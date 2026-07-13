@@ -386,22 +386,6 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
             DAP_DELETE(l_wrapped);
             t->buf_out_wrapped = true;  /* prevent s_tls_write from double-wrapping */
             log_it(L_NOTICE, "TLS server: response sent (%zu bytes)", l_wrapped_sz);
-
-            /* Force-flush: send buf_out immediately so each HTTP response goes
-             * as a separate TLS record.  Without this, multiple responses
-             * (e.g. enc_init + stream_ctl) concatenate in buf_out and the
-             * client receives them as one blob → parse error. */
-            if (a_es->buf_out_size > 0 && a_es->socket != INVALID_SOCKET) {
-                ssize_t l_sent = send(a_es->socket, (const char *)a_es->buf_out,
-                                      a_es->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
-                if (l_sent > 0) {
-                    a_es->buf_out_size -= l_sent;
-                    if (a_es->buf_out_size > 0)
-                        memmove(a_es->buf_out, a_es->buf_out + l_sent, a_es->buf_out_size);
-                    else
-                        t->buf_out_wrapped = false;  /* fully flushed */
-                }
-            }
         }
         DAP_DELETE(l_response);
     } else {
@@ -421,11 +405,20 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 
 static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
 {
-    if (!a_es || a_es->buf_out_size == 0)
+    if (!a_es)
         return false;
     tls_conn_ctx_t *t = s_tls_ctx(a_es);
-    if (!t || !t->mimicry)
-        return true;  /* no mimicry context — send raw (shouldn't happen) */
+    if (!t)
+        return true;
+
+    /* If buf_out is empty, clear the wrapped flag and nothing to do */
+    if (a_es->buf_out_size == 0) {
+        t->buf_out_wrapped = false;
+        return false;
+    }
+
+    if (!t->mimicry)
+        return true;  /* no mimicry context — send raw */
 
     /* Don't re-wrap data that was already wrapped by s_tls_read (init responses). */
     if (!t->stream_mode)

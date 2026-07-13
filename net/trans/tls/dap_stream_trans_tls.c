@@ -217,7 +217,7 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
 
     l_es->_inheritor = a_params->client_ctx;
     dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port);
-    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
+    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE | DAP_SOCK_READY_TO_READ;
 #ifdef DAP_EVENTS_CAPS_IOCP
     l_es->flags &= ~DAP_SOCK_READY_TO_READ;
 #else
@@ -264,13 +264,14 @@ static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_
     void *l_wrapped = NULL;
     size_t l_wrapped_size = 0;
     tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
-    if (!l_ctx) {
-        log_it(L_ERROR, "TLS write: transport_priv is NULL");
-        return -1;
+    if (!l_ctx || !l_ctx->mimicry) {
+        /* No mimicry context — server-side TLS streams may not have one.
+         * Write raw data; the TLS server's s_tls_write event-loop callback
+         * will handle TLS wrapping of buf_out. */
+        return dap_events_socket_write_unsafe(a_stream->esocket, a_data, a_size);
     }
 
-    if (l_ctx && l_ctx->mimicry
-        && dap_tls_mimicry_get_state(l_ctx->mimicry) == DAP_TLS_MIMICRY_STATE_ESTABLISHED) {
+    if (dap_tls_mimicry_get_state(l_ctx->mimicry) == DAP_TLS_MIMICRY_STATE_ESTABLISHED) {
         if (dap_tls_mimicry_wrap(l_ctx->mimicry, a_data, a_size,
                                  &l_wrapped, &l_wrapped_size) != 0) {
             log_it(L_ERROR, "TLS record wrap failed");
@@ -527,7 +528,8 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
     tls_mimicry_ctx_t *l_ctx = l_tc ? (tls_mimicry_ctx_t *)l_tc->transport_priv : NULL;
     if (!l_ctx || !l_ctx->mimicry) {
-        log_it(L_ERROR, "TLS read: no mimicry context (tc=%p ctx=%p)", (void*)l_tc, (void*)l_ctx);
+        /* Expected before handshake_init sets up transport_priv, or on
+         * zombie esockets from a previous failed connection. */
         return;
     }
 
