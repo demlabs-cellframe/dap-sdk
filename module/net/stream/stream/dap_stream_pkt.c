@@ -108,7 +108,13 @@ size_t dap_stream_pkt_read_unsafe( dap_stream_t * a_stream, dap_stream_pkt_t * a
         memcpy(a_buf_out, a_pkt->data, l_copy_size);
         return l_copy_size;
     }
-    
+
+    if (!a_stream->session->key->dec_na) {
+        log_it(L_ERROR, "dap_stream_pkt_read_unsafe: dec_na is NULL for key type %d! stream=%p",
+               a_stream->session->key->type, a_stream);
+        return 0;
+    }
+
     size_t l_result = a_stream->session->key->dec_na(a_stream->session->key,a_pkt->data,a_pkt->hdr.size,a_buf_out, a_buf_out_size);
     
     debug_if(s_debug_more, L_DEBUG, "dap_stream_pkt_read_unsafe: RETURNED dec_na result=%zu (stream=%p, session=%p, key=%p)",
