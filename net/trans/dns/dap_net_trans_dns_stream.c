@@ -41,6 +41,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>

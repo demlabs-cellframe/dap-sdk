@@ -589,6 +589,8 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     debug_if(s_debug, L_DEBUG, "s_stream_new: found transport=%p", (void*)l_transport);
     if (l_transport) {
         l_ret->trans = l_transport;
+        if (l_ret->trans_ctx)
+            l_ret->trans_ctx->trans = l_transport;
         debug_if(s_debug, L_DEBUG, "s_stream_new: assigned transport");
         // Store HTTP client in transport-specific data
         // Note: HTTP client binding is managed by the transport layer
@@ -995,6 +997,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 #endif
 
     DAP_DEL_Z(a_stream->buf_fragments);
+    DAP_DEL_Z(a_stream->pkt_cache);
     DAP_DELETE(a_stream);
     debug_if(s_debug, L_DEBUG, "Stream connection is over");
 }
@@ -1244,7 +1247,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     if (!a_esocket->is_initalized)
         return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_DEBUG, "Skip worker assign callback for events socket "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", a_esocket->uuid);
+        return;
+    }
     dap_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
@@ -1509,9 +1515,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     size_t a_pkt_size = sizeof(dap_stream_pkt_hdr_t) + a_pkt->hdr.size;
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
+    // dap_events_socket_t *l_es = a_stream->esocket;
 
     log_it(L_NOTICE, "s_stream_proc_pkt_in: stream=%p pkt_type=0x%02X pkt_size=%u session=%p",
            (void*)a_stream, a_pkt->hdr.type, a_pkt->hdr.size, (void*)a_stream->session);
+
 
     switch (a_pkt->hdr.type) {
     case STREAM_PKT_TYPE_FRAGMENT_PACKET: {
@@ -1544,6 +1552,17 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         }
+        {
+          size_t l_ms = (size_t)l_fragm_pkt->mem_shift, l_fs = (size_t)l_fragm_pkt->full_size, l_sz = (size_t)l_fragm_pkt->size;
+          if (!l_fs || l_fs > (size_t)DAP_STREAM_PKT_SIZE_MAX || l_sz > l_fs || l_ms > l_fs - l_sz) {
+            debug_if(s_dump_packet_headers, L_WARNING, "Input: invalid fragment bounds mem_shift=%zu size=%zu full_size=%zu", l_ms, l_sz, l_fs);
+            l_is_clean_fragments = true;
+            break;
+          }
+        }
+
+        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu", 
+               l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
 
         debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu",
                l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
@@ -1554,6 +1573,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         } else {
+            if (a_stream->buf_fragments && a_stream->buf_fragments_size_filled && a_stream->buf_fragments_size_total != l_fragm_pkt->full_size) {
+                debug_if(s_dump_packet_headers, L_WARNING, "Input: inconsistent fragment full_size %u vs buffer %zu", l_fragm_pkt->full_size, a_stream->buf_fragments_size_total);
+                l_is_clean_fragments = true;
+                break;
+            }
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
                 DAP_DEL_Z(a_stream->buf_fragments);
                 a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
@@ -1642,6 +1666,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
 
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
+                    // if (!l_es->_inheritor)
+                    //     return;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type,
@@ -1659,6 +1685,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
+                        // if (!l_es->_inheritor)
+                        //     return;
                     }
                     if (l_ch->closing)
                         break;
@@ -1815,9 +1843,21 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             l_es->last_time_active = time(NULL);
             return true;
         }
-        if (!l_stream->trans_ctx || !l_stream->trans_ctx->trans ||
-            !l_stream->trans_ctx->trans->ops || !l_stream->trans_ctx->trans->ops->write ||
+        dap_net_trans_t *l_trans = NULL;
+        if (l_stream->trans_ctx && l_stream->trans_ctx->trans)
+            l_trans = l_stream->trans_ctx->trans;
+        else if (l_stream->trans)
+            l_trans = l_stream->trans;
+        if (!l_trans || !l_trans->ops || !l_trans->ops->write ||
             !l_stream->session || !l_stream->session->key) {
+            debug_if(s_debug, L_DEBUG, "Keepalive %s sock %"DAP_FORMAT_SOCKET": skipped — trans_ctx=%p trans=%p ops=%p write=%p session=%p key=%p",
+                      a_server_side ? "srv" : "cli", l_es->socket,
+                      (void*)l_stream->trans_ctx,
+                      (void*)l_trans,
+                      l_trans ? (void*)l_trans->ops : NULL,
+                      l_trans && l_trans->ops ? (void*)l_trans->ops->write : NULL,
+                      (void*)l_stream->session,
+                      l_stream->session ? (void*)l_stream->session->key : NULL);
             return true;
         }
         debug_if(s_debug_more, L_DEBUG,"Keepalive %s sock %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x,

@@ -46,15 +46,18 @@ if(USE_LIBBSD_EXPLICIT_BZERO)
 endif()
 
 if (NOT DEFINED DAP_VERSION)
-    set(DAP_VERSION "0.0-1")
+    set(DAP_VERSION "0.0.0")
+    message(STATUS "DAP_VERSION is not defined, using default: ${DAP_VERSION}")
 endif()
 
 if (NOT DEFINED BUILD_TS)
-    set(BUILD_TS "0")
+    string(TIMESTAMP BUILD_TS "%s" UTC)
+    message(STATUS "BUILD_TS is not defined, using current timestamp: ${BUILD_TS}")
 endif()
 
 if (NOT DEFINED BUILD_HASH)
-    set(BUILD_HASH "0")
+    set(BUILD_HASH "unknown")
+    message(STATUS "BUILD_HASH is not defined, using default: ${BUILD_HASH}")
 endif()
 
 add_definitions("-DDAP_VERSION=\"${DAP_VERSION}\"")
@@ -99,7 +102,9 @@ if (BUILD_DAP_SDK_TESTS)
     if(NOT DEFINED BUILD_WITH_GDB_DRIVER_SQLITE)
         set(BUILD_WITH_GDB_DRIVER_SQLITE ON)
     endif()
-    set(BUILD_WITH_GDB_DRIVER_MDBX ON)
+    if(NOT DEFINED BUILD_WITH_GDB_DRIVER_MDBX)
+        set(BUILD_WITH_GDB_DRIVER_MDBX ON)
+    endif()
     foreach(_test_mod crypto io network-core network-server network-link_manager network-client global-db test-framework)
         if(NOT DAPSDK_MODULES MATCHES "${_test_mod}")
             set(DAPSDK_MODULES "${DAPSDK_MODULES} ${_test_mod}")
@@ -282,7 +287,6 @@ if(ENABLE_CPPCHECK_ANALYSIS)
                 --suppress=*:_deps/*
                 ${CMAKE_SOURCE_DIR}/core
                 ${CMAKE_SOURCE_DIR}/crypto
-                ${CMAKE_SOURCE_DIR}/examples
                 ${CMAKE_SOURCE_DIR}/global-db
                 ${CMAKE_SOURCE_DIR}/io
                 ${CMAKE_SOURCE_DIR}/net

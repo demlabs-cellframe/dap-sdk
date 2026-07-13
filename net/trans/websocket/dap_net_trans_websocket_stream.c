@@ -580,14 +580,15 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
     size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_data_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
     DAP_DELETE(l_data);
     
-    /* Build node address path segment.
-     * Legacy (protocol_version=0): use the anonymous placeholder. */
-    char l_node_addr_b58[32] = "gd4y5yh78w42aaagh";
-    if (a_params->protocol_version && l_client->link_info.node_addr.uint64) {
-        uint64_t l_addr_le = l_client->link_info.node_addr.uint64;
-        size_t l_b58_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), l_node_addr_b58);
-        if (!l_b58_len)
-            dap_strncpy(l_node_addr_b58, "gd4y5yh78w42aaagh", sizeof(l_node_addr_b58) - 1);
+    /* Build node address path segment (see dap_client_enc_init_url_path). */
+    char l_node_addr_b58[32] = { '\0' };
+    if (!dap_client_enc_init_url_path(l_node_addr_b58, sizeof(l_node_addr_b58),
+                                      &l_client->link_info.node_addr,
+                                      a_params->protocol_version))
+    {
+        log_it(L_ERROR, "Failed to build enc_init URL path");
+        DAP_DELETE(l_data_str);
+        return -5;
     }
 
     // Build URL with query parameters

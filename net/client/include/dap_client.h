@@ -133,12 +133,27 @@ extern "C" {
 int dap_client_init();
 void dap_client_deinit();
 
+#define DAP_ENC_INIT_URL_PATH_PLACEHOLDER "gd4y5yh78w42aaagh"
+
 /** Legacy enc_init: pubkey only, no Dilithium sign (for old cellframe-node master VPN). */
 void dap_client_set_legacy_enc_handshake(bool a_enable);
 bool dap_client_get_legacy_enc_handshake(void);
 bool dap_client_uses_legacy_enc_handshake(dap_client_t *a_client);
 /** Per-client legacy HTTP enc_init for P2P links (protocol_version=0, MSRLN). */
 void dap_client_configure_p2p_handshake(dap_client_t *a_client, bool a_legacy);
+
+/** Use real node b58 in enc_init URL path for modern protocol (default: placeholder). */
+void dap_client_set_enc_init_named_path(bool a_enable);
+bool dap_client_get_enc_init_named_path(void);
+
+/** One-shot legacy enc_init retry after modern handshake failure (per FSM). */
+void dap_client_set_enc_legacy_auto_fallback(bool a_enable);
+bool dap_client_get_enc_legacy_auto_fallback(void);
+
+/** Build enc_init URL path segment (placeholder or node b58). */
+size_t dap_client_enc_init_url_path(char *a_out, size_t a_out_size,
+                                    const dap_stream_node_addr_t *a_node,
+                                    uint32_t a_protocol_version);
 
 dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg);
 

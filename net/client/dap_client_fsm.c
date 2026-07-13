@@ -95,6 +95,12 @@ static void s_fsm_thread_callback_add(uint32_t a_thread_idx,
 
 static void s_fsm_process(dap_client_fsm_t *a_fsm);
 static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm);
+
+/* Client is alive only while client->_internal still points back to this FSM. */
+static bool s_fsm_client_bound(dap_client_fsm_t *a_fsm)
+{
+    return a_fsm && a_fsm->client && DAP_CLIENT_FSM(a_fsm->client) == a_fsm;
+}
 static void s_worker_execute_enc_init_io(void *a_arg);
 static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_arg);
 static int s_add_tried_transport(dap_client_fsm_t *a_fsm, dap_net_trans_type_t a_trans_type);
@@ -281,6 +287,8 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     return l_fsm;
 }
 
+static void s_deferred_trans_ctx_free(void *a_arg) { DAP_DELETE(a_arg); }
+
 void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
 {
     if (!a_fsm)
@@ -306,15 +314,29 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
      * stale esocket references returns NULL from this point forward.  The trans_ctx
      * (if any) was detached from the FSM and handed to the stream's worker by
      * dap_client_trans_ctx_clean_unsafe(); it must not be freed here. */
-    if (a_fsm->client)
+    if (a_fsm->client) {
         a_fsm->client->_internal = NULL;
+        a_fsm->client = NULL;
+    }
 
     if (a_fsm->trans_ctx) {
         a_fsm->trans_ctx->_inheritor = NULL;
-        /* No stream was attached at cleanup time, so trans_ctx is still pending.
-         * Free it now in the FSM context. */
-        DAP_DELETE(a_fsm->trans_ctx);
+        dap_worker_t *l_udp_worker = a_fsm->trans_ctx->esocket_worker;
+        if (l_udp_worker) {
+            /* s_udp_close already cleared callbacks.read_callback = NULL on the esocket,
+             * so no new read callbacks can fire after this point.  We still defer the free
+             * to avoid freeing trans_ctx before any read callback already in-flight (already
+             * dispatched by epoll but not yet executed) on the worker finishes: those
+             * callbacks check l_trans_ctx->stream == NULL and return early, but only if the
+             * trans_ctx struct itself is still valid memory.  Deferring to the same worker
+             * serialises the free after all pending events on that worker complete. */
+            a_fsm->trans_ctx->esocket_worker = NULL;
+            dap_worker_exec_callback_on(l_udp_worker, s_deferred_trans_ctx_free, a_fsm->trans_ctx);
+        } else {
+            DAP_DELETE(a_fsm->trans_ctx);
+        }
         a_fsm->trans_ctx = NULL;
+        a_fsm->esocket   = NULL;
     }
     a_fsm->esocket = NULL;
 
@@ -991,7 +1013,7 @@ static void s_worker_execute_stage_done(void *a_arg)
 
 static void s_fsm_process(dap_client_fsm_t *a_fsm)
 {
-    if (!a_fsm || !s_is_valid_ptr(a_fsm->client) || a_fsm->is_removing)
+    if (!a_fsm || a_fsm->is_removing || !s_fsm_client_bound(a_fsm))
         return;
 
     dap_client_stage_status_t l_stage_status = a_fsm->stage_status;
@@ -1005,6 +1027,28 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
 
     case STAGE_STATUS_ERROR: {
         bool l_is_last_attempt = a_fsm->reconnect_attempts >= s_max_attempts;
+
+        if (l_stage == STAGE_ENC_INIT
+                && dap_client_get_enc_legacy_auto_fallback()
+                && !dap_client_get_legacy_enc_handshake()
+                && !a_fsm->enc_legacy_fallback_tried
+                && !a_fsm->enc_legacy_fallback_active)
+        {
+            dap_net_trans_ctx_t *l_tc = a_fsm->trans_ctx;
+            a_fsm->enc_legacy_fallback_tried = true;
+            a_fsm->enc_legacy_fallback_active = true;
+            a_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_MSRLN;
+            if (l_tc && l_tc->session_key_open)
+            {
+                dap_enc_key_delete(l_tc->session_key_open);
+                l_tc->session_key_open = NULL;
+            }
+            a_fsm->reconnect_attempts = 0;
+            s_set_stage_and_status(a_fsm, STAGE_ENC_INIT, STAGE_STATUS_IN_PROGRESS);
+            log_it(L_NOTICE, "Modern enc_init failed, retrying with legacy protocol (MSRLN, protocol_version=0)");
+            s_fsm_dispatch_stage_to_worker(a_fsm);
+            break;
+        }
 
         if (!l_is_last_attempt) {
             if (!a_fsm->reconnect_attempts) {
@@ -1022,6 +1066,8 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
                    dap_net_trans_type_to_str(a_fsm->client->trans_type));
             log_it(L_ERROR, "Disconnect state(%s), all transports exhausted, doing callback",
                    dap_client_error_str(a_fsm->last_error));
+            /* Block stale DONE/ERROR notifications queued before link_drop frees client. */
+            a_fsm->is_removing = true;
             if (a_fsm->client->stage_status_error_callback)
                 a_fsm->client->stage_status_error_callback(a_fsm->client, (void *)(intptr_t)l_is_last_attempt);
             if (a_fsm->client->always_reconnect) {
@@ -1077,6 +1123,9 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
     } break;
 
     case STAGE_STATUS_DONE: {
+        if (a_fsm->stage == STAGE_ENC_INIT)
+            a_fsm->enc_legacy_fallback_active = false;
+
         log_it(L_INFO, "FSM stage %s completed (target: %s, attempt: %d)",
                dap_client_stage_str(a_fsm->stage),
                dap_client_stage_str(a_fsm->client->stage_target),
@@ -1426,7 +1475,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             size_t l_sign_count = 0;
             uint32_t l_protocol_version = DAP_CLIENT_PROTOCOL_VERSION;
 
-            if (dap_client_uses_legacy_enc_handshake(l_client)) {
+            if (dap_client_uses_legacy_enc_handshake(l_client) || a_fsm->enc_legacy_fallback_active) {
                 l_protocol_version = 0;
                 log_it(L_INFO, "Legacy enc_init handshake (no signature, protocol_version=0)");
             } else {
@@ -1628,7 +1677,7 @@ static void *s_fsm_notify_on_fsm_thread(void *a_arg)
     if (!l_ctx) return NULL;
 
     dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
-    if (!l_fsm || l_fsm->is_removing) {
+    if (!l_fsm || l_fsm->is_removing || !s_fsm_client_bound(l_fsm)) {
         DAP_DELETE(l_ctx);
         return NULL;
     }

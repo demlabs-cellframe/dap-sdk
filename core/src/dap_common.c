@@ -828,7 +828,15 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
     // Finaly read required data from file to buf
     l_len = l_end_pos - l_start_pos - 1;
     char *l_buf = DAP_NEW_Z_SIZE(char, l_len + 1);
-    fread(l_buf, l_len, 1, fp);
+    if (!l_buf) {
+        fclose(fp);
+        return NULL;
+    }
+    if (l_len && fread(l_buf, l_len, 1, fp) != 1) {
+        DAP_DELETE(l_buf);
+        fclose(fp);
+        return NULL;
+    }
 	fclose(fp);
     //debug_if(s_debug_more, L_DEBUG, "Chunk is %s", l_buf); 
     return l_buf;
@@ -978,7 +986,8 @@ int exec_with_ret(char** repl, const char * a_cmd) {
         return(255);
     }
     memset(buf, 0, sizeof(buf));
-    fgets(buf, sizeof(buf) - 1, fp);
+    if (!fgets(buf, sizeof(buf) - 1, fp))
+        buf[0] = '\0';
     buf_len = strlen(buf);
     if(repl) {
         if(buf_len > 0 && buf[buf_len - 1] == '\n')

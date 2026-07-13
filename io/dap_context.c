@@ -264,8 +264,9 @@ void dap_context_stop_n_kill(dap_context_t * a_context)
         a_context->signal_exit = true;
         // Wake up proc thread via eventfd (replaces mutex+condvar)
         uint64_t l_one = 1;
-        if (l_thread->wakeup_fd >= 0)
-            write(l_thread->wakeup_fd, &l_one, sizeof(l_one));
+        if (l_thread->wakeup_fd >= 0
+                && write(l_thread->wakeup_fd, &l_one, sizeof(l_one)) != sizeof(l_one))
+            log_it(L_WARNING, "Failed to wakeup proc thread (errno=%d)", errno);
     }
     default:
         break;
@@ -756,9 +757,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         if (l_selected_sockets > 0) {
             s_busy_count++;
             if (s_busy_count > 10000) {
-                /* Scan ALL ready events for persistent HUP sockets that cause
-                 * the busy loop.  Only events[0] was checked before, missing
-                 * HUP sockets at other indices. */
                 bool l_forced_close = false;
                 for (ssize_t bi = 0; bi < l_sockets_max && bi < l_selected_sockets; bi++) {
                     dap_events_socket_t *l_bes = (dap_events_socket_t *)l_epoll_events[bi].data.ptr;
@@ -1220,7 +1218,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_bytes_read = dap_recvfrom(l_cur->socket, NULL, 0);
 #elif defined(DAP_OS_LINUX)
                         uint64_t val;
-                        read(l_cur->socket, &val, sizeof(val));
+                        ssize_t l_rd = read(l_cur->socket, &val, sizeof(val));
+                        if (l_rd < 0 && errno != EAGAIN && errno != EINTR)
+                            log_it(L_WARNING, "Timer fd read failed: errno=%d", errno);
 #endif
                         if (l_cur->callbacks.timer_callback)
                             l_cur->callbacks.timer_callback(l_cur);
@@ -1504,7 +1504,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             }
                         } else {
                             l_errno = 0;
-                            debug_if(s_debug_more, L_DEBUG, "send OK: socket %"DAP_FORMAT_SOCKET" sent %zd/%zu bytes",
+                            debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT && s_debug_more, L_DEBUG,
+                                     "CLI send OK: socket %"DAP_FORMAT_SOCKET" sent %zd/%zu bytes",
                                      l_cur->socket, l_bytes_sent, l_cur->buf_out_size);
                         }
                     }

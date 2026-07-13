@@ -198,6 +198,33 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
 }
 
 /**
+ * Block until another thread signals via eventfd (callback queued or shutdown).
+ * wakeup_fd is blocking (no EFD_NONBLOCK): idle proc threads must sleep, not spin.
+ */
+static void s_proc_thread_wait_wakeup(dap_proc_thread_t *a_thread)
+{
+    if (a_thread->wakeup_fd < 0)
+        return;
+
+    for (;;) {
+        uint64_t l_val = 0;
+        ssize_t l_rd = read(a_thread->wakeup_fd, &l_val, sizeof(l_val));
+        if (l_rd == (ssize_t)sizeof(l_val))
+            return;
+        if (l_rd < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN)
+                return;
+            log_it(L_ERROR, "Proc thread wakeup read failed: errno=%d", errno);
+            return;
+        }
+        /* EOF: fd closed during shutdown */
+        return;
+    }
+}
+
+/**
  * @brief Pull one item from highest-priority non-empty queue
  */
 static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int *a_priority)
@@ -255,13 +282,7 @@ int dap_proc_thread_loop(dap_context_t *a_context)
         l_item = s_proc_queue_pull(l_thread, &l_item_priority);
 
         if (!l_item && !a_context->signal_exit) {
-            // No items — wait on eventfd (replaces pthread_cond_wait)
-            uint64_t l_val;
-            ssize_t l_rd = read(l_thread->wakeup_fd, &l_val, sizeof(l_val));
-            if (l_rd < 0 && errno != EAGAIN && errno != EINTR) {
-                log_it(L_ERROR, "Proc thread wakeup read failed: errno=%d", errno);
-            }
-            // After wakeup, try pulling again
+            s_proc_thread_wait_wakeup(l_thread);
             l_item = s_proc_queue_pull(l_thread, &l_item_priority);
         }
 
@@ -287,8 +308,8 @@ static int s_context_callback_started(dap_context_t UNUSED_ARG *a_context, void 
 {
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
-    // Create eventfd for cross-thread wakeup (replaces mutex+condvar)
-    l_thread->wakeup_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    // Blocking eventfd: idle proc threads sleep in read() instead of busy-looping.
+    l_thread->wakeup_fd = eventfd(0, EFD_CLOEXEC);
     if (l_thread->wakeup_fd < 0) {
         log_it(L_CRITICAL, "Failed to create eventfd for proc thread: errno=%d", errno);
         return -1;
