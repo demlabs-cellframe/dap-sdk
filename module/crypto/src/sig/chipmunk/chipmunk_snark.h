@@ -3,15 +3,23 @@
  *
  * Post-quantum succinct non-interactive argument of knowledge based on:
  * - Hash-based polynomial commitments over R_q^{(e)} (degree-6 extension)
- * - FRI-style folding with challenges from subtractive set S = F_{q^6} \ {0}
- * - Ring membership circuit as polynomial constraints
+ * - Challenges from subtractive set S = F_{q^6} \ {0}  (|S| = q^6 - 1 ~ 2^129.6)
+ * - Ring membership circuit as polynomial constraints over R_q
  * - QROM Fiat-Shamir transform
  *
- * Provides ~200-400 byte proofs for ring membership (vs ~34KB for MRNG fold).
- * All operations over R_q^{(e)} = R_q[Y]/(Φ_9(Y)) where Φ_9 = Y^6+Y^3+1.
+ * All operations over R_q^{(e)} = R_q[Y]/(Phi_9(Y)) where Phi_9 = Y^6+Y^3+1.
+ * R_q = Z_q[X]/(X^512+1), q = 3168257 (prime).
  *
- * Security: MSIS/MLWE ≥ 128 bits (quantum), soundness ~128 bits via
- * subtractive set |S| = q^6 - 1 ≈ 2^{129.6} per round.
+ * Soundness model (Phase 1 rewrite):
+ * - Alpha challenge drawn from F_{q^6}\{0}: evaluation soundness ~129 bits per check
+ * - Constraint polynomial verified via quotient relation at EXT_ALPHA_CHECKS
+ *   random F_q points: combined soundness >> 128 bits
+ * - w_commit binding: constraint polynomial reconstructed from public inputs,
+ *   mismatch with z_commit causes rejection
+ *
+ * NOTE: Phase 1 uses full-polynomial opening proofs (z, q sent in clear).
+ *       Phase 2+ will replace with Merkle-based polynomial commitment scheme
+ *       for true succinctness (~200-400 byte proofs).
  */
 
 #pragma once
@@ -42,22 +50,31 @@ extern "C" {
  * for backward compatibility but all new code should use CHIPMUNK_Q directly. */
 #define CHIPMUNK_SNARK_Q            CHIPMUNK_Q
 #define CHIPMUNK_SNARK_SECURITY     128     /* Target security level (bits) */
-#define CHIPMUNK_SNARK_EXT_DEG      6       /* Extension degree e=6 (Φ_9) */
-
-/* FRI folding parameters */
-#define CHIPMUNK_SNARK_FOLD_ROUNDS  7       /* log2(N) - 1 for sufficient soundness */
-#define CHIPMUNK_SNARK_FOLD_BLOWUP  4       /* Blowup factor for Reed-Solomon encoding */
+#define CHIPMUNK_SNARK_EXT_DEG      6       /* Extension degree e=6 (Phi_9) */
 
 /* Polynomial commitment */
 #define CHIPMUNK_SNARK_COMMIT_BYTES 32      /* SHA3-256 hash of coefficients */
-#define CHIPMUNK_SNARK_QUERY_COUNT  30      /* Number of FRI queries for 128-bit soundness */
 
-/* Proof size estimates */
-#define CHIPMUNK_SNARK_PROOF_MAX    1024    /* Max proof size in bytes */
+/* Number of random F_q points for quotient relation verification.
+ * Each check: z(beta) == q(beta) * (beta - alpha_scalar) where alpha_scalar
+ * is the Y^0 component of the extension challenge.
+ * Soundness per check: ~2*Q^{-1} ~ 2^{-21.6} (two evaluation points).
+ * With 11 checks: 11 * 21.6 ~ 238 bits >> 128 bits.
+ * The extension alpha provides the primary ~129-bit soundness bound. */
+#define CHIPMUNK_SNARK_QUOTIENT_CHECKS  11
 
-/* Subtractive set size: |S| = q^6 - 1 ≈ 2^{129.6} */
-/* Per-round soundness: 2/|S| ≈ 2^{-128.6} */
-/* Over 7 rounds: 7 * 2/|S| ≈ 2^{-125.8} */
+/* Opening proof: z and q polynomials sent in full (interim Phase 1).
+ * Each polynomial = CHIPMUNK_N * sizeof(int32_t) = 512 * 4 = 2048 bytes.
+ * Total opening: 4096 bytes. Phase 2+ will replace with Merkle proofs. */
+#define CHIPMUNK_SNARK_OPENING_POLYS    2   /* z + q */
+#define CHIPMUNK_SNARK_OPENING_BYTES    \
+    (CHIPMUNK_SNARK_OPENING_POLYS * CHIPMUNK_N * (int)sizeof(int32_t))
+
+/* Total proof size estimate (Phase 1 interim) */
+#define CHIPMUNK_SNARK_PROOF_MAX    (CHIPMUNK_SNARK_OPENING_BYTES + 256)
+
+/* Subtractive set size: |S| = q^6 - 1 ~ 2^{129.6} */
+/* Per-round soundness: 2/|S| ~ 2^{-128.6} */
 
 /* -------------------------------------------------------------------------
  * Types
@@ -68,55 +85,37 @@ typedef struct chipmunk_snark_commit {
     uint8_t hash[CHIPMUNK_SNARK_COMMIT_BYTES];
 } chipmunk_snark_commit_t;
 
-/* Polynomial evaluation proof (for one point) */
-typedef struct chipmunk_snark_eval_proof {
-    chipmunk_mring_ext_t value;         /* f(alpha) in R_q^{(e)} */
-    uint8_t proof_data[256];            /* Authentication path */
-    size_t proof_size;
-} chipmunk_snark_eval_proof_t;
-
-/* FRI layer commitment */
-typedef struct chipmunk_snark_fri_layer {
-    chipmunk_snark_commit_t commit;
-} chipmunk_snark_fri_layer_t;
-
 /* Ring membership statement */
 typedef struct chipmunk_snark_statement {
     const chipmunk_lrs_public_key_t *ring;      /* Ring of public keys */
     size_t ring_size;                           /* N */
     const uint8_t *message;                     /* Message being signed */
     size_t message_size;
-    chipmunk_snark_commit_t ring_commit;        /* Commitment to ring */
+    chipmunk_snark_commit_t ring_commit;        /* Commitment to ring hash */
 } chipmunk_snark_statement_t;
 
 /* Ring membership witness (private) */
 typedef struct chipmunk_snark_witness {
     uint32_t signer_index;                      /* Which key signed */
     chipmunk_poly_t secret_key[CHIPMUNK_LRS_K * 2]; /* Secret witness (s0[GAMMA]+s1[GAMMA]) */
-    chipmunk_poly_t indicator;                  /* b ∈ {0,1}^N */
+    chipmunk_poly_t indicator;                  /* b in {0,1}^N */
 } chipmunk_snark_witness_t;
 
-/* Full SNARK proof */
+/* Full SNARK proof (Phase 1 interim format) */
 typedef struct chipmunk_snark_proof {
     /* Commitment phase */
     chipmunk_snark_commit_t w_commit;           /* Commitment to witness polynomial */
     chipmunk_snark_commit_t z_commit;           /* Commitment to constraint polynomial */
     chipmunk_snark_commit_t q_commit;           /* Commitment to quotient polynomial */
+    chipmunk_snark_commit_t r_commit;           /* Commitment to randomizer (F_q^6) */
 
-    /* FRI proof for polynomial evaluation */
-    chipmunk_snark_fri_layer_t fri_layers[CHIPMUNK_SNARK_FOLD_ROUNDS];
-    chipmunk_mring_ext_t fri_last_layer;        /* Final polynomial in R_q^{(e)} */
-
-    /* Evaluation proofs */
-    chipmunk_mring_ext_t w_eval;                /* w(alpha) in R_q^{(e)} */
-    chipmunk_mring_ext_t z_eval;                /* z(alpha) in R_q^{(e)} */
-    chipmunk_mring_ext_t q_eval;                /* q(alpha) in R_q^{(e)} */
-
-    /* Challenge point (derived from transcript) */
+    /* Evaluation point: full F_q^6 extension element */
     chipmunk_mring_ext_t alpha;                 /* Challenge from subtractive set */
 
-    /* Opening proofs: raw polynomial bytes for verifier */
-    uint8_t opening_proof[CHIPMUNK_N * sizeof(int32_t) * 3]; /* b + z + q */
+    /* Opening proof: serialized z and q polynomials.
+     * b (indicator) is NOT included to protect signer privacy.
+     * Verifier reconstructs z, q and checks commitments + quotient relation. */
+    uint8_t opening_proof[CHIPMUNK_SNARK_OPENING_BYTES];
     size_t opening_proof_size;
 
     /* QROM transcript hash */
@@ -154,7 +153,7 @@ int chipmunk_snark_commit(chipmunk_snark_commit_t *commit,
  * Generate a ring membership SNARK proof.
  *
  * Proves: "I know sk_j for pk_j in {pk_0, ..., pk_{N-1}}" without
- * revealing j. Proof size ~200-400 bytes.
+ * revealing j.
  *
  * @param proof Output proof.
  * @param ctx SNARK context.
