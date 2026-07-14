@@ -192,11 +192,13 @@ void chipmunk_range_proof_free(chipmunk_range_proof_t *a_proof)
     dap_memwipe(a_proof, sizeof(*a_proof));
 }
 
-int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
-                                     const chipmunk_pedersen_params_t *a_params,
-                                     const chipmunk_pedersen_commit_t *a_commit,
-                                     const uint8_t a_value[CHIPMUNK_PEDERSEN_VALUE_BYTES],
-                                     const uint8_t a_randomness_seed[32])
+/* Internal prove implementation: orig_r may be pre-derived or NULL (derived from seed) */
+static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
+                                        const chipmunk_pedersen_params_t *a_params,
+                                        const chipmunk_pedersen_commit_t *a_commit,
+                                        const uint8_t a_value[CHIPMUNK_PEDERSEN_VALUE_BYTES],
+                                        const chipmunk_poly_t a_orig_r[CHIPMUNK_LRS_K],
+                                        const uint8_t a_randomness_seed[32])
 {
     if (!a_proof || !a_params || !a_commit || !a_value || !a_randomness_seed)
         return -EINVAL;
@@ -209,32 +211,14 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
     if (!l_bit_arr) return -ENOMEM;
     s_decompose_bits_bytes(l_bit_arr, a_value, l_num_bits);
 
+    /* Use provided orig_r or derive from seed */
     chipmunk_poly_t l_orig_r[CHIPMUNK_LRS_K];
-    {
-        uint64_t l_state[25];
-        memset(l_state, 0, sizeof(l_state));
-        {
-            size_t l_abs_len = 32 + 22;
-            uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
-            if (!l_abs) { DAP_DELETE(l_bit_arr); return -ENOMEM; }
-            memcpy(l_abs, a_randomness_seed, 32);
-            memcpy(l_abs + 32, "pedersen-randomness-v1", 22);
-            dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
-            DAP_DELETE(l_abs);
-        }
-        size_t l_needed = CHIPMUNK_N * 4;
-        size_t l_nblocks = (l_needed + 135) / 136;
-        uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
-        if (!l_buf) { DAP_DELETE(l_bit_arr); return -ENOMEM; }
-        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
-            dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
-            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                uint32_t l_val;
-                memcpy(&l_val, &l_buf[k * 4], 4);
-                l_orig_r[j].coeffs[k] = (int32_t)((l_val % (2 * 13 + 1)) - 13);
-            }
-        }
-        DAP_DELETE(l_buf);
+    if (a_orig_r) {
+        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j)
+            l_orig_r[j] = a_orig_r[j];
+    } else {
+        int l_rc = chipmunk_pedersen_derive_blinding(l_orig_r, a_randomness_seed);
+        if (l_rc != 0) { DAP_DELETE(l_bit_arr); return l_rc; }
     }
 
     chipmunk_poly_t (*l_bit_r)[CHIPMUNK_LRS_K] = DAP_NEW_Z_COUNT(chipmunk_poly_t[CHIPMUNK_LRS_K], l_num_bits);
@@ -479,4 +463,28 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
     DAP_DELETE(l_bit_commits);
     a_proof->proof_size = sizeof(*a_proof);
     return 0;
+}
+
+int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
+                                     const chipmunk_pedersen_params_t *a_params,
+                                     const chipmunk_pedersen_commit_t *a_commit,
+                                     const uint8_t a_value[CHIPMUNK_PEDERSEN_VALUE_BYTES],
+                                     const uint8_t a_randomness_seed[32])
+{
+    /* orig_r derived from seed internally */
+    return s_range_proof_prove_internal(a_proof, a_params, a_commit, a_value,
+                                        NULL, a_randomness_seed);
+}
+
+int chipmunk_range_proof_prove_explicit(chipmunk_range_proof_t *a_proof,
+                                         const chipmunk_pedersen_params_t *a_params,
+                                         const chipmunk_pedersen_commit_t *a_commit,
+                                         const uint8_t a_value[CHIPMUNK_PEDERSEN_VALUE_BYTES],
+                                         const chipmunk_poly_t a_orig_r[CHIPMUNK_LRS_K],
+                                         const uint8_t a_randomness_seed[32])
+{
+    if (!a_orig_r) return -EINVAL;
+    /* orig_r provided explicitly; seed used for bit-level + Stern blinding only */
+    return s_range_proof_prove_internal(a_proof, a_params, a_commit, a_value,
+                                        a_orig_r, a_randomness_seed);
 }

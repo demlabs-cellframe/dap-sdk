@@ -128,22 +128,17 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *a_params,
     return 0;
 }
 
-int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,
-                             const chipmunk_pedersen_params_t *a_params,
-                             const uint8_t a_message[CHIPMUNK_PEDERSEN_VALUE_BYTES],
-                             const uint8_t a_randomness_seed[32])
+int chipmunk_pedersen_derive_blinding(chipmunk_poly_t a_r[CHIPMUNK_LRS_K],
+                                       const uint8_t a_randomness_seed[32])
 {
-    if (!a_commit || !a_params || !a_message || !a_randomness_seed) return -EINVAL;
-    if (!a_params->initialized) return -EINVAL;
+    if (!a_r || !a_randomness_seed) return -EINVAL;
 
-    chipmunk_poly_t *l_r = DAP_NEW_Z_COUNT(chipmunk_poly_t, CHIPMUNK_LRS_K);
-    if (!l_r) return -ENOMEM;
     uint64_t l_state[25];
     memset(l_state, 0, sizeof(l_state));
     {
         size_t l_abs_len = 32 + 22;
         uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
-        if (!l_abs) { DAP_DELETE(l_r); return -ENOMEM; }
+        if (!l_abs) return -ENOMEM;
         memcpy(l_abs, a_randomness_seed, 32);
         memcpy(l_abs + 32, "pedersen-randomness-v1", 22);
         dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
@@ -154,21 +149,58 @@ int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,
     size_t l_nblocks = (l_needed + 135) / 136;
     size_t l_buf_size = l_nblocks * 136;
     uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buf_size);
-    if (!l_buf) { DAP_DELETE(l_r); return -ENOMEM; }
+    if (!l_buf) return -ENOMEM;
 
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
         dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
         for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
             uint32_t l_val;
             memcpy(&l_val, &l_buf[k * 4], 4);
-            l_r[j].coeffs[k] = (int32_t)((l_val % (2 * 13 + 1)) - 13);
+            a_r[j].coeffs[k] = (int32_t)((l_val % (2 * 13 + 1)) - 13);
         }
     }
     DAP_DELETE(l_buf);
+    return 0;
+}
+
+int chipmunk_pedersen_commit_explicit(chipmunk_pedersen_commit_t *a_commit,
+                                       const chipmunk_pedersen_params_t *a_params,
+                                       const uint8_t a_message[CHIPMUNK_PEDERSEN_VALUE_BYTES],
+                                       const chipmunk_poly_t a_randomness[CHIPMUNK_LRS_K])
+{
+    if (!a_commit || !a_params || !a_message || !a_randomness) return -EINVAL;
+    if (!a_params->initialized) return -EINVAL;
 
     chipmunk_poly_t l_m;
     s_encode_message_bytes(&l_m, a_message);
-    int l_rc = s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, l_r);
+    return s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, a_randomness);
+}
+
+void chipmunk_pedersen_blinding_sub(chipmunk_poly_t a_result[CHIPMUNK_LRS_K],
+                                      const chipmunk_poly_t a[CHIPMUNK_LRS_K],
+                                      const chipmunk_poly_t b[CHIPMUNK_LRS_K])
+{
+    if (!a_result || !a || !b) return;
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j)
+        chipmunk_poly_sub(&a_result[j], &a[j], &b[j]);
+}
+
+int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,
+                             const chipmunk_pedersen_params_t *a_params,
+                             const uint8_t a_message[CHIPMUNK_PEDERSEN_VALUE_BYTES],
+                             const uint8_t a_randomness_seed[32])
+{
+    if (!a_commit || !a_params || !a_message || !a_randomness_seed) return -EINVAL;
+    if (!a_params->initialized) return -EINVAL;
+
+    chipmunk_poly_t *l_r = DAP_NEW_Z_COUNT(chipmunk_poly_t, CHIPMUNK_LRS_K);
+    if (!l_r) return -ENOMEM;
+    int l_rc = chipmunk_pedersen_derive_blinding(l_r, a_randomness_seed);
+    if (l_rc != 0) { DAP_DELETE(l_r); return l_rc; }
+
+    chipmunk_poly_t l_m;
+    s_encode_message_bytes(&l_m, a_message);
+    l_rc = s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, l_r);
 
     dap_memwipe(l_r, CHIPMUNK_LRS_K * sizeof(chipmunk_poly_t));
     DAP_DELETE(l_r);
