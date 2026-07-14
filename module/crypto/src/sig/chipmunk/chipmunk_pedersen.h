@@ -4,7 +4,16 @@
  * Commitment: C = A * r + encode(m) mod q
  * where A is a public matrix, r is a random blinding vector, m is a uint256 amount.
  *
- * Amount encoding: bit i of the 256-bit LE value is stored at polynomial coeff[i].
+ * Amount encoding (Phase 2 fix — homomorphic):
+ *   Base-B = 2^8 digit decomposition of the 256-bit LE value.
+ *   Coefficient i holds digit i of the value in base 256 (little-endian digits).
+ *   encode(v)[i] = (v >> (8*i)) & 0xFF   for i in [0, PEDERSEN_DIGITS).
+ *
+ *   Homomorphic property: encode(v1) + encode(v2) = encode(v1 + v2) in R_q
+ *   because each digit is in [0, 255] and 2*255 = 510 << Q = 3168257,
+ *   so digit-wise addition never wraps mod Q.
+ *
+ *   Uses 32 of 512 coefficients (PEDERSEN_DIGITS = 32).
  */
 
 #pragma once
@@ -26,6 +35,12 @@ extern "C" {
 #define CHIPMUNK_PEDERSEN_VALUE_BYTES   32
 #define CHIPMUNK_PEDERSEN_VALUE_BITS    256
 
+/* Digit-based encoding parameters (Phase 2 homomorphic fix) */
+#define CHIPMUNK_PEDERSEN_DIGIT_BITS   8        /* log2(B), base B = 2^8 = 256 */
+#define CHIPMUNK_PEDERSEN_DIGIT_BASE   256      /* B = 2^8 */
+#define CHIPMUNK_PEDERSEN_DIGITS        32       /* ceil(VALUE_BITS / DIGIT_BITS) = 256/8 */
+#define CHIPMUNK_PEDERSEN_DIGIT_MAX     255      /* B - 1 */
+
 typedef struct chipmunk_pedersen_commit {
     chipmunk_poly_t C[CHIPMUNK_PEDERSEN_K];
 } chipmunk_pedersen_commit_t;
@@ -45,7 +60,9 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *params,
 
 /**
  * Commit to a 256-bit atomic amount (LE bytes).
- * Bit i of the value is encoded at polynomial coefficient i.
+ * Value is encoded using base-256 digit decomposition:
+ *   encode(v)[i] = (v >> (8*i)) & 0xFF  for i in [0, 32).
+ * This encoding is homomorphic: encode(v1) + encode(v2) = encode(v1+v2) in R_q.
  */
 int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *commit,
                              const chipmunk_pedersen_params_t *params,
@@ -54,12 +71,23 @@ int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *commit,
 
 /**
  * Commit to a single bit (0/1) at coefficient @a bit_pos (used by range proofs).
+ * @deprecated Use chipmunk_pedersen_commit_explicit_digit for digit-based encoding.
  */
 int chipmunk_pedersen_commit_explicit_bit(chipmunk_pedersen_commit_t *commit,
                                           const chipmunk_pedersen_params_t *params,
                                           uint8_t bit,
                                           uint32_t bit_pos,
                                           const chipmunk_poly_t randomness[CHIPMUNK_LRS_K]);
+
+/**
+ * Commit to a single base-256 digit [0, 255] at coefficient @a digit_pos.
+ * Used by digit-based range proofs (Phase 2).
+ */
+int chipmunk_pedersen_commit_explicit_digit(chipmunk_pedersen_commit_t *commit,
+                                             const chipmunk_pedersen_params_t *params,
+                                             uint8_t digit,
+                                             uint32_t digit_pos,
+                                             const chipmunk_poly_t randomness[CHIPMUNK_LRS_K]);
 
 int chipmunk_pedersen_verify_opening(const chipmunk_pedersen_commit_t *commit,
                                      const chipmunk_pedersen_params_t *params,

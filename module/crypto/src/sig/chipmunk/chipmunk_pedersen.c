@@ -3,6 +3,11 @@
  *
  * C = A * r + encode(m) mod q
  * where A ∈ R_q^{K×L}, r ∈ R_q^L short, m ∈ Z encoded as constant polynomial.
+ *
+ * Phase 2: Encoding changed from binary bits to base-256 digit decomposition.
+ * encode(v)[i] = byte i of the LE uint256 value (v >> (8*i)) & 0xFF.
+ * This is homomorphic: encode(v1) + encode(v2) = encode(v1+v2) in R_q
+ * because each digit ∈ [0,255] and 2*255 = 510 < Q = 3168257.
  */
 
 #include "chipmunk_pedersen.h"
@@ -19,16 +24,27 @@
 
 #define LOG_TAG "chipmunk_pedersen"
 
-/* Encode uint256 (LE) as bit i at coefficient i */
+/* Encode uint256 (LE bytes) as base-256 digit decomposition.
+ * Coefficient i = byte i of the LE value.
+ * 32 digits (bytes) × 8 bits = 256 bits, using coeffs[0..31].
+ *
+ * Homomorphic: encode(v1) + encode(v2) = encode(v1 + v2) in R_q
+ * because each digit ∈ [0, 255] and digit-wise sum ∈ [0, 510] < Q. */
 static void s_encode_message_bytes(chipmunk_poly_t *a_out,
                                    const uint8_t a_message[CHIPMUNK_PEDERSEN_VALUE_BYTES])
 {
     memset(a_out, 0, sizeof(chipmunk_poly_t));
-    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_VALUE_BITS; ++i) {
-        uint32_t l_byte = i / 8;
-        uint32_t l_bit = i % 8;
-        a_out->coeffs[i] = (int32_t)((a_message[l_byte] >> l_bit) & 1u);
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_DIGITS; ++i) {
+        a_out->coeffs[i] = (int32_t)a_message[i];
     }
+}
+
+/* Encode a single digit [0, 255] at position digit_pos */
+static void s_encode_digit_at(chipmunk_poly_t *a_out, uint8_t a_digit, uint32_t a_pos)
+{
+    memset(a_out, 0, sizeof(chipmunk_poly_t));
+    if (a_pos < CHIPMUNK_N)
+        a_out->coeffs[a_pos] = (int32_t)a_digit;
 }
 
 static void s_encode_bit_at(chipmunk_poly_t *a_out, uint8_t a_bit, uint32_t a_pos)
@@ -236,6 +252,22 @@ int chipmunk_pedersen_commit_explicit_bit(chipmunk_pedersen_commit_t *a_commit,
 
     chipmunk_poly_t l_m;
     s_encode_bit_at(&l_m, a_bit, a_bit_pos);
+    return s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, a_randomness);
+}
+
+int chipmunk_pedersen_commit_explicit_digit(chipmunk_pedersen_commit_t *a_commit,
+                                             const chipmunk_pedersen_params_t *a_params,
+                                             uint8_t a_digit,
+                                             uint32_t a_digit_pos,
+                                             const chipmunk_poly_t a_randomness[CHIPMUNK_LRS_K])
+{
+    if (!a_commit || !a_params || !a_randomness) return -EINVAL;
+    if (!a_params->initialized) return -EINVAL;
+    if (a_digit_pos >= CHIPMUNK_PEDERSEN_DIGITS) return -EINVAL;
+    if (a_digit > CHIPMUNK_PEDERSEN_DIGIT_MAX) return -EINVAL;
+
+    chipmunk_poly_t l_m;
+    s_encode_digit_at(&l_m, a_digit, a_digit_pos);
     return s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, a_randomness);
 }
 

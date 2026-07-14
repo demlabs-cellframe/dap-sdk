@@ -271,8 +271,18 @@ static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
     chipmunk_pedersen_commit_t *l_bit_commits = DAP_NEW_Z_COUNT(chipmunk_pedersen_commit_t, l_num_bits);
     if (!l_bit_commits) { DAP_DELETE(l_bit_arr); DAP_DELETE(l_bit_r); return -ENOMEM; }
     for (uint32_t i = 0; i < l_num_bits; ++i) {
-        int l_rc = chipmunk_pedersen_commit_explicit_bit(&l_bit_commits[i], a_params,
-                                                          l_bit_arr[i], i, l_bit_r[i]);
+        /* Phase 2: digit-compatible bit commitment.
+         * Old: commit_explicit_bit(b_i, i) → coefficient[i] = b_i
+         * New: commit_explicit_digit(b_i << k, j) → coefficient[j] = b_i * 2^k
+         * where j = i/8, k = i%8. Summing all 8 bits for digit j gives:
+         *   Σ_k (b_{j,k} * 2^k) = digit_j, which matches encode(v)[j].
+         * The weighted sum reconstructs the digit value at the correct position.
+         * Max weighted value per coefficient: Σ_k 2^k = 255 < Q (safe). */
+        uint32_t l_j = i / 8;   /* digit position */
+        uint32_t l_k = i % 8;   /* bit within digit */
+        uint8_t l_digit_val = (uint8_t)(l_bit_arr[i] << l_k);
+        int l_rc = chipmunk_pedersen_commit_explicit_digit(&l_bit_commits[i], a_params,
+                                                            l_digit_val, l_j, l_bit_r[i]);
         if (l_rc != 0) {
             DAP_DELETE(l_bit_arr); DAP_DELETE(l_bit_r); DAP_DELETE(l_bit_commits);
             return l_rc;
