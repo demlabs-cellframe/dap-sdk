@@ -38,7 +38,7 @@
 #define LOG_TAG "dap_cli_http_docs"
 
 #define DAP_CLI_HTTP_DOCS_CFG_PATH "http-index-path"
-#define DAP_CLI_HTTP_DOCS_CFG_DEFAULT "../../share/docs/rpc"
+#define DAP_CLI_HTTP_DOCS_CFG_DEFAULT "../share/docs/rpc"
 
 #ifndef BUILD_HASH
 #define BUILD_HASH "unknown"
