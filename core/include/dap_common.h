@@ -377,8 +377,8 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 
 #define DAP_DEL_MULTY(...) \
     do { \
-        void *_dap_del_ptrs[] = { __VA_ARGS__ }; \
-        for (size_t _dap_del_i = 0; _dap_del_i < sizeof(_dap_del_ptrs) / sizeof(void*); ++_dap_del_i) \
+        void *_dap_del_ptrs[] = { NULL, __VA_ARGS__ }; \
+        for (size_t _dap_del_i = 1; _dap_del_i < sizeof(_dap_del_ptrs) / sizeof(void*); ++_dap_del_i) \
             DAP_DELETE(_dap_del_ptrs[_dap_del_i]); \
     } while (0)
 
