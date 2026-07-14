@@ -178,7 +178,7 @@ size_t dap_enc_iaes256_cbc_decrypt_fast(struct dap_enc_key * a_key, const void *
 
     size_t l_padding_size = ((uint8_t *)data)[a_in_size - 1];
     if(l_padding_size == 0 || l_padding_size > IAES_BLOCK_SIZE || l_padding_size > a_in_size){
-        log_it(L_CRITICAL, "Padding size is %zu, expected 1-%zu", l_padding_size, IAES_BLOCK_SIZE);
+        log_it(L_CRITICAL, "Padding size is %zu, expected 1-%zu", l_padding_size, (size_t)IAES_BLOCK_SIZE);
         return 0;
     }
     for(size_t i = a_in_size - l_padding_size; i < a_in_size; i++){
