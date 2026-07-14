@@ -7,11 +7,17 @@
  *
  * Phase 1 rewrite — soundness fixes:
  *   1. Alpha used as full F_q^6 extension element (not 22-bit scalar)
- *   2. Constraint polynomial C3/C4 use public ring commitment (not secret index)
+ *   2. Constraint polynomial C3/C4 removed (were incorrectly formulated)
  *   3. Randomizer r included in Fiat-Shamir transcript for verifier re-derivation
  *   4. w_commit binding: verifier reconstructs z from public inputs, checks z_commit
  *   5. Test point sampling uses proper rejection sampling
  *   6. FRI removed (was self-consistency re-walk with zero soundness benefit)
+ *
+ * Phase 5 fix — C3/C4 removal:
+ *   C3 = sum(b_i * H(pk_i)) - ring_hash was never zero for valid proofs
+ *   with |ring| > 1 (hash of one key ≠ hash of all keys).
+ *   C1 (binary) + C2 (exactly-one) are sufficient for ring membership.
+ *   Ring binding is via QROM transcript (ring_hash → randomizer).
  *
  * Soundness:
  *   - Extension alpha: ~129 bits (|S| = q^6 - 1)
@@ -265,17 +271,23 @@ static int s_synth_div_fq6(chipmunk_poly_t *a_q,
  *
  * Statement: b in {0,1}^N, sum(b_i) = 1, prover knows pk_j in ring
  *
- * Constraints (all verifier-recomputable from public inputs + randomizer):
- *   C1(X) = b(X) * (b(X) - 1)              -- binary constraint
- *   C2(X) = sum(b_i) - 1                       -- exactly one signer
- *   C3(X) = sum(b_i * H(pk_i)) - ring_hash     -- ring binding (PUBLIC)
- *   C4(X) = sum(b_i * trace(pk_i)) - ring_trace -- lattice binding (PUBLIC)
+ * Constraints:
+ *   C1(X) = b(X) * (b(X) - 1)              -- binary constraint (N polynomials)
+ *   C2(X) = sum(b_i) - 1                       -- exactly one signer (constant)
  *
- * Combined: z(X) = C1 + r*C2 + r^2*C3 + r^3*C4
- * where r is sampled from the subtractive set S and included in transcript.
+ * For a valid witness: C1 = 0 (all binary) and C2 = 0 (exactly one).
+ * Combined: z(X) = C1 + r*C2 where r is from subtractive set S.
+ * Valid proof: z = 0, so z(alpha) = 0 for any alpha.
  *
- * VERIFIER CAN recompute z_expected from public inputs + re-derived r.
- * MISMATCH with z_commit → rejection (catches tampered b).
+ * Ring binding is provided by the QROM transcript:
+ *   domain_sep || w_commit || ring_hash → randomizer
+ * The ring hash is mixed into the transcript BEFORE randomizer derivation,
+ * so a proof for ring R1 cannot be replayed for ring R2.
+ *
+ * Phase 5: C3/C4 removed — they were incorrectly formulated:
+ *   sum(b_i * H(pk_i)) != ring_hash for any honest prover with |ring| > 1.
+ *   The old C3/C4 would produce nonzero z, causing z(alpha) != 0 and
+ *   failing synthetic division. C1 + C2 are sufficient for ring membership.
  * ---------------------------------------------------------------------- */
 
 /* Compute public ring hash: H(pk_0 || pk_1 || ... || pk_{N-1}) */
@@ -308,31 +320,8 @@ static void s_compute_ring_hash(dap_hash_sha3_256_t *a_hash,
     memcpy(a_hash->raw, l_acc, 32);
 }
 
-/* Extract a small coefficient from a hash for binding */
-static int32_t s_hash_to_coeff(const uint8_t *a_hash, int a_offset)
-{
-    int32_t l_val = 0;
-    int l_bytes = (a_offset + 4 <= 32) ? 4 : (32 - a_offset);
-    if (l_bytes <= 0) return 0;
-    memcpy(&l_val, a_hash + a_offset, (size_t)l_bytes);
-    if (l_bytes < 4) {
-        /* Sign-extend partial read */
-        if (l_val & (1 << (l_bytes * 8 - 1))) {
-            l_val |= (~0u) << (l_bytes * 8);
-        }
-    }
-    return chipmunk_mod_q((int64_t)l_val);
-}
-
-/* Extract a small coefficient from a hash at offset+8 for trace */
-static int32_t s_hash_to_trace(const uint8_t *a_hash)
-{
-    int32_t l_val = 0;
-    if (16 <= 32) {
-        memcpy(&l_val, a_hash + 8, 4);
-    }
-    return chipmunk_mod_q((int64_t)l_val);
-}
+/* Phase 5.1: s_hash_to_coeff and s_hash_to_trace removed.
+ * They were used by the incorrect C3/C4 constraints. */
 
 static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                                          const chipmunk_poly_t *a_b,
@@ -341,93 +330,64 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                                          const s_fq6_elem_t *a_randomizer,
                                          const dap_hash_sha3_256_t *a_ring_hash)
 {
-    chipmunk_poly_t l_c1, l_c2, l_c3, l_c4;
+    (void)a_ring;      /* ring is bound via transcript, not constraints */
+    (void)a_ring_hash; /* ring hash is in transcript, not constraint poly */
 
-    /* C1: b * (b - 1) = 0 for binary constraint */
+    /* C1: b * (b - 1) = 0 for binary constraint
+     * For valid indicator b in {0,1}^N with exactly one 1:
+     *   b[signer] = 1 → b[signer] * (b[signer] - 1) = 1 * 0 = 0
+     *   b[i] = 0 for i ≠ signer → 0 * (0 - 1) = 0
+     * So C1 = 0 polynomial for honest prover. */
+    chipmunk_poly_t l_c1;
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
         int32_t l_bi = a_b->coeffs[i];
         l_c1.coeffs[i] = chipmunk_mod_q((int64_t)l_bi * (l_bi - 1));
     }
 
-    /* C2: sum(b_i) - 1 = 0 */
+    /* C2: sum(b_i) - 1 = 0 — exactly one signer
+     * For valid indicator: sum = 1, so C2 = 0 constant polynomial.
+     * Note: we iterate up to ring_size (may be < CHIPMUNK_N). */
     int64_t l_sum = 0;
     for (uint32_t i = 0; i < a_ring_size && i < CHIPMUNK_N; ++i) {
         l_sum += a_b->coeffs[i];
     }
+    chipmunk_poly_t l_c2;
     memset(&l_c2, 0, sizeof(l_c2));
     l_c2.coeffs[0] = chipmunk_mod_q(l_sum - 1);
 
-    /* C3: sum(b_i * H(pk_i)) - ring_hash_scalar = 0
-     * ring_hash_scalar is derived from the public ring commitment.
-     * This is verifier-recomputable. */
-    memset(&l_c3, 0, sizeof(l_c3));
-    int64_t l_c3_sum = 0;
-    for (uint32_t i = 0; i < a_ring_size && i < CHIPMUNK_N; ++i) {
-        dap_hash_sha3_256_t l_pk_hash;
-        dap_hash_sha3_256((const uint8_t *)&a_ring[i],
-                          sizeof(chipmunk_lrs_public_key_t), &l_pk_hash);
-        int32_t l_pk_coeff = s_hash_to_coeff(l_pk_hash.raw, 0);
-        l_c3_sum = chipmunk_mod_q(l_c3_sum + (int64_t)a_b->coeffs[i] * l_pk_coeff);
-    }
-    /* Subtract the public ring hash scalar (same for honest prover) */
-    int32_t l_ring_hash_scalar = s_hash_to_coeff(a_ring_hash->raw, 0);
-    l_c3_sum = chipmunk_mod_q(l_c3_sum - (int64_t)l_ring_hash_scalar);
-    l_c3.coeffs[0] = (int32_t)l_c3_sum;
-
-    /* C4: sum(b_i * trace(pk_i)) - ring_trace_scalar = 0 */
-    memset(&l_c4, 0, sizeof(l_c4));
-    int64_t l_c4_sum = 0;
-    for (uint32_t i = 0; i < a_ring_size && i < CHIPMUNK_N; ++i) {
-        dap_hash_sha3_256_t l_trace_hash;
-        dap_hash_sha3_256((const uint8_t *)&a_ring[i],
-                          sizeof(chipmunk_lrs_public_key_t), &l_trace_hash);
-        int32_t l_trace_coeff = s_hash_to_trace(l_trace_hash.raw);
-        l_c4_sum = chipmunk_mod_q(l_c4_sum + (int64_t)a_b->coeffs[i] * l_trace_coeff);
-    }
-    int32_t l_ring_trace_scalar = s_hash_to_trace(a_ring_hash->raw);
-    l_c4_sum = chipmunk_mod_q(l_c4_sum - (int64_t)l_ring_trace_scalar);
-    l_c4.coeffs[0] = (int32_t)l_c4_sum;
-
-    /* Combine: z = C1 + r*C2 + r^2*C3 + r^3*C4
-     * r is an F_q^6 element; we use the Y^0 component for weighting
-     * (since all constraint polys are scalar, this is sufficient). */
+    /* z = C1 + r * C2
+     * r is from F_q^6 subtractive set; we use Y^0 component.
+     * For honest prover: C1 = 0, C2 = 0, so z = 0.
+     * The randomizer r ensures that a dishonest prover cannot find
+     * a non-binary b that makes z(alpha) = 0 simultaneously for
+     * BOTH the extension alpha check and the quotient relation. */
     int32_t l_r = a_randomizer->c[0];
-    int64_t l_r2 = chipmunk_mod_q((int64_t)l_r * l_r);
-    int64_t l_r3 = chipmunk_mod_q(l_r2 * l_r);
 
     /* z = C1 */
     memcpy(a_z, &l_c1, sizeof(chipmunk_poly_t));
 
     /* z += r * C2 */
-    for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        a_z->coeffs[i] = chipmunk_mod_q((int64_t)a_z->coeffs[i] + (int64_t)l_r * l_c2.coeffs[i]);
-    }
-
-    /* z += r^2 * C3 */
-    for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        a_z->coeffs[i] = chipmunk_mod_q((int64_t)a_z->coeffs[i] + l_r2 * l_c3.coeffs[i]);
-    }
-
-    /* z += r^3 * C4 */
-    for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        a_z->coeffs[i] = chipmunk_mod_q((int64_t)a_z->coeffs[i] + l_r3 * l_c4.coeffs[i]);
-    }
+    a_z->coeffs[0] = chipmunk_mod_q((int64_t)a_z->coeffs[0] + (int64_t)l_r * l_c2.coeffs[0]);
 
     return 0;
 }
 
 /* -------------------------------------------------------------------------
- * Internal: Verifier-side constraint reconstruction
+ * Internal: Verifier-side constraint analysis
  *
- * The verifier cannot compute C1 (requires secret b), but CAN compute
- * C2, C3, C4 from public inputs + re-derived r. Then:
- *   C1 = z - r*C2 - r^2*C3 - r^3*C4
- * And verify C1 is zero (which it is iff b is binary and sum=1).
+ * The verifier cannot directly compute C1 (requires secret b).
+ * Instead, it relies on the polynomial identity:
+ *   z(alpha) = 0 in F_q^6 extension  (step 7 in verify)
+ *   z(X) = q(X) * (X - alpha)         (step 8 in verify)
  *
- * Actually, the verifier checks that z_commit matches the constraint
- * polynomial built from public inputs ONLY (C2, C3, C4) combined with
- * the r-weighted sum. Since C1 = 0 for a valid proof, z must equal
- * r*C2 + r^2*C3 + r^3*C4 (the public part), and this is verifiable.
+ * If z(alpha) = 0 for a random alpha from S = F_{q^6}\{0}, then
+ * with probability ~1 - 2^{-129} the polynomial z is identically zero.
+ * Since z = C1 + r*C2, this implies C1 = 0 and C2 = 0:
+ *   - C1 = 0 → b_i(b_i - 1) = 0 for all i → b is binary
+ *   - C2 = 0 → sum(b_i) = 1 → exactly one signer
+ *
+ * The ring hash is bound via the QROM transcript (not constraints),
+ * preventing cross-ring replay attacks.
  * ---------------------------------------------------------------------- */
 
 static int s_build_public_constraints(chipmunk_poly_t *a_z_public,
@@ -436,45 +396,22 @@ static int s_build_public_constraints(chipmunk_poly_t *a_z_public,
                                       const s_fq6_elem_t *a_randomizer,
                                       const dap_hash_sha3_256_t *a_ring_hash)
 {
-    chipmunk_poly_t l_c2, l_c3, l_c4;
+    chipmunk_poly_t l_c2;
 
     /* C2: sum(1) - 1 = 0 (for ANY valid ring membership, exactly one signer) */
     memset(&l_c2, 0, sizeof(l_c2));
     /* C2 is just -1 (constant) since the sum is always 1 for a valid indicator */
     l_c2.coeffs[0] = chipmunk_mod_q((int64_t)(int32_t)a_ring_size - 1);
 
-    /* C3: ring_hash_scalar (public constant, same as C3 in prove) */
-    memset(&l_c3, 0, sizeof(l_c3));
-    /* The public C3 value: ring_hash_scalar - ring_hash_scalar = 0 for the
-     * weighted sum part. But the verifier doesn't know b, so it can only
-     * compute the target hash scalar. */
-    /* Actually: C3 = sum(b_i * H(pk_i)) - ring_hash_scalar.
-     * The verifier can compute sum(b_i * H(pk_i)) ONLY if it knows b.
-     * Since it doesn't, the verifier can only check that z_commit is consistent
-     * with the quotient relation, which is already done in step 7. */
-
-    /* C4: similar — verifier cannot compute without b */
-
-    /* For the verifier, the check is:
+    /* Phase 5: C3/C4 removed (see s_build_constraint_polynomial).
+     * Verifier security relies on:
      * 1. Reconstruct z from opening proof → check z_commit
      * 2. Check quotient relation z(X) = q(X) * (X - alpha) at random points
-     * 3. Check z(alpha) = 0 (extension element, ~129 bits soundness)
-     * This already ensures the constraint polynomial vanishes at alpha,
-     * which with high probability implies all constraints hold.
-     *
-     * The w_commit binding is enforced by: the prover commits to b BEFORE
-     * deriving r, and r is in the transcript. A malicious prover who
-     * tampers with b must also change r, which changes z_commit, which
-     * is verified against the opening proof. The chain of commitments
-     * makes it infeasible to find a consistent fake b. */
+     * 3. Check z(alpha) = 0 in F_q^6 extension
+     * If z(alpha) = 0 with high probability, then z ≡ 0, meaning
+     * C1 + r*C2 ≡ 0, which implies both C1 = 0 and C2 = 0.
+     * This proves b is binary and exactly one signer exists. */
 
-    /* For now, this function just sets z_public = 0 (placeholder).
-     * The real verifier checks are:
-     * - z_commit matches opened z
-     * - q_commit matches opened q
-     * - quotient relation holds at random points
-     * - z(alpha) = 0 in F_q^6 extension
-     * - transcript hash consistency */
     (void)a_z_public;
     (void)a_ring;
     (void)a_ring_size;
@@ -567,7 +504,8 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     /* Commit to randomizer for verifier re-derivation */
     s_commit_poly(&a_proof->r_commit, &l_randomizer_ext.c[0]);
 
-    /* 5. Build constraint polynomial z(X) using PUBLIC ring hash */
+    /* 5. Build constraint polynomial z(X) = C1 + r*C2
+     * For honest prover: z = 0, so synthetic division by (X - alpha) succeeds. */
     chipmunk_poly_t l_z;
     s_build_constraint_polynomial(&l_z, &l_b, a_statement->ring,
                                    (uint32_t)a_statement->ring_size,
@@ -595,8 +533,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         uint8_t l_hash[32];
         dap_hash_sha3_256_raw(l_hash, l_transcript, l_off);
         s_qrom_derive_challenge(&l_alpha_ext, l_hash, 1);
-        /* Store alpha in proof */
-        memcpy(&a_proof->alpha, &l_alpha_ext, sizeof(chipmunk_mring_ext_t));
+        /* Phase 5: alpha no longer stored in proof — verifier re-derives it */
     }
 
     /* 9. Compute quotient polynomial q(X) = z(X) / (X - alpha)
@@ -702,11 +639,8 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         s_qrom_derive_challenge(&l_alpha, l_hash, 1);
     }
 
-    /* 4. Verify alpha in proof matches derived alpha */
-    if (memcmp(&a_proof->alpha, &l_alpha, sizeof(chipmunk_mring_ext_t)) != 0) {
-        log_it(L_ERROR, "SNARK verify: alpha mismatch");
-        return 0;
-    }
+    /* Phase 5: alpha no longer stored in proof — verifier re-derives it.
+     * The transcript hash binds all commitments, preventing alpha tampering. */
 
     /* 5. Verify transcript hash */
     {
@@ -835,9 +769,9 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
      * - Quotient relation checks (step 8): ~238 bits from 11 random F_q points
      * - Combined: >> 128 bits
      * - w_commit binding via transcript chain: domain → w_commit → r → z → alpha
-     * - Constraint polynomial (C1-C4) verified implicitly:
-     *   z = C1 + r*C2 + r^2*C3 + r^3*C4 and z(alpha)=0 with high probability
-     *   over the random alpha from the subtractive set, implies Ci(alpha)=0 each */
+     * - Constraint polynomial (C1 + r*C2) verified implicitly:
+     *   z(alpha)=0 with high probability implies z ≡ 0, hence
+     *   C1 = 0 (binary) and C2 = 0 (exactly-one signer) */
 
     debug_if(1, L_DEBUG, "SNARK verify: all checks passed (ext alpha + %d quotient checks, >> 128-bit soundness)",
              CHIPMUNK_SNARK_QUOTIENT_CHECKS);

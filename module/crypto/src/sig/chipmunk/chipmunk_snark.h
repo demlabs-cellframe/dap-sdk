@@ -70,7 +70,7 @@ extern "C" {
 #define CHIPMUNK_SNARK_OPENING_BYTES    \
     (CHIPMUNK_SNARK_OPENING_POLYS * CHIPMUNK_N * (int)sizeof(int32_t))
 
-/* Total proof size estimate (Phase 1 interim) */
+/* Total proof size estimate (Phase 5: alpha removed, ~4.4 KB) */
 #define CHIPMUNK_SNARK_PROOF_MAX    (CHIPMUNK_SNARK_OPENING_BYTES + 256)
 
 /* Subtractive set size: |S| = q^6 - 1 ~ 2^{129.6} */
@@ -109,8 +109,10 @@ typedef struct chipmunk_snark_proof {
     chipmunk_snark_commit_t q_commit;           /* Commitment to quotient polynomial */
     chipmunk_snark_commit_t r_commit;           /* Commitment to randomizer (F_q^6) */
 
-    /* Evaluation point: full F_q^6 extension element */
-    chipmunk_mring_ext_t alpha;                 /* Challenge from subtractive set */
+    /* Phase 5: alpha removed from proof struct.
+     * The verifier re-derives alpha from the QROM transcript, so storing
+     * it in the proof was redundant (12 KB of wasted space).
+     * Previous proof size: ~16.5 KB.  After removal: ~4.5 KB. */
 
     /* Opening proof: serialized z and q polynomials.
      * b (indicator) is NOT included to protect signer privacy.

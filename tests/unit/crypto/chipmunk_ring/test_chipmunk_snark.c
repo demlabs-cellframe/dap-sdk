@@ -207,15 +207,13 @@ static void test_proof_nonzero(void)
     }
     dap_assert(l_nonzero, "q_commit hash non-zero");
 
-    /* Alpha should be a nonzero extension element */
+    /* Phase 5: alpha removed from proof struct (verifier re-derives from transcript).
+     * Instead, verify transcript_hash is nonzero (binds all commitments). */
     l_nonzero = 0;
-    for (int j = 0; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
-        for (int i = 0; i < CHIPMUNK_N; ++i) {
-            if (l_proof.alpha.c[j].coeffs[i] != 0) { l_nonzero = 1; goto done; }
-        }
+    for (int i = 0; i < 32; ++i) {
+        if (l_proof.transcript_hash[i] != 0) { l_nonzero = 1; break; }
     }
-done:
-    dap_assert(l_nonzero, "alpha extension element non-zero");
+    dap_assert(l_nonzero, "transcript_hash non-zero");
 
     chipmunk_snark_proof_free(&l_proof);
     chipmunk_snark_ctx_free(&l_ctx);

@@ -264,7 +264,7 @@ int chipmunk_pedersen_commit_explicit_digit(chipmunk_pedersen_commit_t *a_commit
     if (!a_commit || !a_params || !a_randomness) return -EINVAL;
     if (!a_params->initialized) return -EINVAL;
     if (a_digit_pos >= CHIPMUNK_PEDERSEN_DIGITS) return -EINVAL;
-    if (a_digit > CHIPMUNK_PEDERSEN_DIGIT_MAX) return -EINVAL;
+    /* a_digit is uint8_t, DIGIT_MAX = 255 — always in range by type */
 
     chipmunk_poly_t l_m;
     s_encode_digit_at(&l_m, a_digit, a_digit_pos);
