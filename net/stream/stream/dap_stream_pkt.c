@@ -187,10 +187,6 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
 
     if (l_trans && l_trans->ops && l_trans->ops->write) {
         ssize_t l_ret = l_trans->ops->write(a_stream, s_pkt_buf, l_full_size);
-        if (l_ret <= 0)
-            log_it(L_WARNING, "stream_pkt_write: trans->write returned %zd for type=0x%02x full_size=%zu esocket=%p fd=%d",
-                   l_ret, a_type, l_full_size,
-                   (void*)a_stream->esocket, a_stream->esocket ? a_stream->esocket->socket : -1);
         return (size_t)l_ret;
     } else if (a_stream->esocket) {
         dap_events_socket_t *l_es = a_stream->esocket;

@@ -422,9 +422,6 @@ static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
     if (a_es->buf_out_size == 0)
         return false;
 
-    log_it(L_INFO, "TLS server: s_tls_write fd=%d buf_out_size=%zu stream_mode=%d mimicry=%p wrapped=%d",
-           a_es->socket, a_es->buf_out_size, t->stream_mode, (void*)t->mimicry, t->buf_out_wrapped);
-
     if (!t->mimicry)
         return true;  /* no mimicry context — send raw */
 
@@ -450,9 +447,6 @@ static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
         return true;  /* send raw as fallback */
     }
 
-    log_it(L_INFO, "TLS server: s_tls_write wrap OK fd=%d %zu -> %zu bytes",
-           a_es->socket, a_es->buf_out_size, l_wrapped_sz);
-
     /* Replace buf_out contents with TLS-wrapped data */
     if (l_wrapped_sz > a_es->buf_out_size_max) {
         byte_t *l_new = DAP_NEW_SIZE(byte_t, l_wrapped_sz);
@@ -464,7 +458,7 @@ static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
     memcpy(a_es->buf_out, l_wrapped, l_wrapped_sz);
     a_es->buf_out_size = l_wrapped_sz;
     DAP_DELETE(l_wrapped);
-    t->buf_out_wrapped = true;  /* mark as wrapped for logging */
+    t->buf_out_wrapped = true;
     return false;  /* data ready to send */
 }
 
