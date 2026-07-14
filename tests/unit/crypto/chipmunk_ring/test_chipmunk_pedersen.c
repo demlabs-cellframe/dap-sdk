@@ -1,7 +1,8 @@
 /*
  * test_chipmunk_pedersen.c — Lattice-based Pedersen commitment tests.
  *
- * Tests: init, commit/verify, additive homomorphism, different values.
+ * Tests: init, commit/verify, additive homomorphism, different values,
+ * conservation property (Phase 2: homomorphic base-256 encoding).
  * All params heap-allocated to avoid stack overflow (73KB struct).
  */
 
@@ -12,6 +13,7 @@
 #include <string.h>
 
 #include "sig/chipmunk/chipmunk_pedersen.h"
+#include "sig/chipmunk/chipmunk_poly.h"
 
 #define LOG_TAG "test_chipmunk_pedersen"
 
@@ -188,6 +190,132 @@ static void test_serialize_deserialize(void)
     DAP_DELETE(l_params);
 }
 
+/* Phase 2: Verify the homomorphic conservation property directly.
+ * This is the property that was BROKEN with binary bit encoding and
+ * is now FIXED with base-256 digit decomposition.
+ *
+ * Tests: C(v1) + C(v2) + ... == C(v1 + v2 + ...) with shared randomness.
+ * This is what the ledger conservation check relies on:
+ *   C_input == Σ C_output_i
+ */
+static void test_conservation_property(void)
+{
+    chipmunk_pedersen_params_t *l_params = DAP_NEW_Z(chipmunk_pedersen_params_t);
+    uint8_t l_seed[32];
+    for (int i = 0; i < 32; ++i) l_seed[i] = 0x42 + i;
+    chipmunk_pedersen_init(l_params, l_seed);
+
+    /* Values: input = 300, outputs = 100 + 200 */
+    uint8_t l_v300[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    uint8_t l_v100[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    uint8_t l_v200[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes(300, l_v300);
+    s_u64_to_amount_bytes(100, l_v100);
+    s_u64_to_amount_bytes(200, l_v200);
+
+    /* Commit to input and outputs with SAME randomness.
+     * Conservation: C(v1+v2) == C(v1) + C(v2) when randomness cancels:
+     *   A*r1 + encode(v1) + A*r2 + encode(v2) = A*(r1+r2) + encode(v1+v2)
+     * But with different randomness, we need r_combined = r1 + r2.
+     * We test with shared randomness for simplicity:
+     *   C(input) = A*r + encode(300)
+     *   C(out1) + C(out2) = A*r + encode(100) + A*r + encode(200) = A*2r + encode(300)
+     * That doesn't match directly. Instead, use opening-based verification:
+     *   1. Compute C_input = commit(300, r)
+     *   2. Compute C_out_sum = commit(100, r1) + commit(200, r2)
+     *   3. Compute C_expected = commit(300, r1+r2)
+     *   4. Verify C_out_sum == C_expected
+     */
+    uint8_t l_r[32], l_r1[32], l_r2[32];
+    for (int i = 0; i < 32; ++i) { l_r[i] = 0xAA; l_r1[i] = 0x11; l_r2[i] = 0x22; }
+
+    chipmunk_pedersen_commit_t l_c_input;
+    chipmunk_pedersen_commit(&l_c_input, l_params, l_v300, l_r);
+
+    chipmunk_pedersen_commit_t l_c_out1, l_c_out2;
+    chipmunk_pedersen_commit(&l_c_out1, l_params, l_v100, l_r1);
+    chipmunk_pedersen_commit(&l_c_out2, l_params, l_v200, l_r2);
+
+    chipmunk_pedersen_commit_t l_c_out_sum;
+    chipmunk_pedersen_add(&l_c_out_sum, &l_c_out1, &l_c_out2);
+
+    /* Derive combined randomness r_combined = r1 + r2 */
+    chipmunk_poly_t l_rr1[CHIPMUNK_LRS_K], l_rr2[CHIPMUNK_LRS_K], l_rr_combined[CHIPMUNK_LRS_K];
+    chipmunk_pedersen_derive_blinding(l_rr1, l_r1);
+    chipmunk_pedersen_derive_blinding(l_rr2, l_r2);
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        chipmunk_poly_add(&l_rr_combined[j], &l_rr1[j], &l_rr2[j]);
+    }
+
+    /* Commit to same total value with combined randomness */
+    chipmunk_pedersen_commit_t l_c_expected;
+    int l_rc = chipmunk_pedersen_commit_explicit(&l_c_expected, l_params, l_v300, l_rr_combined);
+    dap_assert(l_rc == 0, "expected commit OK");
+
+    /* Verify: C(out1) + C(out2) == C(300, r1+r2) */
+    int l_match = 1;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && l_match; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && l_match; ++j) {
+            if (l_c_out_sum.C[i].coeffs[j] != l_c_expected.C[i].coeffs[j]) l_match = 0;
+        }
+    }
+    dap_assert(l_match, "CONSERVATION: C(100,r1) + C(200,r2) == C(300,r1+r2)");
+
+    /* Also verify with carry-heavy values:
+     * 128 + 128 = 256 (byte 0 wraps to 0, byte 1 = 1) */
+    uint8_t l_v128[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    uint8_t l_v256[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes(128, l_v128);
+    s_u64_to_amount_bytes(256, l_v256);
+
+    chipmunk_pedersen_commit_t l_c128a, l_c128b;
+    chipmunk_pedersen_commit(&l_c128a, l_params, l_v128, l_r1);
+    chipmunk_pedersen_commit(&l_c128b, l_params, l_v128, l_r2);
+
+    chipmunk_pedersen_commit_t l_c128_sum;
+    chipmunk_pedersen_add(&l_c128_sum, &l_c128a, &l_c128b);
+
+    chipmunk_pedersen_commit_t l_c256_expected;
+    l_rc = chipmunk_pedersen_commit_explicit(&l_c256_expected, l_params, l_v256, l_rr_combined);
+    dap_assert(l_rc == 0, "carry commit OK");
+
+    int l_carry_match = 1;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && l_carry_match; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && l_carry_match; ++j) {
+            if (l_c128_sum.C[i].coeffs[j] != l_c256_expected.C[i].coeffs[j]) l_carry_match = 0;
+        }
+    }
+    dap_assert(l_carry_match, "CONSERVATION with carry: C(128,r1)+C(128,r2)==C(256,r1+r2)");
+
+    /* Test with max digit values: 255+1 = 256 (digit 0 wraps to 0, carry to digit 1) */
+    uint8_t l_v255[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes(255, l_v255);
+
+    chipmunk_pedersen_commit_t l_c255;
+    chipmunk_pedersen_commit(&l_c255, l_params, l_v255, l_r1);
+    uint8_t l_v1[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes(1, l_v1);
+    chipmunk_pedersen_commit_t l_c1;
+    chipmunk_pedersen_commit(&l_c1, l_params, l_v1, l_r2);
+
+    chipmunk_pedersen_commit_t l_c255_1_sum;
+    chipmunk_pedersen_add(&l_c255_1_sum, &l_c255, &l_c1);
+
+    chipmunk_pedersen_commit_t l_c256_expected2;
+    l_rc = chipmunk_pedersen_commit_explicit(&l_c256_expected2, l_params, l_v256, l_rr_combined);
+    dap_assert(l_rc == 0, "max-digit commit OK");
+
+    int l_max_match = 1;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && l_max_match; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && l_max_match; ++j) {
+            if (l_c255_1_sum.C[i].coeffs[j] != l_c256_expected2.C[i].coeffs[j]) l_max_match = 0;
+        }
+    }
+    dap_assert(l_max_match, "CONSERVATION max-digit: C(255,r1)+C(1,r2)==C(256,r1+r2)");
+
+    DAP_DELETE(l_params);
+}
+
 int main(void)
 {
     dap_set_appname("test_chipmunk_pedersen");
@@ -199,6 +327,7 @@ int main(void)
     test_same_value_same_randomness();
     test_additive_homomorphism();
     test_serialize_deserialize();
+    test_conservation_property();  /* Phase 2: homomorphic conservation */
 
     log_it(L_INFO, "=== ALL Chipmunk Pedersen tests PASSED ===");
     dap_common_deinit();

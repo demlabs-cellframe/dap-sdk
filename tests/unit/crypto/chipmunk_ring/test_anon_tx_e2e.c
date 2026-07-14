@@ -29,6 +29,7 @@
 #include "sig/chipmunk/chipmunk_ring.h"
 #include "sig/chipmunk/chipmunk_snark.h"
 #include "sig/chipmunk/chipmunk_pedersen.h"
+#include "sig/chipmunk/chipmunk_poly.h"
 #include "sig/chipmunk/chipmunk_range_proof.h"
 #include "sig/chipmunk/chipmunk_mixnet.h"
 #include "sig/chipmunk/chipmunk_aggregation.h"
@@ -227,6 +228,76 @@ static void test_pedersen_range_proof_pipeline(void)
     dap_assert(l_diff, "homomorphic sum differs from individual");
 
     chipmunk_range_proof_free(&l_proof);
+}
+
+/* ================================================================
+ * Test 3b: Pedersen conservation (Phase 2 — homomorphic encoding)
+ *
+ * Mirrors the ledger conservation check: C_input == Σ C_output_i.
+ * With digit encoding, encode(v1)+encode(v2)=encode(v1+v2) in R_q,
+ * so this test MUST pass (it was the root cause of anon TX failure).
+ * ================================================================ */
+static void test_pedersen_conservation(void)
+{
+    chipmunk_pedersen_params_t *l_params = DAP_NEW_Z(chipmunk_pedersen_params_t);
+    dap_assert(l_params != NULL, "conservation params alloc OK");
+    uint8_t l_seed[32];
+    for (int i = 0; i < 32; ++i) l_seed[i] = 0x42 + i;
+    chipmunk_pedersen_init(l_params, l_seed);
+
+    /* Scenario: input 500 = output 200 + output 300 */
+    uint8_t l_v500[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    uint8_t l_v200[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    uint8_t l_v300[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    memset(l_v500, 0, CHIPMUNK_PEDERSEN_VALUE_BYTES);
+    memset(l_v200, 0, CHIPMUNK_PEDERSEN_VALUE_BYTES);
+    memset(l_v300, 0, CHIPMUNK_PEDERSEN_VALUE_BYTES);
+    { uint64_t v = 500; memcpy(l_v500, &v, sizeof(v)); }
+    { uint64_t v = 200; memcpy(l_v200, &v, sizeof(v)); }
+    { uint64_t v = 300; memcpy(l_v300, &v, sizeof(v)); }
+
+    uint8_t l_r_in[32], l_r1[32], l_r2[32];
+    for (int i = 0; i < 32; ++i) { l_r_in[i] = 0x01; l_r1[i] = 0x02; l_r2[i] = 0x03; }
+
+    chipmunk_pedersen_commit_t l_c_input;
+    chipmunk_pedersen_commit(&l_c_input, l_params, l_v500, l_r_in);
+
+    chipmunk_pedersen_commit_t l_c_out1, l_c_out2;
+    chipmunk_pedersen_commit(&l_c_out1, l_params, l_v200, l_r1);
+    chipmunk_pedersen_commit(&l_c_out2, l_params, l_v300, l_r2);
+
+    chipmunk_pedersen_commit_t l_c_out_sum;
+    chipmunk_pedersen_add(&l_c_out_sum, &l_c_out1, &l_c_out2);
+
+    /* Derive combined blinding r_combined = r1 + r2 */
+    chipmunk_poly_t l_rr1[CHIPMUNK_LRS_K], l_rr2[CHIPMUNK_LRS_K], l_rr_comb[CHIPMUNK_LRS_K];
+    chipmunk_pedersen_derive_blinding(l_rr1, l_r1);
+    chipmunk_pedersen_derive_blinding(l_rr2, l_r2);
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j)
+        chipmunk_poly_add(&l_rr_comb[j], &l_rr1[j], &l_rr2[j]);
+
+    /* Expected: commit(500, r1+r2) should equal sum of output commitments */
+    chipmunk_pedersen_commit_t l_c_expected;
+    chipmunk_pedersen_commit_explicit(&l_c_expected, l_params, l_v500, l_rr_comb);
+
+    int l_match = 1;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && l_match; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && l_match; ++j) {
+            if (l_c_out_sum.C[i].coeffs[j] != l_c_expected.C[i].coeffs[j]) l_match = 0;
+        }
+    }
+    dap_assert(l_match, "CONSERVATION: C(200)+C(300)==C(500) with combined blinding");
+
+    /* Also verify input != output sum (different blinding) */
+    int l_input_differs = 0;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && !l_input_differs; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && !l_input_differs; ++j) {
+            if (l_c_input.C[i].coeffs[j] != l_c_out_sum.C[i].coeffs[j]) l_input_differs = 1;
+        }
+    }
+    dap_assert(l_input_differs, "C(500,r_in) != C(200,r1)+C(300,r2) (different blinding)");
+
+    DAP_DELETE(l_params);
 }
 
 /* ================================================================
@@ -443,6 +514,8 @@ int main(void)
         dap_assert(l_rc == 0, "Pedersen init OK");
         DAP_DELETE(l_params);
     }
+    test_pedersen_range_proof_pipeline();  /* Phase 2: range proof with digit encoding */
+    test_pedersen_conservation();          /* Phase 2: homomorphic conservation check */
     test_snark_prove_verify();
     test_mixnet_batch_integrity();
     test_key_image_linkability();
