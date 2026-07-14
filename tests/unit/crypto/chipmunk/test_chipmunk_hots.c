@@ -27,6 +27,7 @@
  * @brief Test suite for HOTS (Homomorphic One-Time Signatures) implementation
  */
 
+#include <dap_enc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -182,6 +183,8 @@ int main() {
         log_it(L_ERROR, "❌ DAP initialization failed");
         return 1;
     }
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     int l_tests_passed = 0;
     int l_total_tests = 0;

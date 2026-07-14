@@ -23,6 +23,7 @@
  *      same tree and can continue signing from the persisted leaf_index.
  */
 
+#include <dap_enc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -328,6 +329,8 @@ static void s_test_sk_roundtrip(void)
 int main(void)
 {
     dap_common_init("chipmunk-hypertree-regression", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     fprintf(stderr, "== CR-D15.B Chipmunk Hypertree regression ==\n");
     fprintf(stderr, "   HEIGHT=%u LEAF_COUNT=%u\n",

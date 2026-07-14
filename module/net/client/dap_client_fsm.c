@@ -283,27 +283,13 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
         a_fsm->esocket = NULL;
     }
 
-    /* Detach FSM from client only AFTER trans_ctx cleanup so that DAP_CLIENT_FSM() on
-     * stale esocket references returns NULL from this point forward.  The trans_ctx
-     * (if any) was detached from the FSM and handed to the stream's worker by
-     * dap_client_trans_ctx_clean_unsafe(); it must not be freed here. */
+    /* Detach FSM from client so that DAP_CLIENT_FSM() on stale esocket
+     * references returns NULL from this point forward. */
     if (a_fsm->client) {
         a_fsm->client->_internal = NULL;
         a_fsm->client = NULL;
     }
 
-    if (a_fsm->trans_ctx) {
-        a_fsm->trans_ctx->_inheritor = NULL;
-        dap_worker_t *l_udp_worker = a_fsm->trans_ctx->esocket_worker;
-        if (l_udp_worker) {
-            a_fsm->trans_ctx->esocket_worker = NULL;
-            dap_worker_exec_callback_on(l_udp_worker, s_deferred_trans_ctx_free, a_fsm->trans_ctx);
-        } else {
-            DAP_DELETE(a_fsm->trans_ctx);
-        }
-        a_fsm->trans_ctx = NULL;
-        a_fsm->esocket   = NULL;
-    }
     a_fsm->esocket = NULL;
     DAP_DEL_Z(a_fsm->tried_transports);
     DAP_DELETE(a_fsm);

@@ -1417,7 +1417,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
                       l_stream->session ? (void*)l_stream->session->key : NULL);
             return true;
         }
-        debug_if(s_debug_more, L_DEBUG,"Keepalive %s sock %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x,
+        debug_if(s_debug, L_DEBUG,"Keepalive %s sock %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x,
                  a_server_side ? "srv" : "cli", l_es->socket, *l_es_uuid);
         dap_stream_pkt_hdr_t l_pkt = {};
         l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;

@@ -22,6 +22,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <dap_enc.h>
 #include <dap_common.h>
 #include <dap_test.h>
 #include <dap_sign.h>
@@ -222,6 +223,10 @@ static bool s_test_signature_sizes(void) {
  * @brief Main test function
  */
 int main(void) {
+    dap_set_appname("test");
+    dap_common_init(dap_get_appname(), NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
     printf("=== Starting Signature Unit Tests ===\n");
     fflush(stdout);
 

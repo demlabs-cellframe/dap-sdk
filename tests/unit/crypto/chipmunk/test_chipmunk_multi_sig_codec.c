@@ -793,6 +793,8 @@ static bool test_8_signers_dap_sign_round_trip(void)
 int main(void)
 {
     dap_common_init("test_chipmunk_multi_sig_codec", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
     dap_log_level_set(L_ERROR);
 
     struct {

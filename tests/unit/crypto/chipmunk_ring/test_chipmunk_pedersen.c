@@ -6,6 +6,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 #include <errno.h>
 #include <stdint.h>
@@ -174,6 +175,8 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_pedersen");
     dap_common_init("test_chipmunk_pedersen", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     test_init();
     test_commit_verify();

@@ -20,6 +20,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_hash_sha3.h>
 #include <dap_test.h>
 
@@ -495,6 +496,8 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_mring_anonymity");
     dap_common_init("test_chipmunk_mring_anonymity", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     test_lrs_n2_anonymity();
     test_mring_n2_anonymity();
