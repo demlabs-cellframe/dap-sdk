@@ -258,8 +258,12 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
 
 static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
-    if (!a_stream || !a_stream->esocket || !a_stream->trans_ctx || !a_data || a_size == 0)
+    if (!a_stream || !a_stream->esocket || !a_stream->trans_ctx || !a_data || a_size == 0) {
+        log_it(L_WARNING, "stream_trans s_tls_write: bad args stream=%p esocket=%p trans_ctx=%p data=%p size=%zu",
+               (void*)a_stream, a_stream ? (void*)a_stream->esocket : NULL,
+               a_stream ? (void*)a_stream->trans_ctx : NULL, a_data, a_size);
         return -1;
+    }
 
     void *l_wrapped = NULL;
     size_t l_wrapped_size = 0;
@@ -268,6 +272,8 @@ static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         /* No mimicry context — server-side TLS streams may not have one.
          * Write raw data; the TLS server's s_tls_write event-loop callback
          * will handle TLS wrapping of buf_out. */
+        log_it(L_INFO, "stream_trans s_tls_write: NO mimicry, raw write %zu bytes fd=%d",
+               a_size, a_stream->esocket->socket);
         return dap_events_socket_write_unsafe(a_stream->esocket, a_data, a_size);
     }
 
