@@ -38,7 +38,9 @@ extern "C" {
 
 #define CHIPMUNK_SNARK_LOG_N        9       /* log2(512) */
 #define CHIPMUNK_SNARK_N            512     /* Polynomial ring dimension */
-#define CHIPMUNK_SNARK_Q            3168257 /* Modulus */
+/* CHIPMUNK_SNARK_Q is identical to CHIPMUNK_Q (3168257).  The alias is kept
+ * for backward compatibility but all new code should use CHIPMUNK_Q directly. */
+#define CHIPMUNK_SNARK_Q            CHIPMUNK_Q
 #define CHIPMUNK_SNARK_SECURITY     128     /* Target security level (bits) */
 #define CHIPMUNK_SNARK_EXT_DEG      6       /* Extension degree e=6 (Φ_9) */
 

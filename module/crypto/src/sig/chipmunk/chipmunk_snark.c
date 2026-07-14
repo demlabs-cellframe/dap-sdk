@@ -23,13 +23,7 @@
 
 #define LOG_TAG "chipmunk_snark"
 
-/* Safe modular reduction: handles negative values portably */
-static inline int32_t s_mod_q(int64_t a_val)
-{
-    int32_t l_r = (int32_t)(a_val % (int64_t)CHIPMUNK_SNARK_Q);
-    if (l_r < 0) l_r += CHIPMUNK_SNARK_Q;
-    return l_r;
-}
+/* chipmunk_mod_q is now in chipmunk_poly.h — unified across all modules */
 
 /* QROM domain separators */
 static const char *s_domain_init      = "snark-init-v1";
@@ -50,8 +44,7 @@ static void s_poly_to_bytes(uint8_t *a_out, size_t a_out_size,
     if (l_bytes > a_out_size) l_bytes = a_out_size;
     /* Normalize coefficients to [0, Q) for cross-platform portability */
     for (size_t i = 0; i < l_bytes / sizeof(int32_t); ++i) {
-        int32_t l_coeff = a_poly->coeffs[i] % (int32_t)CHIPMUNK_SNARK_Q;
-        if (l_coeff < 0) l_coeff += CHIPMUNK_SNARK_Q;
+        int32_t l_coeff = chipmunk_mod_q((int64_t)a_poly->coeffs[i]);
         memcpy(a_out + i * sizeof(int32_t), &l_coeff, sizeof(int32_t));
     }
 }
@@ -116,7 +109,7 @@ static int s_fri_fold_ext(chipmunk_poly_t *a_out,
 
         /* Component 0: f_even + alpha_0 * f_odd */
         int64_t l_val = (int64_t)l_even + (int64_t)l_alpha0 * (int64_t)l_odd;
-        a_out->coeffs[i] = s_mod_q(l_val);
+        a_out->coeffs[i] = chipmunk_mod_q(l_val);
     }
     for (uint32_t i = a_half_degree; i < CHIPMUNK_N; ++i) {
         a_out->coeffs[i] = 0;
@@ -210,7 +203,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
     /* C1: b * (b - 1) = 0 for binary constraint */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
         int32_t l_bi = a_b->coeffs[i];
-        l_c1.coeffs[i] = s_mod_q((int64_t)l_bi * (l_bi - 1));
+        l_c1.coeffs[i] = chipmunk_mod_q((int64_t)l_bi * (l_bi - 1));
     }
 
     /* C2: Σ b_i - 1 = 0 */
@@ -219,7 +212,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
         l_sum += a_b->coeffs[i];
     }
     memset(&l_c2, 0, sizeof(l_c2));
-    l_c2.coeffs[0] = s_mod_q(l_sum - 1);
+    l_c2.coeffs[0] = chipmunk_mod_q(l_sum - 1);
 
     /* C3: Σ b_i * H(pk_i) - H(pk_signer) = 0 */
     memset(&l_c3, 0, sizeof(l_c3));
@@ -231,8 +224,8 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
         int64_t l_pk_coeff = 0;
         memcpy(&l_pk_coeff, l_pk_hash.raw, 6);
         if (l_pk_coeff & (1LL << 47)) l_pk_coeff -= (1LL << 48);
-        l_pk_coeff = s_mod_q(l_pk_coeff);
-        l_c3_sum = s_mod_q(l_c3_sum + (int64_t)a_b->coeffs[i] * l_pk_coeff);
+        l_pk_coeff = chipmunk_mod_q(l_pk_coeff);
+        l_c3_sum = chipmunk_mod_q(l_c3_sum + (int64_t)a_b->coeffs[i] * l_pk_coeff);
     }
     {
         dap_hash_sha3_256_t l_signer_hash;
@@ -241,7 +234,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
         int64_t l_signer_coeff = 0;
         memcpy(&l_signer_coeff, l_signer_hash.raw, 6);
         if (l_signer_coeff & (1LL << 47)) l_signer_coeff -= (1LL << 48);
-        l_c3_sum = s_mod_q(l_c3_sum - s_mod_q(l_signer_coeff));
+        l_c3_sum = chipmunk_mod_q(l_c3_sum - chipmunk_mod_q(l_signer_coeff));
     }
     l_c3.coeffs[0] = (int32_t)l_c3_sum;
 
@@ -255,8 +248,8 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
         int64_t l_trace_coeff = 0;
         memcpy(&l_trace_coeff, l_trace_hash.raw + 8, 6);
         if (l_trace_coeff & (1LL << 47)) l_trace_coeff -= (1LL << 48);
-        l_trace_coeff = s_mod_q(l_trace_coeff);
-        l_c4_sum = s_mod_q(l_c4_sum + (int64_t)a_b->coeffs[i] * l_trace_coeff);
+        l_trace_coeff = chipmunk_mod_q(l_trace_coeff);
+        l_c4_sum = chipmunk_mod_q(l_c4_sum + (int64_t)a_b->coeffs[i] * l_trace_coeff);
     }
     {
         dap_hash_sha3_256_t l_signer_hash;
@@ -265,31 +258,31 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
         int64_t l_signer_trace = 0;
         memcpy(&l_signer_trace, l_signer_hash.raw + 8, 6);
         if (l_signer_trace & (1LL << 47)) l_signer_trace -= (1LL << 48);
-        l_c4_sum = s_mod_q(l_c4_sum - s_mod_q(l_signer_trace));
+        l_c4_sum = chipmunk_mod_q(l_c4_sum - chipmunk_mod_q(l_signer_trace));
     }
     l_c4.coeffs[0] = (int32_t)l_c4_sum;
 
     /* Combine: z = C1 + r*C2 + r^2*C3 + r^3*C4 */
     int32_t l_r = a_randomizer->c[0].coeffs[0];
-    int64_t l_r2 = s_mod_q((int64_t)l_r * l_r);
-    int64_t l_r3 = s_mod_q(l_r2 * l_r);
+    int64_t l_r2 = chipmunk_mod_q((int64_t)l_r * l_r);
+    int64_t l_r3 = chipmunk_mod_q(l_r2 * l_r);
 
     /* z = C1 */
     memcpy(a_z, &l_c1, sizeof(chipmunk_poly_t));
 
     /* z += r * C2 */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        a_z->coeffs[i] = s_mod_q((int64_t)a_z->coeffs[i] + (int64_t)l_r * l_c2.coeffs[i]);
+        a_z->coeffs[i] = chipmunk_mod_q((int64_t)a_z->coeffs[i] + (int64_t)l_r * l_c2.coeffs[i]);
     }
 
     /* z += r^2 * C3 */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        a_z->coeffs[i] = s_mod_q((int64_t)a_z->coeffs[i] + l_r2 * l_c3.coeffs[i]);
+        a_z->coeffs[i] = chipmunk_mod_q((int64_t)a_z->coeffs[i] + l_r2 * l_c3.coeffs[i]);
     }
 
     /* z += r^3 * C4 */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        a_z->coeffs[i] = s_mod_q((int64_t)a_z->coeffs[i] + l_r3 * l_c4.coeffs[i]);
+        a_z->coeffs[i] = chipmunk_mod_q((int64_t)a_z->coeffs[i] + l_r3 * l_c4.coeffs[i]);
     }
 
     return 0;
@@ -305,7 +298,7 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
     memset(ctx, 0, sizeof(*ctx));
 
     ctx->params.d = 512;
-    ctx->params.q = CHIPMUNK_SNARK_Q;
+    ctx->params.q = CHIPMUNK_Q;
     ctx->params.k = 6;
     ctx->params.l = 3;
     ctx->params.w = 37;
@@ -403,7 +396,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     int32_t l_alpha_scalar = l_alpha.c[0].coeffs[0];
     int64_t l_z_at_alpha = 0;
     for (int i = CHIPMUNK_N - 1; i >= 0; --i) {
-        l_z_at_alpha = (int64_t)s_mod_q((int64_t)l_alpha_scalar * l_z_at_alpha + l_z.coeffs[i]);
+        l_z_at_alpha = (int64_t)chipmunk_mod_q((int64_t)l_alpha_scalar * l_z_at_alpha + l_z.coeffs[i]);
     }
     if (l_z_at_alpha != 0) {
         log_it(L_ERROR, "SNARK prove: z(alpha) != 0 (%lld) — witness invalid", (long long)l_z_at_alpha);
@@ -415,7 +408,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     memset(&l_q, 0, sizeof(l_q));
     for (int i = CHIPMUNK_N - 2; i >= 0; --i) {
         int64_t l_val = (int64_t)l_z.coeffs[i + 1] + (int64_t)l_alpha_scalar * (int64_t)l_q.coeffs[i + 1];
-        l_q.coeffs[i] = s_mod_q(l_val);
+        l_q.coeffs[i] = chipmunk_mod_q(l_val);
     }
     s_commit_poly(&a_proof->q_commit, &l_q);
 
@@ -520,8 +513,8 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
     /* Verify coefficients are in range [0, Q) */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        if (l_z.coeffs[i] < 0 || l_z.coeffs[i] >= (int32_t)CHIPMUNK_SNARK_Q) return 0;
-        if (l_q.coeffs[i] < 0 || l_q.coeffs[i] >= (int32_t)CHIPMUNK_SNARK_Q) return 0;
+        if (l_z.coeffs[i] < 0 || l_z.coeffs[i] >= (int32_t)CHIPMUNK_Q) return 0;
+        if (l_q.coeffs[i] < 0 || l_q.coeffs[i] >= (int32_t)CHIPMUNK_Q) return 0;
     }
 
     /* Verify commitments match */
@@ -626,26 +619,26 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
         int32_t l_test_point = 1;
         memcpy(&l_test_point, l_test_hash, sizeof(int32_t));
-        l_test_point = s_mod_q((int64_t)l_test_point);
+        l_test_point = chipmunk_mod_q((int64_t)l_test_point);
         if (l_test_point == 0) l_test_point = 1;
 
         /* Evaluate z(test_point) via Horner's method */
         int64_t l_z_eval = 0;
         for (int i = CHIPMUNK_N - 1; i >= 0; --i) {
-            l_z_eval = (int64_t)s_mod_q((int64_t)l_test_point * l_z_eval + l_z.coeffs[i]);
+            l_z_eval = (int64_t)chipmunk_mod_q((int64_t)l_test_point * l_z_eval + l_z.coeffs[i]);
         }
 
         /* Evaluate q(test_point) */
         int64_t l_q_eval = 0;
         for (int i = CHIPMUNK_N - 1; i >= 0; --i) {
-            l_q_eval = (int64_t)s_mod_q((int64_t)l_test_point * l_q_eval + l_q.coeffs[i]);
+            l_q_eval = (int64_t)chipmunk_mod_q((int64_t)l_test_point * l_q_eval + l_q.coeffs[i]);
         }
 
         /* Compute q(test_point) * (test_point - alpha_scalar) */
-        int64_t l_rhs = (int64_t)s_mod_q(l_q_eval * s_mod_q((int64_t)l_test_point - l_alpha_scalar));
+        int64_t l_rhs = (int64_t)chipmunk_mod_q(l_q_eval * chipmunk_mod_q((int64_t)l_test_point - l_alpha_scalar));
 
         /* Check z(test_point) == q(test_point) * (test_point - alpha_scalar) */
-        if (s_mod_q(l_z_eval) != s_mod_q(l_rhs)) {
+        if (chipmunk_mod_q(l_z_eval) != chipmunk_mod_q(l_rhs)) {
             log_it(L_ERROR, "SNARK verify: quotient relation FAILED at check %d", l_check);
             return 0;
         }

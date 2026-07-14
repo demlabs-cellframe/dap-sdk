@@ -22,13 +22,7 @@
 
 #define LOG_TAG "chipmunk_range"
 
-/* Safe modular reduction for Q (not SNARK_Q) */
-static inline int32_t s_mod_q(int64_t a_val)
-{
-    int32_t l_r = (int32_t)(a_val % (int64_t)CHIPMUNK_Q);
-    if (l_r < 0) l_r += CHIPMUNK_Q;
-    return l_r;
-}
+/* chipmunk_mod_q is now in chipmunk_poly.h — unified across all modules */
 
 /* -------------------------------------------------------------------------
  * Internal: Bit decomposition
@@ -239,13 +233,22 @@ static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
         size_t l_nblocks = (l_needed + 135) / 136;
         uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
         if (!l_buf) { DAP_DELETE(l_bit_arr); DAP_DELETE(l_bit_r); return -ENOMEM; }
+        const uint32_t l_blind_range = 2 * 13 + 1;  /* 27: coefficients in [-13, 13] */
         for (uint32_t i = 0; i < l_num_bits - 1; ++i) {
             for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
                 dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
+                size_t l_sq_pos = 0;
                 for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                    uint32_t l_val;
-                    memcpy(&l_val, &l_buf[k * 4], 4);
-                    l_bit_r[i][j].coeffs[k] = (int32_t)((l_val % (2 * 13 + 1)) - 13);
+                    /* Rejection-sample: bias < 2^{-28} for range 27 from uint32 */
+                    for (;;) {
+                        if (l_sq_pos + 4 > l_nblocks * 136) break; /* should not happen */
+                        int32_t l_sample = chipmunk_sample_reject4(l_buf + l_sq_pos, l_blind_range);
+                        l_sq_pos += 4;
+                        if (l_sample >= 0) {
+                            l_bit_r[i][j].coeffs[k] = l_sample - 13;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -257,11 +260,11 @@ static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
         memset(&l_partial, 0, sizeof(l_partial));
         for (uint32_t i = 0; i < l_num_bits - 1; ++i) {
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_partial.coeffs[k] = s_mod_q((int64_t)l_partial.coeffs[k] + l_bit_r[i][j].coeffs[k]);
+                l_partial.coeffs[k] = chipmunk_mod_q((int64_t)l_partial.coeffs[k] + l_bit_r[i][j].coeffs[k]);
             }
         }
         for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-            l_bit_r[l_num_bits - 1][j].coeffs[k] = s_mod_q((int64_t)l_orig_r[j].coeffs[k] - l_partial.coeffs[k]);
+            l_bit_r[l_num_bits - 1][j].coeffs[k] = chipmunk_mod_q((int64_t)l_orig_r[j].coeffs[k] - l_partial.coeffs[k]);
         }
     }
 
@@ -394,8 +397,18 @@ static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
                 return -ENOMEM;
             }
             dap_hash_shake256_squeezeblocks(l_xof, l_nblocks, l_shake_st);
+            size_t l_xof_pos = 0;
             for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
-                l_mask.coeffs[j] = (int32_t)(l_xof[j] % 3) - 1;
+                /* Rejection-sample: range 3 from uint8, bias < 2^{-8} */
+                for (;;) {
+                    if (l_xof_pos >= l_nblocks * 136) break; /* should not happen */
+                    int32_t l_sample = chipmunk_sample_reject1(l_xof[l_xof_pos], 3);
+                    l_xof_pos++;
+                    if (l_sample >= 0) {
+                        l_mask.coeffs[j] = l_sample - 1;
+                        break;
+                    }
+                }
             }
             DAP_DELETE(l_xof);
         }

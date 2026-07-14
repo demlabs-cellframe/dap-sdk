@@ -114,11 +114,20 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *a_params,
             dap_hash_shake256_squeezeblocks(l_buf,
                                              (l_buf_size + 135) / 136,
                                              l_state);
-            /* Convert to polynomial coefficients */
-            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                uint32_t l_val;
-                memcpy(&l_val, &l_buf[k * 4], 4);
-                a_params->A[i][j].coeffs[k] = (int32_t)(l_val % CHIPMUNK_Q);
+            /* Convert to polynomial coefficients — rejection sampling for uniformity */
+            {
+                size_t l_sq_pos = 0;
+                for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                    for (;;) {
+                        if (l_sq_pos + 4 > l_buf_size) break; /* should not happen */
+                        int32_t l_sample = chipmunk_sample_reject4(l_buf + l_sq_pos, (uint32_t)CHIPMUNK_Q);
+                        l_sq_pos += 4;
+                        if (l_sample >= 0) {
+                            a_params->A[i][j].coeffs[k] = l_sample;
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
@@ -151,12 +160,20 @@ int chipmunk_pedersen_derive_blinding(chipmunk_poly_t a_r[CHIPMUNK_LRS_K],
     uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buf_size);
     if (!l_buf) return -ENOMEM;
 
+    const uint32_t l_blind_range = 2 * 13 + 1;  /* 27: coefficients in [-13, 13] */
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
         dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
+        size_t l_sq_pos = 0;
         for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-            uint32_t l_val;
-            memcpy(&l_val, &l_buf[k * 4], 4);
-            a_r[j].coeffs[k] = (int32_t)((l_val % (2 * 13 + 1)) - 13);
+            for (;;) {
+                if (l_sq_pos + 4 > l_buf_size) break; /* should not happen */
+                int32_t l_sample = chipmunk_sample_reject4(l_buf + l_sq_pos, l_blind_range);
+                l_sq_pos += 4;
+                if (l_sample >= 0) {
+                    a_r[j].coeffs[k] = l_sample - 13;
+                    break;
+                }
+            }
         }
     }
     DAP_DELETE(l_buf);
