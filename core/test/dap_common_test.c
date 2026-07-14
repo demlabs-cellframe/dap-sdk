@@ -22,7 +22,8 @@ typedef void (*benchmark_callback)(void *, void *, uint64_t, s_data_type);
 
 static const uint64_t s_times = 100;
 static const uint64_t s_el_count = 100;
-static const uint64_t s_array_size = s_el_count * sizeof(long long) / sizeof(char); // benchmarks array size 8MB
+enum { S_ARRAY_SIZE = 100 * (int)sizeof(long long) / (int)sizeof(char) };
+static const uint64_t s_array_size = S_ARRAY_SIZE; // benchmarks array size 8MB
 
 DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
 {
@@ -59,9 +60,12 @@ static void s_test_put_int()
 
     const long long ten = 10, minus_twenty = -20, maxv = LLONG_MAX, minv = LLONG_MIN;
     const char ten_str[] = "10", minus_twenty_str[] = "-20", maxv_str[] = "9223372036854775807", minv_str[] = "-9223372036854775808";
-    char *res_ten = dap_itoa(ten), *res_minus_20 = dap_itoa(minus_twenty), *res_maxv = dap_itoa(maxv), *res_minv = dap_itoa(minv);
-    dap_assert(!strcmp(res_ten, ten_str) && !strcmp(minus_twenty_str, res_minus_20) 
-            && !strcmp(maxv_str, res_maxv) && !strcmp(minv_str, res_minv), "Check string result from itoa");
+    dap_maxint_str_t res_ten = dap_itoa_(ten);
+    dap_maxint_str_t res_minus_20 = dap_itoa_(minus_twenty);
+    dap_maxint_str_t res_maxv = dap_itoa_(maxv);
+    dap_maxint_str_t res_minv = dap_itoa_(minv);
+    dap_assert(!strcmp(res_ten.s, ten_str) && !strcmp(minus_twenty_str, res_minus_20.s)
+            && !strcmp(maxv_str, res_maxv.s) && !strcmp(minv_str, res_minv.s), "Check string result from itoa");
 }
 
 DAP_STATIC_INLINE void s_overflow_add_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
@@ -1195,8 +1199,8 @@ static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a
 {
     char l_msg[120] = {0};
     int l_cur_1 = 0, l_cur_2 = 0, l_custom = 0, l_builtin = 0;
-    unsigned char l_chars_array_a[s_array_size + 1], l_chars_array_b[s_array_size + 1];
-    l_chars_array_a[s_array_size] = l_chars_array_b[s_array_size] = '\0';
+    unsigned char l_chars_array_a[S_ARRAY_SIZE + 1], l_chars_array_b[S_ARRAY_SIZE + 1];
+    l_chars_array_a[S_ARRAY_SIZE] = l_chars_array_b[S_ARRAY_SIZE] = '\0';
     for (s_data_type t = 0; t < TYPE_COUNT; ++t) {
         // if (t == TYPE_CHAR || t == TYPE_INT || t == TYPE_LONG_LONG || t == TYPE_UCHAR || t == TYPE_ULONG_LONG) {
             l_custom = 0;
