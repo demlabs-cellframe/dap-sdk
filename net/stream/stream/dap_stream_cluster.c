@@ -109,9 +109,14 @@ void dap_cluster_delete(dap_cluster_t *a_cluster)
     if (!a_cluster)
         return;
     pthread_rwlock_wrlock(&s_clusters_rwlock);
-    HASH_DEL(s_clusters, a_cluster);
+    /* Virtual clusters are never added to s_clusters hashtable (dap_cluster_new
+     * returns early for DAP_CLUSTER_TYPE_VIRTUAL). Guard HASH_DEL to avoid
+     * crashing on clusters with hh.tbl == NULL. */
+    if (a_cluster->hh.tbl)
+        HASH_DEL(s_clusters, a_cluster);
     if (a_cluster->mnemonim) {
-        HASH_DELETE(hh_str, s_cluster_mnemonims, a_cluster);
+        if (a_cluster->hh_str.tbl)
+            HASH_DELETE(hh_str, s_cluster_mnemonims, a_cluster);
         DAP_DELETE(a_cluster->mnemonim);
     }
     pthread_rwlock_unlock(&s_clusters_rwlock);
