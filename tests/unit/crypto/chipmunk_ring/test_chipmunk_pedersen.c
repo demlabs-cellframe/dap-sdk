@@ -190,11 +190,11 @@ static void test_serialize_deserialize(void)
     DAP_DELETE(l_params);
 }
 
-/* Phase 2: Verify the homomorphic conservation property directly.
- * This is the property that was BROKEN with binary bit encoding and
- * is now FIXED with base-256 digit decomposition.
+/* Phase 6: Verify the Z-linear (scalar) conservation property.
+ * With scalar encoding, encode(v1) + encode(v2) = encode(v1+v2) in R_q
+ * because all coefficients are (v mod Q). This is Z-linear.
  *
- * Tests: C(v1) + C(v2) + ... == C(v1 + v2 + ...) with shared randomness.
+ * Tests: C(v1) + C(v2) + ... == C(v1 + v2 + ...) with combined randomness.
  * This is what the ledger conservation check relies on:
  *   C_input == Σ C_output_i
  */
@@ -313,6 +313,53 @@ static void test_conservation_property(void)
     }
     dap_assert(l_max_match, "CONSERVATION max-digit: C(255,r1)+C(1,r2)==C(256,r1+r2)");
 
+    /* Test with large values near Q boundary (scalar encoding supports [0, Q-1]).
+     * Q = 3168257. Test: 2000000 + 1000000 = 3000000 < Q ✓ */
+    uint8_t l_v2m[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    uint8_t l_v1m[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    uint8_t l_v3m[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes(2000000ULL, l_v2m);
+    s_u64_to_amount_bytes(1000000ULL, l_v1m);
+    s_u64_to_amount_bytes(3000000ULL, l_v3m);
+
+    chipmunk_pedersen_commit_t l_c2m, l_c1m;
+    chipmunk_pedersen_commit(&l_c2m, l_params, l_v2m, l_r1);
+    chipmunk_pedersen_commit(&l_c1m, l_params, l_v1m, l_r2);
+
+    chipmunk_pedersen_commit_t l_c3m_sum;
+    chipmunk_pedersen_add(&l_c3m_sum, &l_c2m, &l_c1m);
+
+    chipmunk_pedersen_commit_t l_c3m_expected;
+    l_rc = chipmunk_pedersen_commit_explicit(&l_c3m_expected, l_params, l_v3m, l_rr_combined);
+    dap_assert(l_rc == 0, "near-Q commit OK");
+
+    int l_large_match = 1;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && l_large_match; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && l_large_match; ++j) {
+            if (l_c3m_sum.C[i].coeffs[j] != l_c3m_expected.C[i].coeffs[j]) l_large_match = 0;
+        }
+    }
+    dap_assert(l_large_match, "CONSERVATION near-Q: C(2000000,r1)+C(1000000,r2)==C(3000000,r1+r2)");
+
+    /* Test that all coefficients of C(v) equal (v mod Q) — scalar encoding property */
+    {
+        chipmunk_pedersen_commit_t l_c_test;
+        uint8_t l_v42[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+        s_u64_to_amount_bytes(42, l_v42);
+        /* Use zero randomness to isolate the encoding */
+        chipmunk_poly_t l_zero_r[CHIPMUNK_LRS_K];
+        memset(l_zero_r, 0, sizeof(l_zero_r));
+        l_rc = chipmunk_pedersen_commit_explicit(&l_c_test, l_params, l_v42, l_zero_r);
+        dap_assert(l_rc == 0, "zero-randomness commit OK");
+
+        /* Only first polynomial (i=0) has the encoding added; others are pure A*r = 0 */
+        int l_all_42 = 1;
+        for (uint32_t j = 0; j < CHIPMUNK_N && l_all_42; ++j) {
+            if (l_c_test.C[0].coeffs[j] != 42) l_all_42 = 0;
+        }
+        dap_assert(l_all_42, "scalar encoding: all coeffs of C[0] = 42 when r=0");
+    }
+
     DAP_DELETE(l_params);
 }
 
@@ -327,7 +374,7 @@ int main(void)
     test_same_value_same_randomness();
     test_additive_homomorphism();
     test_serialize_deserialize();
-    test_conservation_property();  /* Phase 2: homomorphic conservation */
+    test_conservation_property();  /* Phase 6: Z-linear scalar conservation */
 
     log_it(L_INFO, "=== ALL Chipmunk Pedersen tests PASSED ===");
     dap_common_deinit();

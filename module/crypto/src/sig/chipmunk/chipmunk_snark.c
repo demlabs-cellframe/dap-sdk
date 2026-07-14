@@ -565,14 +565,20 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         a_proof->opening_proof_size = l_off;
     }
 
-    /* 12. Final transcript hash */
+    /* 12. Final transcript hash
+     * CRITICAL: includes msg_hash to bind proof to specific message.
+     * Without msg_hash, a valid proof for one message would verify
+     * against any message (since z ≡ 0 for honest prover, all checks
+     * pass regardless of alpha). The transcript hash is the only
+     * message-binding mechanism. */
     {
-        uint8_t l_transcript[128];
+        uint8_t l_transcript[160];
         size_t l_off = 0;
         memcpy(l_transcript + l_off, a_proof->w_commit.hash, 32); l_off += 32;
         memcpy(l_transcript + l_off, a_proof->r_commit.hash, 32); l_off += 32;
         memcpy(l_transcript + l_off, a_proof->z_commit.hash, 32); l_off += 32;
         memcpy(l_transcript + l_off, a_proof->q_commit.hash, 32); l_off += 32;
+        memcpy(l_transcript + l_off, l_msg_hash, 32); l_off += 32;
         dap_hash_sha3_256_raw(a_proof->transcript_hash, l_transcript, l_off);
     }
 
@@ -642,14 +648,16 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     /* Phase 5: alpha no longer stored in proof — verifier re-derives it.
      * The transcript hash binds all commitments, preventing alpha tampering. */
 
-    /* 5. Verify transcript hash */
+    /* 5. Verify transcript hash
+     * Must include msg_hash to bind proof to message (see prover step 12). */
     {
-        uint8_t l_transcript[128];
+        uint8_t l_transcript[160];
         size_t l_off = 0;
         memcpy(l_transcript + l_off, a_proof->w_commit.hash, 32); l_off += 32;
         memcpy(l_transcript + l_off, a_proof->r_commit.hash, 32); l_off += 32;
         memcpy(l_transcript + l_off, a_proof->z_commit.hash, 32); l_off += 32;
         memcpy(l_transcript + l_off, a_proof->q_commit.hash, 32); l_off += 32;
+        memcpy(l_transcript + l_off, l_msg_hash, 32); l_off += 32;
         uint8_t l_expected_hash[32];
         dap_hash_sha3_256_raw(l_expected_hash, l_transcript, l_off);
         uint8_t l_diff = 0;

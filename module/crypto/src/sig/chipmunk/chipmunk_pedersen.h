@@ -4,16 +4,16 @@
  * Commitment: C = A * r + encode(m) mod q
  * where A is a public matrix, r is a random blinding vector, m is a uint256 amount.
  *
- * Amount encoding (Phase 2 fix — homomorphic):
- *   Base-B = 2^8 digit decomposition of the 256-bit LE value.
- *   Coefficient i holds digit i of the value in base 256 (little-endian digits).
- *   encode(v)[i] = (v >> (8*i)) & 0xFF   for i in [0, PEDERSEN_DIGITS).
+ * Amount encoding (Phase 6 fix — scalar, perfectly additive):
+ *   encode(v) has ALL 512 coefficients equal to (v mod Q).
+ *   This is Z-linear: encode(v1) + encode(v2) = encode(v1 + v2) in R_q,
+ *   and encode(v1) - encode(v2) = encode(v1 - v2) in R_q.
+ *   No carry propagation issues at any value.
  *
- *   Homomorphic property: encode(v1) + encode(v2) = encode(v1 + v2) in R_q
- *   because each digit is in [0, 255] and 2*255 = 510 << Q = 3168257,
- *   so digit-wise addition never wraps mod Q.
- *
- *   Uses 32 of 512 coefficients (PEDERSEN_DIGITS = 32).
+ *   Value range: [0, Q-1] where Q = 3168257 (~3.1M atomic units per TX).
+ *   TX construction must reject amounts >= Q.
+ *   Range proofs prove v ∈ [0, Q-1] via bit decomposition with
+ *   powers-of-2 weighting mod Q.
  */
 
 #pragma once
@@ -35,11 +35,20 @@ extern "C" {
 #define CHIPMUNK_PEDERSEN_VALUE_BYTES   32
 #define CHIPMUNK_PEDERSEN_VALUE_BITS    256
 
-/* Digit-based encoding parameters (Phase 2 homomorphic fix) */
-#define CHIPMUNK_PEDERSEN_DIGIT_BITS   8        /* log2(B), base B = 2^8 = 256 */
-#define CHIPMUNK_PEDERSEN_DIGIT_BASE   256      /* B = 2^8 */
-#define CHIPMUNK_PEDERSEN_DIGITS        32       /* ceil(VALUE_BITS / DIGIT_BITS) = 256/8 */
-#define CHIPMUNK_PEDERSEN_DIGIT_MAX     255      /* B - 1 */
+/* Encoding parameters (Phase 6: scalar encoding)
+ * encode(v)[i] = (v mod Q) for ALL i in [0, N).
+ * Value range: [0, Q-1] = [0, 3168256].
+ * 256 bits of value bytes supported; only lower 64 bits used.
+ * Digit constants kept for range proof API compatibility. */
+#define CHIPMUNK_PEDERSEN_CHUNKS        19       /* legacy: unused by scalar encoding */
+#define CHIPMUNK_PEDERSEN_CHUNK_MAX     16383    /* legacy: unused by scalar encoding */
+
+/* Legacy digit API — kept for range proof compatibility.
+ * Range proofs use commit_explicit_digit with powers-of-2 mod Q. */
+#define CHIPMUNK_PEDERSEN_DIGIT_BITS    14       /* legacy (unused) */
+#define CHIPMUNK_PEDERSEN_DIGIT_BASE    16384    /* legacy (unused) */
+#define CHIPMUNK_PEDERSEN_DIGITS        CHIPMUNK_PEDERSEN_CHUNKS
+#define CHIPMUNK_PEDERSEN_DIGIT_MAX     CHIPMUNK_PEDERSEN_CHUNK_MAX
 
 typedef struct chipmunk_pedersen_commit {
     chipmunk_poly_t C[CHIPMUNK_PEDERSEN_K];
@@ -60,9 +69,9 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *params,
 
 /**
  * Commit to a 256-bit atomic amount (LE bytes).
- * Value is encoded using base-256 digit decomposition:
- *   encode(v)[i] = (v >> (8*i)) & 0xFF  for i in [0, 32).
- * This encoding is homomorphic: encode(v1) + encode(v2) = encode(v1+v2) in R_q.
+ * Value is encoded scalarly: encode(v)[i] = (v mod Q) for all i.
+ * This encoding is Z-linear: encode(v1) + encode(v2) = encode(v1+v2) in R_q.
+ * Amount must be in [0, Q-1]; caller must validate.
  */
 int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *commit,
                              const chipmunk_pedersen_params_t *params,
@@ -80,12 +89,13 @@ int chipmunk_pedersen_commit_explicit_bit(chipmunk_pedersen_commit_t *commit,
                                           const chipmunk_poly_t randomness[CHIPMUNK_LRS_K]);
 
 /**
- * Commit to a single base-256 digit [0, 255] at coefficient @a digit_pos.
- * Used by digit-based range proofs (Phase 2).
+ * Commit to a scalar value (mod Q) at all coefficients.
+ * Used by range proofs: commit(b_i * 2^i mod Q, r_i).
+ * a_digit_pos is ignored (scalar encoding is position-independent).
  */
 int chipmunk_pedersen_commit_explicit_digit(chipmunk_pedersen_commit_t *commit,
                                              const chipmunk_pedersen_params_t *params,
-                                             uint8_t digit,
+                                             int32_t digit,
                                              uint32_t digit_pos,
                                              const chipmunk_poly_t randomness[CHIPMUNK_LRS_K]);
 

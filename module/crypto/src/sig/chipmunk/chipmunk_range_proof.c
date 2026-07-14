@@ -270,24 +270,30 @@ static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
 
     chipmunk_pedersen_commit_t *l_bit_commits = DAP_NEW_Z_COUNT(chipmunk_pedersen_commit_t, l_num_bits);
     if (!l_bit_commits) { DAP_DELETE(l_bit_arr); DAP_DELETE(l_bit_r); return -ENOMEM; }
+    /* Precompute powers of 2 mod Q for bit weighting.
+     * With scalar encoding, each bit i is committed as (b_i * 2^i mod Q)
+     * at ALL coefficients. The sum of all bit commitments reconstructs v*ones. */
+    int32_t *l_pow2 = DAP_NEW_Z_SIZE(int32_t, l_num_bits);
+    if (!l_pow2) { DAP_DELETE(l_bit_arr); return -ENOMEM; }
+    l_pow2[0] = 1;
+    for (uint32_t i = 1; i < l_num_bits; ++i) {
+        l_pow2[i] = chipmunk_mod_q((int64_t)l_pow2[i - 1] * 2);
+    }
+
     for (uint32_t i = 0; i < l_num_bits; ++i) {
-        /* Phase 2: digit-compatible bit commitment.
-         * Old: commit_explicit_bit(b_i, i) → coefficient[i] = b_i
-         * New: commit_explicit_digit(b_i << k, j) → coefficient[j] = b_i * 2^k
-         * where j = i/8, k = i%8. Summing all 8 bits for digit j gives:
-         *   Σ_k (b_{j,k} * 2^k) = digit_j, which matches encode(v)[j].
-         * The weighted sum reconstructs the digit value at the correct position.
-         * Max weighted value per coefficient: Σ_k 2^k = 255 < Q (safe). */
-        uint32_t l_j = i / 8;   /* digit position */
-        uint32_t l_k = i % 8;   /* bit within digit */
-        uint8_t l_digit_val = (uint8_t)(l_bit_arr[i] << l_k);
+        /* Phase 6: scalar encoding bit commitment.
+         * Each bit i committed as (b_i * 2^i mod Q) at all coefficients.
+         * Sum over all bits: Σ (b_i * 2^i mod Q) * ones = v * ones = encode(v).
+         * This matches the scalar Pedersen encoding. */
+        int32_t l_digit_val = (l_bit_arr[i] != 0) ? l_pow2[i] : 0;
         int l_rc = chipmunk_pedersen_commit_explicit_digit(&l_bit_commits[i], a_params,
-                                                            l_digit_val, l_j, l_bit_r[i]);
+                                                            l_digit_val, 0, l_bit_r[i]);
         if (l_rc != 0) {
-            DAP_DELETE(l_bit_arr); DAP_DELETE(l_bit_r); DAP_DELETE(l_bit_commits);
+            DAP_DELETE(l_pow2); DAP_DELETE(l_bit_arr); DAP_DELETE(l_bit_r); DAP_DELETE(l_bit_commits);
             return l_rc;
         }
     }
+    DAP_DELETE(l_pow2);
     DAP_DELETE(l_bit_r);
 
     uint8_t *l_blind_seeds = DAP_NEW_Z_SIZE(uint8_t, (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32);
