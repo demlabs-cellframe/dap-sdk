@@ -1517,7 +1517,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     a_stream->is_active = true;
     // dap_events_socket_t *l_es = a_stream->esocket;
 
-    log_it(L_NOTICE, "s_stream_proc_pkt_in: stream=%p pkt_type=0x%02X pkt_size=%u session=%p",
+    debug_if(s_debug_more, L_DEBUG, "s_stream_proc_pkt_in: stream=%p pkt_type=0x%02X pkt_size=%u session=%p",
            (void*)a_stream, a_pkt->hdr.type, a_pkt->hdr.size, (void*)a_stream->session);
 
 
@@ -1600,7 +1600,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         dap_stream_ch_pkt_t *l_ch_pkt;
         size_t l_dec_pkt_size;
 
-        log_it(L_NOTICE, "DATA_PACKET: from_fragment=%s",
+        debug_if(s_debug_more, L_DEBUG, "DATA_PACKET: from_fragment=%s",
                (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) ? "yes" : "no");
 
         if (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
@@ -1613,7 +1613,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
         }
 
-        log_it(L_NOTICE, "DATA_PKT: dec=%zu hdr=%zu ch_id=0x%02x data_size=%u",
+        debug_if(s_debug_more, L_DEBUG, "DATA_PKT: dec=%zu hdr=%zu ch_id=0x%02x data_size=%u",
                l_dec_pkt_size, sizeof(l_ch_pkt->hdr),
                l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size);
 
