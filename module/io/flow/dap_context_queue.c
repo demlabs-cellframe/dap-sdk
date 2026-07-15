@@ -26,6 +26,7 @@
 #include "dap_events_socket.h"
 #include "dap_context.h"
 #include "dap_events.h"
+#include "dap_worker.h"
 #include <sys/time.h>
 
 #define LOG_TAG "dap_context_queue"
@@ -36,23 +37,36 @@
 
 /**
  * @brief Callback from reactor when event is signaled (items available in queue)
+ *
+ * Drains the ring buffer in a loop until empty, processing items in bounded
+ * batches (DAP_CONTEXT_QUEUE_BATCH_SIZE) to avoid starving other reactor events.
+ * Re-signals the eventfd on each iteration if items remain.
  */
 static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
-    (void)a_value; // Unused - we just process all available items
-    
+    (void)a_value;
+
     dap_context_queue_t *l_queue = (dap_context_queue_t *)a_es->_inheritor;
-    
+
     if (!l_queue) {
         log_it(L_ERROR, "Event callback: NULL queue pointer in _inheritor");
         return;
     }
-    
-    // Process all available items in queue
-    size_t l_processed = dap_context_queue_process(l_queue);
-    
+
+    // Loop-until-empty: keep processing until ring buffer is drained
+    size_t l_processed = 0;
+    int l_batch;
+    do {
+        l_batch = dap_context_queue_process(l_queue);
+        if (l_batch > 0)
+            l_processed += (size_t)l_batch;
+    } while (l_batch > 0 && !dap_ring_buffer_is_empty(l_queue->ring_buffer));
+
     if (l_processed > 0) {
-        debug_if(g_debug_reactor, L_DEBUG, "Context queue processed %zu items (event value=%"PRIu64")",
+        debug_if(g_debug_reactor, L_DEBUG,
+                 "Context queue processed %zu items (event value=%"PRIu64")",
                  l_processed, a_value);
+    } else if (a_value > 0) {
+        debug_if(g_debug_reactor, L_INFO, "Context queue: EMPTY wakeup (spurious signal)");
     }
 }
 
@@ -117,24 +131,45 @@ void dap_context_queue_delete(dap_context_queue_t *a_queue) {
     if (a_queue->ring_buffer) {
         uint64_t l_pushes, l_pops, l_full, l_empty;
         dap_ring_buffer_get_stats(a_queue->ring_buffer, &l_pushes, &l_pops, &l_full, &l_empty);
-        
+
         log_it(L_INFO, "Deleting context queue %p: pushes=%"PRIu64", pops=%"PRIu64", full=%"PRIu64", empty=%"PRIu64,
                a_queue, l_pushes, l_pops, l_full, l_empty);
-        
+
         if (l_full > 0) {
             log_it(L_WARNING, "Context queue was full %"PRIu64" times - consider increasing capacity", l_full);
         }
-        
+
+        /* Drain remaining items to avoid dangling pointers */
+        size_t l_drained = 0;
+        void *l_item;
+        while ((l_item = dap_ring_buffer_pop(a_queue->ring_buffer)) != NULL) {
+            if (a_queue->callback)
+                a_queue->callback(l_item);
+            l_drained++;
+        }
+        if (l_drained > 0) {
+            log_it(L_DEBUG, "Context queue %p: drained %zu remaining items on delete", a_queue, l_drained);
+        }
+
         // Delete ring buffer
         dap_ring_buffer_delete(a_queue->ring_buffer);
         a_queue->ring_buffer = NULL;
     }
-    
-    // Remove event socket from reactor and delete
-    // IMPORTANT: preserve_inheritor = true because _inheritor points to this queue itself!
-    // We will free the queue at the end of this function with DAP_DELETE(a_queue)
+
+    // Remove event socket from reactor — thread-safe: check if we're on the owning worker
     if (a_queue->event_socket) {
-        dap_events_socket_remove_and_delete_unsafe(a_queue->event_socket, true);
+        dap_worker_t *l_owner = a_queue->event_socket->worker;
+        if (l_owner && dap_worker_get_current() == l_owner) {
+            // Same worker — direct (unsafe) removal is safe
+            dap_events_socket_remove_and_delete_unsafe(a_queue->event_socket, true);
+        } else if (l_owner) {
+            // Different worker — detach inheritor to prevent use-after-free, then cross-thread delete
+            a_queue->event_socket->_inheritor = NULL;
+            dap_events_socket_remove_and_delete(l_owner, a_queue->event_socket->uuid);
+        } else {
+            // No worker associated — fallback to unsafe delete
+            dap_events_socket_remove_and_delete_unsafe(a_queue->event_socket, true);
+        }
         a_queue->event_socket = NULL;
     }
     
