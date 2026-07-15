@@ -429,15 +429,23 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fi
                       "unit;crypto;field;fri")
 endif()
 
-# 9.2: 2048-point NTT (FRI evaluation domain)
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri_ntt.c)
-    add_dap_test(test_unit_chipmunk_fri_ntt
-                 unit/crypto/chipmunk_ring/test_chipmunk_fri_ntt.c)
-    register_dap_test(test_unit_chipmunk_fri_ntt
-                      "unit;crypto;ntt;fri")
-endif()
+	# 9.2: 2048-point NTT (FRI evaluation domain)
+	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri_ntt.c)
+	    add_dap_test(test_unit_chipmunk_fri_ntt
+	                 unit/crypto/chipmunk_ring/test_chipmunk_fri_ntt.c)
+	    register_dap_test(test_unit_chipmunk_fri_ntt
+	                      "unit;crypto;ntt;fri")
+	endif()
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
+	# 9.3: Poseidon hash over F_q (t=3, R_F=8, R_P=22, x^5 S-box)
+	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_poseidon.c)
+	    add_dap_test(test_unit_chipmunk_poseidon
+	                 unit/crypto/chipmunk_ring/test_chipmunk_poseidon.c)
+	    register_dap_test(test_unit_chipmunk_poseidon
+	                      "unit;crypto;poseidon;fri")
+	endif()
+
+	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
 endif()
