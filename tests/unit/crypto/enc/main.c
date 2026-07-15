@@ -29,6 +29,8 @@ int main(void) {
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_BF_OFB, 0);
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_IAES, 32);
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_IAES, 32);
+    test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_IAES2, 32);
+    test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_IAES2, 32);
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_OAES, 32);
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_OAES, 32);
 

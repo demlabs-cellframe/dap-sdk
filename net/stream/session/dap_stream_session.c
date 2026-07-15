@@ -70,6 +70,7 @@ void dap_stream_session_deinit()
               DAP_DELETE(current->_inheritor);
           DAP_DELETE(current);
       }
+      s_sessions = NULL;
     pthread_mutex_unlock(&s_sessions_mutex);
 }
 

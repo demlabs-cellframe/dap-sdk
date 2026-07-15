@@ -104,6 +104,10 @@ typedef struct dap_client_fsm {
     // Lifecycle
     bool is_removing;
 
+    // Legacy enc_init fallback (modern attempt failed once)
+    bool enc_legacy_fallback_active;
+    bool enc_legacy_fallback_tried;
+
     UT_hash_handle hh;
 } dap_client_fsm_t;
 

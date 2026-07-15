@@ -23,7 +23,7 @@ typedef struct dap_exec_cmd_pkey {
     UT_hash_handle hh;
 } dap_exec_cmd_pkey_t;
 static dap_exec_cmd_pkey_t *s_exec_cmd_map;
-static pthread_rwlock_t s_exec_cmd_rwlock;
+static pthread_rwlock_t s_exec_cmd_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
 static int dap_json_rpc_map_init(dap_config_t *a_config) {
     s_exec_cmd_map = NULL;

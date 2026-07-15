@@ -13,6 +13,9 @@ set(TLS_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/chrome_120.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/firefox_121.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/edge_120.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/safari_17.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/android_14.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/telegram_android.c"
 )
 
 file(GLOB TLS_HDRS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")

@@ -1,18 +1,21 @@
 cmake_minimum_required(VERSION 3.10)
 project (dap_app_cli)
 
-file(GLOB DAP_APP_CLI_SRCS *.c)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/LibraryHelpers.cmake)
 
+file(GLOB DAP_APP_CLI_SRCS *.c)
 file(GLOB DAP_APP_CLI_HEADERS include/*.h)
 
-add_library(${PROJECT_NAME} STATIC ${DAP_APP_CLI_SRCS} ${DAP_APP_CLI_HEADERS} )
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_APP_CLI_SRCS} HEADERS ${DAP_APP_CLI_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_cli_server m)
-target_include_directories(${PROJECT_NAME} PUBLIC include/ )
+target_include_directories(${PROJECT_NAME} INTERFACE .)
+target_include_directories(${PROJECT_NAME} PUBLIC include/)
+
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_cli_server m)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_APP_CLI_HEADERS}")
-INSTALL(TARGETS ${PROJECT_NAME} 
+INSTALL(TARGETS ${PROJECT_NAME}
         LIBRARY DESTINATION lib/dap/net/app-cli/
         ARCHIVE DESTINATION lib/dap/net/app-cli/
         PUBLIC_HEADER DESTINATION include/dap/net/app-cli/

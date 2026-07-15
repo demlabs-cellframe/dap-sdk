@@ -221,6 +221,7 @@ typedef struct dap_net_handshake_params {
     uint8_t *alice_pub_key;               ///< Client public key (allocated by caller)
     size_t alice_pub_key_size;            ///< Public key size
     size_t sign_count;                    ///< Number of signatures in alice_pub_key
+    uint8_t tls_fp_profile_index;         ///< TLS fingerprint profile index (TL.8, 0=default)
 } dap_net_handshake_params_t;
 
 /**

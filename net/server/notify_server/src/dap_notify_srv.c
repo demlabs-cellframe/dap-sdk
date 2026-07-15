@@ -92,7 +92,19 @@ int dap_notify_server_init()
  */
 void dap_notify_server_deinit()
 {
+    if (!s_notify_server)
+        return;
 
+    /* Clear clients list — actual socket cleanup is handled by event loop */
+    pthread_rwlock_wrlock(&s_notify_server_clients_mutex);
+    s_notify_server_clients = NULL;
+    pthread_rwlock_unlock(&s_notify_server_clients_mutex);
+
+    s_notify_server = NULL;
+    s_notify_server_queue = NULL;
+    s_notify_server_queue_inter = NULL;
+    s_notify_data_user_callback = NULL;
+    s_notify_server_callback_new_ex = NULL;
 }
 
 /**

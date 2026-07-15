@@ -60,6 +60,8 @@ typedef struct dap_stream {
     dap_events_socket_uuid_t keepalive_timer_uuid;
     struct dap_worker *keepalive_timer_worker;
     bool is_active;
+    bool is_deleting;  /* Guard against double-free when keepalive timer and esocket
+                        * HUP both trigger deletion on the same worker event loop tick. */
 
     char *service_key;
     bool is_client_to_uplink;
@@ -192,6 +194,7 @@ void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
 void dap_stream_add_proc_dns(dap_server_t *a_dns_server);
 
 dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_stream_node_addr_t *a_addr, bool a_authorized);
+dap_stream_t* dap_stream_new_es_server(dap_events_socket_t *a_esocket, dap_stream_session_t *a_session);
 int dap_stream_start_keepalive(dap_stream_t *a_stream);
 size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
 size_t dap_stream_data_proc_read_ext(dap_stream_t * a_stream, const void *a_data, size_t a_data_size);
@@ -228,12 +231,18 @@ ssize_t dap_stream_trans_write_unsafe(dap_stream_t *a_stream, const void *a_data
 void dap_stream_delete_unsafe(dap_stream_t * a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
+/** Bind unified server stream delete/error callbacks (HTTP/TLS direct post-stream_ctl). */
+void dap_stream_bind_server_esocket_callbacks(dap_events_socket_t *a_es);
+/** Replace keepalive_direct with UUID-based server keepalive (TLS _inheritor unify). */
+void dap_stream_server_promote_uuid_keepalive(dap_stream_t *a_stream);
+
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
 
 // autorization stream block
 int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id);
 int dap_stream_add_to_list(dap_stream_t *a_stream);
+int dap_stream_authorize_stream(dap_stream_t *a_stream);
 int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);

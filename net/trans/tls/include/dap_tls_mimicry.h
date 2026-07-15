@@ -88,7 +88,8 @@ int dap_tls_mimicry_wrap(dap_tls_mimicry_t *a_m,
 
 /**
  * Unwrap TLS Application Data records from raw wire data.
- * *a_consumed = bytes consumed from a_data (may be < a_size if partial record).
+ * Non-APPLICATION_DATA records (e.g. CCS after handshake) are silently skipped.
+ * *a_consumed = bytes consumed from a_data (includes skipped records).
  * Caller must free(*a_out) with DAP_DELETE.
  * @return 0 on success, 1 if need more data, -1 on error
  */

@@ -36,8 +36,10 @@ typedef struct dap_tls_fp_profile {
     const char     *ja3_hash;          /* 32 hex chars + NUL */
     const uint8_t  *clienthello;
     size_t          clienthello_size;
-    size_t          sni_offset;        /* offset of SNI hostname (after 5-byte ext header) */
-    size_t          sni_length_offset; /* offset of 2-byte BE hostname length */
+    size_t          sni_hostname_length_offset; /* offset of 2-byte BE hostname_length in SNI ext */
+    size_t          sni_hostname_offset;        /* offset of hostname bytes in SNI ext */
+    size_t          sni_data_length_offset;     /* offset of 2-byte BE data_length in SNI ext */
+    size_t          extensions_length_offset;   /* offset of 2-byte BE extensions_length */
 } dap_tls_fp_profile_t;
 
 /**

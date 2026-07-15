@@ -120,6 +120,7 @@ void s_stream_delete_from_list(dap_stream_t *a_stream);
 
 static bool s_callback_server_keepalive(void *a_arg);
 static bool s_callback_client_keepalive(void *a_arg);
+static bool s_callback_keepalive_direct(void *a_arg);
 
 static bool s_dump_packet_headers = false;
 static bool s_debug = false;
@@ -588,6 +589,8 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     debug_if(s_debug, L_DEBUG, "s_stream_new: found transport=%p", (void*)l_transport);
     if (l_transport) {
         l_ret->trans = l_transport;
+        if (l_ret->trans_ctx)
+            l_ret->trans_ctx->trans = l_transport;
         debug_if(s_debug, L_DEBUG, "s_stream_new: assigned transport");
         // Store HTTP client in transport-specific data
         // Note: HTTP client binding is managed by the transport layer
@@ -679,6 +682,9 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
     l_ret->esocket = a_esocket;
     l_ret->is_client_to_uplink = true;
     if (a_esocket) {
+        /* Client streams use stream keepalive + FSM activity timers; suppress
+         * generic dap_worker inactivity closure during connect/ENC handshake. */
+        a_esocket->no_close = true;
         l_ret->esocket_uuid = a_esocket->uuid;
         l_ret->esocket_worker = a_esocket->worker;
         a_esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
@@ -724,6 +730,113 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
 }
 
 /**
+ * @brief dap_stream_new_es_server Create new stream instance for a server-side
+ *        esocket that bypasses the HTTP layer (e.g. TLS direct mode).
+ *
+ * Creates dap_stream_t + dap_net_trans_ctx_t and binds the esocket, following
+ * the same pattern as stream_new_udp().  After this call the esocket's
+ * _inheritor points to trans_ctx (not to any transport-specific context).
+ * The caller should store its transport-private data in trans_ctx->transport_priv.
+ *
+ * @param a_esocket  Accepted client esocket (must have worker assigned).
+ * @param a_session  Stream session created by dap_stream_ctl_handler_process().
+ * @return New stream, or NULL on error.
+ */
+dap_stream_t *dap_stream_new_es_server(dap_events_socket_t *a_esocket,
+                                         dap_stream_session_t *a_session)
+{
+    if (!a_esocket || !a_session) {
+        log_it(L_ERROR, "dap_stream_new_es_server: esocket=%p session=%p", (void*)a_esocket, (void*)a_session);
+        return NULL;
+    }
+
+    dap_stream_t *l_stm = DAP_NEW_Z(dap_stream_t);
+    if (!l_stm) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
+#ifdef  DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
+#endif
+
+    /* Esocket references */
+    l_stm->esocket          = a_esocket;
+    l_stm->esocket_uuid    = a_esocket->uuid;
+    l_stm->esocket_worker  = a_esocket->worker;
+
+    /* stream_worker: the per-worker stream context (holds channel hash table).
+     * Required by dap_stream_ch_new — without it channels can't be created. */
+    l_stm->stream_worker = DAP_STREAM_WORKER(a_esocket->worker);
+    if (!l_stm->stream_worker)
+        log_it(L_ERROR, "dap_stream_new_es_server: stream_worker is NULL for worker %p", (void*)a_esocket->worker);
+
+    /* Transport context — back-reference from stream.  The caller owns the
+     * esocket's _inheritor; we do NOT overwrite it here.  For TLS direct
+     * mode the _inheritor stays as tls_conn_ctx_t and the stream pointer
+     * is stored inside that struct by the caller. */
+    l_stm->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (!l_stm->trans_ctx) {
+        DAP_DELETE(l_stm);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
+    l_stm->trans_ctx->stream  = l_stm;  /* back-reference */
+    l_stm->trans_ctx->esocket = a_esocket;
+    dap_strncpy(l_stm->trans_ctx->remote_addr_str,
+                a_esocket->remote_addr_str,
+                sizeof(l_stm->trans_ctx->remote_addr_str) - 1);
+    l_stm->trans_ctx->remote_port = a_esocket->remote_port;
+
+    /* Bind session and create channels */
+    l_stm->session = a_session;
+
+    int l_open_rc = dap_stream_session_open(a_session);
+    if (l_open_rc != 0) {
+        log_it(L_ERROR, "dap_stream_new_es_server: failed to open session %u", a_session->id);
+        /* Don't free trans_ctx — keep it consistent; caller owns cleanup */
+        return l_stm;
+    }
+
+    for (size_t i = 0; i < sizeof(a_session->active_channels); i++) {
+        if (a_session->active_channels[i])
+            dap_stream_ch_new(l_stm, a_session->active_channels[i]);
+    }
+
+    s_stream_states_update(l_stm);
+
+    /* Start keepalive timer — uses direct stream pointer (not esocket UUID
+     * lookup) because TLS server stores tls_conn_ctx_t in _inheritor, not
+     * trans_ctx, so dap_stream_get_from_es() can't find the stream. */
+    if (a_esocket->worker) {
+        l_stm->keepalive_timer = dap_timerfd_start_on_worker(
+            a_esocket->worker,
+            STREAM_KEEPALIVE_TIMEOUT * 1000,
+            (dap_timerfd_callback_t)s_callback_keepalive_direct,
+            l_stm);
+        if (l_stm->keepalive_timer) {
+            l_stm->keepalive_timer_uuid   = l_stm->keepalive_timer->esocket_uuid;
+            l_stm->keepalive_timer_worker = l_stm->keepalive_timer->worker;
+            log_it(L_INFO, "Server direct stream %p: keepalive (direct) started on worker #%u, sock=%"DAP_FORMAT_SOCKET,
+                   l_stm, a_esocket->worker->id, a_esocket->socket);
+        }
+    }
+
+    /* Prevent worker inactivity timeout */
+    a_esocket->no_close = true;
+
+    /* Authorize from session's node address */
+    if (!dap_stream_node_addr_is_blank(&a_session->node)) {
+        l_stm->node = a_session->node;
+        l_stm->authorized = true;
+    }
+
+    dap_stream_add_to_list(l_stm);
+    log_it(L_NOTICE, "Server direct stream created: stream=%p es=%p sock=%"DAP_FORMAT_SOCKET" session=%u channels='%s'",
+           l_stm, (void*)a_esocket, a_esocket->socket, a_session->id, a_session->active_channels);
+    return l_stm;
+}
+
+/**
  * @brief Start client keepalive timer for a stream that was created without an esocket.
  *        Called when the esocket is assigned to the stream after deferred connection (e.g. HTTP transport).
  * @param a_stream Stream with esocket and esocket->worker already set
@@ -760,13 +873,31 @@ int dap_stream_start_keepalive(dap_stream_t *a_stream)
 }
 
 /**
- * @brief dap_stream_delete_unsafe
- * @param a_stream
+ * @brief Delete a stream and free all its resources.
+ *
+ * UNSAFE contract: the caller MUST be running on the stream's native
+ * worker (the worker pointed to by a_stream->esocket_worker).  This is
+ * guaranteed when called from event-loop callbacks (read, write, timer,
+ * delete) on that worker.  If the caller is on a different thread, use
+ * the dispatch-to-worker pattern:
+ *   dap_worker_exec_callback_on(stream->esocket_worker, callback, stream);
+ * then call this function inside the callback.
+ *
+ * SIGNAL_CLOSE is the deferred alternative: set a_es->flags |= DAP_SOCK_SIGNAL_CLOSE
+ * from any context; the event loop will call this function safely later.
+ * Do NOT call this from a packet_in_callback — use SIGNAL_CLOSE instead.
  */
 void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 {
     if(!a_stream) {
         log_it(L_ERROR,"stream delete NULL instance");
+        return;
+    }
+    /* Guard against double deletion: keepalive timer callback and esocket HUP
+     * can both call this on the same worker tick.  First caller wins; subsequent
+     * callers see is_deleting==true and bail out. */
+    if (__atomic_exchange_n(&a_stream->is_deleting, true, __ATOMIC_ACQ_REL)) {
+        log_it(L_DEBUG, "P2P stream DELETE (skipped, already deleting): stream=%p", (void*)a_stream);
         return;
     }
     if (a_stream->is_client_to_uplink)
@@ -794,15 +925,21 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         if (l_cur && l_cur == l_worker && l_cur->context) {
             dap_events_socket_t *l_timer_es = dap_context_find(l_cur->context, l_uuid);
             if (l_timer_es) {
-                /* Timer is still alive — safely zero callback_arg and delete. */
+                /* Timer is still alive — zero callback_arg to prevent future
+                 * callbacks from touching the (about-to-be-freed) stream.
+                 * Do NOT call dap_timerfd_delete_unsafe here: if we are being
+                 * called from inside a timer callback (keepalive detected error),
+                 * s_es_callback_timer is still on the stack and holds pointers
+                 * to the timer esocket.  Destroying it here causes use-after-free
+                 * when s_es_callback_timer resumes.  Instead, set SIGNAL_CLOSE so
+                 * the event loop cleans it up after the callback returns. */
                 dap_timerfd_t *l_timer = (dap_timerfd_t*)l_timer_es->_inheritor;
                 if (l_timer) {
-                    void *l_arg = __atomic_exchange_n(&l_timer->callback_arg, (void*)NULL, __ATOMIC_RELEASE);
-                    dap_timerfd_delete_unsafe(l_timer);
-                    DAP_DELETE(l_arg);  /* NULL-safe: callback may have freed UUID already */
+                    __atomic_store_n(&l_timer->callback_arg, (void*)NULL, __ATOMIC_RELEASE);
+                    l_timer_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
                 }
             }
-            /* else: timer already freed (SIGNAL_CLOSE processed), UUID freed by callback */
+            /* else: timer already freed (SIGNAL_CLOSE processed), nothing to do */
         } else {
             /* Different worker: send async delete (no-op if already gone) */
             dap_timerfd_delete_mt(l_worker, l_uuid);
@@ -825,10 +962,14 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         dap_stream_session_close_mt(a_stream->session->id);
     }
 
-    // Call trans->ops->close() FIRST to let transport manage esocket
-    dap_net_trans_t *l_trans = a_stream->trans;
+    // Call trans->ops->close() FIRST to let transport manage esocket / transport_priv
+    dap_net_trans_t *l_trans = (a_stream->trans_ctx && a_stream->trans_ctx->trans)
+        ? a_stream->trans_ctx->trans
+        : a_stream->trans;
     if (l_trans) {
-        a_stream->trans = NULL;  // Prevent double close
+        a_stream->trans = NULL;
+        if (a_stream->trans_ctx)
+            a_stream->trans_ctx->trans = NULL;
         if (l_trans->ops && l_trans->ops->close) {
             l_trans->ops->close(a_stream);
         }
@@ -838,11 +979,19 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     if (a_stream->esocket && a_stream->esocket_worker) {
         dap_events_socket_t *l_es = a_stream->esocket;
         dap_worker_t *l_es_worker = a_stream->esocket_worker;
-        l_es->callbacks.delete_callback = NULL;
-        l_es->_inheritor = NULL;
         a_stream->esocket = NULL;
         a_stream->esocket_uuid = 0;
         a_stream->esocket_worker = NULL;
+        /* Clear error_callback to prevent spurious error reports during teardown.
+         * Do NOT clear delete_callback — the esocket delete callback (s_tls_delete
+         * or s_esocket_callback_delete) needs to run to free transport-specific
+         * resources (e.g. tls_conn_ctx_t, mimicry).  The is_deleting guard at the
+         * top of this function prevents the callback from re-entering deletion. */
+        l_es->callbacks.error_callback = NULL;
+        /* For non-TLS transports, _inheritor is trans_ctx which we free below.
+         * NULL it here to prevent double-free by the esocket delete callback. */
+        if (l_es->_inheritor == (void*)a_stream->trans_ctx)
+            l_es->_inheritor = NULL;
         dap_worker_t *l_current = dap_worker_get_current();
         if (l_current == l_es_worker) {
             dap_events_socket_remove_and_delete_unsafe(l_es, false);
@@ -866,6 +1015,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 #endif
 
     DAP_DEL_Z(a_stream->buf_fragments);
+    DAP_DEL_Z(a_stream->pkt_cache);
     DAP_DELETE(a_stream);
     debug_if(s_debug, L_DEBUG, "Stream connection is over");
 }
@@ -924,6 +1074,63 @@ static void s_esocket_callback_error(dap_events_socket_t *a_esocket, int a_error
     log_it(L_WARNING, "Stream esocket error: %d", a_error);
     // Mark for close, the delete callback will clean up
     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+}
+
+void dap_stream_bind_server_esocket_callbacks(dap_events_socket_t *a_es)
+{
+    if (!a_es)
+        return;
+    a_es->callbacks.delete_callback = s_esocket_callback_delete;
+    a_es->callbacks.error_callback = s_esocket_callback_error;
+}
+
+void dap_stream_server_promote_uuid_keepalive(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->esocket || !a_stream->esocket->worker)
+        return;
+
+    if (a_stream->keepalive_timer) {
+        dap_events_socket_uuid_t l_uuid   = a_stream->keepalive_timer_uuid;
+        dap_worker_t            *l_worker = a_stream->keepalive_timer_worker;
+        a_stream->keepalive_timer        = NULL;
+        a_stream->keepalive_timer_uuid   = 0;
+        a_stream->keepalive_timer_worker = NULL;
+
+        dap_worker_t *l_cur = dap_worker_get_current();
+        if (l_cur && l_cur == l_worker && l_cur->context) {
+            dap_events_socket_t *l_timer_es = dap_context_find(l_cur->context, l_uuid);
+            if (l_timer_es) {
+                dap_timerfd_t *l_timer = (dap_timerfd_t *)l_timer_es->_inheritor;
+                if (l_timer) {
+                    void *l_arg = __atomic_exchange_n(&l_timer->callback_arg, (void *)NULL, __ATOMIC_RELEASE);
+                    dap_timerfd_delete_unsafe(l_timer);
+                    /* keepalive_direct passes stream pointer — not heap-allocated */
+                    if (l_arg && l_arg != (void *)a_stream)
+                        DAP_DELETE(l_arg);
+                }
+            }
+        } else if (l_worker) {
+            dap_timerfd_delete_mt(l_worker, l_uuid);
+        }
+    }
+
+    dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
+    if (!l_es_uuid)
+        return;
+    *l_es_uuid = a_stream->esocket->uuid;
+    a_stream->keepalive_timer = dap_timerfd_start_on_worker(
+        a_stream->esocket->worker,
+        STREAM_KEEPALIVE_TIMEOUT * 1000,
+        (dap_timerfd_callback_t)s_callback_server_keepalive,
+        l_es_uuid);
+    if (!a_stream->keepalive_timer) {
+        DAP_DELETE(l_es_uuid);
+        return;
+    }
+    a_stream->keepalive_timer_uuid   = a_stream->keepalive_timer->esocket_uuid;
+    a_stream->keepalive_timer_worker = a_stream->keepalive_timer->worker;
+    log_it(L_INFO, "Server stream %p: promoted to UUID keepalive on worker #%u, sock=%"DAP_FORMAT_SOCKET,
+           (void *)a_stream, a_stream->esocket->worker->id, a_stream->esocket->socket);
 }
 
 /**
@@ -1058,7 +1265,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     if (!a_esocket->is_initalized)
         return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_DEBUG, "Skip worker assign callback for events socket "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", a_esocket->uuid);
+        return;
+    }
     dap_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
@@ -1099,9 +1309,13 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
      * is freed.  dap_stream_delete_unsafe / s_esocket_callback_delete will call
      * trans->ops->close again, but the guard "a_stream->trans = NULL" ensures it
      * is a no-op on the second invocation. */
-    dap_net_trans_t *l_trans = l_stream->trans;
+    dap_net_trans_t *l_trans = (l_stream->trans_ctx && l_stream->trans_ctx->trans)
+        ? l_stream->trans_ctx->trans
+        : l_stream->trans;
     if (l_trans) {
-        l_stream->trans = NULL;   /* prevent double-close */
+        l_stream->trans = NULL;
+        if (l_stream->trans_ctx)
+            l_stream->trans_ctx->trans = NULL;
         if (l_trans->ops && l_trans->ops->close)
             l_trans->ops->close(l_stream);
     }
@@ -1244,19 +1458,23 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
  */
 size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data, size_t a_data_size)
 {
-    if (!a_stream || !a_data || a_data_size == 0) {
-        log_it(L_WARNING, "proc_read_ext: early return stream=%p data=%p size=%zu",
-               (void*)a_stream, a_data, a_data_size);
+    if (!a_stream || !a_data || a_data_size == 0)
         return 0;
-    }
 
-    byte_t *l_pos = (byte_t*)a_data;
-    byte_t *l_end = l_pos + a_data_size;
+    /* INVARIANT: this function runs in the stream's native worker context
+     * (read_callback chain from dap_context event loop).  It relies on the
+     * contract that _unsafe delete functions are NEVER called outside the
+     * owning worker — SIGNAL_CLOSE is deferred to the event loop, and
+     * dap_stream_delete_unsafe self-dispatches via _mt if called from the
+     * wrong thread.  Therefore a_data (which points into esocket->buf_in)
+     * and a_stream remain valid for the entire duration of this call.
+     * Do NOT add packet_in_callback handlers that call _unsafe deletion
+     * synchronously — use SIGNAL_CLOSE instead. */
+    const byte_t *l_pos = (const byte_t *)a_data;
+    const byte_t *l_end = l_pos + a_data_size;
     size_t l_shift = 0, l_processed_size = 0;
-    bool l_found_sig0 = false;
 
     while (l_pos < l_end && (l_pos = memchr(l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos)))) {
-        l_found_sig0 = true;
         if ((size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t)) {
             debug_if(s_debug_more, L_DEBUG, "proc_read_ext: partial header, remain=%zu need=%zu",
                      (size_t)(l_end - l_pos), sizeof(dap_stream_pkt_hdr_t));
@@ -1265,17 +1483,14 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
 
         if (!memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig))) {
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
-            debug_if(s_debug_more, L_DEBUG, "proc_read_ext: SIG FOUND type=0x%02x size=%u at offset=%zu",
-                   l_pkt->hdr.type, l_pkt->hdr.size, (size_t)(l_pos - (byte_t*)a_data));
             if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
-                debug_if(s_debug_more, L_DEBUG, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
             } else {
                 debug_if(s_debug_more, L_DEBUG, "proc_read_ext: incomplete packet need=%zu have=%zu",
-                       l_shift, (size_t)(l_end - l_pos));
+                         l_shift, (size_t)(l_end - l_pos));
                 break;
             }
             l_pos += l_shift;
@@ -1284,9 +1499,6 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
             ++l_pos;
         }
     }
-    if (a_data_size > 0 && !l_found_sig0 && l_processed_size == 0)
-        log_it(L_WARNING, "proc_read_ext: no sig[0]=0x%02x found in %zu bytes (first byte=0x%02x)",
-               c_dap_stream_sig[0], a_data_size, ((byte_t*)a_data)[0]);
 
     debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG,
              "Processed %lu / %lu bytes", l_processed_size, a_data_size);
@@ -1321,9 +1533,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     size_t a_pkt_size = sizeof(dap_stream_pkt_hdr_t) + a_pkt->hdr.size;
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
+    // dap_events_socket_t *l_es = a_stream->esocket;
 
-    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u",
-           a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
+    debug_if(s_debug_more, L_DEBUG, "s_stream_proc_pkt_in: stream=%p pkt_type=0x%02X pkt_size=%u session=%p",
+           (void*)a_stream, a_pkt->hdr.type, a_pkt->hdr.size, (void*)a_stream->session);
+
 
     switch (a_pkt->hdr.type) {
     case STREAM_PKT_TYPE_FRAGMENT_PACKET: {
@@ -1356,6 +1570,17 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         }
+        {
+          size_t l_ms = (size_t)l_fragm_pkt->mem_shift, l_fs = (size_t)l_fragm_pkt->full_size, l_sz = (size_t)l_fragm_pkt->size;
+          if (!l_fs || l_fs > (size_t)DAP_STREAM_PKT_SIZE_MAX || l_sz > l_fs || l_ms > l_fs - l_sz) {
+            debug_if(s_dump_packet_headers, L_WARNING, "Input: invalid fragment bounds mem_shift=%zu size=%zu full_size=%zu", l_ms, l_sz, l_fs);
+            l_is_clean_fragments = true;
+            break;
+          }
+        }
+
+        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu", 
+               l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
 
         debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu",
                l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
@@ -1366,6 +1591,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         } else {
+            if (a_stream->buf_fragments && a_stream->buf_fragments_size_filled && a_stream->buf_fragments_size_total != l_fragm_pkt->full_size) {
+                debug_if(s_dump_packet_headers, L_WARNING, "Input: inconsistent fragment full_size %u vs buffer %zu", l_fragm_pkt->full_size, a_stream->buf_fragments_size_total);
+                l_is_clean_fragments = true;
+                break;
+            }
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
                 DAP_DEL_Z(a_stream->buf_fragments);
                 a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
@@ -1377,18 +1607,18 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
 
         // Not last fragment, otherwise go to parsing STREAM_PKT_TYPE_DATA_PACKET
         if(a_stream->buf_fragments_size_filled < l_fragm_pkt->full_size) {
-            debug_if(s_debug, L_DEBUG, "Fragment not complete yet: filled=%zu full=%u",
+            debug_if(s_dump_packet_headers, L_DEBUG, "Fragment not complete yet: filled=%zu full=%u",
                    a_stream->buf_fragments_size_filled, l_fragm_pkt->full_size);
             break;
         }
         // All fragments collected, move forward
-        debug_if(s_debug, L_INFO, "All fragments collected! Falling through to DATA_PACKET processing");
+        debug_if(s_dump_packet_headers, L_INFO, "All fragments collected! Falling through to DATA_PACKET processing");
     }
     case STREAM_PKT_TYPE_DATA_PACKET: {
         dap_stream_ch_pkt_t *l_ch_pkt;
         size_t l_dec_pkt_size;
 
-        debug_if(s_debug, L_INFO, "Processing DATA_PACKET: from_fragment=%s",
+        debug_if(s_debug_more, L_DEBUG, "DATA_PACKET: from_fragment=%s",
                (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) ? "yes" : "no");
 
         if (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
@@ -1399,20 +1629,20 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_pkt_dec_size);
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
-
-            debug_if(s_dump_packet_headers, L_INFO,
-                     "DATA_PACKET decryption: key=%p, encrypted_size=%u, expected_dec=%zu, actual_dec=%zu",
-                     a_stream->session->key, a_pkt->hdr.size, l_pkt_dec_size, l_dec_pkt_size);
         }
 
+        debug_if(s_debug_more, L_DEBUG, "DATA_PKT: dec=%zu hdr=%zu ch_id=0x%02x data_size=%u",
+               l_dec_pkt_size, sizeof(l_ch_pkt->hdr),
+               l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size);
+
         if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
-            debug_if(s_debug_more, L_WARNING, "Input: decoded size %zu is lesser than size of packet header %zu", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
+            log_it(L_WARNING, "DATA_PKT: decoded %zu < hdr %zu — drop", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
             l_is_clean_fragments = true;
             break;
         }
         if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
-            debug_if(s_debug_more, L_WARNING, "Input: decoded packet BAD SIZE: expected_dec=%zu (hdr.data_size=%u + hdr_size=%zu), actual_dec=%zu",
-                   l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr), l_ch_pkt->hdr.data_size, sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
+            log_it(L_WARNING, "DATA_PKT: size mismatch: got %zu, expected %zu — drop",
+                   l_dec_pkt_size, l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr));
             l_is_clean_fragments = true;
             break;
         }
@@ -1454,6 +1684,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
 
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
+                    // if (!l_es->_inheritor)
+                    //     return;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type,
@@ -1471,6 +1703,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
+                        // if (!l_es->_inheritor)
+                        //     return;
                     }
                     if (l_ch->closing)
                         break;
@@ -1627,9 +1861,21 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             l_es->last_time_active = time(NULL);
             return true;
         }
-        if (!l_stream->trans_ctx || !l_stream->trans_ctx->trans ||
-            !l_stream->trans_ctx->trans->ops || !l_stream->trans_ctx->trans->ops->write ||
+        dap_net_trans_t *l_trans = NULL;
+        if (l_stream->trans_ctx && l_stream->trans_ctx->trans)
+            l_trans = l_stream->trans_ctx->trans;
+        else if (l_stream->trans)
+            l_trans = l_stream->trans;
+        if (!l_trans || !l_trans->ops || !l_trans->ops->write ||
             !l_stream->session || !l_stream->session->key) {
+            debug_if(s_debug, L_DEBUG, "Keepalive %s sock %"DAP_FORMAT_SOCKET": skipped — trans_ctx=%p trans=%p ops=%p write=%p session=%p key=%p",
+                      a_server_side ? "srv" : "cli", l_es->socket,
+                      (void*)l_stream->trans_ctx,
+                      (void*)l_trans,
+                      l_trans ? (void*)l_trans->ops : NULL,
+                      l_trans && l_trans->ops ? (void*)l_trans->ops->write : NULL,
+                      (void*)l_stream->session,
+                      l_stream->session ? (void*)l_stream->session->key : NULL);
             return true;
         }
         debug_if(s_debug_more, L_DEBUG,"Keepalive %s sock %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x,
@@ -1657,6 +1903,45 @@ static bool s_callback_client_keepalive(void *a_arg)
 static bool s_callback_server_keepalive(void *a_arg)
 {
     return s_callback_keepalive(a_arg, true);
+}
+
+/* Keepalive variant for direct-mode server streams (TLS/UDP/DNS) where the
+ * stream pointer is passed as the timer argument instead of an esocket UUID.
+ * This avoids dap_stream_get_from_es() which reads _inheritor as trans_ctx —
+ * invalid for TLS where _inheritor holds the TLS connection context. */
+static bool s_callback_keepalive_direct(void *a_arg)
+{
+    dap_stream_t *l_stream = (dap_stream_t *)a_arg;
+    if (!l_stream)
+        return false;
+    dap_events_socket_t *l_es = l_stream->esocket;
+    if (!l_es) {
+        /* Esocket detached — stream is shutting down, stop timer */
+        return false;
+    }
+    if (l_stream->is_active) {
+        l_stream->is_active = false;
+        l_es->last_time_active = time(NULL);
+        return true;
+    }
+    /* No recent activity — verify socket is still healthy before sending */
+    int l_sockerr = 0;
+    socklen_t l_sockerr_len = sizeof(l_sockerr);
+    getsockopt(l_es->fd, SOL_SOCKET, SO_ERROR, (char *)&l_sockerr, &l_sockerr_len);
+    if (l_sockerr != 0) {
+        log_it(L_INFO, "Keepalive direct: socket error %d on stream %p sock=%d — tearing down",
+               l_sockerr, (void*)l_stream, l_es->socket);
+        dap_stream_delete_unsafe(l_stream);
+        return false;
+    }
+    if (!l_stream->session || !l_stream->session->key)
+        return true;
+    dap_stream_pkt_hdr_t l_pkt = {};
+    l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
+    memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
+    dap_stream_send_unsafe(l_stream, &l_pkt, sizeof(l_pkt));
+    l_es->last_time_active = time(NULL);
+    return true;
 }
 
 int s_stream_add_to_hashtable(dap_stream_t *a_stream)
@@ -1731,6 +2016,28 @@ int dap_stream_add_to_list(dap_stream_t *a_stream)
     DL_APPEND(s_streams, a_stream);
     if (a_stream->authorized)
         l_ret = s_stream_add_to_hashtable(a_stream);
+    pthread_rwlock_unlock(&s_streams_lock);
+    return l_ret;
+}
+
+/**
+ * @brief dap_stream_authorize_stream — promote an existing stream to authorized
+ * and register it in the s_authorized_streams hashtable.
+ *
+ * Call this after the handshake completes and the persistent esocket is bound
+ * (e.g. in transport connected_callback).  Idempotent: if the stream is
+ * already in the hashtable, returns 0 without side-effects.
+ */
+int dap_stream_authorize_stream(dap_stream_t *a_stream)
+{
+    dap_return_val_if_fail(a_stream, -1);
+    int l_ret = 0;
+    int lock = pthread_rwlock_wrlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if (lock == EDEADLK)
+        return log_it(L_CRITICAL, "! Attempt to acquire streams lock recursively !"), -666;
+    a_stream->authorized = true;
+    l_ret = s_stream_add_to_hashtable(a_stream);
     pthread_rwlock_unlock(&s_streams_lock);
     return l_ret;
 }

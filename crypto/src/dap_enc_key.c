@@ -77,6 +77,24 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .sign_get =                         NULL,
         .sign_verify =                      NULL
     },
+    // IAES2: strengthened IV derivation variant. Enc/dec/size callbacks are
+    // shared with IAES — only key setup (new/new_generate) differs.
+    [DAP_ENC_KEY_TYPE_IAES2]={
+        .name =                             "IAES2",
+        .enc =                              dap_enc_iaes256_cbc_encrypt,
+        .enc_na =                           dap_enc_iaes256_cbc_encrypt_fast ,
+        .dec =                              dap_enc_iaes256_cbc_decrypt,
+        .dec_na =                           dap_enc_iaes256_cbc_decrypt_fast ,
+        .new_callback =                     dap_enc_aes2_key_new,
+        .delete_callback =                  dap_enc_aes_key_delete,
+        .new_generate_callback =            dap_enc_aes2_key_generate,
+        .gen_key_public =                   NULL,
+        .ser_pub_key_size =                 NULL,
+        .enc_out_size =                     dap_enc_iaes256_calc_encode_size,
+        .dec_out_size =                     dap_enc_iaes256_calc_decode_max_size,
+        .sign_get =                         NULL,
+        .sign_verify =                      NULL
+    },
     // OAES
     [DAP_ENC_KEY_TYPE_OAES]={
         .name =                             "OAES",

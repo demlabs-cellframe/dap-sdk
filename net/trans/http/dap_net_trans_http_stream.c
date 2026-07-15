@@ -45,6 +45,7 @@
 #include "dap_net.h"
 #include "dap_client_trans_ctx.h"
 #include "dap_client_fsm.h"
+#include "dap_client.h"
 #include "dap_net_trans_ctx.h"
 #include "dap_cert.h"
 #include "dap_worker.h"
@@ -114,6 +115,15 @@ static int s_http_request(dap_client_trans_ctx_t * a_client_esocket, dap_net_tra
         dap_client_callback_int_t a_response_error);
 static void s_http_request_error_unencrypted(int a_err_code, void * a_obj);
 static void s_http_request_response_unencrypted(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code);
+
+static dap_client_t *s_http_stream_client_get(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->trans_ctx || !a_stream->trans_ctx->_inheritor) {
+        return NULL;
+    }
+    dap_client_trans_ctx_t *l_io = (dap_client_trans_ctx_t *)a_stream->trans_ctx->_inheritor;
+    return l_io ? l_io->client : NULL;
+}
 
 // Ctx for handshake callbacks
 typedef struct {
@@ -554,10 +564,12 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
         return -1;
     }
 
-    dap_client_t *l_client = NULL;
-    if (a_stream->trans_ctx && a_stream->trans_ctx->_inheritor) {
-        dap_client_trans_ctx_t *l_io = (dap_client_trans_ctx_t *)a_stream->trans_ctx->_inheritor;
-        l_client = l_io ? l_io->client : NULL;
+    dap_client_t *l_client = s_http_stream_client_get(a_stream);
+    if (!l_client) {
+        log_it(L_WARNING, "HTTP connect: stream=%p has no client in trans_ctx (tc=%p inheritor=%p)",
+               (void*)a_stream,
+               a_stream ? (void*)a_stream->trans_ctx : NULL,
+               (a_stream && a_stream->trans_ctx) ? a_stream->trans_ctx->_inheritor : NULL);
     }
 
     dap_worker_t *l_worker = a_stream->stream_worker
@@ -653,6 +665,22 @@ static void s_http_connect_es_connected(dap_events_socket_t *a_es)
     l_stream->esocket_uuid = a_es->uuid;
     l_stream->esocket_worker = a_es->worker;
 
+    dap_stream_authorize_stream(l_stream);
+
+    if (!a_es->_inheritor) {
+        dap_client_t *l_client = s_http_stream_client_get(l_stream);
+        if (l_client) {
+            a_es->_inheritor = l_client;
+            log_it(L_INFO, "HTTP connect: assigned missing _inheritor on connected callback stream=%p es_uuid=0x%016" DAP_UINT64_FORMAT_x,
+                   (void*)l_stream, a_es->uuid);
+        } else {
+            log_it(L_WARNING, "HTTP connect: connected without client context stream=%p es_uuid=0x%016" DAP_UINT64_FORMAT_x " tc=%p inheritor=%p",
+                   (void*)l_stream, a_es->uuid,
+                   l_stream ? (void*)l_stream->trans_ctx : NULL,
+                   (l_stream && l_stream->trans_ctx) ? l_stream->trans_ctx->_inheritor : NULL);
+        }
+    }
+
     dap_stream_start_keepalive(l_stream);
 
     debug_if(s_debug_more, L_INFO, "HTTP TCP connected, esocket fd=%d associated with stream", a_es->fd);
@@ -687,10 +715,12 @@ static void s_http_connect_es_delete(dap_events_socket_t *a_es, void *a_arg)
     s_http_connect_ctx_t *l_ctx = (s_http_connect_ctx_t *)a_es->callbacks.arg;
 
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    dap_stream_t *l_bound_stream = NULL;
     if (l_client) {
         dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
         dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
         if (l_tc && l_tc->stream && l_tc->stream->esocket == a_es) {
+            l_bound_stream = l_tc->stream;
             l_tc->stream->esocket = NULL;
             l_tc->stream->esocket_uuid = 0;
             l_tc->stream->esocket_worker = NULL;
@@ -709,6 +739,10 @@ static void s_http_connect_es_delete(dap_events_socket_t *a_es, void *a_arg)
     if (l_ctx) {
         DAP_DELETE(l_ctx);
         a_es->callbacks.arg = NULL;
+    }
+    if (a_es->_inheritor) {
+        log_it(L_WARNING, "HTTP connect esocket delete: clearing inheritor es=%p fd=%d uuid=0x%016" DAP_UINT64_FORMAT_x " bound_stream=%p",
+               (void*)a_es, a_es->fd, a_es->uuid, (void*)l_bound_stream);
     }
     a_es->_inheritor = NULL;
 }
@@ -831,18 +865,17 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
     DAP_DELETE(l_data);
     
     /* Build node address path segment.
-     * Legacy (protocol_version=0): old cellframe-node master only understands the
-     * anonymous placeholder "gd4y5yh78w42aaagh".  Passing a real b58 node address
-     * causes the server to do a blockchain lookup that never completes.
-     * Modern (protocol_version>0): use the real node address from link_info. */
-    char l_node_addr_b58[32] = "gd4y5yh78w42aaagh";
-    if (!a_params->protocol_version) {
-        /* legacy — always use the placeholder */
-    } else if (l_client->link_info.node_addr.uint64) {
-        uint64_t l_addr_le = l_client->link_info.node_addr.uint64;
-        size_t l_b58_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), l_node_addr_b58);
-        if (!l_b58_len)
-            dap_strncpy(l_node_addr_b58, "gd4y5yh78w42aaagh", sizeof(l_node_addr_b58) - 1);
+     * Default placeholder is compatible with legacy cellframe-node master and modern
+     * enc_server (basename is not validated). Real b58 path is opt-in via
+     * dap_client enc_init_named_path for peers that require it. */
+    char l_node_addr_b58[32] = { '\0' };
+    if (!dap_client_enc_init_url_path(l_node_addr_b58, sizeof(l_node_addr_b58),
+                                      &l_client->link_info.node_addr,
+                                      a_params->protocol_version))
+    {
+        log_it(L_ERROR, "Failed to build enc_init URL path");
+        DAP_DELETE(l_data_str);
+        return -5;
     }
 
     // Build URL with query parameters
@@ -1145,6 +1178,20 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
     debug_if(s_debug_more, L_DEBUG, "HTTP trans write: size=%zu esocket=%p fd=%d _inheritor=%p buf_out_size=%zu",
              a_size, (void*)l_es, l_es->socket, (void*)l_es->_inheritor, l_es->buf_out_size);
 
+    if (!l_es->_inheritor) {
+        dap_client_t *l_client = s_http_stream_client_get(a_stream);
+        if (l_client) {
+            l_es->_inheritor = l_client;
+            log_it(L_INFO, "HTTP trans write: restored missing _inheritor for stream=%p esocket=%p fd=%d",
+                   (void*)a_stream, (void*)l_es, l_es->fd);
+        } else {
+            log_it(L_WARNING, "HTTP trans write: _inheritor missing and restore failed stream=%p es_uuid=0x%016" DAP_UINT64_FORMAT_x " tc=%p inheritor=%p",
+                   (void*)a_stream, l_es->uuid,
+                   a_stream ? (void*)a_stream->trans_ctx : NULL,
+                   (a_stream && a_stream->trans_ctx) ? a_stream->trans_ctx->_inheritor : NULL);
+        }
+    }
+
     if (l_es->_inheritor) {
         size_t l_ret = dap_events_socket_write_unsafe(l_es, a_data, a_size);
         debug_if(s_debug_more, L_DEBUG, "HTTP trans write: wrote %zu bytes to esocket buf_out (now %zu)",
@@ -1153,7 +1200,7 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
     }
 
     log_it(L_WARNING, "HTTP trans write: _inheritor is NULL, data dropped! size=%zu", a_size);
-    return (ssize_t)a_size;
+    return -1;
 }
 
 /**
@@ -1312,7 +1359,7 @@ static void s_http_request_error_unencrypted(int a_err_code, void * a_obj)
 /**
  * @brief Unencrypted HTTP request response callback
  */
-static void s_http_request_response_unencrypted(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
+static void s_http_request_response_unencrypted(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code)
 {
     s_http_trans_request_ctx_t *l_ctx = (s_http_trans_request_ctx_t *)a_obj;
     assert(l_ctx);
@@ -1345,7 +1392,24 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
         log_it(L_INFO, "s_http_request_response_unencrypted: calling callback with response (size=%zu)", a_response_size);
         l_ctx->callback(l_client_esocket->client, a_response, a_response_size);
     } else {
-        log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu)", a_response, a_response_size);
+        log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu, http_code=%d)",
+               a_response, a_response_size, (int)a_http_code);
+        /* === TEMP_DEBUG_LINKS_CONNECTING: START (temporary, remove after investigation) === */
+        if (l_client_esocket->client)
+        {
+            dap_client_t *l_client = l_client_esocket->client;
+            log_it(L_WARNING, "[TEMP_DEBUG] HTTP empty response node=" NODE_ADDR_FP_STR " %s:%hu stage=%s/%s",
+                   NODE_ADDR_FP_ARGS_S(l_client->link_info.node_addr),
+                   l_client->link_info.uplink_addr[0] ? l_client->link_info.uplink_addr : "?",
+                   l_client->link_info.uplink_port,
+                   dap_client_get_stage_str(l_client), dap_client_get_stage_status_str(l_client));
+        }
+        /* === TEMP_DEBUG_LINKS_CONNECTING: END === */
+        if (l_ctx->error_callback && l_client_esocket->client)
+        {
+            int l_err = (a_http_code >= Http_Status_BadRequest) ? (int)a_http_code : EINVAL;
+            l_ctx->error_callback(l_client_esocket->client, l_fsm->callback_arg, l_err);
+        }
     }
 
     l_fsm->callback_arg = l_old_callback_arg;
@@ -1477,7 +1541,7 @@ static void s_http_request_error(int a_err_code, void * a_obj)
 /**
  * @brief HTTP request response callback
  */
-static void s_http_request_response(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
+static void s_http_request_response(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code)
 {
     s_http_trans_request_ctx_t *l_ctx = (s_http_trans_request_ctx_t *)a_obj;
     assert(l_ctx);
@@ -1555,7 +1619,13 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
             l_ctx->callback(l_client_esocket->client, a_response, a_response_size);
         }
     } else {
-        log_it(L_WARNING, "s_http_request_response: empty response (response=%p, size=%zu)", a_response, a_response_size);
+        log_it(L_WARNING, "s_http_request_response: empty response (response=%p, size=%zu, http_code=%d)",
+               a_response, a_response_size, (int)a_http_code);
+        if (l_ctx->error_callback && l_client_esocket->client)
+        {
+            int l_err = (a_http_code >= Http_Status_BadRequest) ? (int)a_http_code : EINVAL;
+            l_ctx->error_callback(l_client_esocket->client, l_fsm->callback_arg, l_err);
+        }
     }
     
     l_fsm->callback_arg = l_old_callback_arg;
@@ -1610,43 +1680,12 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
     a_result->stream = NULL;
     a_result->error_code = 0;
 
-    // Create TCP socket for streaming phase (GET /stream long-lived connection).
-    // ENC and STREAM_CTL stages use dap_client_http_request() with their own
-    // temporary sockets; this esocket is only used from session_start onwards.
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, a_params->callbacks);
-    if (!l_es) {
-        log_it(L_ERROR, "Failed to create HTTP streaming TCP socket");
-        a_result->error_code = -1;
-        return -1;
-    }
-
-    l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
-    l_es->_inheritor = a_params->client_ctx;
-
-    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
-        log_it(L_ERROR, "Failed to resolve address for HTTP trans");
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
-
-    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
-#ifdef DAP_EVENTS_CAPS_IOCP
-    l_es->flags &= ~DAP_SOCK_READY_TO_READ;
-#else
-    int l_connect_err = 0;
-    if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
-        log_it(L_ERROR, "Failed to connect HTTP streaming socket: error %d", l_connect_err);
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
-#endif
-    l_es->is_initalized = false;
-
-    dap_worker_add_events_socket(a_params->worker, l_es);
-
-    dap_stream_t *l_stream = dap_stream_new_es_client(l_es,
+    /* No TCP socket here — /enc_init and /stream_ctl use transient HTTP clients.
+     * The persistent streaming socket is created in s_http_trans_connect() once
+     * the handshake is complete (STAGE_STREAM_SESSION).  Opening TCP early caused
+     * the peer to RST/EOF the idle connection; recv()==0 then tore down the
+     * handshake esocket while ENC was still in flight. */
+    dap_stream_t *l_stream = dap_stream_new_es_client(NULL,
                                 (dap_stream_node_addr_t *)a_params->node_addr,
                                 a_params->authorized);
     if (!l_stream) {
@@ -1657,10 +1696,10 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
 
     l_stream->trans = a_trans;
 
-    a_result->esocket = l_es;
+    a_result->esocket = NULL;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared with TCP socket (fd=%d) for streaming", l_es->fd);
+    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared (no TCP yet; connect deferred to handshake completion)");
     return 0;
 }
 

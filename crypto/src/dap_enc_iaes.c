@@ -63,10 +63,51 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
 
     memcpy(id_concat_kex,seed, seed_size);
     memcpy(id_concat_kex + seed_size, kex_buf, kex_size);
-    //SHAKE256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
-    //SHAKE128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
     shake256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
+    /* IAES: ivec derived from seed only — original behavior, preserved for
+     * wire compatibility with nodes that use DAP_ENC_KEY_TYPE_IAES. */
     shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
+
+    free(id_concat_kex);
+}
+
+/**
+ * @brief dap_enc_aes2_key_new
+ * IAES2 variant: same key layout as IAES, but self-reports type IAES2.
+ * Enc/dec callbacks are identical (they only read the pre-derived ivec).
+ */
+void dap_enc_aes2_key_new(struct dap_enc_key * a_key)
+{
+    dap_enc_aes_key_new(a_key);
+    a_key->type = DAP_ENC_KEY_TYPE_IAES2;
+}
+
+/**
+ * @brief dap_enc_aes2_key_generate
+ * IAES2 variant: derives the ivec from id_concat_kex (seed+kex) instead of
+ * seed alone, binding the IV to the full key-exchange context. The private
+ * key (shake256) derivation is unchanged from IAES. Use this type when both
+ * peers agree on enc_type=IAES2; existing IAES peers keep the original IV.
+ */
+void dap_enc_aes2_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
+                                                size_t kex_size, const void * seed, size_t seed_size,
+                                                size_t key_size)
+{
+    (void)key_size;
+    a_key->last_used_timestamp = time(NULL);
+
+    uint8_t * id_concat_kex = (uint8_t *) malloc(kex_size + seed_size);
+    if (!id_concat_kex) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
+
+    memcpy(id_concat_kex,seed, seed_size);
+    memcpy(id_concat_kex + seed_size, kex_buf, kex_size);
+    shake256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
+    /* IAES2: ivec derived from id_concat_kex (seed+kex) — strengthened
+     * derivation binding the IV to the full KEX context. */
+    shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, id_concat_kex, (kex_size + seed_size));
 
     free(id_concat_kex);
 }
@@ -136,12 +177,17 @@ size_t dap_enc_iaes256_cbc_decrypt_fast(struct dap_enc_key * a_key, const void *
 //    printf("\n");fflush(stdout);
 
     size_t l_padding_size = ((uint8_t *)data)[a_in_size - 1];
-    if(l_padding_size > a_in_size){
-        log_it(L_CRITICAL, "Padding size is %zu while whole message is just %zu", l_padding_size, a_in_size);
+    if(l_padding_size == 0 || l_padding_size > IAES_BLOCK_SIZE || l_padding_size > a_in_size){
+        log_it(L_CRITICAL, "Padding size is %zu, expected 1-%zu", l_padding_size, (size_t)IAES_BLOCK_SIZE);
         return 0;
-    }else{
-        return a_in_size - l_padding_size;
     }
+    for(size_t i = a_in_size - l_padding_size; i < a_in_size; i++){
+        if(((uint8_t *)data)[i] != l_padding_size){
+            log_it(L_CRITICAL, "Invalid padding byte at position %zu, expected %zu", i, l_padding_size);
+            return 0;
+        }
+    }
+    return a_in_size - l_padding_size;
 }
 
 size_t dap_enc_iaes256_cbc_encrypt(struct dap_enc_key * a_key, const void * a_in, size_t a_in_size, void ** a_out)
@@ -201,10 +247,8 @@ size_t dap_enc_iaes256_cbc_encrypt_fast(struct dap_enc_key * a_key, const void *
     uint8_t tmp_in[IAES_BLOCK_SIZE];
     memcpy(tmp_in, a_in + a_in_size/IAES_BLOCK_SIZE*IAES_BLOCK_SIZE, last_block_from_in);
     int padd_size = IAES_BLOCK_SIZE - last_block_from_in;
-    for(int padd_num = 0; padd_num < padd_size - 1; ++padd_num)
-        tmp_in[last_block_from_in + padd_num] = 16;
-
-    tmp_in[IAES_BLOCK_SIZE - 1] = padd_size;
+    for(int padd_num = 0; padd_num < padd_size; ++padd_num)
+        tmp_in[last_block_from_in + padd_num] = (uint8_t)padd_size;
 
     for (count32_word = 0; count32_word < block_in32_size; count32_word++)
        *((uint32_t *)cdata + count_block * block_in32_size + count32_word) =

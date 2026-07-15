@@ -113,6 +113,22 @@ void dap_plugin_deinit(){
     dap_plugin_binary_deinit();
     dap_plugin_manifest_deinit();
     dap_plugin_command_deinit();
+
+    /* Free plugin types hash table */
+    struct plugin_type *l_type, *l_tmp;
+    HASH_ITER(hh, s_types, l_type, l_tmp){
+        HASH_DEL(s_types, l_type);
+        DAP_DELETE(l_type);
+    }
+    s_types = NULL;
+
+    /* Free plugin modules hash table */
+    struct plugin_module *l_module, *l_mtmp;
+    HASH_ITER(hh, s_modules, l_module, l_mtmp){
+        HASH_DEL(s_modules, l_module);
+        DAP_DELETE(l_module);
+    }
+    s_modules = NULL;
 }
 
 /**
@@ -336,13 +352,14 @@ static int s_preinit(struct plugin_module * a_module)
     if (!a_module || !a_module->type->callbacks.preinit)
         return 0;
     char * l_err_str = NULL;
+    log_it(L_INFO, "Plugin \"%s\" preinit starting", a_module->name);
     int l_ret = a_module->type->callbacks.preinit(a_module->manifest, a_module->pvt_data, &l_err_str);
     if (l_ret) {
         log_it(L_ERROR, "Preinit failed for plugin \"%s\": \"%s\" (code %d)", a_module->name,
                l_err_str ? l_err_str : "<UNKNOWN>", l_ret);
         DAP_DELETE(l_err_str);
     } else {
-        log_it(L_DEBUG, "Plugin \"%s\" preinit completed", a_module->name);
+        log_it(L_INFO, "Plugin \"%s\" preinit completed", a_module->name);
     }
     return l_ret;
 }
@@ -356,13 +373,14 @@ static int s_init(struct plugin_module * a_module)
     if (!a_module || !a_module->type->callbacks.init)
         return 0;
     char * l_err_str = NULL;
+    log_it(L_INFO, "Plugin \"%s\" init starting", a_module->name);
     int l_ret = a_module->type->callbacks.init(a_module->manifest, a_module->pvt_data, &l_err_str);
     if (l_ret) {
         log_it(L_ERROR, "Init failed for plugin \"%s\": \"%s\" (code %d)", a_module->name,
                l_err_str ? l_err_str : "<UNKNOWN>", l_ret);
         DAP_DELETE(l_err_str);
     } else {
-        log_it(L_DEBUG, "Plugin \"%s\" init completed", a_module->name);
+        log_it(L_INFO, "Plugin \"%s\" init completed", a_module->name);
     }
     return l_ret;
 }

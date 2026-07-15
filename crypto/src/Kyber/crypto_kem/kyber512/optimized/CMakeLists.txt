@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.10)
 project (dap_crypto_kyber512 C)
 set(CMAKE_C_STANDARD 11)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../cmake/LibraryHelpers.cmake)
+
 add_definitions ("-D_GNU_SOURCE")
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -47,30 +49,23 @@ file(GLOB DAP_CRYPTO_KYBER512_HEADERS
     verify.h
 )
 
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_CRYPTO_KYBER512_SOURCES} HEADERS ${DAP_CRYPTO_KYBER512_HEADERS})
 
-add_library(${PROJECT_NAME} STATIC ${DAP_CRYPTO_KYBER512_HEADERS} ${DAP_CRYPTO_KYBER512_SOURCES})
-
-
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto)
-
-if(NOT ANDROID)
-    target_link_libraries(${PROJECT_NAME} pthread)
-endif()
-
+get_filename_component(DAP_CRYPTO_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../ ABSOLUTE)
+target_include_directories(${PROJECT_NAME} PRIVATE ${DAP_CRYPTO_SRC_DIR})
+target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC .)
+
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core)
 
 if (${BUILD_DAP_CRYPTO_KYBER512_TESTS} MATCHES ON)
     enable_testing()
     add_subdirectory(test)
 endif()
 
-
-
 if(INSTALL_DAP_SDK)
-    
-    INSTALL(TARGETS ${PROJECT_NAME} 
+    INSTALL(TARGETS ${PROJECT_NAME}
             LIBRARY DESTINATION lib/dap/crypto/
             ARCHIVE DESTINATION lib/dap/crypto/
     )
-
 endif()

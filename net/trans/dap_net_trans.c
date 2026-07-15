@@ -90,6 +90,18 @@ int dap_net_trans_init(void)
 void dap_net_trans_deinit(void)
 {
     log_it(L_NOTICE, "Deinitializing DAP Network Trans Abstraction Layer");
+    if (!s_trans_registry_initialized)
+        return;
+
+    dap_net_trans_t *l_trans, *l_tmp;
+    HASH_ITER(hh, s_trans_registry, l_trans, l_tmp) {
+        HASH_DEL(s_trans_registry, l_trans);
+        if (l_trans->ops && l_trans->ops->deinit)
+            l_trans->ops->deinit(l_trans);
+        DAP_DELETE(l_trans);
+    }
+    s_trans_registry = NULL;
+    s_trans_registry_initialized = false;
 }
 
 /**
