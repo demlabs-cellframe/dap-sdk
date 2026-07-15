@@ -96,9 +96,9 @@ dap_context_queue_t *dap_context_queue_create(dap_context_t *a_context, size_t a
     
     l_queue->callback = a_callback;
     l_queue->context = a_context;
+    l_queue->worker = NULL;  /* No worker association */
     
     // Create cross-platform event socket for notifications
-    // This will use eventfd on Linux, kqueue on BSD/macOS, IOCP on Windows
     l_queue->event_socket = dap_context_create_event(a_context, s_event_read_callback);
     if (!l_queue->event_socket) {
         log_it(L_ERROR, "Failed to create event socket");
@@ -110,12 +110,23 @@ dap_context_queue_t *dap_context_queue_create(dap_context_t *a_context, size_t a
     // Store queue pointer in event socket's _inheritor for callback
     l_queue->event_socket->_inheritor = l_queue;
     
-    // Add event socket to context's reactor (already done in dap_context_create_event for worker context)
-    // Event socket is already added to context during creation
-    
     log_it(L_INFO, "Created context queue: context=%p, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
            a_context, l_capacity, l_queue->event_socket->fd);
     
+    return l_queue;
+}
+
+/**
+ * @brief Create context queue associated with a worker
+ */
+dap_context_queue_t *dap_context_queue_create_worker(dap_worker_t *a_worker, size_t a_capacity, void (*a_callback)(void *)) {
+    if (!a_worker) {
+        log_it(L_ERROR, "Context queue create_worker: NULL worker");
+        return NULL;
+    }
+    dap_context_queue_t *l_queue = dap_context_queue_create(a_worker->context, a_capacity, a_callback);
+    if (l_queue)
+        l_queue->worker = a_worker;
     return l_queue;
 }
 

@@ -228,9 +228,8 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
     l_msg->data_size = sizeof(*l_pkt_hdr) + dap_enc_code(a_key, a_data, a_data_size,
         ((byte_t*)l_msg->data) + sizeof(*l_pkt_hdr), l_msg->data_size, DAP_ENC_DATA_TYPE_RAW);
 
-    size_t l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Can't send msg to queue");
+    if (!dap_context_queue_push(a_w->queue_es_io, l_msg)) {
+        log_it(L_ERROR, "Can't push msg to worker queue");
         DAP_DEL_MULTY(l_msg->data, l_msg);
         return 0;
     }
