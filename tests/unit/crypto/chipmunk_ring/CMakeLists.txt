@@ -55,3 +55,12 @@ add_chipmunk_test(test_chipmunk_field)
 
 # Phase 9.2: 2048-point NTT tests
 add_chipmunk_test(test_chipmunk_fri_ntt)
+
+# Phase 9.5: Reed-Solomon encoding tests
+add_chipmunk_test(test_chipmunk_rs)
+
+# Phase 9.6+9.7: FRI commit + query tests
+add_chipmunk_test(test_chipmunk_fri)
+
+# Phase 9.8: DEEP composition tests
+add_chipmunk_test(test_chipmunk_deep)

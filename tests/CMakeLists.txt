@@ -461,13 +461,21 @@ endif()
 			                      "unit;crypto;rs;fri")
 			endif()
 
-			# 9.6: FRI commit phase (7 rounds folding + Merkle caps)
-			if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri.c)
-			    add_dap_test(test_unit_chipmunk_fri
-			                 unit/crypto/chipmunk_ring/test_chipmunk_fri.c)
-			    register_dap_test(test_unit_chipmunk_fri
-			                      "unit;crypto;fri;commit")
-			endif()
+				# 9.6: FRI commit phase (7 rounds folding + Merkle caps)
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri.c)
+				    add_dap_test(test_unit_chipmunk_fri
+				                 unit/crypto/chipmunk_ring/test_chipmunk_fri.c)
+				    register_dap_test(test_unit_chipmunk_fri
+				                      "unit;crypto;fri;commit")
+				endif()
+
+				# 9.8: DEEP composition polynomial
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_deep.c)
+				    add_dap_test(test_unit_chipmunk_deep
+				                 unit/crypto/chipmunk_ring/test_chipmunk_deep.c)
+				    register_dap_test(test_unit_chipmunk_deep
+				                      "unit;crypto;deep;composition")
+				endif()
 
 			if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
