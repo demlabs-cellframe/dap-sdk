@@ -892,6 +892,15 @@ void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
             }
         }
         s_temp_debug_log_link("client_connected_cb OK", l_link, NULL);
+        if (s_link_manager->callbacks.connected) {
+            for (dap_list_t *l_net_item = l_link->uplink.associated_nets;
+                 l_net_item;
+                 l_net_item = l_net_item->next) {
+                dap_managed_net_t *l_net = l_net_item->data;
+                if (l_net && l_net->active)
+                    s_link_manager->callbacks.connected(l_link, l_net->id);
+            }
+        }
     } else {
         log_it(L_ERROR, "Link with "NODE_ADDR_FP_STR" already dropped!", NODE_ADDR_FP_ARGS(l_addr));
         s_temp_debug_log_client("client_connected_cb MISS link gone", a_client, NULL);
