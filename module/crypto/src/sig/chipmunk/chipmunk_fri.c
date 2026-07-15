@@ -543,3 +543,113 @@ bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
         result->valid = true;
     return true;
 }
+
+bool chipmunk_fri_verify_fast(const chipmunk_fri_proof_t *proof,
+                              const uint8_t domain[16],
+                              const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                              uint32_t grinding_nonce,
+                              chipmunk_fri_verify_result_t *result)
+{
+    if (!proof || !domain || !alphas) {
+        if (result) {
+            memset(result, 0, sizeof(*result));
+            memcpy(result->reason, "null proof, domain, or alphas", 29);
+        }
+        return false;
+    }
+
+    if (result)
+        memset(result, 0, sizeof(*result));
+
+    /* 1. Initialize transcript with domain separator. */
+    chipmunk_fri_transcript_t tr;
+    int rc = chipmunk_fri_transcript_init(&tr, domain);
+    if (rc != 0) {
+        if (result) memcpy(result->reason, "transcript init", 16);
+        return false;
+    }
+
+    /* 2. Absorb all 7 Merkle caps into transcript. */
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        uint32_t cap_size = s_round_sizes_val(r) >= 32u ? 16u : s_round_sizes_val(r);
+        rc = chipmunk_fri_transcript_absorb_cap(&tr, proof->commit.caps[r].nodes,
+                                                 cap_size);
+        if (rc != 0) {
+            if (result) {
+                snprintf(result->reason, sizeof(result->reason),
+                         "absorb cap round %u failed", r);
+            }
+            return false;
+        }
+    }
+
+    /* 3. Absorb final evaluations (16 values). */
+    for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
+        rc = chipmunk_fri_transcript_absorb_fq(&tr, proof->commit.final_evals[i]);
+        if (rc != 0) {
+            if (result) {
+                snprintf(result->reason, sizeof(result->reason),
+                         "absorb final eval %u failed", i);
+            }
+            return false;
+        }
+    }
+
+    /* 4. Absorb the alphas. */
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        rc = chipmunk_fri_transcript_absorb_fq(&tr, alphas[r]);
+        if (rc != 0) {
+            if (result) {
+                snprintf(result->reason, sizeof(result->reason),
+                         "absorb alpha %u failed", r);
+            }
+            return false;
+        }
+    }
+
+    /* 5. Finalize with verifier-side grinding check (1 hash, not 2^16). */
+    rc = chipmunk_fri_transcript_finalize_verify(&tr, grinding_nonce);
+    if (rc != 0) {
+        if (result) memcpy(result->reason, "finalize verify failed", 23);
+        return false;
+    }
+
+    if (result)
+        result->grinding_nonce = grinding_nonce;
+
+    /* 6. Derive 8 query indices. */
+    uint32_t indices[CHIPMUNK_FRI_NUM_QUERIES];
+    rc = chipmunk_fri_derive_query_indices(&tr, CHIPMUNK_FRI_NUM_QUERIES,
+                                            CHIPMUNK_FRI_INIT_SIZE, indices);
+    if (rc != 0) {
+        if (result) memcpy(result->reason, "derive indices failed", 21);
+        return false;
+    }
+
+    /* 7. Verify each query. */
+    for (uint32_t qi = 0; qi < CHIPMUNK_FRI_NUM_QUERIES; ++qi) {
+        if (proof->queries[qi].idx != indices[qi]) {
+            if (result) {
+                result->failed_query = qi;
+                snprintf(result->reason, sizeof(result->reason),
+                         "query %u index mismatch (got %u, expected %u)",
+                         qi, proof->queries[qi].idx, indices[qi]);
+            }
+            return false;
+        }
+
+        if (!chipmunk_fri_verify_query(proof, qi, alphas)) {
+            if (result) {
+                result->failed_query = qi;
+                snprintf(result->reason, sizeof(result->reason),
+                         "query %u verification failed", qi);
+            }
+            return false;
+        }
+    }
+
+    /* All checks passed. */
+    if (result)
+        result->valid = true;
+    return true;
+}

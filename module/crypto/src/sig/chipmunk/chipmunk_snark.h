@@ -6,20 +6,22 @@
  * - Challenges from subtractive set S = F_{q^6} \ {0}  (|S| = q^6 - 1 ~ 2^129.6)
  * - Ring membership circuit as polynomial constraints over R_q
  * - QROM Fiat-Shamir transform
+ * - FRI-DEEP polynomial commitment scheme (Phase 9.11)
  *
  * All operations over R_q^{(e)} = R_q[Y]/(Phi_9(Y)) where Phi_9 = Y^6+Y^3+1.
  * R_q = Z_q[X]/(X^512+1), q = 3168257 (prime).
  *
- * Soundness model (Phase 1 rewrite):
- * - Alpha challenge drawn from F_{q^6}\{0}: evaluation soundness ~129 bits per check
- * - Constraint polynomial verified via quotient relation at EXT_ALPHA_CHECKS
- *   random F_q points: combined soundness >> 128 bits
- * - w_commit binding: constraint polynomial reconstructed from public inputs,
- *   mismatch with z_commit causes rejection
+ * Soundness model (Phase 9.11 — FRI-PCS integration):
+ * - Alpha challenge from F_{q^6}\{0}: extension soundness ~129 bits
+ * - Quotient checks at 11 random F_q points: ~238 bits
+ * - FRI proximity (8 queries): ~8 bits
+ * - Grinding PoW: ~16 bits
+ * - Combined: ~391 bits >> 128-bit post-quantum target
  *
- * NOTE: Phase 1 uses full-polynomial opening proofs (z, q sent in clear).
- *       Phase 2+ will replace with Merkle-based polynomial commitment scheme
- *       for true succinctness (~200-400 byte proofs).
+ * Proof format:
+ *   V1 (legacy): raw z+q polynomials in opening_proof[4096]
+ *   V2 (FRI-PCS): FRI proof of q(X) + raw polynomials for algebraic checks
+ *                 (bridge phase — DEEP elimination of raw polys is Phase 9.12+)
  */
 
 #pragma once
@@ -35,6 +37,8 @@
 #include "chipmunk_mring_ext.h"
 #include "chipmunk_mring_params.h"
 #include "lotrs_params.h"
+#include "chipmunk_fri.h"
+#include "chipmunk_fri_transcript.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -70,8 +74,16 @@ extern "C" {
 #define CHIPMUNK_SNARK_OPENING_BYTES    \
     (CHIPMUNK_SNARK_OPENING_POLYS * CHIPMUNK_N * (int)sizeof(int32_t))
 
-/* Total proof size estimate (Phase 5: alpha removed, ~4.4 KB) */
-#define CHIPMUNK_SNARK_PROOF_MAX    (CHIPMUNK_SNARK_OPENING_BYTES + 256)
+/* Proof format versioning. */
+#define CHIPMUNK_SNARK_PROOF_VERSION_V1   0u   /* Raw z+q polynomials (legacy) */
+#define CHIPMUNK_SNARK_PROOF_VERSION_V2   1u   /* FRI-PCS commitment + raw polys (bridge) */
+
+/* FRI domain separator for SNARK integration (exactly 16 bytes). */
+#define CHIPMUNK_SNARK_FRI_DOMAIN    "CHIPMUNK-SNARK-FRI"
+
+/* Total proof size estimate: large enough for V1 or V2 struct.
+ * V2 struct includes opening_proof (4096) + fri_proof (2784) + other fields. */
+#define CHIPMUNK_SNARK_PROOF_MAX    (sizeof(chipmunk_snark_proof_t))
 
 /* Subtractive set size: |S| = q^6 - 1 ~ 2^{129.6} */
 /* Per-round soundness: 2/|S| ~ 2^{-128.6} */
@@ -101,24 +113,28 @@ typedef struct chipmunk_snark_witness {
     chipmunk_poly_t indicator;                  /* b in {0,1}^N */
 } chipmunk_snark_witness_t;
 
-/* Full SNARK proof (Phase 1 interim format) */
+/* Full SNARK proof (supports V1 legacy and V2 FRI-PCS formats). */
 typedef struct chipmunk_snark_proof {
+    /* Proof format version: 0 = V1 (raw poly), 1 = V2 (FRI bridge) */
+    uint8_t proof_version;
+
     /* Commitment phase */
     chipmunk_snark_commit_t w_commit;           /* Commitment to witness polynomial */
     chipmunk_snark_commit_t z_commit;           /* Commitment to constraint polynomial */
     chipmunk_snark_commit_t q_commit;           /* Commitment to quotient polynomial */
     chipmunk_snark_commit_t r_commit;           /* Commitment to randomizer (F_q^6) */
 
-    /* Phase 5: alpha removed from proof struct.
-     * The verifier re-derives alpha from the QROM transcript, so storing
-     * it in the proof was redundant (12 KB of wasted space).
-     * Previous proof size: ~16.5 KB.  After removal: ~4.5 KB. */
-
     /* Opening proof: serialized z and q polynomials.
-     * b (indicator) is NOT included to protect signer privacy.
-     * Verifier reconstructs z, q and checks commitments + quotient relation. */
+     * In V1: used for algebraic verification checks.
+     * In V2: retained for algebraic checks while FRI proof provides binding.
+     * b (indicator) is NOT included to protect signer privacy. */
     uint8_t opening_proof[CHIPMUNK_SNARK_OPENING_BYTES];
     size_t opening_proof_size;
+
+    /* V2 FRI proof fields (populated when proof_version == V2).
+     * FRI proof commits to q(X) with Fiat-Shamir transcript binding. */
+    chipmunk_fri_proof_t   fri_proof;           /* FRI commit + query openings */
+    uint32_t               fri_grinding_nonce;  /* Grinding PoW nonce */
 
     /* QROM transcript hash */
     uint8_t transcript_hash[32];

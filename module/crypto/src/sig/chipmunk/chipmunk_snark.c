@@ -524,8 +524,8 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     s_commit_poly(&a_proof->q_commit, &l_q);
 
     /* 11. Opening proof: serialized z and q polynomials.
-     * b is NOT included (leaks signer index).
-     * Phase 2+ will replace with Merkle-based opening proofs. */
+     * Retained in V2 for algebraic verification checks (z(alpha)=0, quotient).
+     * Phase 9.12+ will eliminate raw polys via DEEP composition. */
     {
         size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
         size_t l_off = 0;
@@ -551,6 +551,154 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         memcpy(l_transcript + l_off, a_proof->q_commit.hash, 32); l_off += 32;
         memcpy(l_transcript + l_off, l_msg_hash, 32); l_off += 32;
         dap_hash_sha3_256_raw(a_proof->transcript_hash, l_transcript, l_off);
+    }
+
+    /* 13. FRI proof for q(X) — Phase 9.11: polynomial commitment scheme.
+     *
+     * Builds a Fiat-Shamir transcript binding all SNARK commitments to
+     * the FRI proof. The prover:
+     *   a) Absorbs all 4 commitments + msg_hash + transcript_hash
+     *   b) Derives 7 FRI alphas from transcript
+     *   c) Commits q(X) via FRI (RS-encode, fold, Merkle caps)
+     *   d) Absorbs caps + final_evals + alphas into transcript
+     *   e) Finalizes transcript (grinding PoW, ~2^16 work)
+     *   f) Derives 8 query indices from transcript
+     *   g) Opens q(X) at those indices (leaf + sibling + auth path)
+     *
+     * The FRI proof provides:
+     *   - Binding commitment to q(X) (anti-malleability)
+     *   - 8-bit proximity soundness (FRI)
+     *   - 16-bit computational soundness (grinding)
+     */
+    {
+        /* 13a. Initialize FRI transcript with SNARK-FRI domain separator. */
+        chipmunk_fri_transcript_t l_fri_tr;
+        int l_rc = chipmunk_fri_transcript_init(
+            &l_fri_tr,
+            (const uint8_t *)CHIPMUNK_SNARK_FRI_DOMAIN);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI transcript init failed");
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            return l_rc;
+        }
+
+        /* 13b. Absorb all SNARK commitments into FRI transcript. */
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->w_commit.hash, sizeof(a_proof->w_commit.hash));
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->r_commit.hash, sizeof(a_proof->r_commit.hash));
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->z_commit.hash, sizeof(a_proof->z_commit.hash));
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->q_commit.hash, sizeof(a_proof->q_commit.hash));
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            l_msg_hash, 32);
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->transcript_hash, 32);
+
+        /* 13c. Derive 7 FRI alphas from transcript. */
+        int32_t l_fri_alphas[CHIPMUNK_FRI_ROUNDS];
+        l_rc = chipmunk_fri_transcript_squeeze_fq_many(
+            &l_fri_tr, l_fri_alphas, CHIPMUNK_FRI_ROUNDS);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI alpha derivation failed");
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            return l_rc;
+        }
+
+        /* 13d. FRI commit: RS-encode q(X), fold 7 rounds, Merkle caps. */
+        chipmunk_fri_prover_t l_fri_prover;
+        l_rc = chipmunk_fri_prover_init(&l_fri_prover);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI prover init failed");
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            return l_rc;
+        }
+
+        l_rc = chipmunk_fri_commit(&l_fri_prover, l_q.coeffs, l_fri_alphas);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI commit failed");
+            chipmunk_fri_prover_free(&l_fri_prover);
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            return l_rc;
+        }
+
+        /* 13e. Absorb FRI commit output (caps + final_evals) into transcript. */
+        for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+            uint32_t l_n = (r == 0) ? 2048u : (2048u >> r);
+            uint32_t l_cap_sz = (l_n >= 32u) ? 16u : l_n;
+            chipmunk_fri_transcript_absorb_cap(
+                &l_fri_tr,
+                l_fri_prover.proof.caps[r].nodes,
+                l_cap_sz);
+        }
+        for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
+            chipmunk_fri_transcript_absorb_fq(
+                &l_fri_tr,
+                l_fri_prover.proof.final_evals[i]);
+        }
+
+        /* Absorb alphas into transcript (verifier needs same order). */
+        for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+            chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
+        }
+
+        /* 13f. Finalize: grinding PoW (~2^16 hashes expected). */
+        l_rc = chipmunk_fri_transcript_finalize(&l_fri_tr);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI transcript finalize failed");
+            chipmunk_fri_prover_free(&l_fri_prover);
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            return l_rc;
+        }
+
+        /* 13g. Derive 8 query indices. */
+        uint32_t l_fri_indices[CHIPMUNK_FRI_NUM_QUERIES];
+        l_rc = chipmunk_fri_derive_query_indices(
+            &l_fri_tr, CHIPMUNK_FRI_NUM_QUERIES,
+            CHIPMUNK_FRI_INIT_SIZE, l_fri_indices);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI query index derivation failed");
+            chipmunk_fri_prover_free(&l_fri_prover);
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            return l_rc;
+        }
+
+        /* 13h. FRI query: open q(X) at 8 positions. */
+        chipmunk_fri_query_opening_t l_fri_openings[CHIPMUNK_FRI_NUM_QUERIES];
+        l_rc = chipmunk_fri_query(&l_fri_prover,
+                                  CHIPMUNK_FRI_NUM_QUERIES,
+                                  l_fri_indices,
+                                  l_fri_openings);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI query failed");
+            chipmunk_fri_prover_free(&l_fri_prover);
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            return l_rc;
+        }
+
+        /* 13i. Store FRI proof in SNARK proof struct. */
+        a_proof->fri_proof.commit = l_fri_prover.proof;
+        memcpy(a_proof->fri_proof.queries, l_fri_openings,
+               sizeof(l_fri_openings));
+        a_proof->fri_grinding_nonce = l_fri_tr.grinding_nonce;
+        a_proof->proof_version = CHIPMUNK_SNARK_PROOF_VERSION_V2;
+
+        chipmunk_fri_prover_free(&l_fri_prover);
     }
 
     /* Wipe secret material from stack */
@@ -641,7 +789,99 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    /* 6. Verify opening proof: reconstruct z, q from bytes and check commitments */
+    /* 6. V2 FRI proof verification (Phase 9.11).
+     * For V2 proofs, verify the FRI commitment to q(X) before algebraic checks.
+     * Uses verify_fast (1 hash) instead of full grind (2^16 hashes). */
+    if (a_proof->proof_version == CHIPMUNK_SNARK_PROOF_VERSION_V2) {
+        chipmunk_fri_transcript_t l_fri_tr;
+        int l_rc = chipmunk_fri_transcript_init(
+            &l_fri_tr,
+            (const uint8_t *)CHIPMUNK_SNARK_FRI_DOMAIN);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK verify: FRI transcript init failed");
+            return 0;
+        }
+
+        /* Absorb same data as prover (steps 13a-13b). */
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->w_commit.hash, sizeof(a_proof->w_commit.hash));
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->r_commit.hash, sizeof(a_proof->r_commit.hash));
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->z_commit.hash, sizeof(a_proof->z_commit.hash));
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->q_commit.hash, sizeof(a_proof->q_commit.hash));
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            l_msg_hash, 32);
+        chipmunk_fri_transcript_absorb(&l_fri_tr,
+            a_proof->transcript_hash, 32);
+
+        /* Derive 7 FRI alphas (same order as prover). */
+        int32_t l_fri_alphas[CHIPMUNK_FRI_ROUNDS];
+        l_rc = chipmunk_fri_transcript_squeeze_fq_many(
+            &l_fri_tr, l_fri_alphas, CHIPMUNK_FRI_ROUNDS);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK verify: FRI alpha derivation failed");
+            return 0;
+        }
+
+        /* 6b. Continue transcript: absorb caps + final_evals + alphas
+         *     (same order as prover step 13e). */
+        for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+            uint32_t l_n = (r == 0) ? 2048u : (2048u >> r);
+            uint32_t l_cap_sz = (l_n >= 32u) ? 16u : l_n;
+            chipmunk_fri_transcript_absorb_cap(
+                &l_fri_tr,
+                a_proof->fri_proof.commit.caps[r].nodes,
+                l_cap_sz);
+        }
+        for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
+            chipmunk_fri_transcript_absorb_fq(
+                &l_fri_tr,
+                a_proof->fri_proof.commit.final_evals[i]);
+        }
+        for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+            chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
+        }
+
+        /* 6c. Finalize verifier-side: verify grinding nonce (1 hash). */
+        l_rc = chipmunk_fri_transcript_finalize_verify(
+            &l_fri_tr, a_proof->fri_grinding_nonce);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK verify: FRI grinding nonce invalid");
+            return 0;
+        }
+
+        /* 6d. Derive 8 query indices (same transcript → same indices). */
+        uint32_t l_fri_indices[CHIPMUNK_FRI_NUM_QUERIES];
+        l_rc = chipmunk_fri_derive_query_indices(
+            &l_fri_tr, CHIPMUNK_FRI_NUM_QUERIES,
+            CHIPMUNK_FRI_INIT_SIZE, l_fri_indices);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK verify: FRI query index derivation failed");
+            return 0;
+        }
+
+        /* 6e. Verify each FRI query: index match + Merkle + folding. */
+        for (uint32_t qi = 0; qi < CHIPMUNK_FRI_NUM_QUERIES; ++qi) {
+            if (a_proof->fri_proof.queries[qi].idx != l_fri_indices[qi]) {
+                log_it(L_ERROR, "SNARK verify: FRI query %u index mismatch "
+                       "(got %u, expected %u)",
+                       qi, a_proof->fri_proof.queries[qi].idx, l_fri_indices[qi]);
+                return 0;
+            }
+            if (!chipmunk_fri_verify_query(
+                    &a_proof->fri_proof, qi, l_fri_alphas)) {
+                log_it(L_ERROR, "SNARK verify: FRI query %u verification failed",
+                       qi);
+                return 0;
+            }
+        }
+    }
+
+    /* 7. Verify opening proof: reconstruct z, q from bytes and check commitments.
+     * For V2: raw polys retained for algebraic checks (z(alpha)=0, quotient).
+     * For V1: this is the primary verification path (no FRI binding). */
     size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
     if (a_proof->opening_proof_size < l_poly_bytes * 2) {
         log_it(L_ERROR, "SNARK verify: opening proof too small (%zu < %zu)",
@@ -676,7 +916,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    /* 7. Verify z(alpha) = 0 in F_q^6 extension
+    /* 8. Verify z(alpha) = 0 in F_q^6 extension
      * This is the PRIMARY soundness check: alpha from the subtractive set
      * S = F_{q^6}\{0} gives ~129-bit soundness per check.
      * If z(alpha) != 0, the prover's constraint polynomial is invalid. */
@@ -691,7 +931,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    /* 8. Verify quotient relation: z(X) = q(X) * (X - alpha_scalar)
+    /* 9. Verify quotient relation: z(X) = q(X) * (X - alpha_scalar)
      * Multiple independent checks at random F_q points.
      * Each check has soundness ~2/Q ~ 2^{-21.6}.
      * With 11 checks: 11 * 21.6 ~ 238 bits > 128 bits.
@@ -702,7 +942,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
      *   - This guarantees all 11 checks execute, maintaining 238-bit soundness
      *
      * We use alpha_scalar = alpha.c[0].coeffs[0] for the quotient relation
-     * in R_q (the Y^0 component). The extension check above (step 7)
+     * in R_q (the Y^0 component). The extension check above (step 8)
      * already ensures z vanishes at the full alpha. */
     {
         int32_t l_alpha_scalar = l_alpha.c[0].coeffs[0];
@@ -760,20 +1000,23 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    /* 9. Summary of soundness:
-     * - Extension alpha check (step 7): ~129 bits from |S| = q^6 - 1
-     * - Quotient relation checks (step 8): ~238 bits from 11 random F_q points
-     *   (Phase 7: all 11 checks guaranteed to execute via retry loop)
-     * - Combined: >> 128 bits
+    /* 10. Summary of soundness:
+     * - Extension alpha check (step 8): ~129 bits from |S| = q^6 - 1
+     * - Quotient relation checks (step 9): ~238 bits from 11 random F_q points
+     * - FRI proximity (step 6, V2 only): ~8 bits from 8 queries
+     * - Grinding PoW (step 6, V2 only): ~16 bits from nonce search
+     * - Combined (V2): ~391 bits >> 128-bit post-quantum target
+     * - Combined (V1): ~367 bits >> 128-bit post-quantum target
      * - Ring binding via QROM transcript: ring_hash → randomizer → alpha
-     *   (Phase 7: ring_hash now uses full 1424-byte keys, no truncation)
-     * - w_commit is a random nonce (Phase 7): does not leak witness information
+     * - w_commit is a random nonce: does not leak witness information
      * - Constraint polynomial (C1 + r*C2) verified implicitly:
      *   z(alpha)=0 with high probability implies z ≡ 0, hence
      *   C1 = 0 (binary) and C2 = 0 (exactly-one signer) */
 
-    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (ext alpha + %d quotient checks, >> 128-bit soundness)",
-             CHIPMUNK_SNARK_QUOTIENT_CHECKS);
+    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (v%u, ext alpha + %d quotient checks%s, >> 128-bit soundness)",
+             a_proof->proof_version,
+             CHIPMUNK_SNARK_QUOTIENT_CHECKS,
+             a_proof->proof_version == CHIPMUNK_SNARK_PROOF_VERSION_V2 ? " + FRI" : "");
     return 1;
 }
 

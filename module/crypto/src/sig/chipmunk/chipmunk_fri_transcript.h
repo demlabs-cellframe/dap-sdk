@@ -141,6 +141,20 @@ bool chipmunk_fri_transcript_verify_grinding(const chipmunk_fri_transcript_t *tr
 int chipmunk_fri_transcript_finalize(chipmunk_fri_transcript_t *tr);
 
 /**
+ * Finalize transcript for verifier: verify grinding nonce (1 hash) instead
+ * of performing the expensive brute-force grind search (~2^16 hashes).
+ *
+ * Checks that the provided nonce satisfies the grinding constraint,
+ * then appends it to the buffer and initializes squeeze state.
+ *
+ * @param tr    Transcript (must have data absorbed).
+ * @param nonce Grinding nonce to verify (from prover's proof).
+ * @return 0 on success, negative on error.
+ */
+int chipmunk_fri_transcript_finalize_verify(chipmunk_fri_transcript_t *tr,
+                                             uint32_t nonce);
+
+/**
  * Clone transcript state (for verifier reconstruction).
  * @param dst Destination.
  * @param src Source.

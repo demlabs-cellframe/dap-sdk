@@ -124,7 +124,7 @@ int chipmunk_fri_transcript_absorb_cap(chipmunk_fri_transcript_t *tr,
 int chipmunk_fri_transcript_squeeze_fq(chipmunk_fri_transcript_t *tr,
                                         int32_t *out)
 {
-    if (!tr || !tr->initialized || !tr->grinding_done || !out)
+    if (!tr || !tr->initialized || !out)
         return -1;
 
     /* Counter-based one-shot SHAKE256: hash(buffer || counter) → 32 bytes.
@@ -250,6 +250,39 @@ int chipmunk_fri_transcript_finalize(chipmunk_fri_transcript_t *tr)
     nonce_bytes[1] = (uint8_t)((tr->grinding_nonce >> 8) & 0xFF);
     nonce_bytes[2] = (uint8_t)((tr->grinding_nonce >> 16) & 0xFF);
     nonce_bytes[3] = (uint8_t)((tr->grinding_nonce >> 24) & 0xFF);
+    memcpy(tr->buffer + tr->buf_len, nonce_bytes, 4);
+    tr->buf_len += 4;
+
+    /* Initialize squeeze counter. */
+    tr->squeeze_counter = 0;
+
+    return 0;
+}
+
+int chipmunk_fri_transcript_finalize_verify(chipmunk_fri_transcript_t *tr,
+                                             uint32_t nonce)
+{
+    if (!tr || !tr->initialized)
+        return -1;
+    if (tr->grinding_done)
+        return -1;  /* already finalized */
+
+    /* Verify grinding nonce (single hash check). */
+    if (!chipmunk_fri_transcript_verify_grinding(tr, nonce))
+        return -1;
+
+    tr->grinding_nonce = nonce;
+    tr->grinding_done = true;
+
+    /* Append nonce to buffer so squeeze can use buffer || counter. */
+    if (tr->buf_len + 4 > CHIPMUNK_FRI_TRANSCRIPT_BUF)
+        return -1;
+
+    uint8_t nonce_bytes[4];
+    nonce_bytes[0] = (uint8_t)(nonce & 0xFF);
+    nonce_bytes[1] = (uint8_t)((nonce >> 8) & 0xFF);
+    nonce_bytes[2] = (uint8_t)((nonce >> 16) & 0xFF);
+    nonce_bytes[3] = (uint8_t)((nonce >> 24) & 0xFF);
     memcpy(tr->buffer + tr->buf_len, nonce_bytes, 4);
     tr->buf_len += 4;
 
