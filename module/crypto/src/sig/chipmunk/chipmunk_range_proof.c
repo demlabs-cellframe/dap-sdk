@@ -273,7 +273,7 @@ static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
     /* Precompute powers of 2 mod Q for bit weighting.
      * With scalar encoding, each bit i is committed as (b_i * 2^i mod Q)
      * at ALL coefficients. The sum of all bit commitments reconstructs v*ones. */
-    int32_t *l_pow2 = DAP_NEW_Z_SIZE(int32_t, l_num_bits);
+    int32_t *l_pow2 = DAP_NEW_Z_COUNT(int32_t, l_num_bits);
     if (!l_pow2) { DAP_DELETE(l_bit_arr); return -ENOMEM; }
     l_pow2[0] = 1;
     for (uint32_t i = 1; i < l_num_bits; ++i) {

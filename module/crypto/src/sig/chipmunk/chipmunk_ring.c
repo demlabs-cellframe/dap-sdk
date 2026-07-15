@@ -349,16 +349,16 @@ static int s_pk_cmp(const void *a_a, const void *a_b)
 {
     /* Compare over the a_hat polynomial vector coefficients.
      * Use the polyvec n field (number of polynomials) for bounds.
-     * Each polynomial has CHIPMUNK_N coefficients allocated, but only
-     * the first d may be valid — however since allocations use
-     * sizeof(lotrs_poly_t) = CHIPMUNK_N * 8, all 512 are addressable. */
+     * lotrs_poly_t has LOTRS_D_MAX coefficients — must NOT use CHIPMUNK_N
+     * here because LOTRS ring dimension d (max 128) differs from Chipmunk
+     * NTT dimension N (512). Using CHIPMUNK_N would read past the buffer. */
     const chipmunk_ring_pk_t *l_a = (const chipmunk_ring_pk_t *)a_a;
     const chipmunk_ring_pk_t *l_b = (const chipmunk_ring_pk_t *)a_b;
     if (!l_a->a_hat.polys || !l_b->a_hat.polys) return 0;
     uint32_t l_n = l_a->a_hat.n < l_b->a_hat.n ? l_a->a_hat.n : l_b->a_hat.n;
     for (uint32_t i = 0u; i < l_n; ++i) {
         if (!l_a->a_hat.polys[i] || !l_b->a_hat.polys[i]) continue;
-        for (uint32_t j = 0u; j < CHIPMUNK_N; ++j) {
+        for (uint32_t j = 0u; j < LOTRS_D_MAX; ++j) {
             int32_t l_diff = l_a->a_hat.polys[i]->coeffs[j] - l_b->a_hat.polys[i]->coeffs[j];
             if (l_diff != 0) return (l_diff > 0) ? 1 : -1;
         }
