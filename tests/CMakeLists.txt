@@ -453,15 +453,23 @@ endif()
 		                      "unit;crypto;merkle;fri")
 		endif()
 
-		# 9.5: Reed-Solomon encoding via coset NTT
-		if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_rs.c)
-		    add_dap_test(test_unit_chipmunk_rs
-		                 unit/crypto/chipmunk_ring/test_chipmunk_rs.c)
-		    register_dap_test(test_unit_chipmunk_rs
-		                      "unit;crypto;rs;fri")
-		endif()
+			# 9.5: Reed-Solomon encoding via coset NTT
+			if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_rs.c)
+			    add_dap_test(test_unit_chipmunk_rs
+			                 unit/crypto/chipmunk_ring/test_chipmunk_rs.c)
+			    register_dap_test(test_unit_chipmunk_rs
+			                      "unit;crypto;rs;fri")
+			endif()
 
-		if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
+			# 9.6: FRI commit phase (7 rounds folding + Merkle caps)
+			if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri.c)
+			    add_dap_test(test_unit_chipmunk_fri
+			                 unit/crypto/chipmunk_ring/test_chipmunk_fri.c)
+			    register_dap_test(test_unit_chipmunk_fri
+			                      "unit;crypto;fri;commit")
+			endif()
+
+			if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
 endif()

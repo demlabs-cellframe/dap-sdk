@@ -1,0 +1,498 @@
+/*
+ * test_chipmunk_fri.c — Unit tests for FRI commit phase.
+ *
+ * Phase 9.6 of the FRI-DEEP polynomial commitment scheme.
+ *
+ * Test strategy:
+ *   - Zero polynomial: all rounds produce zeros
+ *   - Constant polynomial: all rounds produce same constant
+ *   - Specific polynomial: Python reference vectors for all 7 round codewords
+ *   - Folding relation verification at sample indices
+ *   - Merkle cap consistency: verify caps match the round codewords
+ *   - Final evaluations match expected values
+ *   - chipmunk_fri_verify_fold() correctness
+ *   - Invalid arguments
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+#include <dap_common.h>
+#include <dap_test.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#include <chipmunk_field.h>
+#include <chipmunk_fri_ntt.h>
+#include <chipmunk_rs.h>
+#include <chipmunk_merkle_pcs.h>
+#include <chipmunk_poseidon.h>
+#include <chipmunk_fri.h>
+
+#define LOG_TAG "test_chipmunk_fri"
+
+/* Round sizes: 2048, 1024, 512, 256, 128, 64, 32 */
+static const uint32_t s_round_sizes[CHIPMUNK_FRI_ROUNDS] = {
+    2048, 1024, 512, 256, 128, 64, 32
+};
+
+/* Fixed alphas for deterministic reference vectors. */
+static const int32_t s_alphas[CHIPMUNK_FRI_ROUNDS] = {
+    7, 13, 42, 100, 200, 300, 1000
+};
+
+/* ========================================================================
+ * Test 1: Zero polynomial — all codewords are zero, all folding correct.
+ * ======================================================================== */
+static void test_fri_zero_poly(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "zero poly init");
+
+    int32_t poly[512];
+    memset(poly, 0, sizeof(poly));
+
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "zero poly commit");
+
+    /* All round codewords should be zero. */
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        uint32_t len;
+        const int32_t *data = chipmunk_fri_prover_round_data(&prov, r, &len);
+        dap_assert(data != NULL, "zero poly round data");
+        dap_assert(len == s_round_sizes[r], "zero poly round len");
+        for (uint32_t i = 0; i < len; ++i) {
+            dap_assert(data[i] == 0, "zero poly round eval");
+        }
+    }
+
+    /* Final evals all zero. */
+    const int32_t *final = chipmunk_fri_prover_final_evals(&prov);
+    dap_assert(final != NULL, "zero poly final");
+    for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
+        dap_assert(final[i] == 0, "zero poly final eval");
+    }
+
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
+ * Test 2: Constant polynomial f(x) = 42.
+ * Folding preserves constants: [(1+a)*42 + (1-a)*42] / 2 = 42.
+ * ======================================================================== */
+static void test_fri_constant_poly(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "const poly init");
+
+    int32_t poly[512];
+    memset(poly, 0, sizeof(poly));
+    poly[0] = 42;
+
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "const poly commit");
+
+    /* All round codewords should be 42. */
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        uint32_t len;
+        const int32_t *data = chipmunk_fri_prover_round_data(&prov, r, &len);
+        for (uint32_t i = 0; i < len; ++i) {
+            dap_assert(data[i] == 42, "const poly round eval");
+        }
+    }
+
+    /* Final evals all 42. */
+    const int32_t *final = chipmunk_fri_prover_final_evals(&prov);
+    for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
+        dap_assert(final[i] == 42, "const poly final eval");
+    }
+
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
+ * Test 3: Specific polynomial f(x) = 5 + 3x + 7x^2 + 2x^5.
+ * Python reference vectors for round codewords.
+ * ======================================================================== */
+static void test_fri_specific_poly(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "specific poly init");
+
+    int32_t poly[512];
+    memset(poly, 0, sizeof(poly));
+    poly[0] = 5; poly[1] = 3; poly[2] = 7; poly[5] = 2;
+
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "specific poly commit");
+
+    /* Round 0 codeword: RS-encoded, should match RS encode output. */
+    uint32_t len;
+    const int32_t *r0 = chipmunk_fri_prover_round_data(&prov, 0, &len);
+    dap_assert(len == 2048, "round 0 len");
+
+    /* Python reference: evals at coset domain */
+    const int32_t r0_refs[] = {563, 2015349, 2208781, 3167830, 1728949};
+    const uint32_t r0_idx[] = {0, 1, 42, 1024, 2047};
+    for (int t = 0; t < 5; ++t) {
+        dap_assert(r0[r0_idx[t]] == r0_refs[t], "round 0 eval ref");
+    }
+
+    /* Round 1 first values (from Python). */
+    const int32_t r1_refs[] = {3533, 2339357, 1013668, 1565991, 213953};
+    const int32_t *r1 = chipmunk_fri_prover_round_data(&prov, 1, &len);
+    dap_assert(len == 1024, "round 1 len");
+    for (int t = 0; t < 5; ++t) {
+        dap_assert(r1[t] == r1_refs[t], "round 1 eval ref");
+    }
+
+    /* Round 2 first values. */
+    const int32_t r2_refs[] = {1520177, 2421035, 2934039, 231980, 2496373};
+    const int32_t *r2 = chipmunk_fri_prover_round_data(&prov, 2, &len);
+    dap_assert(len == 512, "round 2 len");
+    for (int t = 0; t < 5; ++t) {
+        dap_assert(r2[t] == r2_refs[t], "round 2 eval ref");
+    }
+
+    /* Rounds 3-6 first values. */
+    const int32_t r3_first = 1653414;
+    const int32_t r4_first = 1743212;
+    const int32_t r5_first = 2296460;
+    const int32_t r6_first = 358635;
+    const int32_t *r3 = chipmunk_fri_prover_round_data(&prov, 3, &len);
+    const int32_t *r4 = chipmunk_fri_prover_round_data(&prov, 4, &len);
+    const int32_t *r5 = chipmunk_fri_prover_round_data(&prov, 5, &len);
+    const int32_t *r6 = chipmunk_fri_prover_round_data(&prov, 6, &len);
+    dap_assert(len == 32, "round 6 len");
+    dap_assert(r3[0] == r3_first, "round 3 first");
+    dap_assert(r4[0] == r4_first, "round 4 first");
+    dap_assert(r5[0] == r5_first, "round 5 first");
+    dap_assert(r6[0] == r6_first, "round 6 first");
+
+    /* Final evals. */
+    const int32_t *final = chipmunk_fri_prover_final_evals(&prov);
+    const int32_t final_refs[] = {1615478, 1068014, 1692652, 2680113};
+    for (int t = 0; t < 4; ++t) {
+        dap_assert(final[t] == final_refs[t], "final eval ref");
+    }
+    dap_assert(final[7] == 1271919, "final eval [7]");
+    dap_assert(final[15] == 2872864, "final eval [15]");
+
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
+ * Test 4: Folding relation verification at every round, every sample index.
+ * ======================================================================== */
+static void test_fri_fold_relations(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "fold init");
+
+    int32_t poly[512];
+    for (int i = 0; i < 512; ++i)
+        poly[i] = (i * 7919 + 1) % CHIPMUNK_Q;
+
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "fold commit");
+
+    /* Check folding at sample indices for each round. */
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        uint32_t n_r;
+        const int32_t *h_r = chipmunk_fri_prover_round_data(&prov, r, &n_r);
+        dap_assert(h_r != NULL, "fold round data");
+
+        /* Check first 10 indices. */
+        for (uint32_t l = 0; l < 10 && l < n_r / 2; ++l) {
+            bool ok = chipmunk_fri_verify_fold(h_r, h_r + n_r, n_r,
+                                                s_alphas[r], l);
+            dap_assert(ok, "fold relation at sample");
+        }
+    }
+
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
+ * Test 5: Merkle cap consistency — caps should match re-built Merkle trees.
+ * ======================================================================== */
+static void test_fri_merkle_caps(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "merkle caps init");
+
+    int32_t poly[512];
+    for (int i = 0; i < 512; ++i)
+        poly[i] = (i * 31337 + 42) % CHIPMUNK_Q;
+
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "merkle caps commit");
+
+    /* Rebuild Merkle tree for each round and compare caps. */
+    int32_t *scratch = calloc(2u * CHIPMUNK_FRI_INIT_SIZE, sizeof(int32_t));
+    dap_assert(scratch != NULL, "scratch alloc");
+
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        uint32_t n;
+        const int32_t *data = chipmunk_fri_prover_round_data(&prov, r, &n);
+        dap_assert(data != NULL, "merkle round data");
+
+        const chipmunk_fri_cap_t *cap = chipmunk_fri_prover_cap(&prov, r);
+        dap_assert(cap != NULL, "merkle cap");
+
+        /* Compute expected cap size. */
+        uint32_t cap_size = (n >= 32u) ? 16u : n;
+
+        int32_t rebuilt_cap[16];
+        rc = chipmunk_merkle_build(data, n, rebuilt_cap, cap_size, scratch);
+        dap_assert(rc == 0, "merkle rebuild");
+
+        for (uint32_t c = 0; c < cap_size; ++c) {
+            dap_assert(cap->nodes[c] == rebuilt_cap[c], "cap node match");
+        }
+    }
+
+    free(scratch);
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
+ * Test 6: Verify fold for deliberately wrong alpha (should fail).
+ * ======================================================================== */
+static void test_fri_fold_wrong_alpha(void)
+{
+    int32_t h_r[4] = {10, 20, 30, 40};
+    int32_t h_r1[2] = {0, 0};  /* will compute correctly, then check wrong alpha */
+
+    /* Correct fold with alpha=7: [(1+7)*h + (1-7)*h'] * inv2 */
+    int32_t inv2 = chipmunk_field_inv(2);
+    int32_t a = 7;
+    int32_t one_plus_a = (1 + a) % CHIPMUNK_Q;
+    int32_t one_minus_a = (1 - a + CHIPMUNK_Q) % CHIPMUNK_Q;
+    for (uint32_t l = 0; l < 2; ++l) {
+        int64_t s = (int64_t)one_plus_a * (int64_t)h_r[l]
+                  + (int64_t)one_minus_a * (int64_t)h_r[l + 2];
+        s = s % CHIPMUNK_Q;
+        if (s < 0) s += CHIPMUNK_Q;
+        h_r1[l] = (int32_t)(s * (int64_t)inv2 % CHIPMUNK_Q);
+    }
+
+    /* Verify with correct alpha should pass. */
+    bool ok = chipmunk_fri_verify_fold(h_r, h_r1, 4, 7, 0);
+    dap_assert(ok, "correct alpha fold");
+
+    /* Verify with wrong alpha should fail. */
+    ok = chipmunk_fri_verify_fold(h_r, h_r1, 4, 8, 0);
+    dap_assert(!ok, "wrong alpha fold rejected");
+}
+
+/* ========================================================================
+ * Test 7: Final evaluations are in [0, q).
+ * ======================================================================== */
+static void test_fri_final_range(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "range init");
+
+    int32_t poly[512];
+    for (int i = 0; i < 512; ++i)
+        poly[i] = (i * 104729 + 65537) % CHIPMUNK_Q;
+
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "range commit");
+
+    const int32_t *final = chipmunk_fri_prover_final_evals(&prov);
+    for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
+        dap_assert(final[i] >= 0 && final[i] < CHIPMUNK_Q, "final in [0,q)");
+    }
+
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
+ * Test 8: Determinism — same poly + alphas produce same output.
+ * ======================================================================== */
+static void test_fri_determinism(void)
+{
+    chipmunk_fri_prover_t prov1, prov2;
+    int rc;
+
+    rc = chipmunk_fri_prover_init(&prov1);
+    dap_assert(rc == 0, "det init 1");
+    rc = chipmunk_fri_prover_init(&prov2);
+    dap_assert(rc == 0, "det init 2");
+
+    int32_t poly[512];
+    for (int i = 0; i < 512; ++i)
+        poly[i] = (i * 99991 + 12345) % CHIPMUNK_Q;
+
+    rc = chipmunk_fri_commit(&prov1, poly, s_alphas);
+    dap_assert(rc == 0, "det commit 1");
+    rc = chipmunk_fri_commit(&prov2, poly, s_alphas);
+    dap_assert(rc == 0, "det commit 2");
+
+    /* Compare all round codewords. */
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        uint32_t len1, len2;
+        const int32_t *d1 = chipmunk_fri_prover_round_data(&prov1, r, &len1);
+        const int32_t *d2 = chipmunk_fri_prover_round_data(&prov2, r, &len2);
+        dap_assert(len1 == len2, "det round len");
+        for (uint32_t i = 0; i < len1; ++i) {
+            dap_assert(d1[i] == d2[i], "det round data");
+        }
+    }
+
+    /* Compare caps. */
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        const chipmunk_fri_cap_t *c1 = chipmunk_fri_prover_cap(&prov1, r);
+        const chipmunk_fri_cap_t *c2 = chipmunk_fri_prover_cap(&prov2, r);
+        for (unsigned i = 0; i < CHIPMUNK_FRI_CAP_SIZE; ++i) {
+            dap_assert(c1->nodes[i] == c2->nodes[i], "det cap");
+        }
+    }
+
+    /* Compare final evals. */
+    const int32_t *f1 = chipmunk_fri_prover_final_evals(&prov1);
+    const int32_t *f2 = chipmunk_fri_prover_final_evals(&prov2);
+    for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
+        dap_assert(f1[i] == f2[i], "det final");
+    }
+
+    chipmunk_fri_prover_free(&prov1);
+    chipmunk_fri_prover_free(&prov2);
+}
+
+/* ========================================================================
+ * Test 9: Different alphas produce different results.
+ * ======================================================================== */
+static void test_fri_different_alphas(void)
+{
+    chipmunk_fri_prover_t prov1, prov2;
+    int rc;
+
+    rc = chipmunk_fri_prover_init(&prov1);
+    dap_assert(rc == 0, "diff alpha init 1");
+    rc = chipmunk_fri_prover_init(&prov2);
+    dap_assert(rc == 0, "diff alpha init 2");
+
+    int32_t poly[512];
+    for (int i = 0; i < 512; ++i)
+        poly[i] = (i + 1) % CHIPMUNK_Q;
+
+    /* First set of alphas. */
+    rc = chipmunk_fri_commit(&prov1, poly, s_alphas);
+    dap_assert(rc == 0, "diff alpha commit 1");
+
+    /* Second set: shifted by 1. */
+    int32_t alphas2[CHIPMUNK_FRI_ROUNDS] = {8, 14, 43, 101, 201, 301, 1001};
+    rc = chipmunk_fri_commit(&prov2, poly, alphas2);
+    dap_assert(rc == 0, "diff alpha commit 2");
+
+    /* Round 0 should be identical (same RS encoding). */
+    uint32_t len1, len2;
+    const int32_t *d1_0 = chipmunk_fri_prover_round_data(&prov1, 0, &len1);
+    const int32_t *d2_0 = chipmunk_fri_prover_round_data(&prov2, 0, &len2);
+    for (uint32_t i = 0; i < len1; ++i) {
+        dap_assert(d1_0[i] == d2_0[i], "same round 0");
+    }
+
+    /* Round 1 should differ (different alpha_0). */
+    const int32_t *d1_1 = chipmunk_fri_prover_round_data(&prov1, 1, &len1);
+    const int32_t *d2_1 = chipmunk_fri_prover_round_data(&prov2, 1, &len2);
+    int same_count = 0;
+    for (uint32_t i = 0; i < len1; ++i) {
+        if (d1_1[i] == d2_1[i]) same_count++;
+    }
+    /* For a non-trivial poly, different alpha should produce different round 1. */
+    dap_assert((uint32_t)same_count < len1, "different alphas -> different round 1");
+
+    chipmunk_fri_prover_free(&prov1);
+    chipmunk_fri_prover_free(&prov2);
+}
+
+/* ========================================================================
+ * Test 10: Invalid arguments.
+ * ======================================================================== */
+static void test_fri_invalid_args(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc;
+
+    rc = chipmunk_fri_prover_init(NULL);
+    dap_assert(rc < 0, "init NULL");
+
+    rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "init ok");
+
+    int32_t poly[512];
+    memset(poly, 0, sizeof(poly));
+
+    rc = chipmunk_fri_commit(NULL, poly, s_alphas);
+    dap_assert(rc < 0, "commit NULL prov");
+
+    rc = chipmunk_fri_commit(&prov, NULL, s_alphas);
+    dap_assert(rc < 0, "commit NULL poly");
+
+    rc = chipmunk_fri_commit(&prov, poly, NULL);
+    dap_assert(rc < 0, "commit NULL alphas");
+
+    /* Round data before commit. */
+    const int32_t *d = chipmunk_fri_prover_round_data(&prov, 0, NULL);
+    dap_assert(d == NULL, "round data before commit");
+
+    /* Round data with invalid round. */
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "commit ok for arg test");
+    d = chipmunk_fri_prover_round_data(&prov, CHIPMUNK_FRI_ROUNDS, NULL);
+    dap_assert(d == NULL, "round data invalid round");
+
+    chipmunk_fri_prover_free(&prov);
+
+    /* verify_fold with NULL. */
+    bool ok = chipmunk_fri_verify_fold(NULL, NULL, 4, 1, 0);
+    dap_assert(!ok, "verify_fold NULL");
+
+    ok = chipmunk_fri_verify_fold(poly, poly, 0, 1, 0);
+    dap_assert(!ok, "verify_fold n=0");
+}
+
+/* ========================================================================
+ * Main
+ * ======================================================================== */
+int main(void)
+{
+    dap_set_appname("test_chipmunk_fri");
+    if (0 != dap_common_init("test_chipmunk_fri", NULL)) {
+        fprintf(stderr, "dap_common_init failed\n");
+        return 1;
+    }
+
+    int rc = chipmunk_field_init();
+    dap_assert(rc == 0, "chipmunk_field_init");
+    rc = chipmunk_fri_ntt_init();
+    dap_assert(rc == 0, "chipmunk_fri_ntt_init");
+
+    log_it(L_INFO, "=== FRI commit phase tests ===");
+
+    test_fri_zero_poly();
+    test_fri_constant_poly();
+    test_fri_specific_poly();
+    test_fri_fold_relations();
+    test_fri_merkle_caps();
+    test_fri_fold_wrong_alpha();
+    test_fri_final_range();
+    test_fri_determinism();
+    test_fri_different_alphas();
+    test_fri_invalid_args();
+
+    log_it(L_INFO, "All FRI commit tests passed");
+
+    dap_common_deinit();
+    return 0;
+}
