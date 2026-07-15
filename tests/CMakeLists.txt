@@ -445,15 +445,23 @@ endif()
 	                      "unit;crypto;poseidon;fri")
 	endif()
 
-	# 9.4: Merkle tree with cap (FRI PCS)
-	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_merkle_pcs.c)
-	    add_dap_test(test_unit_chipmunk_merkle_pcs
-	                 unit/crypto/chipmunk_ring/test_chipmunk_merkle_pcs.c)
-	    register_dap_test(test_unit_chipmunk_merkle_pcs
-	                      "unit;crypto;merkle;fri")
-	endif()
+		# 9.4: Merkle tree with cap (FRI PCS)
+		if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_merkle_pcs.c)
+		    add_dap_test(test_unit_chipmunk_merkle_pcs
+		                 unit/crypto/chipmunk_ring/test_chipmunk_merkle_pcs.c)
+		    register_dap_test(test_unit_chipmunk_merkle_pcs
+		                      "unit;crypto;merkle;fri")
+		endif()
 
-	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
+		# 9.5: Reed-Solomon encoding via coset NTT
+		if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_rs.c)
+		    add_dap_test(test_unit_chipmunk_rs
+		                 unit/crypto/chipmunk_ring/test_chipmunk_rs.c)
+		    register_dap_test(test_unit_chipmunk_rs
+		                      "unit;crypto;rs;fri")
+		endif()
+
+		if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
 endif()
