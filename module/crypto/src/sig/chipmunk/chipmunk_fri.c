@@ -369,3 +369,177 @@ bool chipmunk_fri_verify_query(const chipmunk_fri_proof_t *proof,
 
     return true;
 }
+
+/* -------------------------------------------------------------------------
+ * FRI Verify Phase (verifier-side)
+ * ------------------------------------------------------------------------- */
+
+int chipmunk_fri_derive_query_indices(chipmunk_fri_transcript_t *tr,
+                                       uint32_t num_queries,
+                                       uint32_t domain_size,
+                                       uint32_t out[])
+{
+    if (!tr || !out || num_queries == 0 || domain_size == 0)
+        return -1;
+
+    for (uint32_t i = 0; i < num_queries; ++i) {
+        int32_t val;
+        int rc = chipmunk_fri_transcript_squeeze_fq(tr, &val);
+        if (rc < 0) {
+            log_it(L_ERROR, "FRI verify: squeeze query index %u failed", i);
+            return rc;
+        }
+        /* Map to [0, domain_size) via modular reduction. */
+        out[i] = (uint32_t)val % domain_size;
+    }
+    return 0;
+}
+
+bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
+                           const uint8_t domain[16],
+                           const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                           chipmunk_fri_verify_result_t *result)
+{
+    if (!proof || !domain || !alphas) {
+        if (result) {
+            memset(result, 0, sizeof(*result));
+            memcpy(result->reason, "null proof, domain, or alphas", 29);
+        }
+        return false;
+    }
+
+    if (result)
+        memset(result, 0, sizeof(*result));
+
+    /* 1. Initialize transcript with domain separator. */
+    chipmunk_fri_transcript_t tr;
+    int rc = chipmunk_fri_transcript_init(&tr, domain);
+    if (rc != 0) {
+        if (result) memcpy(result->reason, "transcript init", 16);
+        return false;
+    }
+
+    /* 2. Absorb all 7 Merkle caps into transcript. */
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        uint32_t cap_size = s_round_sizes_val(r) >= 32u ? 16u : s_round_sizes_val(r);
+        rc = chipmunk_fri_transcript_absorb_cap(&tr, proof->commit.caps[r].nodes,
+                                                 cap_size);
+        if (rc != 0) {
+            if (result) {
+                snprintf(result->reason, sizeof(result->reason),
+                         "absorb cap round %u failed", r);
+            }
+            return false;
+        }
+    }
+
+    /* 3. Absorb final evaluations (16 values). */
+    for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
+        rc = chipmunk_fri_transcript_absorb_fq(&tr, proof->commit.final_evals[i]);
+        if (rc != 0) {
+            if (result) {
+                snprintf(result->reason, sizeof(result->reason),
+                         "absorb final eval %u failed", i);
+            }
+            return false;
+        }
+    }
+
+    /* 4. Absorb the alphas (verifier-derived from earlier transcript context). */
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        rc = chipmunk_fri_transcript_absorb_fq(&tr, alphas[r]);
+        if (rc != 0) {
+            if (result) {
+                snprintf(result->reason, sizeof(result->reason),
+                         "absorb alpha %u failed", r);
+            }
+            return false;
+        }
+    }
+
+    /* 5. Finalize: grinding PoW + prepare XOF. */
+    rc = chipmunk_fri_transcript_finalize(&tr);
+    if (rc != 0) {
+        if (result) memcpy(result->reason, "finalize failed", 15);
+        return false;
+    }
+
+    if (result)
+        result->grinding_nonce = tr.grinding_nonce;
+
+    /* 6. Derive 8 query indices. */
+    uint32_t indices[CHIPMUNK_FRI_NUM_QUERIES];
+    rc = chipmunk_fri_derive_query_indices(&tr, CHIPMUNK_FRI_NUM_QUERIES,
+                                            CHIPMUNK_FRI_INIT_SIZE, indices);
+    if (rc != 0) {
+        if (result) memcpy(result->reason, "derive indices failed", 21);
+        return false;
+    }
+
+    /* 7. Verify each query. */
+    for (uint32_t qi = 0; qi < CHIPMUNK_FRI_NUM_QUERIES; ++qi) {
+        /* Check that the query's stored index matches the derived one. */
+        if (proof->queries[qi].idx != indices[qi]) {
+            if (result) {
+                result->failed_query = qi;
+                snprintf(result->reason, sizeof(result->reason),
+                         "query %u index mismatch (got %u, expected %u)",
+                         qi, proof->queries[qi].idx, indices[qi]);
+            }
+            return false;
+        }
+
+        if (!chipmunk_fri_verify_query(proof, qi, alphas)) {
+            if (result) {
+                result->failed_query = qi;
+                /* Determine which round failed. */
+                for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+                    uint32_t l_n = s_round_sizes_val(r);
+                    uint32_t l_cap_size = (l_n >= 32u) ? 16u : l_n;
+                    const int32_t *l_cap = proof->commit.caps[r].nodes;
+                    bool l_ok = chipmunk_merkle_verify(
+                        proof->queries[qi].leaf_values[r], l_n,
+                        &proof->queries[qi].paths[r], l_cap, l_cap_size);
+                    if (!l_ok) {
+                        result->failed_round = r;
+                        snprintf(result->reason, sizeof(result->reason),
+                                 "query %u round %u merkle verify", qi, r);
+                        break;
+                    }
+                    /* Check folding. */
+                    if (r + 1u < CHIPMUNK_FRI_ROUNDS) {
+                        uint32_t l_half = l_n / 2u;
+                        uint32_t l_leaf_idx = proof->queries[qi].idx % l_n;
+                        int32_t l_inv2 = chipmunk_field_inv(2);
+                        int32_t l_1pa = (1 + alphas[r]) % (int32_t)CHIPMUNK_Q;
+                        int32_t l_1ma = (1 - alphas[r] + (int32_t)CHIPMUNK_Q) % (int32_t)CHIPMUNK_Q;
+                        int32_t l_cfirst, l_csecond;
+                        if (l_leaf_idx < l_half) {
+                            l_cfirst = l_1pa; l_csecond = l_1ma;
+                        } else {
+                            l_cfirst = l_1ma; l_csecond = l_1pa;
+                        }
+                        int64_t l_sum = (int64_t)l_cfirst * (int64_t)proof->queries[qi].leaf_values[r]
+                                      + (int64_t)l_csecond * (int64_t)proof->queries[qi].sibling_values[r];
+                        l_sum = l_sum % (int64_t)CHIPMUNK_Q;
+                        if (l_sum < 0) l_sum += (int64_t)CHIPMUNK_Q;
+                        int32_t l_folded = (int32_t)(l_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
+                        if (l_folded < 0) l_folded += (int32_t)CHIPMUNK_Q;
+                        if (l_folded != proof->queries[qi].leaf_values[r + 1u]) {
+                            result->failed_round = r;
+                            snprintf(result->reason, sizeof(result->reason),
+                                     "query %u round %u folding", qi, r);
+                            break;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    /* All checks passed. */
+    if (result)
+        result->valid = true;
+    return true;
+}

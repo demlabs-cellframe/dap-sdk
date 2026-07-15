@@ -35,6 +35,7 @@
 #include "chipmunk_fri_ntt.h"
 #include "chipmunk_rs.h"
 #include "chipmunk_merkle_pcs.h"
+#include "chipmunk_fri_transcript.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -246,6 +247,55 @@ int chipmunk_fri_query(chipmunk_fri_prover_t *prover,
 bool chipmunk_fri_verify_query(const chipmunk_fri_proof_t *proof,
                                 uint32_t q,
                                 const int32_t alphas[CHIPMUNK_FRI_ROUNDS]);
+
+/**
+ * @brief FRI proof verification result.
+ */
+typedef struct chipmunk_fri_verify_result {
+    bool     valid;                /**< Overall verification result. */
+    uint32_t grinding_nonce;       /**< Prover's grinding nonce (input). */
+    uint32_t failed_query;         /**< Index of first failing query, or NUM_QUERIES if none. */
+    uint32_t failed_round;         /**< Round index of first failure within query. */
+    char     reason[64];           /**< Human-readable failure reason. */
+} chipmunk_fri_verify_result_t;
+
+/**
+ * @brief Full FRI proof verification (verifier-side).
+ *
+ * Reconstructs the Fiat-Shamir transcript from the proof's Merkle caps
+ * and the given alphas, verifies the grinding PoW, derives query indices,
+ * then verifies all 8 query openings (Merkle auth paths + folding relations).
+ *
+ * In the full SNARK pipeline (Phase 9.11), alphas are derived from the
+ * DEEP transcript before FRI commit. Here they are provided explicitly.
+ *
+ * @param proof        Complete FRI proof (commit + queries).
+ * @param domain       16-byte domain separator (must match prover's).
+ * @param alphas       7 FRI folding challenges in F_q.
+ * @param result       Output: verification result details (may be NULL).
+ * @return true if all checks pass, false otherwise.
+ */
+bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
+                           const uint8_t domain[16],
+                           const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                           chipmunk_fri_verify_result_t *result);
+
+/**
+ * @brief Derive FRI query indices from transcript.
+ *
+ * Squeezes num_queries indices in [0, domain_size) from the transcript.
+ * Each index is derived by squeezing a value and taking modulo domain_size.
+ *
+ * @param tr           Transcript (must be finalized with caps absorbed).
+ * @param num_queries  Number of indices to derive.
+ * @param domain_size  Domain size (e.g. 2048).
+ * @param out          Output: array of query indices.
+ * @return 0 on success, negative on error.
+ */
+int chipmunk_fri_derive_query_indices(chipmunk_fri_transcript_t *tr,
+                                       uint32_t num_queries,
+                                       uint32_t domain_size,
+                                       uint32_t out[]);
 
 #ifdef __cplusplus
 }

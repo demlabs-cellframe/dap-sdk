@@ -64,3 +64,9 @@ add_chipmunk_test(test_chipmunk_fri)
 
 # Phase 9.8: DEEP composition tests
 add_chipmunk_test(test_chipmunk_deep)
+
+# Phase 9.9: Fiat-Shamir transcript + grinding tests
+add_chipmunk_test(test_chipmunk_fri_transcript)
+
+# Phase 9.10: FRI verify phase tests
+add_chipmunk_test(test_chipmunk_fri_verify)

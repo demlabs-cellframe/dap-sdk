@@ -477,7 +477,21 @@ endif()
 				                      "unit;crypto;deep;composition")
 				endif()
 
-			if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
+				# 9.9: Fiat-Shamir transcript + grinding PoW
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri_transcript.c)
+					    add_dap_test(test_unit_chipmunk_fri_transcript
+					                 unit/crypto/chipmunk_ring/test_chipmunk_fri_transcript.c)
+					    register_dap_test(test_unit_chipmunk_fri_transcript
+					                      "unit;crypto;transcript;grinding")
+					endif()
+					if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri_verify.c)
+					    add_dap_test(test_unit_chipmunk_fri_verify
+					                 unit/crypto/chipmunk_ring/test_chipmunk_fri_verify.c)
+					    register_dap_test(test_unit_chipmunk_fri_verify
+					                      "unit;crypto;fri;verify")
+					endif()
+
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
 endif()
