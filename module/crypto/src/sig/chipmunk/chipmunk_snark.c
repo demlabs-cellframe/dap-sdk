@@ -9,9 +9,8 @@
  *   1. Alpha used as full F_q^6 extension element (not 22-bit scalar)
  *   2. Constraint polynomial C3/C4 removed (were incorrectly formulated)
  *   3. Randomizer r included in Fiat-Shamir transcript for verifier re-derivation
- *   4. w_commit binding: verifier reconstructs z from public inputs, checks z_commit
- *   5. Test point sampling uses proper rejection sampling
- *   6. FRI removed (was self-consistency re-walk with zero soundness benefit)
+ *   4. Test point sampling uses proper rejection sampling
+ *   5. FRI removed (was self-consistency re-walk with zero soundness benefit)
  *
  * Phase 5 fix — C3/C4 removal:
  *   C3 = sum(b_i * H(pk_i)) - ring_hash was never zero for valid proofs
@@ -19,9 +18,17 @@
  *   C1 (binary) + C2 (exactly-one) are sufficient for ring membership.
  *   Ring binding is via QROM transcript (ring_hash → randomizer).
  *
+ * Phase 7 fixes — privacy and robustness:
+ *   6. w_commit uses random nonce instead of H(b) — prevents signer
+ *      de-anonymization (b is sparse: 1-of-512, precomputable hashes)
+ *   7. Ring hash uses full public keys (1424 bytes each), not just 32 bytes
+ *   8. Quotient check loops on rejection failure — never skips, guarantees 238-bit soundness
+ *   9. Test points use SHAKE256 XOF instead of SHA3+4-byte truncation
+ *  10. Dead s_build_public_constraints stub removed
+ *
  * Soundness:
  *   - Extension alpha: ~129 bits (|S| = q^6 - 1)
- *   - Quotient checks: 11 * 21.6 ~ 238 bits
+ *   - Quotient checks: 11 * 21.6 ~ 238 bits (all checks guaranteed to execute)
  *   - Combined: >> 128 bits
  */
 
@@ -290,34 +297,32 @@ static int s_synth_div_fq6(chipmunk_poly_t *a_q,
  *   failing synthetic division. C1 + C2 are sufficient for ring membership.
  * ---------------------------------------------------------------------- */
 
-/* Compute public ring hash: H(pk_0 || pk_1 || ... || pk_{N-1}) */
+/* Compute public ring hash: H(pk_0 || pk_1 || ... || pk_{N-1})
+ * Phase 7: Hash the FULL public key (1424 bytes each), not just the first 32 bytes.
+ * Previous version only hashed first 32 bytes, allowing collision between keys
+ * that share a header but differ in the polynomial payload. */
 static void s_compute_ring_hash(dap_hash_sha3_256_t *a_hash,
                                  const chipmunk_lrs_public_key_t *a_ring,
                                  uint32_t a_ring_size)
 {
-    /* SHA3-256 of concatenated ring keys */
-    /* For efficiency, use incremental hashing */
-    dap_hash_sha3_256_t l_ctx;
-    memset(&l_ctx, 0, sizeof(l_ctx));
-    /* Use raw SHA3 context via the streaming API */
-    /* Since the ring can be large, we hash in chunks */
-    uint8_t l_chunk[64];
-    size_t l_chunk_size = sizeof(chipmunk_lrs_public_key_t);
-    if (l_chunk_size > sizeof(l_chunk)) l_chunk_size = sizeof(l_chunk);
+    /* Use SHAKE256 for incremental hashing of potentially large ring data.
+     * Each key is 1424 bytes. For ring_size = 256: 256 * 1424 = 364,544 bytes.
+     * We absorb in chunks to avoid allocating a huge buffer. */
+    uint64_t l_state[25];
+    memset(l_state, 0, sizeof(l_state));
 
-    /* Simple approach: hash the whole ring */
-    size_t l_total = (size_t)a_ring_size * sizeof(chipmunk_lrs_public_key_t);
-    /* For typical ring sizes (< 256 keys, each ~2KB), this fits in a buffer */
-    /* We use a simplified incremental hash */
-    uint8_t l_acc[32];
-    memset(l_acc, 0, 32);
+    /* Absorb domain separator */
+    dap_hash_shake256_absorb(l_state,
+        (const uint8_t *)"snark-ring-hash-v1", 18);
+
+    /* Absorb each public key in full */
     for (uint32_t i = 0; i < a_ring_size; ++i) {
-        uint8_t l_combined[64];
-        memcpy(l_combined, l_acc, 32);
-        memcpy(l_combined + 32, (const uint8_t *)&a_ring[i], 32);
-        dap_hash_sha3_256_raw(l_acc, l_combined, 64);
+        dap_hash_shake256_absorb(l_state,
+            (const uint8_t *)&a_ring[i], sizeof(chipmunk_lrs_public_key_t));
     }
-    memcpy(a_hash->raw, l_acc, 32);
+
+    /* Squeeze 32 bytes for the ring hash */
+    dap_hash_shake256_squeezeblocks(a_hash->raw, 1, l_state);
 }
 
 /* Phase 5.1: s_hash_to_coeff and s_hash_to_trace removed.
@@ -368,55 +373,6 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
 
     /* z += r * C2 */
     a_z->coeffs[0] = chipmunk_mod_q((int64_t)a_z->coeffs[0] + (int64_t)l_r * l_c2.coeffs[0]);
-
-    return 0;
-}
-
-/* -------------------------------------------------------------------------
- * Internal: Verifier-side constraint analysis
- *
- * The verifier cannot directly compute C1 (requires secret b).
- * Instead, it relies on the polynomial identity:
- *   z(alpha) = 0 in F_q^6 extension  (step 7 in verify)
- *   z(X) = q(X) * (X - alpha)         (step 8 in verify)
- *
- * If z(alpha) = 0 for a random alpha from S = F_{q^6}\{0}, then
- * with probability ~1 - 2^{-129} the polynomial z is identically zero.
- * Since z = C1 + r*C2, this implies C1 = 0 and C2 = 0:
- *   - C1 = 0 → b_i(b_i - 1) = 0 for all i → b is binary
- *   - C2 = 0 → sum(b_i) = 1 → exactly one signer
- *
- * The ring hash is bound via the QROM transcript (not constraints),
- * preventing cross-ring replay attacks.
- * ---------------------------------------------------------------------- */
-
-static int s_build_public_constraints(chipmunk_poly_t *a_z_public,
-                                      const chipmunk_lrs_public_key_t *a_ring,
-                                      uint32_t a_ring_size,
-                                      const s_fq6_elem_t *a_randomizer,
-                                      const dap_hash_sha3_256_t *a_ring_hash)
-{
-    chipmunk_poly_t l_c2;
-
-    /* C2: sum(1) - 1 = 0 (for ANY valid ring membership, exactly one signer) */
-    memset(&l_c2, 0, sizeof(l_c2));
-    /* C2 is just -1 (constant) since the sum is always 1 for a valid indicator */
-    l_c2.coeffs[0] = chipmunk_mod_q((int64_t)(int32_t)a_ring_size - 1);
-
-    /* Phase 5: C3/C4 removed (see s_build_constraint_polynomial).
-     * Verifier security relies on:
-     * 1. Reconstruct z from opening proof → check z_commit
-     * 2. Check quotient relation z(X) = q(X) * (X - alpha) at random points
-     * 3. Check z(alpha) = 0 in F_q^6 extension
-     * If z(alpha) = 0 with high probability, then z ≡ 0, meaning
-     * C1 + r*C2 ≡ 0, which implies both C1 = 0 and C2 = 0.
-     * This proves b is binary and exactly one signer exists. */
-
-    (void)a_z_public;
-    (void)a_ring;
-    (void)a_ring_size;
-    (void)a_randomizer;
-    (void)a_ring_hash;
 
     return 0;
 }
@@ -476,8 +432,23 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         l_b.coeffs[a_witness->signer_index] = 1;
     }
 
-    /* 2. Commit to witness polynomial b → w_commit */
-    s_commit_poly(&a_proof->w_commit, &l_b);
+    /* 2. Generate random nonce for w_commit (Phase 7: privacy fix).
+     * w_commit must NOT depend on b — b is sparse (1 out of 512 nonzero),
+     * so H(b) allows trivial brute-force de-anonymization (512 precomputable hashes).
+     * Instead, w_commit = H(random_nonce), making it indistinguishable from random.
+     * Soundness is preserved: z(alpha)=0 still implies C1=0, C2=0 via the
+     * quotient and extension checks, independent of w_commit's content. */
+    uint8_t l_w_nonce[32];
+    if (dap_random_bytes(l_w_nonce, 32) != 0) {
+        dap_memwipe(&l_b, sizeof(l_b));
+        return -EIO;
+    }
+    {
+        uint8_t l_transcript[64];
+        memcpy(l_transcript, a_ctx->domain_separator, 32);
+        memcpy(l_transcript + 32, l_w_nonce, 32);
+        dap_hash_sha3_256_raw(a_proof->w_commit.hash, l_transcript, 64);
+    }
 
     /* 3. Compute ring hash (public binding) */
     dap_hash_sha3_256_t l_ring_hash;
@@ -725,27 +696,44 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
      * Each check has soundness ~2/Q ~ 2^{-21.6}.
      * With 11 checks: 11 * 21.6 ~ 238 bits > 128 bits.
      *
+     * Phase 7: Fixed test point sampling:
+     *   - Uses SHAKE256 XOF instead of SHA3-256 + 4-byte truncation
+     *   - Loops until rejection sampling succeeds (never skips a check)
+     *   - This guarantees all 11 checks execute, maintaining 238-bit soundness
+     *
      * We use alpha_scalar = alpha.c[0].coeffs[0] for the quotient relation
      * in R_q (the Y^0 component). The extension check above (step 7)
      * already ensures z vanishes at the full alpha. */
     {
         int32_t l_alpha_scalar = l_alpha.c[0].coeffs[0];
 
-        for (int l_check = 0; l_check < CHIPMUNK_SNARK_QUOTIENT_CHECKS; ++l_check) {
-            /* Derive unique test point using proper rejection sampling */
-            uint8_t l_test_input[80];
-            memcpy(l_test_input, a_proof->transcript_hash, 32);
-            memcpy(l_test_input + 32, l_msg_hash, 32);
-            memcpy(l_test_input + 64, &l_check, 4);
-            memset(l_test_input + 68, 0, 12);
-            uint8_t l_test_hash[32];
-            dap_hash_sha3_256_raw(l_test_hash, l_test_input, 80);
+        /* Initialize SHAKE256 XOF for test point generation.
+         * Seed: transcript_hash || msg_hash — binds to the specific proof. */
+        uint64_t l_xof_state[25];
+        memset(l_xof_state, 0, sizeof(l_xof_state));
+        {
+            uint8_t l_xof_input[64];
+            memcpy(l_xof_input, a_proof->transcript_hash, 32);
+            memcpy(l_xof_input + 32, l_msg_hash, 32);
+            dap_hash_shake256_absorb(l_xof_state, l_xof_input, 64);
+        }
 
-            int32_t l_test_point = chipmunk_sample_reject4(l_test_hash, (uint32_t)CHIPMUNK_Q);
+        for (int l_check = 0; l_check < CHIPMUNK_SNARK_QUOTIENT_CHECKS; ++l_check) {
+            /* Phase 7.3: Loop until rejection sampling succeeds.
+             * With Q = 3168257, acceptance probability per sample is ~73.8%.
+             * Expected iterations: 1/0.738 ≈ 1.35. Max iterations capped at 100. */
+            int32_t l_test_point = -1;
+            for (int l_attempt = 0; l_attempt < 100; ++l_attempt) {
+                /* Squeeze 4 bytes from XOF (Phase 7.4: full entropy via XOF) */
+                uint8_t l_sample_bytes[4];
+                dap_hash_shake256_squeezeblocks(l_sample_bytes, 1, l_xof_state);
+                l_test_point = chipmunk_sample_reject4(l_sample_bytes, (uint32_t)CHIPMUNK_Q);
+                if (l_test_point >= 0) break;
+            }
             if (l_test_point < 0) {
-                /* Rejection sampling failed for this check — skip it
-                 * (extremely rare, and we have 11 checks total) */
-                continue;
+                /* Should never happen with 100 attempts (prob ~ 10^{-13}) */
+                log_it(L_ERROR, "SNARK verify: test point sampling failed after 100 attempts");
+                return 0;
             }
             if (l_test_point == 0) l_test_point = 1;
 
@@ -775,8 +763,11 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     /* 9. Summary of soundness:
      * - Extension alpha check (step 7): ~129 bits from |S| = q^6 - 1
      * - Quotient relation checks (step 8): ~238 bits from 11 random F_q points
+     *   (Phase 7: all 11 checks guaranteed to execute via retry loop)
      * - Combined: >> 128 bits
-     * - w_commit binding via transcript chain: domain → w_commit → r → z → alpha
+     * - Ring binding via QROM transcript: ring_hash → randomizer → alpha
+     *   (Phase 7: ring_hash now uses full 1424-byte keys, no truncation)
+     * - w_commit is a random nonce (Phase 7): does not leak witness information
      * - Constraint polynomial (C1 + r*C2) verified implicitly:
      *   z(alpha)=0 with high probability implies z ≡ 0, hence
      *   C1 = 0 (binary) and C2 = 0 (exactly-one signer) */
