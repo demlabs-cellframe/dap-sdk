@@ -60,6 +60,8 @@ typedef struct dap_stream {
     dap_events_socket_uuid_t keepalive_timer_uuid;
     struct dap_worker *keepalive_timer_worker;
     bool is_active;
+    bool is_deleting;  /* Guard against double-free when keepalive timer and esocket
+                        * HUP both trigger deletion on the same worker event loop tick. */
 
     char *service_key;
     bool is_client_to_uplink;

@@ -893,6 +893,13 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         log_it(L_ERROR,"stream delete NULL instance");
         return;
     }
+    /* Guard against double deletion: keepalive timer callback and esocket HUP
+     * can both call this on the same worker tick.  First caller wins; subsequent
+     * callers see is_deleting==true and bail out. */
+    if (__atomic_exchange_n(&a_stream->is_deleting, true, __ATOMIC_ACQ_REL)) {
+        log_it(L_DEBUG, "P2P stream DELETE (skipped, already deleting): stream=%p", (void*)a_stream);
+        return;
+    }
     if (a_stream->is_client_to_uplink)
         debug_if(s_debug_more, L_DEBUG, "P2P stream DELETE (client): stream=%p es=%p sock=%"DAP_FORMAT_SOCKET" keepalive=%s",
                a_stream, (void*)a_stream->esocket,
@@ -918,15 +925,21 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         if (l_cur && l_cur == l_worker && l_cur->context) {
             dap_events_socket_t *l_timer_es = dap_context_find(l_cur->context, l_uuid);
             if (l_timer_es) {
-                /* Timer is still alive — safely zero callback_arg and delete. */
+                /* Timer is still alive — zero callback_arg to prevent future
+                 * callbacks from touching the (about-to-be-freed) stream.
+                 * Do NOT call dap_timerfd_delete_unsafe here: if we are being
+                 * called from inside a timer callback (keepalive detected error),
+                 * s_es_callback_timer is still on the stack and holds pointers
+                 * to the timer esocket.  Destroying it here causes use-after-free
+                 * when s_es_callback_timer resumes.  Instead, set SIGNAL_CLOSE so
+                 * the event loop cleans it up after the callback returns. */
                 dap_timerfd_t *l_timer = (dap_timerfd_t*)l_timer_es->_inheritor;
                 if (l_timer) {
-                    void *l_arg = __atomic_exchange_n(&l_timer->callback_arg, (void*)NULL, __ATOMIC_RELEASE);
-                    dap_timerfd_delete_unsafe(l_timer);
-                    DAP_DELETE(l_arg);  /* NULL-safe: callback may have freed UUID already */
+                    __atomic_store_n(&l_timer->callback_arg, (void*)NULL, __ATOMIC_RELEASE);
+                    l_timer_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
                 }
             }
-            /* else: timer already freed (SIGNAL_CLOSE processed), UUID freed by callback */
+            /* else: timer already freed (SIGNAL_CLOSE processed), nothing to do */
         } else {
             /* Different worker: send async delete (no-op if already gone) */
             dap_timerfd_delete_mt(l_worker, l_uuid);
@@ -969,11 +982,16 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         a_stream->esocket = NULL;
         a_stream->esocket_uuid = 0;
         a_stream->esocket_worker = NULL;
-        /* Clear callbacks before remove — delete_callback must not re-enter
-         * dap_stream_delete_unsafe (HUP path calls callback → delete_unsafe). */
-        l_es->callbacks.delete_callback = NULL;
+        /* Clear error_callback to prevent spurious error reports during teardown.
+         * Do NOT clear delete_callback — the esocket delete callback (s_tls_delete
+         * or s_esocket_callback_delete) needs to run to free transport-specific
+         * resources (e.g. tls_conn_ctx_t, mimicry).  The is_deleting guard at the
+         * top of this function prevents the callback from re-entering deletion. */
         l_es->callbacks.error_callback = NULL;
-        l_es->_inheritor = NULL;
+        /* For non-TLS transports, _inheritor is trans_ctx which we free below.
+         * NULL it here to prevent double-free by the esocket delete callback. */
+        if (l_es->_inheritor == (void*)a_stream->trans_ctx)
+            l_es->_inheritor = NULL;
         dap_worker_t *l_current = dap_worker_get_current();
         if (l_current == l_es_worker) {
             dap_events_socket_remove_and_delete_unsafe(l_es, false);
