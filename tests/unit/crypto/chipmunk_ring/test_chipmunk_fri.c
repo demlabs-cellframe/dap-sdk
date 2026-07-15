@@ -463,6 +463,190 @@ static void test_fri_invalid_args(void)
 }
 
 /* ========================================================================
+ * Test 11: FRI query phase — 8 queries with auth paths.
+ * ======================================================================== */
+static void test_fri_query(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "query init");
+
+    int32_t poly[512];
+    for (int i = 0; i < 512; ++i)
+        poly[i] = (i * 7919 + 1) % CHIPMUNK_Q;
+
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "query commit");
+
+    /* Query 8 indices. */
+    uint32_t indices[CHIPMUNK_FRI_NUM_QUERIES] = {0, 1, 42, 256, 511, 1024, 1500, 2047};
+    chipmunk_fri_query_opening_t openings[CHIPMUNK_FRI_NUM_QUERIES];
+
+    rc = chipmunk_fri_query(&prov, CHIPMUNK_FRI_NUM_QUERIES, indices, openings);
+    dap_assert(rc == 0, "query query");
+
+    /* Check that leaf values match round data. */
+    for (unsigned qi = 0; qi < CHIPMUNK_FRI_NUM_QUERIES; ++qi) {
+        dap_assert(openings[qi].idx == indices[qi], "query idx stored");
+
+        for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+            uint32_t len;
+            const int32_t *data = chipmunk_fri_prover_round_data(&prov, r, &len);
+            dap_assert(data != NULL, "query round data");
+            uint32_t leaf_idx = indices[qi] % len;
+            dap_assert(openings[qi].leaf_values[r] == data[leaf_idx],
+                       "query leaf value match");
+
+            /* Sibling should be antipodal. */
+            uint32_t sib_idx = leaf_idx ^ (len / 2u);
+            dap_assert(openings[qi].sibling_values[r] == data[sib_idx],
+                       "query sibling value match");
+        }
+    }
+
+    /* Build a proof struct and verify queries. */
+    chipmunk_fri_proof_t proof;
+    memcpy(&proof.commit, &prov.proof, sizeof(chipmunk_fri_commit_proof_t));
+    memcpy(proof.queries, openings, sizeof(openings));
+
+    for (unsigned qi = 0; qi < CHIPMUNK_FRI_NUM_QUERIES; ++qi) {
+        bool ok = chipmunk_fri_verify_query(&proof, qi, s_alphas);
+        dap_assert(ok, "query verify");
+    }
+
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
+ * Test 12: Query with zero polynomial.
+ * ======================================================================== */
+static void test_fri_query_zero_poly(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "query zero init");
+
+    int32_t poly[512];
+    memset(poly, 0, sizeof(poly));
+
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "query zero commit");
+
+    uint32_t indices[4] = {0, 100, 1024, 2047};
+    chipmunk_fri_query_opening_t openings[4];
+
+    rc = chipmunk_fri_query(&prov, 4, indices, openings);
+    dap_assert(rc == 0, "query zero query");
+
+    /* All leaf and sibling values should be zero. */
+    for (unsigned qi = 0; qi < 4; ++qi) {
+        for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+            dap_assert(openings[qi].leaf_values[r] == 0, "query zero leaf");
+            dap_assert(openings[qi].sibling_values[r] == 0, "query zero sib");
+        }
+    }
+
+    chipmunk_fri_proof_t proof;
+    memcpy(&proof.commit, &prov.proof, sizeof(chipmunk_fri_commit_proof_t));
+    memcpy(proof.queries, openings, sizeof(openings));
+
+    for (unsigned qi = 0; qi < 4; ++qi) {
+        bool ok = chipmunk_fri_verify_query(&proof, qi, s_alphas);
+        dap_assert(ok, "query zero verify");
+    }
+
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
+ * Test 13: Query verification rejects tampered leaf.
+ * ======================================================================== */
+static void test_fri_query_tampered(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "tampered init");
+
+    int32_t poly[512];
+    for (int i = 0; i < 512; ++i)
+        poly[i] = (i + 1) % CHIPMUNK_Q;
+
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "tampered commit");
+
+    uint32_t indices[1] = {42};
+    chipmunk_fri_query_opening_t openings[1];
+
+    rc = chipmunk_fri_query(&prov, 1, indices, openings);
+    dap_assert(rc == 0, "tampered query");
+
+    chipmunk_fri_proof_t proof;
+    memcpy(&proof.commit, &prov.proof, sizeof(chipmunk_fri_commit_proof_t));
+    memcpy(proof.queries, openings, sizeof(openings));
+
+    /* Verify original — should pass. */
+    bool ok = chipmunk_fri_verify_query(&proof, 0, s_alphas);
+    dap_assert(ok, "tampered original verify");
+
+    /* Tamper with round 0 leaf value. */
+    proof.queries[0].leaf_values[0] ^= 1;
+    ok = chipmunk_fri_verify_query(&proof, 0, s_alphas);
+    dap_assert(!ok, "tampered leaf rejected");
+
+    /* Restore and tamper with sibling. */
+    memcpy(proof.queries, openings, sizeof(openings));
+    proof.queries[0].sibling_values[3] ^= 1;
+    ok = chipmunk_fri_verify_query(&proof, 0, s_alphas);
+    dap_assert(!ok, "tampered sibling rejected");
+
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
+ * Test 14: Query invalid arguments.
+ * ======================================================================== */
+static void test_fri_query_invalid_args(void)
+{
+    chipmunk_fri_prover_t prov;
+    int rc = chipmunk_fri_prover_init(&prov);
+    dap_assert(rc == 0, "q args init");
+
+    int32_t poly[512];
+    memset(poly, 0, sizeof(poly));
+    rc = chipmunk_fri_commit(&prov, poly, s_alphas);
+    dap_assert(rc == 0, "q args commit");
+
+    uint32_t idx[1] = {0};
+    chipmunk_fri_query_opening_t out[1];
+
+    rc = chipmunk_fri_query(NULL, 1, idx, out);
+    dap_assert(rc < 0, "q NULL prov");
+
+    rc = chipmunk_fri_query(&prov, 0, idx, out);
+    dap_assert(rc < 0, "q zero queries");
+
+    rc = chipmunk_fri_query(&prov, 1, NULL, out);
+    dap_assert(rc < 0, "q NULL indices");
+
+    rc = chipmunk_fri_query(&prov, 1, idx, NULL);
+    dap_assert(rc < 0, "q NULL out");
+
+    /* Out-of-range index. */
+    uint32_t bad_idx[1] = {2048};
+    rc = chipmunk_fri_query(&prov, 1, bad_idx, out);
+    dap_assert(rc < 0, "q out of range idx");
+
+    /* Verify query with invalid index. */
+    chipmunk_fri_proof_t proof;
+    memcpy(&proof.commit, &prov.proof, sizeof(chipmunk_fri_commit_proof_t));
+    bool ok = chipmunk_fri_verify_query(&proof, 0, s_alphas);
+    /* query 0 was not opened, so values are zero — should fail merkle verify. */
+    dap_assert(!ok, "verify unopened query");
+
+    chipmunk_fri_prover_free(&prov);
+}
+
+/* ========================================================================
  * Main
  * ======================================================================== */
 int main(void)
@@ -491,7 +675,14 @@ int main(void)
     test_fri_different_alphas();
     test_fri_invalid_args();
 
-    log_it(L_INFO, "All FRI commit tests passed");
+    log_it(L_INFO, "=== FRI query phase tests ===");
+
+    test_fri_query();
+    test_fri_query_zero_poly();
+    test_fri_query_tampered();
+    test_fri_query_invalid_args();
+
+    log_it(L_INFO, "All FRI tests passed");
 
     dap_common_deinit();
     return 0;

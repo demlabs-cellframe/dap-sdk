@@ -52,3 +52,6 @@ add_chipmunk_test(test_pedersen_minimal)
 
 # Phase 9.1: FRI field arithmetic tests
 add_chipmunk_test(test_chipmunk_field)
+
+# Phase 9.2: 2048-point NTT tests
+add_chipmunk_test(test_chipmunk_fri_ntt)

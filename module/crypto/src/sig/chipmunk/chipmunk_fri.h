@@ -75,6 +75,39 @@ typedef struct chipmunk_fri_commit_proof {
     int32_t           final_evals[CHIPMUNK_FRI_FINAL_SIZE];
 } chipmunk_fri_commit_proof_t;
 
+/* Number of FRI queries (verifier checks). */
+#define CHIPMUNK_FRI_NUM_QUERIES   8u
+
+/**
+ * @brief A single query opening: one leaf value + Merkle auth path per round.
+ *
+ * For round r, stores the leaf value at index `idx` and its auth path
+ * to the cap.  The verifier checks:
+ *   1. Auth path: leaf → cap (Merkle verify)
+ *   2. Folding: H_{r+1}[idx/2] = [(1+α_r)·H_r[idx] + (1-α_r)·H_r[idx^n/2]] / 2
+ */
+typedef struct chipmunk_fri_query_opening {
+    /** Leaf index at round 0 (in [0, 2048)). */
+    uint32_t idx;
+
+    /** Leaf values at each round (the queried leaf, not the sibling). */
+    int32_t leaf_values[CHIPMUNK_FRI_ROUNDS];
+
+    /** Sibling leaf values (the antipodal pair) at each round. */
+    int32_t sibling_values[CHIPMUNK_FRI_ROUNDS];
+
+    /** Merkle auth paths at each round (path to cap). */
+    chipmunk_merkle_auth_path_t paths[CHIPMUNK_FRI_ROUNDS];
+} chipmunk_fri_query_opening_t;
+
+/**
+ * @brief Complete FRI proof: commit + query openings.
+ */
+typedef struct chipmunk_fri_proof {
+    chipmunk_fri_commit_proof_t  commit;
+    chipmunk_fri_query_opening_t queries[CHIPMUNK_FRI_NUM_QUERIES];
+} chipmunk_fri_proof_t;
+
 /**
  * @brief Internal state for the FRI prover (used during commit and query phases).
  *
@@ -177,6 +210,42 @@ const int32_t *chipmunk_fri_prover_final_evals(
  */
 bool chipmunk_fri_verify_fold(const int32_t *h_r, const int32_t *h_r1,
                                uint32_t n_r, int32_t alpha, uint32_t l);
+
+/**
+ * @brief FRI query phase: open multiple query positions across all rounds.
+ *
+ * For each query index, opens the leaf and its antipodal sibling at every
+ * FRI round, generates Merkle auth paths, and stores the results.
+ *
+ * The query indices are provided by the caller (derived from the Fiat-Shamir
+ * transcript in production; fixed for testing).
+ *
+ * @param prover       Prover state (must be committed).
+ * @param num_queries  Number of queries (≤ CHIPMUNK_FRI_NUM_QUERIES).
+ * @param indices      Query indices at round 0, each in [0, 2048).
+ * @param out          Output: array of query openings.
+ * @return             0 on success, negative on error.
+ */
+int chipmunk_fri_query(chipmunk_fri_prover_t *prover,
+                        uint32_t num_queries,
+                        const uint32_t indices[num_queries],
+                        chipmunk_fri_query_opening_t out[num_queries]);
+
+/**
+ * @brief Verify a single query opening against the commit proof.
+ *
+ * For each round r = 0..6:
+ *   1. Verify Merkle auth path: leaf → cap[r]
+ *   2. Verify folding relation: leaf + sibling → next round leaf
+ *
+ * @param proof     FRI proof (commit + query).
+ * @param q         Index of the query to verify.
+ * @param alphas    Folding challenges (7 values).
+ * @return          true if all checks pass, false otherwise.
+ */
+bool chipmunk_fri_verify_query(const chipmunk_fri_proof_t *proof,
+                                uint32_t q,
+                                const int32_t alphas[CHIPMUNK_FRI_ROUNDS]);
 
 #ifdef __cplusplus
 }

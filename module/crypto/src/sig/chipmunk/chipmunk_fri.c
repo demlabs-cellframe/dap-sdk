@@ -245,3 +245,127 @@ bool chipmunk_fri_verify_fold(const int32_t *h_r, const int32_t *h_r1,
 
     return l_expected == h_r1[l];
 }
+
+/* Helper: round size for verify (avoids depending on prover state). */
+static inline uint32_t s_round_sizes_val(unsigned r)
+{
+    static const uint32_t s_sizes[CHIPMUNK_FRI_ROUNDS] = {
+        2048, 1024, 512, 256, 128, 64, 32
+    };
+    return (r < CHIPMUNK_FRI_ROUNDS) ? s_sizes[r] : 0;
+}
+
+/* -------------------------------------------------------------------------
+ * FRI Query Phase
+ * ------------------------------------------------------------------------- */
+
+int chipmunk_fri_query(chipmunk_fri_prover_t *prover,
+                        uint32_t num_queries,
+                        const uint32_t indices[num_queries],
+                        chipmunk_fri_query_opening_t out[num_queries])
+{
+    if (!prover || !prover->committed || !indices || !out)
+        return -1;
+    if (num_queries == 0 || num_queries > CHIPMUNK_FRI_NUM_QUERIES)
+        return -1;
+
+    for (uint32_t qi = 0; qi < num_queries; ++qi) {
+        uint32_t l_idx = indices[qi];
+        if (l_idx >= CHIPMUNK_FRI_INIT_SIZE)
+            return -1;
+
+        out[qi].idx = l_idx;
+
+        for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+            uint32_t l_n = prover->round_sizes[r];
+            uint32_t l_cap_size = prover->cap_sizes[r];
+
+            /* Get round codeword. */
+            uint32_t l_offset = 0;
+            for (unsigned j = 0; j < r; ++j)
+                l_offset += prover->round_sizes[j];
+            const int32_t *l_data = prover->round_data + l_offset;
+
+            /* Leaf and its antipodal sibling. */
+            uint32_t l_half = l_n / 2u;
+            uint32_t l_leaf_idx = l_idx % l_n;       /* index within this round */
+            uint32_t l_sib_idx = l_leaf_idx ^ l_half; /* antipodal: flip the highest bit */
+
+            out[qi].leaf_values[r] = l_data[l_leaf_idx];
+            out[qi].sibling_values[r] = l_data[l_sib_idx];
+
+            /* Generate Merkle auth path for the leaf. */
+            int l_rc = chipmunk_merkle_open(l_data, l_n, l_leaf_idx,
+                                              l_cap_size,
+                                              &out[qi].paths[r],
+                                              prover->merkle_scratch);
+            if (l_rc != 0) {
+                log_it(L_ERROR, "FRI query: merkle_open round %u idx %u failed",
+                       r, l_leaf_idx);
+                return l_rc;
+            }
+        }
+    }
+
+    return 0;
+}
+
+bool chipmunk_fri_verify_query(const chipmunk_fri_proof_t *proof,
+                                uint32_t q,
+                                const int32_t alphas[CHIPMUNK_FRI_ROUNDS])
+{
+    if (!proof || q >= CHIPMUNK_FRI_NUM_QUERIES)
+        return false;
+
+    const chipmunk_fri_query_opening_t *l_qry = &proof->queries[q];
+    int32_t l_inv2 = chipmunk_field_inv(2);
+
+    for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
+        uint32_t l_n = s_round_sizes_val(r);
+        uint32_t l_cap_size = (l_n >= 32u) ? 16u : l_n;
+        const int32_t *l_cap = proof->commit.caps[r].nodes;
+        int32_t l_leaf = l_qry->leaf_values[r];
+        int32_t l_sib = l_qry->sibling_values[r];
+        const chipmunk_merkle_auth_path_t *l_path = &l_qry->paths[r];
+
+        /* 1. Verify Merkle auth path for the leaf. */
+        bool l_ok = chipmunk_merkle_verify(l_leaf, l_n, l_path, l_cap, l_cap_size);
+        if (!l_ok)
+            return false;
+
+        /* 2. Verify folding relation: leaf + sibling → next round leaf.
+         * The canonical index in round r+1 is min(leaf_idx, sib_idx).
+         * H_{r+1}[c] = [(1+α)·H_r[c] + (1-α)·H_r[c+n/2]] / 2
+         * If leaf is in the first half, coefficients are (1+α,1-α) for
+         * (leaf, sib). If leaf is in the second half, they swap. */
+        if (r + 1u < CHIPMUNK_FRI_ROUNDS) {
+            uint32_t l_half = l_n / 2u;
+            uint32_t l_leaf_idx = l_qry->idx % l_n;
+
+            int32_t l_1pa = (1 + alphas[r]) % (int32_t)CHIPMUNK_Q;
+            int32_t l_1ma = (1 - alphas[r] + (int32_t)CHIPMUNK_Q) % (int32_t)CHIPMUNK_Q;
+
+            /* Choose coefficients based on which half the leaf is in. */
+            int32_t l_cfirst, l_csecond;
+            if (l_leaf_idx < l_half) {
+                l_cfirst  = l_1pa;   /* (1+α) for H_r[leaf]   */
+                l_csecond = l_1ma;   /* (1-α) for H_r[sibling] */
+            } else {
+                l_cfirst  = l_1ma;   /* (1-α) for H_r[leaf]   */
+                l_csecond = l_1pa;   /* (1+α) for H_r[sibling] */
+            }
+
+            int64_t l_sum = (int64_t)l_cfirst  * (int64_t)l_leaf
+                          + (int64_t)l_csecond * (int64_t)l_sib;
+            l_sum = l_sum % (int64_t)CHIPMUNK_Q;
+            if (l_sum < 0) l_sum += (int64_t)CHIPMUNK_Q;
+            int32_t l_folded = (int32_t)(l_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
+            if (l_folded < 0) l_folded += (int32_t)CHIPMUNK_Q;
+
+            if (l_folded != l_qry->leaf_values[r + 1u])
+                return false;
+        }
+    }
+
+    return true;
+}
