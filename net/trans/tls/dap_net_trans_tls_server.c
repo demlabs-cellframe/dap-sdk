@@ -216,7 +216,7 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     if (a_es->buf_in_size > 0 && a_es->buf_in_size == t->prev_buf_in_size)
         return;
 
-    log_it(L_NOTICE, "TLS server: s_tls_read fd=%d, buf_in_size=%zu, t=%p",
+    debug_if(s_debug_more, L_DEBUG, "TLS server: s_tls_read fd=%d, buf_in_size=%zu, t=%p",
            a_es ? a_es->socket : -1, a_es ? a_es->buf_in_size : 0, (void*)t);
 
     /* === TLS handshake phase === */
@@ -291,7 +291,7 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     void *l_raw = NULL; size_t l_raw_sz = 0, l_consumed = 0;
     int l_rc = dap_tls_mimicry_unwrap(t->mimicry,
         a_es->buf_in, a_es->buf_in_size, &l_raw, &l_raw_sz, &l_consumed);
-    log_it(L_NOTICE, "TLS server: unwrap rc=%d, consumed=%zu, raw_sz=%zu, buf_in_size=%zu",
+    debug_if(s_debug_more, L_DEBUG, "TLS server: unwrap rc=%d, consumed=%zu, raw_sz=%zu, buf_in_size=%zu",
            l_rc, l_consumed, l_raw_sz, a_es->buf_in_size);
 
     if (l_consumed > 0) {
