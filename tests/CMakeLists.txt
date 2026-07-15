@@ -417,6 +417,18 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_ledger_anon
                       "unit;ledger;anonymous;integration")
 endif()
 
+# ============================================================
+# Phase 9: FRI-DEEP polynomial commitment scheme
+# ============================================================
+
+# 9.1: Field arithmetic (modinv, powmod, primitive root)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_field.c)
+    add_dap_test(test_unit_chipmunk_field
+                 unit/crypto/chipmunk_ring/test_chipmunk_field.c)
+    register_dap_test(test_unit_chipmunk_field
+                      "unit;crypto;field;fri")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
