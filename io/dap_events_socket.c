@@ -1792,6 +1792,33 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
 }
 
 /**
+ * @brief dap_events_socket_write_inter — cross-worker write taking ownership of data.
+ *
+ * Like write_mt but the caller transfers ownership of a_data (which must be
+ * heap-allocated) and must NOT free it afterward.  This saves one allocation
+ * compared to write_mt (no DAP_DUP_SIZE needed).  The target worker copies the
+ * data into the esocket buf_out and then frees a_data.
+ *
+ * On error (queue full) a_data is freed by this function.
+ */
+size_t dap_events_socket_write_inter(dap_worker_t *a_w, dap_events_socket_uuid_t a_es_uuid,
+                                     void *a_data, size_t a_data_size)
+{
+    dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
+    l_msg->esocket_uuid = a_es_uuid;
+    l_msg->data = a_data;       /* takes ownership */
+    l_msg->data_size = a_data_size;
+    l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
+
+    if (!dap_context_queue_push(a_w->queue_es_io, l_msg)) {
+        log_it(L_ERROR, "write inter: queue full, lost %zu bytes", a_data_size);
+        DAP_DEL_MULTY(l_msg->data, l_msg);
+        return 0;
+    }
+    return a_data_size;
+}
+
+/**
  * @brief dap_events_socket_write_f_mt
  * @param a_es_uuid
  * @param a_format

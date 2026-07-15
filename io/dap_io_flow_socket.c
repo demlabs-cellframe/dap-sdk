@@ -816,17 +816,17 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         if (a_socket_type == SOCK_DGRAM) {
             int l_udp_buf = 16 * 1024 * 1024; // 16 MB
 #if defined(__linux__) && defined(SO_RCVBUFFORCE)
-            if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUFFORCE, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+            if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUFFORCE, (const char *)&l_udp_buf, sizeof(l_udp_buf)) < 0)
 #endif
             {
-                if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+                if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, (const char *)&l_udp_buf, sizeof(l_udp_buf)) < 0)
                     log_it(L_WARNING, "UDP recv buffer setsockopt failed: %s", strerror(errno));
             }
 #if defined(__linux__) && defined(SO_SNDBUFFORCE)
-            if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUFFORCE, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+            if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUFFORCE, (const char *)&l_udp_buf, sizeof(l_udp_buf)) < 0)
 #endif
             {
-                if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+                if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, (const char *)&l_udp_buf, sizeof(l_udp_buf)) < 0)
                     log_it(L_WARNING, "UDP send buffer setsockopt failed: %s", strerror(errno));
             }
         }

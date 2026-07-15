@@ -581,7 +581,7 @@ static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted)
             if (l_append_cmd) {
                 l_argc++;
                 char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
-                al_argv[1] = l_ncmd;
+                al_argv[0] = l_argv[0];
                 al_argv[1] = l_append_cmd;
                 for (int i = 1; i < l_argc; i++)
                     al_argv[i + 1] = l_argv[i];

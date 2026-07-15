@@ -42,6 +42,9 @@ void dap_enc_salsa2012_key_generate(struct dap_enc_key * a_key, const void *kex_
     if(key_size < SALSA20_KEY_SIZE)
     {
         log_it(L_ERROR, "SALSA20 key cannot be less than 32 bytes but got %zd",key_size);
+        a_key->priv_key_data = NULL;
+        a_key->priv_key_data_size = 0;
+        return;
     }
     a_key->last_used_timestamp = time(NULL);
 
@@ -164,14 +167,7 @@ void dap_enc_salsa2012_key_new_from_raw_bytes(struct dap_enc_key *a_key,
     dap_hash_fast(seed, 16, &l_hash);  // Hash first 16 bytes of key
     memcpy(a_key->_inheritor, &l_hash, SALSA20_NONCE_SIZE);  // Take first 8 bytes as nonce
     
-    debug_if(s_debug_more, L_DEBUG, "SALSA2012: created key from raw bytes with deterministic nonce: "
-           "nonce=%02x%02x%02x%02x%02x%02x%02x%02x key=%02x%02x%02x%02x...",
-           ((uint8_t*)a_key->_inheritor)[0], ((uint8_t*)a_key->_inheritor)[1],
-           ((uint8_t*)a_key->_inheritor)[2], ((uint8_t*)a_key->_inheritor)[3],
-           ((uint8_t*)a_key->_inheritor)[4], ((uint8_t*)a_key->_inheritor)[5],
-           ((uint8_t*)a_key->_inheritor)[6], ((uint8_t*)a_key->_inheritor)[7],
-           ((uint8_t*)a_key->priv_key_data)[0], ((uint8_t*)a_key->priv_key_data)[1],
-           ((uint8_t*)a_key->priv_key_data)[2], ((uint8_t*)a_key->priv_key_data)[3]);
+    debug_if(s_debug_more, L_DEBUG, "SALSA2012: created key from raw bytes with deterministic nonce");
 }
 
 /**
@@ -188,11 +184,11 @@ size_t dap_enc_salsa2012_decrypt(struct dap_enc_key *a_key, const void * a_in, s
     debug_if(s_debug_more, L_INFO, "SALSA2012_DECRYPT (wrapper): a_in_size=%zu, SALSA20_NONCE_SIZE=%d, _inheritor=%p, _inheritor_size=%zu",
            a_in_size, SALSA20_NONCE_SIZE, a_key->_inheritor, a_key->_inheritor_size);
     
-    size_t l_out_size = a_in_size - SALSA20_NONCE_SIZE;
-    if(l_out_size <= 0) {
+    if(a_in_size < SALSA20_NONCE_SIZE) {
         log_it(L_ERROR, "salsa2012 decryption ct with iv must be more than kBlockLen89 bytes");
         return 0;
     }
+    size_t l_out_size = a_in_size - SALSA20_NONCE_SIZE;
     *a_out = DAP_NEW_SIZE(uint8_t, a_in_size - SALSA20_NONCE_SIZE);
     l_out_size = dap_enc_salsa2012_decrypt_fast(a_key, a_in, a_in_size, *a_out, l_out_size);
     if(l_out_size == 0)
@@ -277,12 +273,6 @@ size_t dap_enc_salsa2012_decrypt_fast(struct dap_enc_key *a_key, const void * a_
         debug_if(s_debug_more, L_DEBUG, "DECRYPT input nonce (first 8 bytes): %02x%02x%02x%02x%02x%02x%02x%02x",
                ((uint8_t*)a_in)[0], ((uint8_t*)a_in)[1], ((uint8_t*)a_in)[2], ((uint8_t*)a_in)[3],
                ((uint8_t*)a_in)[4], ((uint8_t*)a_in)[5], ((uint8_t*)a_in)[6], ((uint8_t*)a_in)[7]);
-        
-        if (a_key->priv_key_data && a_key->priv_key_data_size >= 8) {
-            uint8_t *k = a_key->priv_key_data;
-            debug_if(s_debug_more, L_DEBUG, "DECRYPT priv_key_data (first 8 bytes): %02x%02x%02x%02x%02x%02x%02x%02x",
-                   k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]);
-        }
     }
     
     size_t l_out_size = a_in_size - SALSA20_NONCE_SIZE;
@@ -317,12 +307,6 @@ size_t dap_enc_salsa2012_encrypt_fast(struct dap_enc_key * a_key, const void * a
         uint8_t *n = (uint8_t*)a_key->_inheritor;
         debug_if(s_debug_more, L_DEBUG, "ENCRYPT nonce (in _inheritor): %02x%02x%02x%02x%02x%02x%02x%02x",
                n[0], n[1], n[2], n[3], n[4], n[5], n[6], n[7]);
-    }
-    
-    if (s_debug_more && a_key->priv_key_data && a_key->priv_key_data_size >= 8) {
-        uint8_t *k = a_key->priv_key_data;
-        debug_if(s_debug_more, L_DEBUG, "ENCRYPT priv_key_data (first 8 bytes): %02x%02x%02x%02x%02x%02x%02x%02x",
-               k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]);
     }
     
     size_t l_out_size = a_in_size + SALSA20_NONCE_SIZE;

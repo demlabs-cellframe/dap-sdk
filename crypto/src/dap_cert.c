@@ -315,12 +315,15 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
     dap_cert_item_t *l_cert_item = NULL;
     dap_cert_t *l_ret = NULL;
 
-    char* l_cert_name = (char*)a_cert_name;
     size_t l_cert_name_len = strlen(a_cert_name);
-    for (unsigned int i = 0; i < l_cert_name_len; i++){
-        if (l_cert_name[i]=='\\')
-            l_cert_name[i]='/';
+    char* l_cert_name = DAP_NEW_Z_SIZE(char, l_cert_name_len + 1);
+    if (!l_cert_name) {
+        return NULL;
     }
+    for (unsigned int i = 0; i < l_cert_name_len; i++){
+        l_cert_name[i] = (a_cert_name[i] == '\\') ? '/' : a_cert_name[i];
+    }
+    l_cert_name[l_cert_name_len] = '\0';
 
     if(strstr(l_cert_name, "/")){
         // find external certificate
@@ -333,7 +336,7 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
         l_ret = dap_cert_file_load(l_cert_path);
         DAP_DELETE(l_cert_path);
     } else {
-        HASH_FIND_STR(s_certs, a_cert_name, l_cert_item);
+        HASH_FIND_STR(s_certs, l_cert_name, l_cert_item);
         if (l_cert_item ) {
             l_ret = l_cert_item->cert ;
             debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: '%s' FOUND in memory (enc_key=%p)", a_cert_name, l_ret->enc_key);
@@ -344,7 +347,7 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
             char **l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);
             debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: ca_folders_size=%u", l_ca_folders_size);
             for (uint16_t i = 0; i < l_ca_folders_size; ++i) {
-                l_cert_path = dap_strjoin("", l_ca_folders[i], "/", a_cert_name, ".dcert", (char *)NULL);
+                l_cert_path = dap_strjoin("", l_ca_folders[i], "/", l_cert_name, ".dcert", (char *)NULL);
                 debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: trying path '%s'", l_cert_path);
                 l_ret = dap_cert_file_load(l_cert_path);
                 DAP_DELETE(l_cert_path);
@@ -357,7 +360,8 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
         }
     }
     if (!l_ret)
-        debug_if(s_debug_more, L_DEBUG, "Can't load cert '%s'", a_cert_name);
+        debug_if(s_debug_more, L_DEBUG, "Can't load cert '%s'", l_cert_name);
+    DAP_DELETE(l_cert_name);
     return l_ret;
 }
 
@@ -755,11 +759,11 @@ bool dap_cert_get_meta_bool(dap_cert_t *a_cert, const char *a_field)
 {
     dap_cert_metadata_t *l_meta = dap_cert_get_meta(a_cert, a_field);
     if (!l_meta) {
-        return -1;
+        return false;
     }
     if (l_meta->type != DAP_CERT_META_BOOL) {
         debug_if(s_debug_more, L_DEBUG, "Requested and actual metadata types are not equal");
-        return -1;
+        return false;
     }
     if (l_meta->length != sizeof(bool)) {
         debug_if(s_debug_more, L_DEBUG, "Metadata field corrupted");

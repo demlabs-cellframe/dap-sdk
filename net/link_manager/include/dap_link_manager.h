@@ -42,6 +42,9 @@ typedef void (*dap_link_manager_callback_error_t)(dap_link_t *, uint64_t, int);
 typedef int (*dap_link_manager_callback_fill_net_info_t)(dap_link_t *);
 typedef int (*dap_link_manager_callback_link_request_t)(uint64_t);
 typedef int (*dap_link_manager_callback_link_count_changed_t)();
+typedef void (*dap_link_manager_callback_configure_handshake_t)(dap_client_t *a_client,
+                                                                dap_stream_node_addr_t *a_addr,
+                                                                uint64_t a_net_id);
 
 typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_connected_t connected;
@@ -50,6 +53,7 @@ typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_fill_net_info_t fill_net_info;
     dap_link_manager_callback_link_request_t link_request;
     dap_link_manager_callback_link_count_changed_t link_count_changed;
+    dap_link_manager_callback_configure_handshake_t configure_handshake;
 
 } dap_link_manager_callbacks_t;
 
@@ -113,6 +117,10 @@ size_t dap_link_manager_links_count(uint64_t a_net_id);
 size_t dap_link_manager_established_uplinks_count(uint64_t a_net_id);
 size_t dap_link_manager_required_links_count(uint64_t a_net_id);
 size_t dap_link_manager_needed_links_count(uint64_t a_net_id);
+/* === TEMP_DEBUG_LINKS_CONNECTING: START (temporary, remove after investigation) === */
+void dap_link_manager_log_uplinks_connecting_diag(uint64_t a_net_id);
+void dap_link_manager_log_all_connecting_diag(void);
+/* === TEMP_DEBUG_LINKS_CONNECTING: END === */
 void dap_link_manager_set_condition(bool a_new_condition);
 bool dap_link_manager_get_condition();
 char *dap_link_manager_get_links_info();

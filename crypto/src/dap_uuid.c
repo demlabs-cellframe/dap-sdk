@@ -115,7 +115,7 @@ dap_guuid_t dap_guuid_from_hex_str(const char *a_hex_str, bool *succsess)
         return ret;
     }
     size_t l_hex_str_len = strlen(a_hex_str);
-    if (l_hex_str_len != (16 * 2 + 2) || dap_strncmp(a_hex_str, "0x", 2) || dap_is_hex_string(a_hex_str + 2, l_hex_str_len - 2)) {
+    if (l_hex_str_len != (16 * 2 + 2) || dap_strncmp(a_hex_str, "0x", 2) || !dap_is_hex_string(a_hex_str + 2, l_hex_str_len - 2)) {
         if (succsess) *succsess = false;
         return ret;
     }

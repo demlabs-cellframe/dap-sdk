@@ -52,7 +52,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${DAP_SDK_ROOT}/net/common/server/include  # For dap_net_server_common.h
 )
 
-if(DARWIN)
+if(DARWIN AND NOT IOS)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)
 endif()
 

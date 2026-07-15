@@ -556,7 +556,17 @@ pthread_t       l_tid;
             log_it(L_WARNING, "pthread_join failed for worker %u: %d", i, l_join_result);
     }
     }
-    
+
+    /* Threads have exited and freed their contexts (s_context_thread ->
+     * DAP_DELETE(l_context)). Null out the dangling pointers so that
+     * dap_events_deinit()/dap_events_stop_all() short-circuit safely
+     * on the existing `!context` guards instead of dereferencing freed
+     * memory (use-after-free → SEGV). */
+    for (uint32_t i = 0; i < s_threads_count; i++) {
+        if (s_workers[i])
+            s_workers[i]->context = NULL;
+    }
+
     DAP_DELETE(l_thread_ids);
     return 0;
 }

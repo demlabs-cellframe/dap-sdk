@@ -520,13 +520,17 @@ static int s_deobfuscate_impl(dap_stream_obfuscation_t *a_obfs,
         }
     }
 
-    // Remove padding (for now, assume padding is at the end)
-    // In production, padding info should be encoded in packet header
-    size_t l_original_size = a_data_size;  // Placeholder
+    // Remove padding from the end
+    size_t l_original_size = a_data_size;
     if (a_obfs->config.enabled_techniques & DAP_STREAM_OBFS_PADDING) {
-        // For now, just use full size
-        // Real implementation would need padding length encoded
-        l_original_size = a_data_size;
+        if (l_original_size > 0) {
+            // Last byte contains padding length
+            uint8_t l_padding_size = ((uint8_t *)a_data)[l_original_size - 1];
+            // Valid padding size is 1-16 (based on block size)
+            if (l_padding_size > 0 && l_padding_size <= 16 && l_padding_size <= l_original_size) {
+                l_original_size = l_original_size - l_padding_size;
+            }
+        }
     }
 
     *a_out_data = l_buffer;
