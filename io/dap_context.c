@@ -1565,14 +1565,15 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_FILE:
                         l_bytes_sent = write(s_es_io_fd(l_cur), (char *) (l_cur->buf_out), l_cur->buf_out_size );
                         l_errno = errno;
-                        /* TUN (FILE): retain buffered data and drop EPOLLOUT to avoid a
-                         * level-triggered spin; flush is re-armed after the next read. */
                         if (l_bytes_sent < 0 && (l_errno == EAGAIN || l_errno == EWOULDBLOCK)) {
                             if (l_cur->type == DESCRIPTOR_TYPE_FILE) {
+                                /* TUN (FILE): keep EPOLLOUT armed so the reactor retries
+                                 * the write as soon as the kernel tx queue has space.
+                                 * Dropping EPOLLOUT here stalled downstream data until
+                                 * the next upstream TUN read event. */
                                 debug_if(s_debug_more, L_DEBUG,
-                                         "TUN fd=%d write EAGAIN — keeping %zu bytes buffered",
+                                         "TUN fd=%d write EAGAIN — keeping %zu bytes buffered, EPOLLOUT stays armed",
                                          s_es_io_fd(l_cur), l_cur->buf_out_size);
-                                dap_events_socket_set_writable_unsafe(l_cur, false);
                                 l_bytes_sent = 0;
                             } else if (l_cur->type == DESCRIPTOR_TYPE_PIPE) {
                                 debug_if(s_debug_more, L_DEBUG,
@@ -1608,7 +1609,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                             case DESCRIPTOR_TYPE_PIPE:
-                            case DESCRIPTOR_TYPE_FILE:
+                                /* FILE (TUN) handled above — keeps EPOLLOUT armed */
                                 dap_events_socket_set_writable_unsafe(l_cur, false);
                                 break;
                             default:

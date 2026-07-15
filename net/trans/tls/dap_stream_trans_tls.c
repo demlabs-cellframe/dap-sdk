@@ -21,6 +21,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <sys/socket.h>
+#include <netinet/tcp.h>
 
 #include "dap_common.h"
 #include "dap_config.h"
@@ -216,6 +218,18 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
     }
 
     l_es->_inheritor = a_params->client_ctx;
+
+    /* Disable Nagle's algorithm on the client-side TCP socket.
+     * VPN data consists of individual IP packets (~1420 bytes + headers);
+     * Nagle delays small writes up to 200 ms waiting for coalescing or an ACK,
+     * which adds unacceptable latency on the VPN hot path. */
+    {
+        int l_nodelay = 1;
+        if (setsockopt(l_es->socket, IPPROTO_TCP, TCP_NODELAY,
+                        &l_nodelay, sizeof(l_nodelay)) < 0)
+            log_it(L_WARNING, "TLS transport: failed to set TCP_NODELAY: %s", strerror(errno));
+    }
+
     dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port);
     l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE | DAP_SOCK_READY_TO_READ;
 #ifdef DAP_EVENTS_CAPS_IOCP
