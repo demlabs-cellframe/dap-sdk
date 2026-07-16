@@ -101,9 +101,9 @@ static inline int32_t s_fq6_sub(int32_t a, int32_t b)
  * ---------------------------------------------------------------------- */
 
 static void s_poly_to_bytes(uint8_t *a_out, size_t a_out_size,
-                            const chipmunk_poly_t *a_poly)
+                            const chipmunk_poly_t *a_poly, uint32_t a_d)
 {
-    size_t l_bytes = CHIPMUNK_N * sizeof(int32_t);
+    size_t l_bytes = (size_t)a_d * sizeof(int32_t);
     if (l_bytes > a_out_size) l_bytes = a_out_size;
     /* Normalize coefficients to [0, Q) for cross-platform portability */
     for (size_t i = 0; i < l_bytes / sizeof(int32_t); ++i) {
@@ -113,12 +113,13 @@ static void s_poly_to_bytes(uint8_t *a_out, size_t a_out_size,
 }
 
 static int s_commit_poly(chipmunk_snark_commit_t *a_commit,
-                         const chipmunk_poly_t *a_poly)
+                         const chipmunk_poly_t *a_poly, uint32_t a_d)
 {
-    uint8_t l_buf[CHIPMUNK_N * sizeof(int32_t)];
-    s_poly_to_bytes(l_buf, sizeof(l_buf), a_poly);
-    dap_hash_sha3_256_raw(a_commit->hash, l_buf, sizeof(l_buf));
-    dap_memwipe(l_buf, sizeof(l_buf));
+    uint8_t l_buf[CHIPMUNK_SNARK_MAX_D * sizeof(int32_t)];
+    size_t l_bytes = (size_t)a_d * sizeof(int32_t);
+    s_poly_to_bytes(l_buf, l_bytes, a_poly, a_d);
+    dap_hash_sha3_256_raw(a_commit->hash, l_buf, l_bytes);
+    dap_memwipe(l_buf, l_bytes);
     return 0;
 }
 
@@ -347,7 +348,8 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                                          const chipmunk_lrs_public_key_t *a_ring,
                                          uint32_t a_ring_size,
                                          const s_fq6_elem_t *a_randomizer,
-                                         const dap_hash_sha3_256_t *a_ring_hash)
+                                         const dap_hash_sha3_256_t *a_ring_hash,
+                                         uint32_t a_d)
 {
     (void)a_ring;      /* ring is bound via transcript, not constraints */
     (void)a_ring_hash; /* ring hash is in transcript, not constraint poly */
@@ -358,16 +360,17 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
      *   b[i] = 0 for i ≠ signer → 0 * (0 - 1) = 0
      * So C1 = 0 polynomial for honest prover. */
     chipmunk_poly_t l_c1;
-    for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
+    memset(&l_c1, 0, sizeof(l_c1));
+    for (uint32_t i = 0; i < a_d; ++i) {
         int32_t l_bi = a_b->coeffs[i];
         l_c1.coeffs[i] = chipmunk_mod_q((int64_t)l_bi * (l_bi - 1));
     }
 
     /* C2: sum(b_i) - 1 = 0 — exactly one signer
      * For valid indicator: sum = 1, so C2 = 0 constant polynomial.
-     * Note: we iterate up to ring_size (may be < CHIPMUNK_N). */
+     * Note: we iterate up to ring_size (may be < d). */
     int64_t l_sum = 0;
-    for (uint32_t i = 0; i < a_ring_size && i < CHIPMUNK_N; ++i) {
+    for (uint32_t i = 0; i < a_ring_size && i < a_d; ++i) {
         l_sum += a_b->coeffs[i];
     }
     chipmunk_poly_t l_c2;
@@ -635,7 +638,8 @@ int chipmunk_snark_commit(chipmunk_snark_commit_t *a_commit,
                           const chipmunk_poly_t *a_poly)
 {
     if (!a_commit || !a_poly) return -EINVAL;
-    return s_commit_poly(a_commit, a_poly);
+    /* Default to MAX_D for standalone API (no context available). */
+    return s_commit_poly(a_commit, a_poly, CHIPMUNK_SNARK_MAX_D);
 }
 
 int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
@@ -648,9 +652,8 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     if (a_statement->ring_size == 0) return -EINVAL;
     if (!a_statement->ring) return -EINVAL;
     if (a_statement->message_size > 0 && !a_statement->message) return -EINVAL;
-    if (a_statement->ring_size > UINT32_MAX) return -EINVAL;
+    if (a_statement->ring_size > a_ctx->sp.d) return -EINVAL;
     if (a_witness->signer_index >= a_statement->ring_size) return -EINVAL;
-    if (a_witness->signer_index >= CHIPMUNK_N) return -EINVAL;
 
     memset(a_proof, 0, sizeof(*a_proof));
 
@@ -700,17 +703,18 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     s_ext_to_fq6(&l_randomizer, &l_randomizer_ext);
 
     /* Commit to randomizer for verifier re-derivation */
-    s_commit_poly(&a_proof->r_commit, &l_randomizer_ext.c[0]);
+    s_commit_poly(&a_proof->r_commit, &l_randomizer_ext.c[0], a_ctx->sp.d);
 
     /* 5. Build constraint polynomial z(X) = C1 + r*C2
      * For honest prover: z = 0, so synthetic division by (X - alpha) succeeds. */
     chipmunk_poly_t l_z;
     s_build_constraint_polynomial(&l_z, &l_b, a_statement->ring,
                                    (uint32_t)a_statement->ring_size,
-                                   &l_randomizer, &l_ring_hash);
+                                   &l_randomizer, &l_ring_hash,
+                                   a_ctx->sp.d);
 
     /* 6. Commit to constraint polynomial → z_commit */
-    s_commit_poly(&a_proof->z_commit, &l_z);
+    s_commit_poly(&a_proof->z_commit, &l_z, a_ctx->sp.d);
 
     /* 7. Compute message hash for binding.
      * Use empty string for zero-length messages to avoid NULL dereference. */
@@ -755,17 +759,18 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     }
 
     /* 10. Commit to quotient polynomial → q_commit */
-    s_commit_poly(&a_proof->q_commit, &l_q);
+    s_commit_poly(&a_proof->q_commit, &l_q, a_ctx->sp.d);
 
     /* 11. Opening proof: serialized z and q polynomials.
      * Retained for algebraic verification checks (z(alpha)=0, quotient).
      * Phase 9.12+ will eliminate raw polys via DEEP composition. */
     {
-        size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
+        uint32_t l_d = a_ctx->sp.d;
+        size_t l_poly_bytes = (size_t)l_d * sizeof(int32_t);
         size_t l_off = 0;
-        s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_z);
+        s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_z, l_d);
         l_off += l_poly_bytes;
-        s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_q);
+        s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_q, l_d);
         l_off += l_poly_bytes;
         a_proof->opening_proof_size = l_off;
     }
@@ -1014,7 +1019,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     /* Verify r_commit matches re-derived randomizer (constant-time). */
     {
         chipmunk_snark_commit_t l_r_commit;
-        s_commit_poly(&l_r_commit, &l_randomizer_ext.c[0]);
+        s_commit_poly(&l_r_commit, &l_randomizer_ext.c[0], a_ctx->sp.d);
         uint8_t l_diff = 0;
         for (int i = 0; i < 32; ++i)
             l_diff |= l_r_commit.hash[i] ^ a_proof->r_commit.hash[i];
@@ -1174,7 +1179,8 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
     /* 7. Verify opening proof: reconstruct z, q from bytes and check commitments.
      * Raw polys retained for algebraic checks (z(alpha)=0, quotient). */
-    size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
+    uint32_t l_d = a_ctx->sp.d;
+    size_t l_poly_bytes = (size_t)l_d * sizeof(int32_t);
     if (a_proof->opening_proof_size < l_poly_bytes * 2) {
         log_it(L_ERROR, "SNARK verify: opening proof too small (%zu < %zu)",
                a_proof->opening_proof_size, l_poly_bytes * 2);
@@ -1183,11 +1189,13 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
     /* Reconstruct z, q from opening proof bytes */
     chipmunk_poly_t l_z, l_q;
+    memset(&l_z, 0, sizeof(l_z));
+    memset(&l_q, 0, sizeof(l_q));
     memcpy(l_z.coeffs, a_proof->opening_proof, l_poly_bytes);
     memcpy(l_q.coeffs, a_proof->opening_proof + l_poly_bytes, l_poly_bytes);
 
     /* Verify coefficients are in range [0, Q) */
-    for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
+    for (uint32_t i = 0; i < l_d; ++i) {
         if (l_z.coeffs[i] < 0 || l_z.coeffs[i] >= (int32_t)CHIPMUNK_Q) return 0;
         if (l_q.coeffs[i] < 0 || l_q.coeffs[i] >= (int32_t)CHIPMUNK_Q) return 0;
     }
@@ -1195,8 +1203,8 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     /* Verify commitments match (constant-time). */
     {
         chipmunk_snark_commit_t l_z_commit, l_q_commit;
-        s_commit_poly(&l_z_commit, &l_z);
-        s_commit_poly(&l_q_commit, &l_q);
+        s_commit_poly(&l_z_commit, &l_z, a_ctx->sp.d);
+        s_commit_poly(&l_q_commit, &l_q, a_ctx->sp.d);
 
         uint8_t l_diff_z = 0, l_diff_q = 0;
         for (int i = 0; i < 32; ++i) {
@@ -1277,13 +1285,13 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
             /* Evaluate z(test_point) via Horner's method in F_q */
             int64_t l_z_eval = 0;
-            for (int i = CHIPMUNK_N - 1; i >= 0; --i) {
+            for (int i = (int)l_d - 1; i >= 0; --i) {
                 l_z_eval = (int64_t)chipmunk_mod_q((int64_t)l_test_point * l_z_eval + l_z.coeffs[i]);
             }
 
             /* Evaluate q(test_point) via Horner's method in F_q */
             int64_t l_q_eval = 0;
-            for (int i = CHIPMUNK_N - 1; i >= 0; --i) {
+            for (int i = (int)l_d - 1; i >= 0; --i) {
                 l_q_eval = (int64_t)chipmunk_mod_q((int64_t)l_test_point * l_q_eval + l_q.coeffs[i]);
             }
 
