@@ -3,23 +3,22 @@
  *
  * Post-quantum succinct non-interactive argument of knowledge based on:
  * - Hash-based polynomial commitments over R_q^{(e)} (degree-6 extension)
- * - Challenges from subtractive set S = F_{q^6} \ {0}  (|S| = q^6 - 1 ~ 2^129.6)
+ * - Challenges from subtractive set S = F_{q^6} \ {0}
  * - Ring membership circuit as polynomial constraints over R_q
  * - QROM Fiat-Shamir transform
  * - FRI-DEEP polynomial commitment scheme (Phase 9.11)
  *
  * All operations over R_q^{(e)} = R_q[Y]/(Phi_9(Y)) where Phi_9 = Y^6+Y^3+1.
- * R_q = Z_q[X]/(X^512+1), q = 3168257 (prime).
+ * R_q = Z_q[X]/(X^d+1), q prime with q mod 9 ∈ {2,5}.
  *
- * Soundness model (Phase 9.11 — FRI-PCS integration):
- * - Alpha challenge from F_{q^6}\{0}: extension soundness ~129 bits
- * - Quotient checks at 11 random F_q points: ~238 bits
- * - FRI proximity (8 queries): ~8 bits
- * - Grinding PoW: ~16 bits
- * - Combined: ~391 bits >> 128-bit post-quantum target
+ * Phase 9.13: Universal parameterization via chipmunk_snark_params_t.
+ * Supports arbitrary (d, q) with NTT-compatible q. Predefined sets:
+ *   LRS:  d=512, q=3168257   (129-bit extension security)
+ *   Ring: d=128, q=4206593   (132-bit extension security)
+ *   Test: d=32,  q=4206593   (fast unit tests)
  *
- * Proof format: FRI proof of q(X) + raw z+q polynomials for algebraic checks.
- * (bridge phase — DEEP elimination of raw polys is Phase 9.12+)
+ * Soundness: ~391 bits (129 ext + 238 quotient + 8 FRI + 16 grinding).
+ * Proof format: FRI proof + raw z+q polynomials (bridge phase).
  */
 
 #pragma once
@@ -46,13 +45,8 @@ extern "C" {
  * Parameters
  * ---------------------------------------------------------------------- */
 
-#define CHIPMUNK_SNARK_LOG_N        9       /* log2(512) */
-#define CHIPMUNK_SNARK_N            512     /* Polynomial ring dimension */
-/* CHIPMUNK_SNARK_Q is identical to CHIPMUNK_Q (3168257).  The alias is kept
- * for backward compatibility but all new code should use CHIPMUNK_Q directly. */
-#define CHIPMUNK_SNARK_Q            CHIPMUNK_Q
-#define CHIPMUNK_SNARK_SECURITY     128     /* Target security level (bits) */
-#define CHIPMUNK_SNARK_EXT_DEG      6       /* Extension degree e=6 (Phi_9) */
+/* Maximum polynomial dimension (struct-embedded arrays sized to this). */
+#define CHIPMUNK_SNARK_MAX_D        512
 
 /* Polynomial commitment */
 #define CHIPMUNK_SNARK_COMMIT_BYTES 32      /* SHA3-256 hash of coefficients */
@@ -65,23 +59,104 @@ extern "C" {
  * The extension alpha provides the primary ~129-bit soundness bound. */
 #define CHIPMUNK_SNARK_QUOTIENT_CHECKS  11
 
-/* Opening proof: z and q polynomials sent in full (interim Phase 1).
- * Each polynomial = CHIPMUNK_N * sizeof(int32_t) = 512 * 4 = 2048 bytes.
- * Total opening: 4096 bytes. Phase 2+ will replace with Merkle proofs. */
+/* Opening proof: z and q polynomials sent in full (bridge phase).
+ * Each polynomial = CHIPMUNK_SNARK_MAX_D * sizeof(int32_t) = 2048 bytes.
+ * Total opening: 4096 bytes. Phase 9.12+ will replace with DEEP composition. */
 #define CHIPMUNK_SNARK_OPENING_POLYS    2   /* z + q */
 #define CHIPMUNK_SNARK_OPENING_BYTES    \
-    (CHIPMUNK_SNARK_OPENING_POLYS * CHIPMUNK_N * sizeof(int32_t))
+    (CHIPMUNK_SNARK_OPENING_POLYS * CHIPMUNK_SNARK_MAX_D * (int)sizeof(int32_t))
 
-/* FRI domain separator for SNARK integration (exactly 16 bytes, no NUL).
- * Note: chipmunk_fri_transcript_init() absorbs exactly 16 bytes from domain.
- * "CHIPMUNK-SNARK-F" provides 128-bit domain separation from other FRI users. */
+/* FRI domain separator for SNARK integration (exactly 16 bytes, no NUL). */
 #define CHIPMUNK_SNARK_FRI_DOMAIN    "CHIPMUNK-SNARK-F"
 
-/* Total proof size: opening_proof (4096) + fri_proof (2784) + other fields. */
+/* Maximum proof size. */
 #define CHIPMUNK_SNARK_PROOF_MAX    (sizeof(chipmunk_snark_proof_t))
 
-/* Subtractive set size: |S| = q^6 - 1 ~ 2^{129.6} */
-/* Per-round soundness: 2/|S| ~ 2^{-128.6} */
+/* -------------------------------------------------------------------------
+ * SNARK Parameter Set (Phase 9.13 — Universal SNARK)
+ *
+ * Encapsulates all runtime parameters for a specific (d, q) pair.
+ * Each SNARK context owns one params instance. The params struct
+ * contains derived constants and per-context NTT twiddle tables.
+ *
+ * Predefined sets: chipmunk_snark_params_lrs(), _ring(), _test().
+ * Custom sets: chipmunk_snark_params_init(&params, d, q).
+ * ---------------------------------------------------------------------- */
+
+/* FRI security parameters (same for all param sets). */
+#define CHIPMUNK_SNARK_FRI_FINAL_SIZE   16u
+#define CHIPMUNK_SNARK_FRI_NUM_QUERIES  8u
+#define CHIPMUNK_SNARK_FRI_GRINDING     16u
+#define CHIPMUNK_SNARK_FRI_CAP_SIZE     16u
+
+/* Extension degree for Phi_9 = Y^6+Y^3+1. */
+#define CHIPMUNK_SNARK_EXT_DEG          6
+
+typedef struct chipmunk_snark_params {
+    /* --- Fundamental parameters --- */
+    uint32_t d;             /* Polynomial ring dimension R_q = Z_q[X]/(X^d+1) */
+    uint64_t q;             /* Modulus (must be prime, q mod 9 ∈ {2,5}) */
+
+    /* --- Derived FRI constants --- */
+    uint32_t fri_init_size; /* FRI domain = 4*d */
+    uint32_t fri_rounds;    /* log2(4d) - log2(FINAL_SIZE) */
+    uint32_t fri_total_data;/* Sum of all round sizes + final */
+
+    /* --- Derived RS constants --- */
+    uint32_t rs_msg_len;    /* RS message length = d */
+    uint32_t rs_code_len;   /* RS codeword length = 4*d */
+    int32_t  rs_coset_g;    /* Coset generator g for RS encoding */
+
+    /* --- Field constants for this q --- */
+    int32_t  omega;         /* Primitive 4d-th root of unity in F_q */
+    int32_t  omega_inv;     /* omega^{-1} mod q */
+    int32_t  inv_2;         /* 2^{-1} mod q */
+    int32_t  inv_d;         /* d^{-1} mod q (for INTT scaling) */
+
+    /* --- Per-context NTT twiddle tables (heap-allocated) --- */
+    int32_t *zetas;         /* omega^k for k=0..4d-1 */
+    int32_t *zetas_inv;     /* omega^{-k} for k=0..4d-1 */
+    uint32_t zetas_size;    /* Number of elements (4d) */
+
+    /* --- Parameter identification --- */
+    uint32_t param_id;      /* SHA3-256(d||q)[0..3] for context matching */
+} chipmunk_snark_params_t;
+
+/**
+ * Initialize SNARK params for a given (d, q).
+ * Computes omega, inv_2, inv_d, coset_g, twiddle tables.
+ * Validates: q prime, q mod 9 ∈ {2,5}, 2-adicity(q-1) ≥ log2(4d)+1.
+ * @param params Output params.
+ * @param d      Polynomial ring dimension (must be power of 2, ≤ 512).
+ * @param q      Modulus.
+ * @return 0 on success, negative on error.
+ */
+int chipmunk_snark_params_init(chipmunk_snark_params_t *params,
+                                uint32_t d, uint64_t q);
+
+/**
+ * Free heap resources in params (twiddle tables).
+ * @param params Params to free.
+ */
+void chipmunk_snark_params_free(chipmunk_snark_params_t *params);
+
+/**
+ * Predefined LRS param set: d=512, q=3168257.
+ * Backward compatible with Phase 9.1-9.12.
+ */
+const chipmunk_snark_params_t *chipmunk_snark_params_lrs(void);
+
+/**
+ * Predefined Ring param set: d=128, q=4206593.
+ * For chipmunk_ring integration (Phase 9.13g).
+ */
+const chipmunk_snark_params_t *chipmunk_snark_params_ring(void);
+
+/**
+ * Predefined Test param set: d=32, q=4206593.
+ * For fast unit tests.
+ */
+const chipmunk_snark_params_t *chipmunk_snark_params_test(void);
 
 /* -------------------------------------------------------------------------
  * Types
@@ -132,7 +207,8 @@ typedef struct chipmunk_snark_proof {
 
 /* SNARK context (public parameters) */
 typedef struct chipmunk_snark_ctx {
-    lotrs_params_t params;
+    chipmunk_snark_params_t sp;                 /* Runtime parameters (d, q, FRI, NTT) */
+    lotrs_params_t params;                      /* LoTRS lattice parameters */
     uint8_t domain_separator[32];               /* QROM domain separator */
     bool initialized;
 } chipmunk_snark_ctx_t;

@@ -35,6 +35,7 @@
 #include "chipmunk_snark.h"
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
+#include "chipmunk_field.h"
 #include "chipmunk_lrs.h"
 #include "chipmunk_mring_ext.h"
 #include "dap_hash_sha3.h"
@@ -43,11 +44,19 @@
 #include "dap_rand.h"
 
 #include <string.h>
+#include <stdlib.h>
 #include <errno.h>
 
 #define LOG_TAG "chipmunk_snark"
 
-/* chipmunk_mod_q is in chipmunk_poly.h — unified across all modules */
+/* Field multiplication in [0, q). Used for twiddle table computation. */
+static inline int32_t s_fqmul(int32_t a_a, int32_t a_b)
+{
+    int64_t l_t = (int64_t)a_a * (int64_t)a_b;
+    int32_t l_r = (int32_t)(l_t % (int64_t)CHIPMUNK_Q);
+    if (l_r < 0) l_r += (int32_t)CHIPMUNK_Q;
+    return l_r;
+}
 
 /* QROM domain separators */
 static const char *s_domain_init      = "snark-init-v1";
@@ -388,6 +397,207 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
 }
 
 /* -------------------------------------------------------------------------
+ * Phase 9.13: Universal SNARK Parameter Sets
+ * ---------------------------------------------------------------------- */
+
+/* Helper: compute 2-adicity of n (number of trailing zero bits). */
+static uint32_t s_two_adicity(uint64_t n)
+{
+    uint32_t v = 0;
+    while (n > 0 && (n & 1u) == 0) { n >>= 1; ++v; }
+    return v;
+}
+
+/* Helper: compute param_id = first 4 bytes of SHA3-256(d || q). */
+static uint32_t s_param_id(uint32_t d, uint64_t q)
+{
+    uint8_t buf[12];
+    memset(buf, 0, sizeof(buf));
+    buf[0] = (uint8_t)(d & 0xFF);
+    buf[1] = (uint8_t)((d >> 8) & 0xFF);
+    buf[2] = (uint8_t)((d >> 16) & 0xFF);
+    buf[3] = (uint8_t)((d >> 24) & 0xFF);
+    buf[4] = (uint8_t)(q & 0xFF);
+    buf[5] = (uint8_t)((q >> 8) & 0xFF);
+    buf[6] = (uint8_t)((q >> 16) & 0xFF);
+    buf[7] = (uint8_t)((q >> 24) & 0xFF);
+    buf[8] = (uint8_t)((q >> 32) & 0xFF);
+    buf[9] = (uint8_t)((q >> 40) & 0xFF);
+    buf[10] = (uint8_t)((q >> 48) & 0xFF);
+    buf[11] = (uint8_t)((q >> 56) & 0xFF);
+    uint8_t hash[32];
+    dap_hash_sha3_256_raw(hash, buf, 12);
+    uint32_t id;
+    memcpy(&id, hash, 4);
+    return id;
+}
+
+int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
+                                uint32_t a_d, uint64_t a_q)
+{
+    if (!a_params) return -EINVAL;
+    memset(a_params, 0, sizeof(*a_params));
+
+    /* Validate d: must be power of 2, 32 ≤ d ≤ MAX_D. */
+    if (a_d == 0 || a_d > CHIPMUNK_SNARK_MAX_D) return -EINVAL;
+    if ((a_d & (a_d - 1)) != 0) return -EINVAL;  /* not power of 2 */
+
+    /* Validate q: must be > d and odd. */
+    if (a_q <= (uint64_t)a_d) return -EINVAL;
+    if ((a_q & 1u) == 0) return -EINVAL;
+
+    /* Check 2-adicity of q-1: need ≥ log2(4d) for FRI NTT of size 4d. */
+    uint32_t l_ad = s_two_adicity(a_q - 1);
+    uint32_t l_log2_4d = 0;
+    { uint32_t v = a_d * 4; while (v > 1) { v >>= 1; ++l_log2_4d; } }
+    if (l_ad < l_log2_4d) {
+        log_it(L_ERROR, "SNARK params: 2-adicity(q-1)=%u < %u needed for d=%u",
+               l_ad, l_log2_4d, a_d);
+        return -EINVAL;
+    }
+
+    /* Check Phi_9 irreducibility: q mod 9 must have multiplicative order 6.
+     * The elements of (Z/9Z)* with order 6 are: 2 and 5. */
+    uint32_t l_q_mod9 = (uint32_t)(a_q % 9u);
+    if (l_q_mod9 != 2 && l_q_mod9 != 5) {
+        log_it(L_ERROR, "SNARK params: q mod 9 = %u (need 2 or 5 for Phi_9 irreducibility)",
+               l_q_mod9);
+        return -EINVAL;
+    }
+
+    /* Fill fundamental parameters. */
+    a_params->d = a_d;
+    a_params->q = a_q;
+
+    /* Derived FRI constants. */
+    a_params->fri_init_size = 4 * a_d;
+    a_params->fri_rounds = l_log2_4d - 4;  /* log2(4d) - log2(16) */
+    a_params->fri_total_data = 0;
+    {
+        uint32_t sz = a_params->fri_init_size;
+        for (uint32_t r = 0; r < a_params->fri_rounds; ++r) {
+            a_params->fri_total_data += sz;
+            sz /= 2;
+        }
+        a_params->fri_total_data += CHIPMUNK_SNARK_FRI_FINAL_SIZE;
+    }
+
+    /* Derived RS constants. */
+    a_params->rs_msg_len = a_d;
+    a_params->rs_code_len = 4 * a_d;
+
+    /* param_id. */
+    a_params->param_id = s_param_id(a_d, a_q);
+
+    /* Field constants.
+     * NOTE: chipmunk_field_* functions use the global CHIPMUNK_Q.
+     * For q != CHIPMUNK_Q, field constants must be recomputed (Phase 9.13b).
+     * For now, only q == CHIPMUNK_Q is fully supported. */
+    if (a_q != (uint64_t)CHIPMUNK_Q) {
+        log_it(L_WARNING, "SNARK params: q=%lu != CHIPMUNK_Q=%u — "
+               "field constants use global q, may be incorrect",
+               (unsigned long)a_q, CHIPMUNK_Q);
+    }
+    a_params->omega = chipmunk_field_omega_2048();
+    a_params->omega_inv = chipmunk_field_omega_2048_inv();
+    a_params->inv_2 = chipmunk_field_inv(2);
+    a_params->inv_d = chipmunk_field_inv((int32_t)a_d);
+
+    /* Coset generator: find g with g^(4d) != 1 mod q.
+     * chipmunk_field_pow uses global q — correct only for q == CHIPMUNK_Q. */
+    a_params->rs_coset_g = 0;
+    for (int32_t g = 3; g < 100; ++g) {
+        int32_t g_pow = chipmunk_field_pow(g, 4 * a_d);
+        if (g_pow != 1) {
+            a_params->rs_coset_g = g;
+            break;
+        }
+    }
+    if (a_params->rs_coset_g == 0) {
+        log_it(L_ERROR, "SNARK params: failed to find coset generator for d=%u q=%lu",
+               a_d, (unsigned long)a_q);
+        return -EINVAL;
+    }
+
+    /* Allocate and fill NTT twiddle tables.
+     * zetas[k] = omega^k for k = 0..4d-1
+     * zetas_inv[k] = omega_inv^k for k = 0..4d-1 */
+    a_params->zetas_size = 4 * a_d;
+    a_params->zetas = (int32_t *)calloc(a_params->zetas_size, sizeof(int32_t));
+    a_params->zetas_inv = (int32_t *)calloc(a_params->zetas_size, sizeof(int32_t));
+    if (!a_params->zetas || !a_params->zetas_inv) {
+        chipmunk_snark_params_free(a_params);
+        return -ENOMEM;
+    }
+
+    a_params->zetas[0] = 1;
+    a_params->zetas_inv[0] = 1;
+    for (uint32_t k = 1; k < a_params->zetas_size; ++k) {
+        a_params->zetas[k] = s_fqmul(a_params->zetas[k - 1], a_params->omega);
+        a_params->zetas_inv[k] = s_fqmul(a_params->zetas_inv[k - 1], a_params->omega_inv);
+    }
+
+    log_it(L_INFO, "SNARK params init: d=%u q=%lu 2-ad=%u q%%9=%u coset_g=%d "
+           "fri_rounds=%u fri_total=%u param_id=0x%08x",
+           a_d, (unsigned long)a_q, l_ad, l_q_mod9, a_params->rs_coset_g,
+           a_params->fri_rounds, a_params->fri_total_data, a_params->param_id);
+
+    return 0;
+}
+
+void chipmunk_snark_params_free(chipmunk_snark_params_t *a_params)
+{
+    if (!a_params) return;
+    if (a_params->zetas) {
+        dap_memwipe(a_params->zetas, a_params->zetas_size * sizeof(int32_t));
+        free(a_params->zetas);
+        a_params->zetas = NULL;
+    }
+    if (a_params->zetas_inv) {
+        dap_memwipe(a_params->zetas_inv, a_params->zetas_size * sizeof(int32_t));
+        free(a_params->zetas_inv);
+        a_params->zetas_inv = NULL;
+    }
+    a_params->zetas_size = 0;
+}
+
+/* Predefined parameter sets (lazy-initialized singletons). */
+
+static chipmunk_snark_params_t s_params_lrs;
+static chipmunk_snark_params_t s_params_ring;
+static chipmunk_snark_params_t s_params_test;
+static bool s_params_lrs_init = false;
+static bool s_params_ring_init = false;
+static bool s_params_test_init = false;
+
+const chipmunk_snark_params_t *chipmunk_snark_params_lrs(void)
+{
+    if (!s_params_lrs_init) {
+        if (chipmunk_snark_params_init(&s_params_lrs, 512, 3168257) == 0)
+            s_params_lrs_init = true;
+    }
+    return s_params_lrs_init ? &s_params_lrs : NULL;
+}
+
+const chipmunk_snark_params_t *chipmunk_snark_params_ring(void)
+{
+    if (!s_params_ring_init) {
+        if (chipmunk_snark_params_init(&s_params_ring, 128, 4206593) == 0)
+            s_params_ring_init = true;
+    }
+    return s_params_ring_init ? &s_params_ring : NULL;
+}
+
+const chipmunk_snark_params_t *chipmunk_snark_params_test(void)
+{
+    if (!s_params_test_init) {
+        if (chipmunk_snark_params_init(&s_params_test, 32, 4206593) == 0)
+            s_params_test_init = true;
+    }
+    return s_params_test_init ? &s_params_test : NULL;
+}
+
+/* -------------------------------------------------------------------------
  * Public API
  * ---------------------------------------------------------------------- */
 
@@ -396,6 +606,14 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
     if (!ctx) return -EINVAL;
     memset(ctx, 0, sizeof(*ctx));
 
+    /* Initialize runtime params for LRS (d=512, q=3168257). */
+    int l_rc = chipmunk_snark_params_init(&ctx->sp, 512, (uint64_t)CHIPMUNK_Q);
+    if (l_rc != 0) {
+        log_it(L_ERROR, "SNARK init: params_init failed: %d", l_rc);
+        return l_rc;
+    }
+
+    /* Fill LoTRS lattice params (used by some internal functions). */
     ctx->params.d = 512;
     ctx->params.q = CHIPMUNK_Q;
     ctx->params.k = 6;
@@ -410,6 +628,7 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
     /* Verify Phi_9 irreducibility (Rabin test) */
     if (!chipmunk_mring_ext_modulus_is_irreducible()) {
         log_it(L_ERROR, "SNARK init: Phi_9 is NOT irreducible over F_q — soundness broken");
+        chipmunk_snark_params_free(&ctx->sp);
         return -EINVAL;
     }
 
@@ -1115,5 +1334,6 @@ void chipmunk_snark_proof_free(chipmunk_snark_proof_t *a_proof)
 void chipmunk_snark_ctx_free(chipmunk_snark_ctx_t *a_ctx)
 {
     if (!a_ctx) return;
+    chipmunk_snark_params_free(&a_ctx->sp);
     dap_memwipe(a_ctx, sizeof(*a_ctx));
 }
