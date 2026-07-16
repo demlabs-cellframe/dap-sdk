@@ -71,5 +71,3 @@ add_chipmunk_test(test_chipmunk_fri_transcript)
 # Phase 9.10: FRI verify phase tests
 add_chipmunk_test(test_chipmunk_fri_verify)
 
-# Phase 9.11: SNARK V2 (FRI-PCS integration) tests
-add_chipmunk_test(test_chipmunk_snark_v2)

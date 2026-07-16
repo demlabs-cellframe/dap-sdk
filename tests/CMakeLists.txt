@@ -382,7 +382,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_sn
     add_dap_test(test_unit_chipmunk_snark
                  unit/crypto/chipmunk_ring/test_chipmunk_snark.c)
     register_dap_test(test_unit_chipmunk_snark
-                      "unit;crypto;snark;lattice")
+                      "unit;crypto;snark;lattice;fri")
 endif()
 
 # Pedersen: lattice-based commitments
@@ -490,14 +490,6 @@ endif()
 						    register_dap_test(test_unit_chipmunk_fri_verify
 						                      "unit;crypto;fri;verify")
 						endif()
-
-					# 9.11: SNARK V2 FRI-PCS integration
-					if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_snark_v2.c)
-					    add_dap_test(test_unit_chipmunk_snark_v2
-					                 unit/crypto/chipmunk_ring/test_chipmunk_snark_v2.c)
-					    register_dap_test(test_unit_chipmunk_snark_v2
-					                      "unit;crypto;snark;fri")
-					endif()
 
 				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)

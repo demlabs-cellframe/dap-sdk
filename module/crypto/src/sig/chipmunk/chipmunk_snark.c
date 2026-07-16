@@ -727,7 +727,6 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         memcpy(a_proof->fri_proof.queries, l_fri_openings,
                sizeof(l_fri_openings));
         a_proof->fri_grinding_nonce = l_fri_tr.grinding_nonce;
-        a_proof->proof_version = CHIPMUNK_SNARK_PROOF_VERSION_V2;
 
         chipmunk_fri_prover_free(&l_fri_prover);
     }
@@ -820,12 +819,9 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    /* 6. V2 FRI proof verification (Phase 9.11).
-     * For V2 proofs, verify the FRI commitment to q(X) before algebraic checks.
-     * Verifier uses grinding nonce verification (1 hash) instead of full grind.
-     *
-     * FIX 9.11: Also reject proofs with unknown proof_version (not V1 or V2). */
-    if (a_proof->proof_version == CHIPMUNK_SNARK_PROOF_VERSION_V2) {
+    /* 6. FRI proof verification — verify the FRI commitment to q(X).
+     * Uses grinding nonce verification (1 hash) instead of full grind. */
+    {
         chipmunk_fri_transcript_t l_fri_tr;
         int l_rc = chipmunk_fri_transcript_init(
             &l_fri_tr,
@@ -928,16 +924,10 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
                 return 0;
             }
         }
-    } else if (a_proof->proof_version != CHIPMUNK_SNARK_PROOF_VERSION_V1) {
-        log_it(L_ERROR, "SNARK verify: unknown proof_version %u (expected V1=%u or V2=%u)",
-               a_proof->proof_version,
-               CHIPMUNK_SNARK_PROOF_VERSION_V1,
-               CHIPMUNK_SNARK_PROOF_VERSION_V2);
-        return 0;
     }
 
     /* 7. Verify opening proof: reconstruct z, q from bytes and check commitments.
-     * For V2: raw polys retained for algebraic checks (z(alpha)=0, quotient).
+     * Raw polys retained for algebraic checks (z(alpha)=0, quotient).
      * For V1: this is the primary verification path (no FRI binding). */
     size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
     if (a_proof->opening_proof_size < l_poly_bytes * 2) {
@@ -1070,10 +1060,8 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
      *   z(alpha)=0 with high probability implies z ≡ 0, hence
      *   C1 = 0 (binary) and C2 = 0 (exactly-one signer) */
 
-    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (v%u, ext alpha + %d quotient checks%s, >> 128-bit soundness)",
-             a_proof->proof_version,
-             CHIPMUNK_SNARK_QUOTIENT_CHECKS,
-             a_proof->proof_version == CHIPMUNK_SNARK_PROOF_VERSION_V2 ? " + FRI" : "");
+    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (ext alpha + %d quotient checks + FRI, >> 128-bit soundness)",
+             CHIPMUNK_SNARK_QUOTIENT_CHECKS);
     return 1;
 }
 
