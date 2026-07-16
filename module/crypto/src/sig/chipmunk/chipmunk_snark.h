@@ -78,8 +78,10 @@ extern "C" {
 #define CHIPMUNK_SNARK_PROOF_VERSION_V1   0u   /* Raw z+q polynomials (legacy) */
 #define CHIPMUNK_SNARK_PROOF_VERSION_V2   1u   /* FRI-PCS commitment + raw polys (bridge) */
 
-/* FRI domain separator for SNARK integration (exactly 16 bytes). */
-#define CHIPMUNK_SNARK_FRI_DOMAIN    "CHIPMUNK-SNARK-FRI"
+/* FRI domain separator for SNARK integration (exactly 16 bytes, no NUL).
+ * Note: chipmunk_fri_transcript_init() absorbs exactly 16 bytes from domain.
+ * "CHIPMUNK-SNARK-F" provides 128-bit domain separation from other FRI users. */
+#define CHIPMUNK_SNARK_FRI_DOMAIN    "CHIPMUNK-SNARK-F"
 
 /* Total proof size estimate: large enough for V1 or V2 struct.
  * V2 struct includes opening_proof (4096) + fri_proof (2784) + other fields. */

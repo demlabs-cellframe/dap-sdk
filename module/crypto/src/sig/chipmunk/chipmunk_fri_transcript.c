@@ -43,19 +43,6 @@ static unsigned s_clz_bytes(const uint8_t *data, size_t len)
     return total;
 }
 
-/* Rejection-sample 3 bytes → [0, q).
- * q = 3168257 < 2^22, so 3 bytes (24 bits) suffice.
- * Acceptance probability: q / 2^24 ≈ 18.9%. */
-static int32_t s_sample_fq(const uint8_t raw[3])
-{
-    uint32_t val = (uint32_t)raw[0]
-                 | ((uint32_t)raw[1] << 8)
-                 | ((uint32_t)raw[2] << 16);
-    if (val >= (uint32_t)CHIPMUNK_Q)
-        return -1;
-    return (int32_t)val;
-}
-
 /* -------------------------------------------------------------------------
  * Public API
  * ------------------------------------------------------------------------- */
@@ -150,9 +137,14 @@ int chipmunk_fri_transcript_squeeze_fq(chipmunk_fri_transcript_t *tr,
 
         tr->squeeze_counter++;
 
-        int32_t val = s_sample_fq(digest);
-        if (val >= 0) {
-            *out = val;
+        /* Rejection-sample 3 bytes → [0, q).
+         * q = 3168257 < 2^22, so 3 bytes (24 bits) suffice.
+         * Acceptance probability: q / 2^24 ≈ 18.9%. */
+        uint32_t val = (uint32_t)digest[0]
+                     | ((uint32_t)digest[1] << 8)
+                     | ((uint32_t)digest[2] << 16);
+        if (val < (uint32_t)CHIPMUNK_Q) {
+            *out = (int32_t)val;
             return 0;
         }
     }

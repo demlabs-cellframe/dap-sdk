@@ -585,18 +585,25 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         }
 
         /* 13b. Absorb all SNARK commitments into FRI transcript. */
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
-            a_proof->w_commit.hash, sizeof(a_proof->w_commit.hash));
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
-            a_proof->r_commit.hash, sizeof(a_proof->r_commit.hash));
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
-            a_proof->z_commit.hash, sizeof(a_proof->z_commit.hash));
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
-            a_proof->q_commit.hash, sizeof(a_proof->q_commit.hash));
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
-            l_msg_hash, 32);
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
-            a_proof->transcript_hash, 32);
+        {   /* Helper macro: absorb and fail early on error. */
+#define L_ABSORB(data, len) do { \
+    l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr, (data), (len)); \
+    if (l_rc != 0) { \
+        log_it(L_ERROR, "SNARK prove: FRI absorb failed"); \
+        dap_memwipe(&l_b, sizeof(l_b)); \
+        dap_memwipe(&l_z, sizeof(l_z)); \
+        dap_memwipe(&l_q, sizeof(l_q)); \
+        return l_rc; \
+    } \
+} while (0)
+            L_ABSORB(a_proof->w_commit.hash, sizeof(a_proof->w_commit.hash));
+            L_ABSORB(a_proof->r_commit.hash, sizeof(a_proof->r_commit.hash));
+            L_ABSORB(a_proof->z_commit.hash, sizeof(a_proof->z_commit.hash));
+            L_ABSORB(a_proof->q_commit.hash, sizeof(a_proof->q_commit.hash));
+            L_ABSORB(l_msg_hash, 32);
+            L_ABSORB(a_proof->transcript_hash, 32);
+#undef L_ABSORB
+        }
 
         /* 13c. Derive 7 FRI alphas from transcript. */
         int32_t l_fri_alphas[CHIPMUNK_FRI_ROUNDS];
@@ -635,20 +642,44 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
             uint32_t l_n = (r == 0) ? 2048u : (2048u >> r);
             uint32_t l_cap_sz = (l_n >= 32u) ? 16u : l_n;
-            chipmunk_fri_transcript_absorb_cap(
+            l_rc = chipmunk_fri_transcript_absorb_cap(
                 &l_fri_tr,
                 l_fri_prover.proof.caps[r].nodes,
                 l_cap_sz);
+            if (l_rc != 0) {
+                log_it(L_ERROR, "SNARK prove: FRI absorb cap round %u failed", r);
+                chipmunk_fri_prover_free(&l_fri_prover);
+                dap_memwipe(&l_b, sizeof(l_b));
+                dap_memwipe(&l_z, sizeof(l_z));
+                dap_memwipe(&l_q, sizeof(l_q));
+                return l_rc;
+            }
         }
         for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
-            chipmunk_fri_transcript_absorb_fq(
+            l_rc = chipmunk_fri_transcript_absorb_fq(
                 &l_fri_tr,
                 l_fri_prover.proof.final_evals[i]);
+            if (l_rc != 0) {
+                log_it(L_ERROR, "SNARK prove: FRI absorb final eval %u failed", i);
+                chipmunk_fri_prover_free(&l_fri_prover);
+                dap_memwipe(&l_b, sizeof(l_b));
+                dap_memwipe(&l_z, sizeof(l_z));
+                dap_memwipe(&l_q, sizeof(l_q));
+                return l_rc;
+            }
         }
 
         /* Absorb alphas into transcript (verifier needs same order). */
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
-            chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
+            l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
+            if (l_rc != 0) {
+                log_it(L_ERROR, "SNARK prove: FRI absorb alpha %u failed", r);
+                chipmunk_fri_prover_free(&l_fri_prover);
+                dap_memwipe(&l_b, sizeof(l_b));
+                dap_memwipe(&l_z, sizeof(l_z));
+                dap_memwipe(&l_q, sizeof(l_q));
+                return l_rc;
+            }
         }
 
         /* 13f. Finalize: grinding PoW (~2^16 hashes expected). */
@@ -791,7 +822,9 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
     /* 6. V2 FRI proof verification (Phase 9.11).
      * For V2 proofs, verify the FRI commitment to q(X) before algebraic checks.
-     * Uses verify_fast (1 hash) instead of full grind (2^16 hashes). */
+     * Verifier uses grinding nonce verification (1 hash) instead of full grind.
+     *
+     * FIX 9.11: Also reject proofs with unknown proof_version (not V1 or V2). */
     if (a_proof->proof_version == CHIPMUNK_SNARK_PROOF_VERSION_V2) {
         chipmunk_fri_transcript_t l_fri_tr;
         int l_rc = chipmunk_fri_transcript_init(
@@ -803,18 +836,24 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
 
         /* Absorb same data as prover (steps 13a-13b). */
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
+        l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->w_commit.hash, sizeof(a_proof->w_commit.hash));
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb w_commit failed"); return 0; }
+        l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->r_commit.hash, sizeof(a_proof->r_commit.hash));
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb r_commit failed"); return 0; }
+        l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->z_commit.hash, sizeof(a_proof->z_commit.hash));
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb z_commit failed"); return 0; }
+        l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->q_commit.hash, sizeof(a_proof->q_commit.hash));
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q_commit failed"); return 0; }
+        l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             l_msg_hash, 32);
-        chipmunk_fri_transcript_absorb(&l_fri_tr,
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb msg_hash failed"); return 0; }
+        l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->transcript_hash, 32);
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb transcript_hash failed"); return 0; }
 
         /* Derive 7 FRI alphas (same order as prover). */
         int32_t l_fri_alphas[CHIPMUNK_FRI_ROUNDS];
@@ -830,18 +869,30 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
             uint32_t l_n = (r == 0) ? 2048u : (2048u >> r);
             uint32_t l_cap_sz = (l_n >= 32u) ? 16u : l_n;
-            chipmunk_fri_transcript_absorb_cap(
+            l_rc = chipmunk_fri_transcript_absorb_cap(
                 &l_fri_tr,
                 a_proof->fri_proof.commit.caps[r].nodes,
                 l_cap_sz);
+            if (l_rc != 0) {
+                log_it(L_ERROR, "SNARK verify: FRI absorb cap round %u failed", r);
+                return 0;
+            }
         }
         for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
-            chipmunk_fri_transcript_absorb_fq(
+            l_rc = chipmunk_fri_transcript_absorb_fq(
                 &l_fri_tr,
                 a_proof->fri_proof.commit.final_evals[i]);
+            if (l_rc != 0) {
+                log_it(L_ERROR, "SNARK verify: FRI absorb final eval %u failed", i);
+                return 0;
+            }
         }
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
-            chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
+            l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
+            if (l_rc != 0) {
+                log_it(L_ERROR, "SNARK verify: FRI absorb alpha %u failed", r);
+                return 0;
+            }
         }
 
         /* 6c. Finalize verifier-side: verify grinding nonce (1 hash). */
@@ -877,6 +928,12 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
                 return 0;
             }
         }
+    } else if (a_proof->proof_version != CHIPMUNK_SNARK_PROOF_VERSION_V1) {
+        log_it(L_ERROR, "SNARK verify: unknown proof_version %u (expected V1=%u or V2=%u)",
+               a_proof->proof_version,
+               CHIPMUNK_SNARK_PROOF_VERSION_V1,
+               CHIPMUNK_SNARK_PROOF_VERSION_V2);
+        return 0;
     }
 
     /* 7. Verify opening proof: reconstruct z, q from bytes and check commitments.

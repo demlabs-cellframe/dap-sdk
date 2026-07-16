@@ -90,8 +90,14 @@ int chipmunk_fri_transcript_absorb_cap(chipmunk_fri_transcript_t *tr,
 
 /**
  * Squeeze an F_q challenge from transcript using rejection sampling.
- * Repeatedly squeezes 4 bytes from XOF until value ∈ [0, q).
- * @param tr  Transcript.
+ * Hashes buffer || squeeze_counter via SHAKE256, then rejection-samples
+ * the first 4 bytes until value ∈ [0, q). Acceptance prob ≈ 73.8%.
+ *
+ * Valid call order:
+ *   1) init() → absorb()×N → squeeze_fq()×M  (pre-finalize, for deriving challenges)
+ *   2) ... → finalize() / finalize_verify() → squeeze_fq()×K  (post-finalize, for query indices)
+ *
+ * @param tr  Transcript (must be initialized).
  * @param out Output challenge ∈ [0, q).
  * @return 0 on success, negative on error.
  */

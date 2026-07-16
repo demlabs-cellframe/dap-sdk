@@ -133,9 +133,9 @@ static void test_v2_fri_nonzero(void)
     dap_assert(rc == 0, "prove OK");
     dap_assert(proof.proof_version == CHIPMUNK_SNARK_PROOF_VERSION_V2, "V2 format");
 
-    /* Grinding nonce should be nonzero (requires 16-bit PoW) */
-    dap_assert(proof.fri_grinding_nonce > 0,
-               "grinding nonce > 0 (PoW performed)");
+    /* Grinding nonce: any value in [0, 2^24) is valid.
+     * nonce=0 has ~1/65536 probability (SHA3 hash of buffer||0 has ≥16 leading zeros).
+     * We only verify the proof validates; the nonce value itself is not security-critical. */
 
     /* FRI caps should have at least one nonzero value in round 0 */
     int cap_nonzero = 0;
