@@ -459,15 +459,15 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
 
     /* Generate A matrix (shared across retries). */
     lotrs_polymat_t l_A = lotrs_polymat_alloc(a_par, a_par->k, a_par->l);
-    if (!l_A.rows) return -ENOMEM;
+    if (!l_A.rows) { DAP_DELETE(l_sorted_ring.pks); return -ENOMEM; }
     const char *l_a_domain = "crin-A-v1";
     lotrs_xof_t *l_xof_a = lotrs_xof_new((const uint8_t *)l_a_domain, strlen(l_a_domain));
-    if (!l_xof_a) { lotrs_polymat_free(&l_A); return -ENOMEM; }
+    if (!l_xof_a) { lotrs_polymat_free(&l_A); DAP_DELETE(l_sorted_ring.pks); return -ENOMEM; }
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         for (uint32_t j = 0u; j < a_par->l; ++j) {
             l_rc = lotrs_sample_uniform(l_A.rows[i].polys[j], l_xof_a, a_par);
             if (l_rc != 0) {
-                lotrs_xof_free(l_xof_a); lotrs_polymat_free(&l_A); return l_rc;
+                lotrs_xof_free(l_xof_a); lotrs_polymat_free(&l_A); DAP_DELETE(l_sorted_ring.pks); return l_rc;
             }
         }
     }
@@ -479,7 +479,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
     lotrs_polyvec_t *l_z = DAP_NEW_Z_COUNT(lotrs_polyvec_t, l_N);
     if (!l_T || !l_c_arr || !l_z) {
         DAP_DELETE(l_T); DAP_DELETE(l_c_arr); DAP_DELETE(l_z);
-        lotrs_polymat_free(&l_A); return -ENOMEM;
+        lotrs_polymat_free(&l_A); DAP_DELETE(l_sorted_ring.pks); return -ENOMEM;
     }
 
     for (uint32_t i = 0u; i < l_N; ++i) {
@@ -491,7 +491,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
                 lotrs_polyvec_free(&l_T[j]); lotrs_poly_free(l_c_arr[j]); lotrs_polyvec_free(&l_z[j]);
             }
             DAP_DELETE(l_T); DAP_DELETE(l_c_arr); DAP_DELETE(l_z);
-            lotrs_polymat_free(&l_A); return -ENOMEM;
+            lotrs_polymat_free(&l_A); DAP_DELETE(l_sorted_ring.pks); return -ENOMEM;
         }
     }
 

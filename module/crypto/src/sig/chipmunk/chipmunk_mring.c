@@ -802,6 +802,13 @@ out:
     dap_memwipe(l_rb_seed, sizeof(l_rb_seed));
     dap_memwipe(l_fold_seed, sizeof(l_fold_seed));
     dap_memwipe(l_mask_seed, sizeof(l_mask_seed));
+    /* Wipe secret witness material from stack. */
+    dap_memwipe(l_X, sizeof(l_X));
+    dap_memwipe(&l_Y_pk, sizeof(l_Y_pk));
+    dap_memwipe(&l_T_tag, sizeof(l_T_tag));
+    dap_memwipe(l_rho_x, sizeof(l_rho_x));
+    dap_memwipe(l_z_x, sizeof(l_z_x));
+    dap_memwipe(&l_c_star, sizeof(l_c_star));
     if (l_b) {
         dap_memwipe(l_b, a_n_ring);
     }

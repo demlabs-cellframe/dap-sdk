@@ -326,8 +326,13 @@ static void s_compute_ring_hash(dap_hash_sha3_256_t *a_hash,
             (const uint8_t *)&a_ring[i], sizeof(chipmunk_lrs_public_key_t));
     }
 
-    /* Squeeze 32 bytes for the ring hash */
-    dap_hash_shake256_squeezeblocks(a_hash->raw, 1, l_state);
+    /* Squeeze 32 bytes for the ring hash.
+     * squeezeblocks writes DAP_SHAKE256_RATE (136) bytes per block.
+     * Use scratch buffer and copy only the needed 32 bytes. */
+    uint8_t l_scratch[DAP_SHAKE256_RATE];
+    dap_hash_shake256_squeezeblocks(l_scratch, 1, l_state);
+    memcpy(a_hash->raw, l_scratch, 32);
+    dap_memwipe(l_scratch, sizeof(l_scratch));
 }
 
 /* Phase 5.1: s_hash_to_coeff and s_hash_to_trace removed.
@@ -426,19 +431,19 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
 {
     if (!a_proof || !a_ctx || !a_statement || !a_witness) return -EINVAL;
     if (!a_ctx->initialized) return -EINVAL;
-    if (a_statement->ring_size > 0 && !a_statement->ring) return -EINVAL;
+    if (a_statement->ring_size == 0) return -EINVAL;
+    if (!a_statement->ring) return -EINVAL;
     if (a_statement->message_size > 0 && !a_statement->message) return -EINVAL;
     if (a_statement->ring_size > UINT32_MAX) return -EINVAL;
+    if (a_witness->signer_index >= a_statement->ring_size) return -EINVAL;
+    if (a_witness->signer_index >= CHIPMUNK_N) return -EINVAL;
 
     memset(a_proof, 0, sizeof(*a_proof));
 
     /* 1. Build indicator polynomial b in {0,1}^N */
     chipmunk_poly_t l_b;
     memset(&l_b, 0, sizeof(l_b));
-    if (a_witness->signer_index < a_statement->ring_size &&
-        a_witness->signer_index < CHIPMUNK_N) {
-        l_b.coeffs[a_witness->signer_index] = 1;
-    }
+    l_b.coeffs[a_witness->signer_index] = 1;
 
     /* 2. Generate random nonce for w_commit (Phase 7: privacy fix).
      * w_commit must NOT depend on b — b is sparse (1 out of 512 nonzero),
@@ -493,9 +498,16 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     /* 6. Commit to constraint polynomial → z_commit */
     s_commit_poly(&a_proof->z_commit, &l_z);
 
-    /* 7. Compute message hash for binding */
+    /* 7. Compute message hash for binding.
+     * Use empty string for zero-length messages to avoid NULL dereference. */
     uint8_t l_msg_hash[32];
-    dap_hash_sha3_256_raw(l_msg_hash, a_statement->message, a_statement->message_size);
+    {
+        const uint8_t *l_msg = a_statement->message;
+        size_t l_msg_len = a_statement->message_size;
+        uint8_t l_empty = 0;
+        if (!l_msg && l_msg_len == 0) { l_msg = &l_empty; }
+        dap_hash_sha3_256_raw(l_msg_hash, l_msg, l_msg_len);
+    }
 
     /* 8. Derive evaluation point alpha from subtractive set
      * Transcript: domain_sep || w_commit || r_commit || z_commit || msg_hash
@@ -754,13 +766,18 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 {
     if (!a_proof || !a_ctx || !a_statement) return -EINVAL;
     if (!a_ctx->initialized) return -EINVAL;
-    if (a_statement->ring_size > 0 && !a_statement->ring) return -EINVAL;
-    if (a_statement->message_size > 0 && !a_statement->message) return -EINVAL;
-    if (a_statement->ring_size > UINT32_MAX) return -EINVAL;
+    if (a_statement->ring_size == 0) return -EINVAL;
+    if (!a_statement->ring) return -EINVAL;
+    if (a_statement->message_size > UINT32_MAX) return -EINVAL;
 
-    /* 1. Compute message hash and ring hash */
+    /* 1. Compute message hash and ring hash.
+     * Use empty string for zero-length messages to avoid NULL dereference. */
     uint8_t l_msg_hash[32];
-    dap_hash_sha3_256_raw(l_msg_hash, a_statement->message, a_statement->message_size);
+    const uint8_t *l_msg = a_statement->message;
+    size_t l_msg_len = a_statement->message_size;
+    uint8_t l_empty = 0;
+    if (!l_msg && l_msg_len == 0) { l_msg = &l_empty; }
+    dap_hash_sha3_256_raw(l_msg_hash, l_msg, l_msg_len);
 
     dap_hash_sha3_256_t l_ring_hash;
     s_compute_ring_hash(&l_ring_hash, a_statement->ring,
@@ -961,17 +978,22 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         if (l_q.coeffs[i] < 0 || l_q.coeffs[i] >= (int32_t)CHIPMUNK_Q) return 0;
     }
 
-    /* Verify commitments match */
+    /* Verify commitments match (constant-time). */
     {
         chipmunk_snark_commit_t l_z_commit, l_q_commit;
         s_commit_poly(&l_z_commit, &l_z);
         s_commit_poly(&l_q_commit, &l_q);
 
-        if (memcmp(l_z_commit.hash, a_proof->z_commit.hash, 32) != 0) {
+        uint8_t l_diff_z = 0, l_diff_q = 0;
+        for (int i = 0; i < 32; ++i) {
+            l_diff_z |= l_z_commit.hash[i] ^ a_proof->z_commit.hash[i];
+            l_diff_q |= l_q_commit.hash[i] ^ a_proof->q_commit.hash[i];
+        }
+        if (l_diff_z != 0) {
             log_it(L_ERROR, "SNARK verify: z_commit mismatch");
             return 0;
         }
-        if (memcmp(l_q_commit.hash, a_proof->q_commit.hash, 32) != 0) {
+        if (l_diff_q != 0) {
             log_it(L_ERROR, "SNARK verify: q_commit mismatch");
             return 0;
         }
@@ -1025,10 +1047,11 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
              * Expected iterations: 1/0.738 ≈ 1.35. Max iterations capped at 100. */
             int32_t l_test_point = -1;
             for (int l_attempt = 0; l_attempt < 100; ++l_attempt) {
-                /* Squeeze 4 bytes from XOF (Phase 7.4: full entropy via XOF) */
-                uint8_t l_sample_bytes[4];
-                dap_hash_shake256_squeezeblocks(l_sample_bytes, 1, l_xof_state);
-                l_test_point = chipmunk_sample_reject4(l_sample_bytes, (uint32_t)CHIPMUNK_Q);
+                /* Squeeze from XOF. squeezeblocks writes DAP_SHAKE256_RATE (136) bytes.
+                 * Use scratch buffer and consume only the first 4 bytes. */
+                uint8_t l_sample_buf[DAP_SHAKE256_RATE];
+                dap_hash_shake256_squeezeblocks(l_sample_buf, 1, l_xof_state);
+                l_test_point = chipmunk_sample_reject4(l_sample_buf, (uint32_t)CHIPMUNK_Q);
                 if (l_test_point >= 0) break;
             }
             if (l_test_point < 0) {
