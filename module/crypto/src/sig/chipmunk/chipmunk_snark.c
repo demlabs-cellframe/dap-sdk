@@ -524,7 +524,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     s_commit_poly(&a_proof->q_commit, &l_q);
 
     /* 11. Opening proof: serialized z and q polynomials.
-     * Retained in V2 for algebraic verification checks (z(alpha)=0, quotient).
+     * Retained for algebraic verification checks (z(alpha)=0, quotient).
      * Phase 9.12+ will eliminate raw polys via DEEP composition. */
     {
         size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
@@ -927,8 +927,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     }
 
     /* 7. Verify opening proof: reconstruct z, q from bytes and check commitments.
-     * Raw polys retained for algebraic checks (z(alpha)=0, quotient).
-     * For V1: this is the primary verification path (no FRI binding). */
+     * Raw polys retained for algebraic checks (z(alpha)=0, quotient). */
     size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
     if (a_proof->opening_proof_size < l_poly_bytes * 2) {
         log_it(L_ERROR, "SNARK verify: opening proof too small (%zu < %zu)",
@@ -1050,10 +1049,9 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     /* 10. Summary of soundness:
      * - Extension alpha check (step 8): ~129 bits from |S| = q^6 - 1
      * - Quotient relation checks (step 9): ~238 bits from 11 random F_q points
-     * - FRI proximity (step 6, V2 only): ~8 bits from 8 queries
-     * - Grinding PoW (step 6, V2 only): ~16 bits from nonce search
-     * - Combined (V2): ~391 bits >> 128-bit post-quantum target
-     * - Combined (V1): ~367 bits >> 128-bit post-quantum target
+     * - FRI proximity (step 6): ~8 bits from 8 queries
+     * - Grinding PoW (step 6): ~16 bits from nonce search
+     * - Combined: ~391 bits >> 128-bit post-quantum target
      * - Ring binding via QROM transcript: ring_hash → randomizer → alpha
      * - w_commit is a random nonce: does not leak witness information
      * - Constraint polynomial (C1 + r*C2) verified implicitly:
