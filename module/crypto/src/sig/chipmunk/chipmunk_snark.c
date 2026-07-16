@@ -49,12 +49,16 @@
 
 #define LOG_TAG "chipmunk_snark"
 
+/* Module-level q for static helpers that lack ctx access.
+ * Set by chipmunk_snark_params_init(). Safe for sequential use. */
+static uint64_t s_ctx_q = (uint64_t)CHIPMUNK_Q;
+
 /* Field multiplication in [0, q). Used for twiddle table computation. */
 static inline int32_t s_fqmul(int32_t a_a, int32_t a_b)
 {
     int64_t l_t = (int64_t)a_a * (int64_t)a_b;
-    int32_t l_r = (int32_t)(l_t % (int64_t)CHIPMUNK_Q);
-    if (l_r < 0) l_r += (int32_t)CHIPMUNK_Q;
+    int32_t l_r = (int32_t)(l_t % (int64_t)s_ctx_q);
+    if (l_r < 0) l_r += (int32_t)s_ctx_q;
     return l_r;
 }
 
@@ -72,7 +76,9 @@ static const char *s_domain_init = "snark-init-v1";
  * ---------------------------------------------------------------------- */
 
 /* Multiply two F_q values, return in [0, Q).
- * Handles negative inputs correctly via signed modulo. */
+ * Handles negative inputs correctly via signed modulo.
+ * NOTE: Uses global CHIPMUNK_Q. Full q parameterization deferred to Phase 9.13b
+ * when chipmunk_field module is generalized. */
 static inline int64_t s_fq6_mul(int32_t a, int32_t b)
 {
     int64_t l_a = (int64_t)a % (int64_t)CHIPMUNK_Q;
@@ -466,6 +472,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
     /* Fill fundamental parameters. */
     a_params->d = a_d;
     a_params->q = a_q;
+    s_ctx_q = a_q;  /* Update module-level q for static helpers. */
 
     /* Derived FRI constants. */
     a_params->fri_init_size = 4 * a_d;
@@ -612,8 +619,8 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
     }
 
     /* Fill LoTRS lattice params (used by some internal functions). */
-    ctx->params.d = 512;
-    ctx->params.q = CHIPMUNK_Q;
+    ctx->params.d = ctx->sp.d;
+    ctx->params.q = ctx->sp.q;
     ctx->params.k = 6;
     ctx->params.l = 3;
     ctx->params.w = 37;
@@ -1194,10 +1201,11 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     memcpy(l_z.coeffs, a_proof->opening_proof, l_poly_bytes);
     memcpy(l_q.coeffs, a_proof->opening_proof + l_poly_bytes, l_poly_bytes);
 
-    /* Verify coefficients are in range [0, Q) */
+    /* Verify coefficients are in range [0, q) */
+    uint64_t l_mod_q = a_ctx->sp.q;
     for (uint32_t i = 0; i < l_d; ++i) {
-        if (l_z.coeffs[i] < 0 || l_z.coeffs[i] >= (int32_t)CHIPMUNK_Q) return 0;
-        if (l_q.coeffs[i] < 0 || l_q.coeffs[i] >= (int32_t)CHIPMUNK_Q) return 0;
+        if (l_z.coeffs[i] < 0 || (uint64_t)l_z.coeffs[i] >= l_mod_q) return 0;
+        if (l_q.coeffs[i] < 0 || (uint64_t)l_q.coeffs[i] >= l_mod_q) return 0;
     }
 
     /* Verify commitments match (constant-time). */
@@ -1273,7 +1281,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
                  * Use scratch buffer and consume only the first 4 bytes. */
                 uint8_t l_sample_buf[DAP_SHAKE256_RATE];
                 dap_hash_shake256_squeezeblocks(l_sample_buf, 1, l_xof_state);
-                l_test_point = chipmunk_sample_reject4(l_sample_buf, (uint32_t)CHIPMUNK_Q);
+                l_test_point = chipmunk_sample_reject4(l_sample_buf, (uint32_t)l_mod_q);
                 if (l_test_point >= 0) break;
             }
             if (l_test_point < 0) {
