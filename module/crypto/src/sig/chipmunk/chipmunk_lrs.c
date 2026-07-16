@@ -336,7 +336,9 @@ int chipmunk_lrs_poly_chknorm_centered(const chipmunk_poly_t *a_poly,
             return -EINVAL;
         }
         l_c = s_center_q(l_c);
-        if (l_c < -a_bound || l_c > a_bound) {
+        /* Half-open interval [-bound, bound) to match zpack encoding
+         * which stores coeff + bias in [0, 2*bias-1] using Z_BITS bits. */
+        if (l_c < -a_bound || l_c >= a_bound) {
             return 1;
         }
     }

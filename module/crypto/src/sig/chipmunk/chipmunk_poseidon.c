@@ -23,7 +23,8 @@
  * Internal helpers
  * ========================================================================= */
 
-/** Safe modular reduction: a_val in [-2q, 2q) → [0, q). */
+/** Safe modular reduction: arbitrary int64_t → [0, q).
+ *  Works for any a_val (uses % operator, handles negatives). */
 static inline int32_t s_freduce(int64_t a_val)
 {
     int64_t l_r = a_val % (int64_t)CHIPMUNK_Q;

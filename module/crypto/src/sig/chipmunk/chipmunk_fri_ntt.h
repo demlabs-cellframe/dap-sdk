@@ -50,26 +50,25 @@ int chipmunk_fri_ntt_init(void);
 bool chipmunk_fri_ntt_is_initialized(void);
 
 /**
- * @brief Forward NTT (Cooley-Tukey, in-place).
+ * @brief Forward NTT (Gentleman-Sande DIF, in-place).
  *
  * Input:  a[i] in [0, q), standard coefficient order.
- * Output: a[brv11(i)] = f(omega^i)  ( evaluations in bit-reversed order).
+ * Output: a[k] = f(omega^k) for k = 0..N-1 (natural order).
  *
- * The output is in bit-reversed order because the Cooley-Tukey algorithm
- * naturally produces this layout.  Callers who need canonical order
- * should bit-reverse the output, or use chipmunk_fri_ntt_domain() to
- * index evaluations directly.
+ * Algorithm: bit-reverse input, then DIF stages.  The pre-BRV + DIF
+ * combination produces natural-order output (evaluations indexed by k).
  *
  * @param a Array of CHIPMUNK_FRI_NTT_SIZE elements.
  */
 void chipmunk_fri_ntt_forward(int32_t a[CHIPMUNK_FRI_NTT_SIZE]);
 
 /**
- * @brief Inverse NTT (Gentleman-Sande, in-place).
+ * @brief Inverse NTT (Cooley-Tukey DIT, in-place).
  *
- * Input:  a[brv11(i)] = evaluations in bit-reversed order.
+ * Input:  a[k] = evaluations in natural order (a[k] = f(omega^k)).
  * Output: a[i] = coefficients in standard order.
  *
+ * Algorithm: DIT stages in reverse order, then bit-reverse output.
  * Applies 1/N scaling (N^{-1} mod q from chipmunk_field).
  *
  * @param a Array of CHIPMUNK_FRI_NTT_SIZE elements.

@@ -116,8 +116,8 @@ int chipmunk_fri_transcript_squeeze_fq(chipmunk_fri_transcript_t *tr,
 
     /* Counter-based one-shot SHAKE256: hash(buffer || counter) → 32 bytes.
      * Buffer already includes domain + absorbed data + nonce (finalize appends).
-     * Rejection-sample the first 4 bytes until value ∈ [0, q).
-     * With q = 3168257 < 2^22, acceptance prob ≈ 73.8%.
+     * Rejection-sample the first 3 bytes (24 bits) until value ∈ [0, q).
+     * With q = 3168257 < 2^22, acceptance prob ≈ 18.9%.
      * On rejection, increment counter and retry. */
     if (tr->buf_len + 4 > CHIPMUNK_FRI_TRANSCRIPT_BUF + 4)
         return -1;
