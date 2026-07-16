@@ -58,13 +58,8 @@ static inline int32_t s_fqmul(int32_t a_a, int32_t a_b)
     return l_r;
 }
 
-/* QROM domain separators */
-static const char *s_domain_init      = "snark-init-v1";
-static const char *s_domain_commit    = "snark-commit-v1";
-static const char *s_domain_challenge = "snark-challenge-v1";
-static const char *s_domain_eval      = "snark-eval-v1";
-static const char *s_domain_randomizer = "snark-randomizer-v1";
-static const char *s_domain_opening   = "snark-opening-v1";
+/* QROM domain separator */
+static const char *s_domain_init = "snark-init-v1";
 
 /* -------------------------------------------------------------------------
  * Internal: F_q^6 scalar arithmetic for polynomial evaluation
