@@ -200,17 +200,21 @@ const int32_t *chipmunk_fri_prover_final_evals(
  * @brief Verify a folding relation between two consecutive rounds.
  *
  * Checks that for a given index l and round r:
- *   H_{r+1}[l] = [(1+α_r)·H_r[l] + (1-α_r)·H_r[l+n_r/2]] / 2
+ *   H_{r+1}[l] = [H_r[l] + H_r[l+n_r/2]]/2
+ *               + α_r · [H_r[l] - H_r[l+n_r/2]] / (2·x_l)
+ * where x_l = g·ω^(l·2^r) is the coset domain point.
  *
  * @param h_r       Codeword at round r.
  * @param h_r1      Codeword at round r+1.
  * @param n_r       Codeword length at round r.
  * @param alpha     Folding challenge for round r.
+ * @param round     Round number r (needed to compute domain point).
  * @param l         Index to check (0 ≤ l < n_r/2).
  * @return          true if relation holds, false otherwise.
  */
 bool chipmunk_fri_verify_fold(const int32_t *h_r, const int32_t *h_r1,
-                               uint32_t n_r, int32_t alpha, uint32_t l);
+                               uint32_t n_r, int32_t alpha, uint32_t round,
+                               uint32_t l);
 
 /**
  * @brief FRI query phase: open multiple query positions across all rounds.

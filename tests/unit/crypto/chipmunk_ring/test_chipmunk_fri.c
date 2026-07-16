@@ -141,45 +141,41 @@ static void test_fri_specific_poly(void)
         dap_assert(r0[r0_idx[t]] == r0_refs[t], "round 0 eval ref");
     }
 
-    /* Round 1 first values (from Python). */
-    const int32_t r1_refs[] = {3533, 2339357, 1013668, 1565991, 213953};
+    /* Round 1 first values (corrected with domain-point folding). */
+    const int32_t r1_refs[] = {1223, 1801736, 1284364, 2847494, 1371217};
     const int32_t *r1 = chipmunk_fri_prover_round_data(&prov, 1, &len);
     dap_assert(len == 1024, "round 1 len");
+
     for (int t = 0; t < 5; ++t) {
         dap_assert(r1[t] == r1_refs[t], "round 1 eval ref");
     }
 
-    /* Round 2 first values. */
-    const int32_t r2_refs[] = {1520177, 2421035, 2934039, 231980, 2496373};
+    /* Round 2 first values (corrected with domain-point folding). */
+    const int32_t r2_refs[] = {1433, 896752, 2466934, 1607429, 1410469};
     const int32_t *r2 = chipmunk_fri_prover_round_data(&prov, 2, &len);
     dap_assert(len == 512, "round 2 len");
+
     for (int t = 0; t < 5; ++t) {
         dap_assert(r2[t] == r2_refs[t], "round 2 eval ref");
     }
 
-    /* Rounds 3-6 first values. */
-    const int32_t r3_first = 1653414;
-    const int32_t r4_first = 1743212;
-    const int32_t r5_first = 2296460;
-    const int32_t r6_first = 358635;
+    /* Rounds 3-6 first values (domain-point folding).
+     * For this small poly, all rounds converge to the same constant. */
     const int32_t *r3 = chipmunk_fri_prover_round_data(&prov, 3, &len);
     const int32_t *r4 = chipmunk_fri_prover_round_data(&prov, 4, &len);
     const int32_t *r5 = chipmunk_fri_prover_round_data(&prov, 5, &len);
     const int32_t *r6 = chipmunk_fri_prover_round_data(&prov, 6, &len);
     dap_assert(len == 32, "round 6 len");
-    dap_assert(r3[0] == r3_first, "round 3 first");
-    dap_assert(r4[0] == r4_first, "round 4 first");
-    dap_assert(r5[0] == r5_first, "round 5 first");
-    dap_assert(r6[0] == r6_first, "round 6 first");
+    dap_assert(r3[0] == 16175, "round 3 first");
+    dap_assert(r4[0] == 16175, "round 4 first");
+    dap_assert(r5[0] == 16175, "round 5 first");
+    dap_assert(r6[0] == 16175, "round 6 first");
 
     /* Final evals. */
-    const int32_t *final = chipmunk_fri_prover_final_evals(&prov);
-    const int32_t final_refs[] = {1615478, 1068014, 1692652, 2680113};
-    for (int t = 0; t < 4; ++t) {
-        dap_assert(final[t] == final_refs[t], "final eval ref");
+    const int32_t *final_evals = chipmunk_fri_prover_final_evals(&prov);
+    for (int t = 0; t < 16; ++t) {
+        dap_assert(final_evals[t] == 16175, "final eval");
     }
-    dap_assert(final[7] == 1271919, "final eval [7]");
-    dap_assert(final[15] == 2872864, "final eval [15]");
 
     chipmunk_fri_prover_free(&prov);
 }
@@ -209,7 +205,7 @@ static void test_fri_fold_relations(void)
         /* Check first 10 indices. */
         for (uint32_t l = 0; l < 10 && l < n_r / 2; ++l) {
             bool ok = chipmunk_fri_verify_fold(h_r, h_r + n_r, n_r,
-                                                s_alphas[r], l);
+                                                s_alphas[r], r, l);
             dap_assert(ok, "fold relation at sample");
         }
     }
@@ -264,30 +260,48 @@ static void test_fri_merkle_caps(void)
 /* ========================================================================
  * Test 6: Verify fold for deliberately wrong alpha (should fail).
  * ======================================================================== */
+static inline int32_t s_test_fqmul(int32_t a, int32_t b)
+{
+    int64_t t = (int64_t)a * (int64_t)b;
+    int32_t r = (int32_t)(t % (int64_t)CHIPMUNK_Q);
+    if (r < 0) r += (int32_t)CHIPMUNK_Q;
+    return r;
+}
+
 static void test_fri_fold_wrong_alpha(void)
 {
+    /* Use n_r=4, round=6 (domain has 32 points, indices 0,1 map to g·ω^0, g·ω^32). */
     int32_t h_r[4] = {10, 20, 30, 40};
-    int32_t h_r1[2] = {0, 0};  /* will compute correctly, then check wrong alpha */
+    int32_t h_r1[2] = {0, 0};
+    uint32_t round = 6;
 
-    /* Correct fold with alpha=7: [(1+7)*h + (1-7)*h'] * inv2 */
     int32_t inv2 = chipmunk_field_inv(2);
     int32_t a = 7;
-    int32_t one_plus_a = (1 + a) % CHIPMUNK_Q;
-    int32_t one_minus_a = (1 - a + CHIPMUNK_Q) % CHIPMUNK_Q;
+    int32_t inv_g = chipmunk_field_inv((int32_t)CHIPMUNK_RS_COSET_G);
+    int32_t omega_inv = chipmunk_field_omega_2048_inv();
+
+    /* Compute h_r1 using correct formula with domain points. */
     for (uint32_t l = 0; l < 2; ++l) {
-        int64_t s = (int64_t)one_plus_a * (int64_t)h_r[l]
-                  + (int64_t)one_minus_a * (int64_t)h_r[l + 2];
-        s = s % CHIPMUNK_Q;
-        if (s < 0) s += CHIPMUNK_Q;
-        h_r1[l] = (int32_t)(s * (int64_t)inv2 % CHIPMUNK_Q);
+        /* inv(x) = inv(g) · (inv(ω))^(l · 2^round) */
+        int32_t inv_omega_exp = chipmunk_field_pow(omega_inv, l * (1u << round));
+        int32_t inv_x = s_test_fqmul(inv_g, inv_omega_exp);
+
+        int32_t even = (int32_t)(((int64_t)h_r[l] + (int64_t)h_r[l + 2])
+                                 * (int64_t)inv2 % (int64_t)CHIPMUNK_Q);
+        int64_t diff = ((int64_t)h_r[l] - (int64_t)h_r[l + 2]) % (int64_t)CHIPMUNK_Q;
+        if (diff < 0) diff += (int64_t)CHIPMUNK_Q;
+        int32_t odd = s_test_fqmul(
+            (int32_t)(diff * (int64_t)inv2 % (int64_t)CHIPMUNK_Q), inv_x);
+        h_r1[l] = even + s_test_fqmul(a, odd);
+        if (h_r1[l] >= (int32_t)CHIPMUNK_Q) h_r1[l] -= (int32_t)CHIPMUNK_Q;
     }
 
     /* Verify with correct alpha should pass. */
-    bool ok = chipmunk_fri_verify_fold(h_r, h_r1, 4, 7, 0);
+    bool ok = chipmunk_fri_verify_fold(h_r, h_r1, 4, 7, round, 0);
     dap_assert(ok, "correct alpha fold");
 
     /* Verify with wrong alpha should fail. */
-    ok = chipmunk_fri_verify_fold(h_r, h_r1, 4, 8, 0);
+    ok = chipmunk_fri_verify_fold(h_r, h_r1, 4, 8, round, 0);
     dap_assert(!ok, "wrong alpha fold rejected");
 }
 
@@ -455,10 +469,10 @@ static void test_fri_invalid_args(void)
     chipmunk_fri_prover_free(&prov);
 
     /* verify_fold with NULL. */
-    bool ok = chipmunk_fri_verify_fold(NULL, NULL, 4, 1, 0);
+    bool ok = chipmunk_fri_verify_fold(NULL, NULL, 4, 1, 0, 0);
     dap_assert(!ok, "verify_fold NULL");
 
-    ok = chipmunk_fri_verify_fold(poly, poly, 0, 1, 0);
+    ok = chipmunk_fri_verify_fold(poly, poly, 0, 1, 0, 0);
     dap_assert(!ok, "verify_fold n=0");
 }
 

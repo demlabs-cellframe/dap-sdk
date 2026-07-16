@@ -130,40 +130,86 @@ int chipmunk_fri_commit(chipmunk_fri_prover_t *prover,
         return l_rc;
     }
 
-    /* Step 2: 7 rounds of folding. */
+    /* Step 2: 7 rounds of folding.
+     *
+     * Standard FRI folding with domain-point division:
+     *   h(y) = [f(x) + f(-x)]/2 + α · [f(x) - f(-x)] / (2·x)
+     *        = f_even(y) + α · f_odd(y)
+     * where y = x², and x = g·ω^l is the coset domain point.
+     *
+     * This halves the polynomial degree at each round, which is
+     * essential for FRI proximity soundness. */
     int32_t *l_prev = l_cur;
-    uint32_t l_offset = 0u;  /* running offset into round_data */
+    uint32_t l_offset = 0u;
+
+    /* Precompute inv(g) and inv(ω) for domain point iteration. */
+    int32_t l_inv_g = chipmunk_field_inv((int32_t)CHIPMUNK_RS_COSET_G);
+    int32_t l_omega_inv = chipmunk_field_omega_2048_inv();
 
     for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
         l_n = prover->round_sizes[r];
         int32_t l_alpha = alphas[r];
-        int32_t l_one_plus_alpha = (1 + l_alpha) % (int32_t)CHIPMUNK_Q;
-        int32_t l_one_minus_alpha = (1 - l_alpha + (int32_t)CHIPMUNK_Q) % (int32_t)CHIPMUNK_Q;
-
         uint32_t l_half = l_n / 2u;
-        int32_t *l_next = prover->round_data + (uint32_t)(CHIPMUNK_RS_MSG_LEN - l_half);
 
-        /* Wait — need to compute the correct offset for each round.
-         * Round data layout: round0[2048], round1[1024], ..., round6[32], final[16]
-         * Total offset after round r: sum of sizes 0..r */
+        /* Compute offset into round_data for this round. */
         l_offset = 0;
         for (unsigned j = 0; j < r; ++j) {
             l_offset += prover->round_sizes[j];
         }
         l_prev = prover->round_data + l_offset;
-        l_next = prover->round_data + l_offset + l_n;
+        int32_t *l_next = prover->round_data + l_offset + l_n;
 
-        /* Fold: H_{r+1}[l] = [(1+α)·H_r[l] + (1-α)·H_r[l+half]] * inv_2 */
+        /* Compute inv_domain points for this round.
+         * Round r domain: {g · ω^(l·2^r) : l = 0..n-1}
+         * inv_domain[l] = inv(g) · (inv(ω))^(l·2^r)
+         *
+         * We iterate: inv_zeta starts at inv(g)·inv(ω)^(2^r - 1)
+         * (the inv domain point at l=0), then multiply by inv(ω)^2^r
+         * to advance l. But simpler: precompute inv(ω^stride) where
+         * stride = 2^r, then iterate. */
+        int32_t l_omega_inv_stride = 1;  /* inv(ω)^(2^r) — will compute */
+        {
+            /* Compute inv(ω)^(2^r) by repeated squaring. */
+            int32_t l_base = l_omega_inv;
+            uint32_t l_exp = 1u << r;
+            l_omega_inv_stride = 1;
+            while (l_exp > 0) {
+                if (l_exp & 1u)
+                    l_omega_inv_stride = s_fqmul(l_omega_inv_stride, l_base);
+                l_base = s_fqmul(l_base, l_base);
+                l_exp >>= 1u;
+            }
+        }
+
+        /* inv_zeta_l = inv(g) · inv(ω)^(l · 2^r)
+         * Start at l=0: inv_zeta = inv(g), then multiply by inv(ω)^2^r each step. */
+        int32_t l_inv_zeta = l_inv_g;
+
         int32_t l_inv2 = prover->inv_2;
         for (uint32_t l = 0; l < l_half; ++l) {
             int32_t l_vp = l_prev[l];
             int32_t l_vm = l_prev[l + l_half];
-            int64_t l_sum = (int64_t)l_one_plus_alpha * (int64_t)l_vp
-                          + (int64_t)l_one_minus_alpha * (int64_t)l_vm;
-            l_sum = l_sum % (int64_t)CHIPMUNK_Q;
-            if (l_sum < 0) l_sum += (int64_t)CHIPMUNK_Q;
-            l_next[l] = (int32_t)(l_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
-            if (l_next[l] < 0) l_next[l] += (int32_t)CHIPMUNK_Q;
+
+            /* even_sum = [f(x) + f(-x)] / 2 */
+            int64_t l_even_sum = (int64_t)l_vp + (int64_t)l_vm;
+            l_even_sum = l_even_sum % (int64_t)CHIPMUNK_Q;
+            int32_t l_even = (int32_t)(l_even_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
+
+            /* odd_sum = [f(x) - f(-x)] / (2·x)
+             * = [f(x) - f(-x)] · inv(2) · inv(x) */
+            int64_t l_odd_diff = (int64_t)l_vp - (int64_t)l_vm;
+            l_odd_diff = l_odd_diff % (int64_t)CHIPMUNK_Q;
+            if (l_odd_diff < 0) l_odd_diff += (int64_t)CHIPMUNK_Q;
+            int32_t l_odd = s_fqmul(
+                (int32_t)(l_odd_diff * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q),
+                l_inv_zeta);
+
+            /* h(y_l) = even + α · odd */
+            l_next[l] = l_even + s_fqmul(l_alpha, l_odd);
+            if (l_next[l] >= (int32_t)CHIPMUNK_Q) l_next[l] -= (int32_t)CHIPMUNK_Q;
+
+            /* Advance inv_zeta for next l. */
+            l_inv_zeta = s_fqmul(l_inv_zeta, l_omega_inv_stride);
         }
 
         /* Build Merkle tree for next round (if not the last). */
@@ -226,22 +272,46 @@ const int32_t *chipmunk_fri_prover_final_evals(
 }
 
 bool chipmunk_fri_verify_fold(const int32_t *h_r, const int32_t *h_r1,
-                               uint32_t n_r, int32_t alpha, uint32_t l)
+                               uint32_t n_r, int32_t alpha, uint32_t round,
+                               uint32_t l)
 {
     if (!h_r || !h_r1 || n_r < 2u || l >= n_r / 2u)
         return false;
 
-    uint32_t l_half = n_r / 2u;
     int32_t l_inv2 = chipmunk_field_inv(2);
-    int32_t l_1pa = (1 + alpha) % (int32_t)CHIPMUNK_Q;
-    int32_t l_1ma = (1 - alpha + (int32_t)CHIPMUNK_Q) % (int32_t)CHIPMUNK_Q;
 
-    int64_t l_sum = (int64_t)l_1pa * (int64_t)h_r[l]
-                  + (int64_t)l_1ma * (int64_t)h_r[l + l_half];
-    l_sum = l_sum % (int64_t)CHIPMUNK_Q;
-    if (l_sum < 0) l_sum += (int64_t)CHIPMUNK_Q;
-    int32_t l_expected = (int32_t)(l_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
-    if (l_expected < 0) l_expected += (int32_t)CHIPMUNK_Q;
+    /* Compute inv(x) where x = g·ω^(l·2^round) is the coset domain point. */
+    int32_t l_inv_g = chipmunk_field_inv((int32_t)CHIPMUNK_RS_COSET_G);
+    int32_t l_omega_inv = chipmunk_field_omega_2048_inv();
+    int32_t l_inv_omega_exp = 1;
+    {
+        int32_t l_base = l_omega_inv;
+        uint32_t l_exp = l * (1u << round);
+        while (l_exp > 0) {
+            if (l_exp & 1u)
+                l_inv_omega_exp = s_fqmul(l_inv_omega_exp, l_base);
+            l_base = s_fqmul(l_base, l_base);
+            l_exp >>= 1u;
+        }
+    }
+    int32_t l_inv_x = s_fqmul(l_inv_g, l_inv_omega_exp);
+
+    /* even = [h_r[l] + h_r[l+half]] / 2 */
+    int64_t l_even_sum = (int64_t)h_r[l] + (int64_t)h_r[l + n_r / 2u];
+    l_even_sum = l_even_sum % (int64_t)CHIPMUNK_Q;
+    int32_t l_even = (int32_t)(l_even_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
+
+    /* odd = [h_r[l] - h_r[l+half]] · inv(2) · inv(x) */
+    int64_t l_odd_diff = (int64_t)h_r[l] - (int64_t)h_r[l + n_r / 2u];
+    l_odd_diff = l_odd_diff % (int64_t)CHIPMUNK_Q;
+    if (l_odd_diff < 0) l_odd_diff += (int64_t)CHIPMUNK_Q;
+    int32_t l_odd = s_fqmul(
+        (int32_t)(l_odd_diff * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q),
+        l_inv_x);
+
+    /* expected = even + α · odd */
+    int32_t l_expected = l_even + s_fqmul(alpha, l_odd);
+    if (l_expected >= (int32_t)CHIPMUNK_Q) l_expected -= (int32_t)CHIPMUNK_Q;
 
     return l_expected == h_r1[l];
 }
@@ -333,34 +403,64 @@ bool chipmunk_fri_verify_query(const chipmunk_fri_proof_t *proof,
         if (!l_ok)
             return false;
 
-        /* 2. Verify folding relation: leaf + sibling → next round leaf.
-         * The canonical index in round r+1 is min(leaf_idx, sib_idx).
-         * H_{r+1}[c] = [(1+α)·H_r[c] + (1-α)·H_r[c+n/2]] / 2
-         * If leaf is in the first half, coefficients are (1+α,1-α) for
-         * (leaf, sib). If leaf is in the second half, they swap. */
+        /* 2. Verify folding relation with domain-point division.
+         * Correct formula: h(y) = [f(x)+f(-x)]/2 + α·[f(x)-f(-x)]/(2·x)
+         * where x = g·ω^(canonical_idx · 2^r) is the coset domain point.
+         *
+         * If leaf is in the first half (idx = c): x = g·ω^(c·2^r), first=leaf, second=sib.
+         * If leaf is in the second half (idx = c+n/2): x = g·ω^(c·2^r), first=sib, second=leaf.
+         * In both cases: folded = [first+second]/2 + α·[first-second]·inv(2)·inv(x). */
         if (r + 1u < CHIPMUNK_FRI_ROUNDS) {
             uint32_t l_half = l_n / 2u;
             uint32_t l_leaf_idx = l_qry->idx % l_n;
 
-            int32_t l_1pa = (1 + alphas[r]) % (int32_t)CHIPMUNK_Q;
-            int32_t l_1ma = (1 - alphas[r] + (int32_t)CHIPMUNK_Q) % (int32_t)CHIPMUNK_Q;
+            /* Compute canonical index (always in first half). */
+            uint32_t l_canonical = (l_leaf_idx < l_half) ? l_leaf_idx : (l_leaf_idx - l_half);
 
-            /* Choose coefficients based on which half the leaf is in. */
-            int32_t l_cfirst, l_csecond;
+            /* Compute domain point x = g · ω^(canonical · 2^r).
+             * Start from inv(g)·(inv(ω))^0, then raise inv(ω) to power (canonical·2^r). */
+            int32_t l_inv_g = chipmunk_field_inv((int32_t)CHIPMUNK_RS_COSET_G);
+            int32_t l_omega_inv = chipmunk_field_omega_2048_inv();
+            /* Compute inv(ω)^(canonical · 2^r) by repeated squaring. */
+            int32_t l_inv_omega_exp = 1;
+            {
+                int32_t l_base = l_omega_inv;
+                uint32_t l_exp = l_canonical * (1u << r);
+                while (l_exp > 0) {
+                    if (l_exp & 1u)
+                        l_inv_omega_exp = s_fqmul(l_inv_omega_exp, l_base);
+                    l_base = s_fqmul(l_base, l_base);
+                    l_exp >>= 1u;
+                }
+            }
+            int32_t l_inv_x = s_fqmul(l_inv_g, l_inv_omega_exp);
+
+            /* Choose first/second based on which half the leaf is in. */
+            int32_t l_first, l_second;
             if (l_leaf_idx < l_half) {
-                l_cfirst  = l_1pa;   /* (1+α) for H_r[leaf]   */
-                l_csecond = l_1ma;   /* (1-α) for H_r[sibling] */
+                l_first  = l_leaf;
+                l_second = l_sib;
             } else {
-                l_cfirst  = l_1ma;   /* (1-α) for H_r[leaf]   */
-                l_csecond = l_1pa;   /* (1+α) for H_r[sibling] */
+                l_first  = l_sib;
+                l_second = l_leaf;
             }
 
-            int64_t l_sum = (int64_t)l_cfirst  * (int64_t)l_leaf
-                          + (int64_t)l_csecond * (int64_t)l_sib;
-            l_sum = l_sum % (int64_t)CHIPMUNK_Q;
-            if (l_sum < 0) l_sum += (int64_t)CHIPMUNK_Q;
-            int32_t l_folded = (int32_t)(l_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
-            if (l_folded < 0) l_folded += (int32_t)CHIPMUNK_Q;
+            /* even = [first + second] / 2 */
+            int64_t l_even_sum = (int64_t)l_first + (int64_t)l_second;
+            l_even_sum = l_even_sum % (int64_t)CHIPMUNK_Q;
+            int32_t l_even = (int32_t)(l_even_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
+
+            /* odd = [first - second] · inv(2) · inv(x) */
+            int64_t l_odd_diff = (int64_t)l_first - (int64_t)l_second;
+            l_odd_diff = l_odd_diff % (int64_t)CHIPMUNK_Q;
+            if (l_odd_diff < 0) l_odd_diff += (int64_t)CHIPMUNK_Q;
+            int32_t l_odd = s_fqmul(
+                (int32_t)(l_odd_diff * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q),
+                l_inv_x);
+
+            /* folded = even + α · odd */
+            int32_t l_folded = l_even + s_fqmul(alphas[r], l_odd);
+            if (l_folded >= (int32_t)CHIPMUNK_Q) l_folded -= (int32_t)CHIPMUNK_Q;
 
             if (l_folded != l_qry->leaf_values[r + 1u])
                 return false;
@@ -506,25 +606,51 @@ bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
                                  "query %u round %u merkle verify", qi, r);
                         break;
                     }
-                    /* Check folding. */
+                    /* Check folding with domain-point division. */
                     if (r + 1u < CHIPMUNK_FRI_ROUNDS) {
                         uint32_t l_half = l_n / 2u;
                         uint32_t l_leaf_idx = proof->queries[qi].idx % l_n;
+                        uint32_t l_canonical = (l_leaf_idx < l_half) ? l_leaf_idx : (l_leaf_idx - l_half);
                         int32_t l_inv2 = chipmunk_field_inv(2);
-                        int32_t l_1pa = (1 + alphas[r]) % (int32_t)CHIPMUNK_Q;
-                        int32_t l_1ma = (1 - alphas[r] + (int32_t)CHIPMUNK_Q) % (int32_t)CHIPMUNK_Q;
-                        int32_t l_cfirst, l_csecond;
-                        if (l_leaf_idx < l_half) {
-                            l_cfirst = l_1pa; l_csecond = l_1ma;
-                        } else {
-                            l_cfirst = l_1ma; l_csecond = l_1pa;
+
+                        /* Compute inv(x) where x = g·ω^(canonical·2^r). */
+                        int32_t l_inv_g = chipmunk_field_inv((int32_t)CHIPMUNK_RS_COSET_G);
+                        int32_t l_omega_inv = chipmunk_field_omega_2048_inv();
+                        int32_t l_inv_omega_exp = 1;
+                        {
+                            int32_t l_base = l_omega_inv;
+                            uint32_t l_exp = l_canonical * (1u << r);
+                            while (l_exp > 0) {
+                                if (l_exp & 1u)
+                                    l_inv_omega_exp = s_fqmul(l_inv_omega_exp, l_base);
+                                l_base = s_fqmul(l_base, l_base);
+                                l_exp >>= 1u;
+                            }
                         }
-                        int64_t l_sum = (int64_t)l_cfirst * (int64_t)proof->queries[qi].leaf_values[r]
-                                      + (int64_t)l_csecond * (int64_t)proof->queries[qi].sibling_values[r];
-                        l_sum = l_sum % (int64_t)CHIPMUNK_Q;
-                        if (l_sum < 0) l_sum += (int64_t)CHIPMUNK_Q;
-                        int32_t l_folded = (int32_t)(l_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
-                        if (l_folded < 0) l_folded += (int32_t)CHIPMUNK_Q;
+                        int32_t l_inv_x = s_fqmul(l_inv_g, l_inv_omega_exp);
+
+                        int32_t l_first, l_second;
+                        if (l_leaf_idx < l_half) {
+                            l_first = proof->queries[qi].leaf_values[r];
+                            l_second = proof->queries[qi].sibling_values[r];
+                        } else {
+                            l_first = proof->queries[qi].sibling_values[r];
+                            l_second = proof->queries[qi].leaf_values[r];
+                        }
+
+                        int64_t l_even_sum = (int64_t)l_first + (int64_t)l_second;
+                        l_even_sum = l_even_sum % (int64_t)CHIPMUNK_Q;
+                        int32_t l_even = (int32_t)(l_even_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
+
+                        int64_t l_odd_diff = (int64_t)l_first - (int64_t)l_second;
+                        l_odd_diff = l_odd_diff % (int64_t)CHIPMUNK_Q;
+                        if (l_odd_diff < 0) l_odd_diff += (int64_t)CHIPMUNK_Q;
+                        int32_t l_odd = s_fqmul(
+                            (int32_t)(l_odd_diff * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q),
+                            l_inv_x);
+
+                        int32_t l_folded = l_even + s_fqmul(alphas[r], l_odd);
+                        if (l_folded >= (int32_t)CHIPMUNK_Q) l_folded -= (int32_t)CHIPMUNK_Q;
                         if (l_folded != proof->queries[qi].leaf_values[r + 1u]) {
                             result->failed_round = r;
                             snprintf(result->reason, sizeof(result->reason),
