@@ -12,6 +12,7 @@
 #include <stdlib.h>
 
 #include "dap_common.h"
+#include "dap_memwipe.h"
 
 #define LOG_TAG "chipmunk_fri"
 
@@ -97,10 +98,16 @@ void chipmunk_fri_prover_free(chipmunk_fri_prover_t *prover)
 {
     if (!prover)
         return;
-    free(prover->round_data);
-    prover->round_data = NULL;
-    free(prover->merkle_scratch);
-    prover->merkle_scratch = NULL;
+    if (prover->round_data) {
+        dap_memwipe(prover->round_data, FRI_TOTAL_DATA * sizeof(int32_t));
+        free(prover->round_data);
+        prover->round_data = NULL;
+    }
+    if (prover->merkle_scratch) {
+        dap_memwipe(prover->merkle_scratch, 2u * CHIPMUNK_FRI_INIT_SIZE * sizeof(int32_t));
+        free(prover->merkle_scratch);
+        prover->merkle_scratch = NULL;
+    }
     prover->committed = false;
 }
 

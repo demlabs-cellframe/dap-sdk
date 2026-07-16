@@ -176,22 +176,24 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
         memcpy(l_s0_seed + 32, &l_s0_nonce, 4);
         
         chipmunk_poly_uniform_mod_p(&a_sk->s0[i], l_s0_seed, CHIPMUNK_PHI);
+        dap_memwipe(l_s0_seed, sizeof(l_s0_seed));
         debug_if(s_debug_more, L_DEBUG, "  s0[%d] first coeffs: %d %d %d %d", i,
                a_sk->s0[i].coeffs[0], a_sk->s0[i].coeffs[1], a_sk->s0[i].coeffs[2], a_sk->s0[i].coeffs[3]);
-        
+
         // Convert s0[i] to NTT domain for storage
         chipmunk_ntt(a_sk->s0[i].coeffs);
-        
+
         // Generate s1[i] in time domain, then convert to NTT
         uint8_t l_s1_seed[36];
         memcpy(l_s1_seed, l_derived_seed, 32);
         uint32_t l_s1_nonce = a_counter + CHIPMUNK_GAMMA + i;
         memcpy(l_s1_seed + 32, &l_s1_nonce, 4);
-        
+
         chipmunk_poly_uniform_mod_p(&a_sk->s1[i], l_s1_seed, CHIPMUNK_PHI_ALPHA_H);
+        dap_memwipe(l_s1_seed, sizeof(l_s1_seed));
         debug_if(s_debug_more, L_DEBUG, "  s1[%d] first coeffs: %d %d %d %d", i,
                a_sk->s1[i].coeffs[0], a_sk->s1[i].coeffs[1], a_sk->s1[i].coeffs[2], a_sk->s1[i].coeffs[3]);
-        
+
         // Convert s1[i] to NTT domain for storage
         chipmunk_ntt(a_sk->s1[i].coeffs);
         
@@ -260,6 +262,11 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
            a_pk->v1.coeffs[0], a_pk->v1.coeffs[1], a_pk->v1.coeffs[2], a_pk->v1.coeffs[3]);
     
     debug_if(s_debug_more, L_DEBUG, "✓ HOTS keygen completed with unique s0[i] and s1[i]");
+
+    /* Wipe secret key derivation material from stack. */
+    dap_memwipe(l_derived_seed, sizeof(l_derived_seed));
+    dap_memwipe(l_seed_and_counter, sizeof(l_seed_and_counter));
+    dap_memwipe(&l_hash_out, sizeof(l_hash_out));
     return 0;
 }
 
@@ -369,6 +376,12 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         dap_memwipe(&l_s1_blinded, sizeof(l_s1_blinded));
         dap_memwipe(l_r_seed, sizeof(l_r_seed));
         dap_memwipe(l_r2_seed, sizeof(l_r2_seed));
+        dap_memwipe(&l_r, sizeof(l_r));
+        dap_memwipe(&l_r2, sizeof(l_r2));
+        dap_memwipe(&l_hm, sizeof(l_hm));
+        dap_memwipe(&l_term1, sizeof(l_term1));
+        dap_memwipe(&l_term2, sizeof(l_term2));
+        dap_memwipe(&l_s0_hm, sizeof(l_s0_hm));
     }
     
     debug_if(s_debug_more, L_DEBUG, "✓ HOTS signature generation completed");

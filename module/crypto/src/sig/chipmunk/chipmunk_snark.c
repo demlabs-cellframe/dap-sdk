@@ -67,11 +67,15 @@ static const char *s_domain_opening   = "snark-opening-v1";
  * We represent F_q^6 elements as int32_t[6] and provide Horner evaluation.
  * ---------------------------------------------------------------------- */
 
-/* Multiply two F_q values, return in [0, Q) */
+/* Multiply two F_q values, return in [0, Q).
+ * Handles negative inputs correctly via signed modulo. */
 static inline int64_t s_fq6_mul(int32_t a, int32_t b)
 {
-    return (int64_t)((uint32_t)a % (uint32_t)CHIPMUNK_Q) *
-           (int64_t)((uint32_t)b % (uint32_t)CHIPMUNK_Q) % (int64_t)CHIPMUNK_Q;
+    int64_t l_a = (int64_t)a % (int64_t)CHIPMUNK_Q;
+    if (l_a < 0) l_a += (int64_t)CHIPMUNK_Q;
+    int64_t l_b = (int64_t)b % (int64_t)CHIPMUNK_Q;
+    if (l_b < 0) l_b += (int64_t)CHIPMUNK_Q;
+    return l_a * l_b % (int64_t)CHIPMUNK_Q;
 }
 
 /* Add two F_q values, return in [0, Q) */
@@ -110,6 +114,7 @@ static int s_commit_poly(chipmunk_snark_commit_t *a_commit,
     uint8_t l_buf[CHIPMUNK_N * sizeof(int32_t)];
     s_poly_to_bytes(l_buf, sizeof(l_buf), a_poly);
     dap_hash_sha3_256_raw(a_commit->hash, l_buf, sizeof(l_buf));
+    dap_memwipe(l_buf, sizeof(l_buf));
     return 0;
 }
 
@@ -421,6 +426,9 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
 {
     if (!a_proof || !a_ctx || !a_statement || !a_witness) return -EINVAL;
     if (!a_ctx->initialized) return -EINVAL;
+    if (a_statement->ring_size > 0 && !a_statement->ring) return -EINVAL;
+    if (a_statement->message_size > 0 && !a_statement->message) return -EINVAL;
+    if (a_statement->ring_size > UINT32_MAX) return -EINVAL;
 
     memset(a_proof, 0, sizeof(*a_proof));
 
@@ -735,6 +743,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     dap_memwipe(&l_b, sizeof(l_b));
     dap_memwipe(&l_z, sizeof(l_z));
     dap_memwipe(&l_q, sizeof(l_q));
+    dap_memwipe(l_w_nonce, sizeof(l_w_nonce));
 
     return 0;
 }
@@ -745,6 +754,9 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 {
     if (!a_proof || !a_ctx || !a_statement) return -EINVAL;
     if (!a_ctx->initialized) return -EINVAL;
+    if (a_statement->ring_size > 0 && !a_statement->ring) return -EINVAL;
+    if (a_statement->message_size > 0 && !a_statement->message) return -EINVAL;
+    if (a_statement->ring_size > UINT32_MAX) return -EINVAL;
 
     /* 1. Compute message hash and ring hash */
     uint8_t l_msg_hash[32];
@@ -768,11 +780,14 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         s_qrom_derive_challenge(&l_randomizer_ext, l_hash, 0);
     }
 
-    /* Verify r_commit matches re-derived randomizer */
+    /* Verify r_commit matches re-derived randomizer (constant-time). */
     {
         chipmunk_snark_commit_t l_r_commit;
         s_commit_poly(&l_r_commit, &l_randomizer_ext.c[0]);
-        if (memcmp(l_r_commit.hash, a_proof->r_commit.hash, 32) != 0) {
+        uint8_t l_diff = 0;
+        for (int i = 0; i < 32; ++i)
+            l_diff |= l_r_commit.hash[i] ^ a_proof->r_commit.hash[i];
+        if (l_diff != 0) {
             log_it(L_ERROR, "SNARK verify: r_commit mismatch");
             return 0;
         }
@@ -1066,7 +1081,11 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 void chipmunk_snark_proof_free(chipmunk_snark_proof_t *a_proof)
 {
     if (!a_proof) return;
-    dap_memwipe(a_proof->opening_proof, a_proof->opening_proof_size);
+    /* Clamp wipe size to prevent read-beyond-bounds if size is corrupted. */
+    size_t l_wipe_sz = a_proof->opening_proof_size;
+    if (l_wipe_sz > sizeof(a_proof->opening_proof))
+        l_wipe_sz = sizeof(a_proof->opening_proof);
+    dap_memwipe(a_proof->opening_proof, l_wipe_sz);
     memset(a_proof, 0, sizeof(*a_proof));
 }
 
