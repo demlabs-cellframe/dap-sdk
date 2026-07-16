@@ -70,7 +70,7 @@ extern "C" {
  * Total opening: 4096 bytes. Phase 2+ will replace with Merkle proofs. */
 #define CHIPMUNK_SNARK_OPENING_POLYS    2   /* z + q */
 #define CHIPMUNK_SNARK_OPENING_BYTES    \
-    (CHIPMUNK_SNARK_OPENING_POLYS * CHIPMUNK_N * (int)sizeof(int32_t))
+    (CHIPMUNK_SNARK_OPENING_POLYS * CHIPMUNK_N * sizeof(int32_t))
 
 /* FRI domain separator for SNARK integration (exactly 16 bytes, no NUL).
  * Note: chipmunk_fri_transcript_init() absorbs exactly 16 bytes from domain.
