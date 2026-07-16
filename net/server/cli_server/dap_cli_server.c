@@ -74,6 +74,18 @@ typedef struct cli_cmd_arg {
 
 static void* s_cli_cmd_exec(void *a_arg);
 
+static bool s_allowed_cmd_match(const char *a_pattern, const char *a_method) {
+    if (!a_pattern || !a_method)
+        return false;
+    size_t l_pat_len = strlen(a_pattern);
+    size_t l_method_len = strlen(a_method);
+    if (l_method_len < l_pat_len)
+        return false;
+    if (strncmp(a_pattern, a_method, l_pat_len) != 0)
+        return false;
+    return l_method_len == l_pat_len || a_method[l_pat_len] == ':';
+}
+
 static bool s_allowed_cmd_check(char *a_buf) {
     enum json_tokener_error jterr;
     const char *l_method;
@@ -89,7 +101,16 @@ static bool s_allowed_cmd_check(char *a_buf) {
         return false;
     }
 
-    bool l_allowed = !!dap_str_find( dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL), l_method );
+    const char **l_allowed_cmds = dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL);
+    bool l_allowed = false;
+    if (l_allowed_cmds) {
+        for (size_t i = 0; l_allowed_cmds[i]; ++i) {
+            if (s_allowed_cmd_match(l_allowed_cmds[i], l_method)) {
+                l_allowed = true;
+                break;
+            }
+        }
+    }
     debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method);
     json_object_put(jobj);
     return l_allowed;
