@@ -37,7 +37,7 @@
 #include "chipmunk_ntt.h"
 #include "chipmunk_field.h"
 #include "chipmunk_lrs.h"
-#include "chipmunk_mring_ext.h"
+#include "chipmunk_fq6_ext.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake256.h"
 #include "dap_memwipe.h"
@@ -127,14 +127,14 @@ static int s_commit_poly(chipmunk_snark_commit_t *a_commit,
  * Internal: QROM Fiat-Shamir transcript
  * ---------------------------------------------------------------------- */
 
-static int s_qrom_derive_challenge(chipmunk_mring_ext_t *a_challenge,
+static int s_qrom_derive_challenge(chipmunk_fq6_ext_t *a_challenge,
                                    const uint8_t *a_transcript_hash,
                                    uint32_t a_counter)
 {
     /* Sample challenge from subtractive set S = F_{q^6} \ {0}
      * This gives |S| = q^6 - 1 ~ 2^{129.6}, so every nonzero element
      * is invertible and pairwise differences are invertible. */
-    return chipmunk_mring_ext_sample_challenge(a_challenge, a_transcript_hash, a_counter);
+    return chipmunk_fq6_ext_sample_challenge(a_challenge, a_transcript_hash, a_counter);
 }
 
 /* -------------------------------------------------------------------------
@@ -154,15 +154,15 @@ static int s_qrom_derive_challenge(chipmunk_mring_ext_t *a_challenge,
  * ---------------------------------------------------------------------- */
 
 typedef struct s_fq6_elem {
-    int32_t c[CHIPMUNK_MRING_EXT_DEG]; /* 6 F_q coordinates */
+    int32_t c[CHIPMUNK_FQ6_EXT_DEG]; /* 6 F_q coordinates */
 } s_fq6_elem_t;
 
 /* Extract F_q^6 coordinates from a scalar extension element */
-static void s_ext_to_fq6(s_fq6_elem_t *a_out, const chipmunk_mring_ext_t *a_ext)
+static void s_ext_to_fq6(s_fq6_elem_t *a_out, const chipmunk_fq6_ext_t *a_ext)
 {
-    int32_t l_coords[CHIPMUNK_MRING_EXT_DEG];
-    chipmunk_mring_ext_scalar_get(l_coords, a_ext);
-    for (int j = 0; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
+    int32_t l_coords[CHIPMUNK_FQ6_EXT_DEG];
+    chipmunk_fq6_ext_scalar_get(l_coords, a_ext);
+    for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         a_out->c[j] = l_coords[j];
     }
 }
@@ -173,7 +173,7 @@ static void s_poly_eval_fq6(s_fq6_elem_t *a_result,
                              const s_fq6_elem_t *a_alpha)
 {
     /* Horner: result = f_{N-1}, then for i=N-2..0: result = alpha * result + f_i */
-    for (int j = 0; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         int32_t l_acc = chipmunk_mod_q((int64_t)a_f->coeffs[CHIPMUNK_N - 1]);
         for (int i = CHIPMUNK_N - 2; i >= 0; --i) {
             /* l_acc = alpha[j] * l_acc + f[i] */
@@ -186,7 +186,7 @@ static void s_poly_eval_fq6(s_fq6_elem_t *a_result,
 /* Check if F_q^6 element is zero (all components) */
 static bool s_fq6_is_zero(const s_fq6_elem_t *a_elem)
 {
-    for (int j = 0; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         if (a_elem->c[j] != 0) return false;
     }
     return true;
@@ -195,7 +195,7 @@ static bool s_fq6_is_zero(const s_fq6_elem_t *a_elem)
 /* Compare two F_q^6 elements for equality */
 static bool s_fq6_equal(const s_fq6_elem_t *a, const s_fq6_elem_t *b)
 {
-    for (int j = 0; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         if (a->c[j] != b->c[j]) return false;
     }
     return true;
@@ -234,7 +234,7 @@ static int s_synth_div_fq6(chipmunk_poly_t *a_q,
     /* We do 6 parallel synthetic divisions. Each produces a scalar R_q
      * polynomial (all 512 coefficients equal to the F_q result), but
      * we store the scalar result at coeffs[0] only for commitment. */
-    for (int j = 0; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         int32_t l_alpha_j = a_alpha->c[j];
         int64_t l_acc = 0;
         for (int i = CHIPMUNK_N - 2; i >= 0; --i) {
@@ -624,7 +624,7 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
     dap_hash_sha3_256_raw(ctx->domain_separator, (const uint8_t *)s_domain_init, strlen(s_domain_init));
 
     /* Verify Phi_9 irreducibility (Rabin test) */
-    if (!chipmunk_mring_ext_modulus_is_irreducible()) {
+    if (!chipmunk_fq6_ext_modulus_is_irreducible()) {
         log_it(L_ERROR, "SNARK init: Phi_9 is NOT irreducible over F_q — soundness broken");
         chipmunk_snark_params_free(&ctx->sp);
         return -EINVAL;
@@ -688,7 +688,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     /* 4. Derive randomizer from subtractive set S = F_{q^6} \ {0}
      * Transcript: domain_sep || w_commit || ring_hash
      * The randomizer is committed (r_commit) so the verifier re-derives it. */
-    chipmunk_mring_ext_t l_randomizer_ext;
+    chipmunk_fq6_ext_t l_randomizer_ext;
     {
         uint8_t l_transcript[96];
         size_t l_off = 0;
@@ -730,7 +730,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     /* 8. Derive evaluation point alpha from subtractive set
      * Transcript: domain_sep || w_commit || r_commit || z_commit || msg_hash
      * This binds the proof to specific witness, randomizer, constraints, and message. */
-    chipmunk_mring_ext_t l_alpha_ext;
+    chipmunk_fq6_ext_t l_alpha_ext;
     {
         uint8_t l_transcript[160];
         size_t l_off = 0;
@@ -1004,7 +1004,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
     /* 2. Re-derive randomizer from transcript
      * Transcript: domain_sep || w_commit || ring_hash  (same as prove) */
-    chipmunk_mring_ext_t l_randomizer_ext;
+    chipmunk_fq6_ext_t l_randomizer_ext;
     {
         uint8_t l_transcript[96];
         size_t l_off = 0;
@@ -1031,7 +1031,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
     /* 3. Re-derive alpha from transcript
      * Transcript: domain_sep || w_commit || r_commit || z_commit || msg_hash */
-    chipmunk_mring_ext_t l_alpha;
+    chipmunk_fq6_ext_t l_alpha;
     {
         uint8_t l_transcript[160];
         size_t l_off = 0;

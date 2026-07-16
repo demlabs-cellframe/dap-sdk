@@ -310,16 +310,16 @@ static void test_ext_qpack_roundtrip(void)
     s_prove_fixture(l_proof, pks, &c, &Y_pk, ring_hash, fs_seed,
                     opening_seed, 0x44u);
 
-    uint8_t l_packed[CHIPMUNK_MRING_EXT_QPACK_BYTES];
-    chipmunk_mring_ext_t l_restored;
-    dap_assert(chipmunk_mring_ext_qpack(l_packed, sizeof(l_packed),
+    uint8_t l_packed[CHIPMUNK_FQ6_EXT_QPACK_BYTES];
+    chipmunk_fq6_ext_t l_restored;
+    dap_assert(chipmunk_fq6_ext_qpack(l_packed, sizeof(l_packed),
                                         &l_proof->rounds[0].C_L) == 0,
                "ext_qpack");
-    dap_assert(chipmunk_mring_ext_qunpack(&l_restored, l_packed,
+    dap_assert(chipmunk_fq6_ext_qunpack(&l_restored, l_packed,
                                           sizeof(l_packed)) == 0,
                "ext_qunpack");
 
-    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_FQ6_EXT_DEG; ++j) {
         for (size_t k = 0u; k < CHIPMUNK_N; ++k) {
             dap_assert(l_proof->rounds[0].C_L.c[j].coeffs[k]
                        == l_restored.c[j].coeffs[k],

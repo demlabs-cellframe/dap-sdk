@@ -251,10 +251,10 @@ endif()
 # arithmetic R_q^(e)=R_q[Y]/Φ₉ (e=6).  Ring axioms, x·x⁻¹=1 in F_{q⁶}
 # (scalar) and per-slot (general), embed∘project=id, is_in_base, and a
 # CI Rabin re-check that Φ₉ is irreducible over F_q.
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_ext.c)
-    add_dap_test(test_unit_crypto_chipmunk_mring_ext
-                 unit/crypto/chipmunk_ring/test_chipmunk_mring_ext.c)
-    register_dap_test(test_unit_crypto_chipmunk_mring_ext
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fq6_ext.c)
+    add_dap_test(test_unit_crypto_chipmunk_fq6_ext
+                 unit/crypto/chipmunk_ring/test_chipmunk_fq6_ext.c)
+    register_dap_test(test_unit_crypto_chipmunk_fq6_ext
                       "unit;crypto;ring;mring;ext")
 endif()
 

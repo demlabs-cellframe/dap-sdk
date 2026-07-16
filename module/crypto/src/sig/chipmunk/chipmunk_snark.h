@@ -31,7 +31,7 @@
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
 #include "chipmunk_lrs.h"
-#include "chipmunk_mring_ext.h"
+#include "chipmunk_fq6_ext.h"
 #include "chipmunk_mring_params.h"
 #include "lotrs_params.h"
 #include "chipmunk_fri.h"

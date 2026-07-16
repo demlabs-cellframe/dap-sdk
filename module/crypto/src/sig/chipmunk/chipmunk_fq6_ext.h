@@ -29,8 +29,8 @@
  */
 
 #pragma once
-#ifndef _CHIPMUNK_MRING_EXT_H_
-#define _CHIPMUNK_MRING_EXT_H_
+#ifndef _CHIPMUNK_FQ6_EXT_H_
+#define _CHIPMUNK_FQ6_EXT_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -42,54 +42,54 @@
 extern "C" {
 #endif
 
-/* Extension degree e is pinned in chipmunk_mring_params.h (CHIPMUNK_MRING_EXT_DEG). */
+/* Extension degree e is pinned in chipmunk_mring_params.h (CHIPMUNK_FQ6_EXT_DEG). */
 
 /* Element of R_q^{(e)}: coefficients of a degree-<e polynomial in Y. */
-typedef struct chipmunk_mring_ext {
-    chipmunk_poly_t c[CHIPMUNK_MRING_EXT_DEG];
-} chipmunk_mring_ext_t;
+typedef struct chipmunk_fq6_ext {
+    chipmunk_poly_t c[CHIPMUNK_FQ6_EXT_DEG];
+} chipmunk_fq6_ext_t;
 
 /* ---- constructors -------------------------------------------------- */
 
 /*  a := 0  (additive identity). */
-void chipmunk_mring_ext_zero(chipmunk_mring_ext_t *a_out);
+void chipmunk_fq6_ext_zero(chipmunk_fq6_ext_t *a_out);
 
 /*  a := 1  (multiplicative identity, the constant polynomial 1·Y⁰). */
-void chipmunk_mring_ext_one(chipmunk_mring_ext_t *a_out);
+void chipmunk_fq6_ext_one(chipmunk_fq6_ext_t *a_out);
 
 /*  Embed an R_q element into R_q^{(e)} at Y-degree 0:  out := a · Y⁰. */
-void chipmunk_mring_ext_embed(chipmunk_mring_ext_t *a_out,
+void chipmunk_fq6_ext_embed(chipmunk_fq6_ext_t *a_out,
                               const chipmunk_poly_t *a_base);
 
 /*  Project the Y-degree-0 component:  out := a.c[0]. */
-void chipmunk_mring_ext_project(chipmunk_poly_t *a_out,
-                                const chipmunk_mring_ext_t *a);
+void chipmunk_fq6_ext_project(chipmunk_poly_t *a_out,
+                                const chipmunk_fq6_ext_t *a);
 
 /*  Normalise every R_q coefficient into canonical [0, q).  Wire qpack and
  *  FS transcript absorption both require this representation. */
-void chipmunk_mring_ext_canonicalize(chipmunk_mring_ext_t *a);
+void chipmunk_fq6_ext_canonicalize(chipmunk_fq6_ext_t *a);
 
 /*  True iff a lies in the base ring R_q (Y-components 1..e-1 all zero).
  *  Used by the verifier-side consistency lane (G3.1 §7). */
-bool chipmunk_mring_ext_is_in_base(const chipmunk_mring_ext_t *a);
+bool chipmunk_fq6_ext_is_in_base(const chipmunk_fq6_ext_t *a);
 
 /* ---- ring operations ----------------------------------------------- */
 
 /*  out := a + b   (coefficient-wise R_q add). */
-int chipmunk_mring_ext_add(chipmunk_mring_ext_t *a_out,
-                           const chipmunk_mring_ext_t *a,
-                           const chipmunk_mring_ext_t *b);
+int chipmunk_fq6_ext_add(chipmunk_fq6_ext_t *a_out,
+                           const chipmunk_fq6_ext_t *a,
+                           const chipmunk_fq6_ext_t *b);
 
 /*  out := a − b. */
-int chipmunk_mring_ext_sub(chipmunk_mring_ext_t *a_out,
-                           const chipmunk_mring_ext_t *a,
-                           const chipmunk_mring_ext_t *b);
+int chipmunk_fq6_ext_sub(chipmunk_fq6_ext_t *a_out,
+                           const chipmunk_fq6_ext_t *a,
+                           const chipmunk_fq6_ext_t *b);
 
 /*  out := a · b  mod Φ₉  (schoolbook in Y over R_q, reduced by
  *  Y⁶ ≡ −Y³ − 1).  out may NOT alias a or b. */
-int chipmunk_mring_ext_mul(chipmunk_mring_ext_t *a_out,
-                           const chipmunk_mring_ext_t *a,
-                           const chipmunk_mring_ext_t *b);
+int chipmunk_fq6_ext_mul(chipmunk_fq6_ext_t *a_out,
+                           const chipmunk_fq6_ext_t *a,
+                           const chipmunk_fq6_ext_t *b);
 
 /* ---- Galois / Frobenius (R_q ↔ R_q^{(e)} consistency, NOGAP §4) ---- */
 
@@ -100,35 +100,35 @@ int chipmunk_mring_ext_mul(chipmunk_mring_ext_t *a_out,
  *      w ∈ ι(R_q)  ⟺  σ(w) = w,
  *  giving a succinct linear opening (NOGAP_LEMMA §4.1).  out may alias a.
  *  Returns 0, or -EINVAL on null args. */
-int chipmunk_mring_ext_frobenius(chipmunk_mring_ext_t *a_out,
-                                 const chipmunk_mring_ext_t *a);
+int chipmunk_fq6_ext_frobenius(chipmunk_fq6_ext_t *a_out,
+                                 const chipmunk_fq6_ext_t *a);
 
 /*  Field trace  Tr_{R_q^{(e)}/R_q}(w) = Σ_{i=0}^{e-1} σⁱ(w).  The result
  *  always lies in the base ring R_q (it is σ-fixed); the R_q value is
  *  written to a_out.  For a base element ι(a) it equals e·a (NOGAP §4.1).
  *  Returns 0, or -EINVAL on null args. */
-int chipmunk_mring_ext_trace(chipmunk_poly_t *a_out,
-                             const chipmunk_mring_ext_t *a);
+int chipmunk_fq6_ext_trace(chipmunk_poly_t *a_out,
+                             const chipmunk_fq6_ext_t *a);
 
 /* ---- scalar (F_{q⁶}) sub-API — challenges live here ---------------- */
 
 /*  A scalar is given by its six F_q coordinates (a_0,…,a_5) representing
  *  Σ a_j Yʲ ∈ F_{q⁶}.  Materialise it as an ext element whose six
  *  Y-coefficients are the corresponding CONSTANT R_q polynomials. */
-void chipmunk_mring_ext_scalar_set(chipmunk_mring_ext_t *a_out,
-                                   const int32_t a_coords[CHIPMUNK_MRING_EXT_DEG]);
+void chipmunk_fq6_ext_scalar_set(chipmunk_fq6_ext_t *a_out,
+                                   const int32_t a_coords[CHIPMUNK_FQ6_EXT_DEG]);
 
 /*  Extract the six F_q coordinates from a scalar ext element (reads the
  *  degree-0 X-coefficient of each Y-component).  Returns -EINVAL if the
  *  element is not scalar (some Y-component is a non-constant R_q poly). */
-int chipmunk_mring_ext_scalar_get(int32_t a_coords_out[CHIPMUNK_MRING_EXT_DEG],
-                                  const chipmunk_mring_ext_t *a);
+int chipmunk_fq6_ext_scalar_get(int32_t a_coords_out[CHIPMUNK_FQ6_EXT_DEG],
+                                  const chipmunk_fq6_ext_t *a);
 
 /*  Invert a scalar (F_{q⁶}) element via extended Euclid in F_q[Y]/(Φ₉).
  *  Returns 0 on success (out is the scalar inverse), -EDOM if the scalar
  *  is zero / non-invertible, -EINVAL if a is not scalar. */
-int chipmunk_mring_ext_scalar_invert(chipmunk_mring_ext_t *a_out,
-                                     const chipmunk_mring_ext_t *a);
+int chipmunk_fq6_ext_scalar_invert(chipmunk_fq6_ext_t *a_out,
+                                     const chipmunk_fq6_ext_t *a);
 
 /* ---- Fiat-Shamir challenge sampler over the subtractive set ------- */
 
@@ -145,7 +145,7 @@ int chipmunk_mring_ext_scalar_invert(chipmunk_mring_ext_t *a_out,
  *  verifier re-derives it identically.  The all-zero element is
  *  rejection-resampled, so the output is always nonzero (invertible).
  *  Returns 0 on success, -EINVAL on null args. */
-int chipmunk_mring_ext_sample_challenge(chipmunk_mring_ext_t *a_out,
+int chipmunk_fq6_ext_sample_challenge(chipmunk_fq6_ext_t *a_out,
                                         const uint8_t a_fs_hash[32],
                                         uint32_t a_counter);
 
@@ -156,18 +156,18 @@ int chipmunk_mring_ext_sample_challenge(chipmunk_mring_ext_t *a_out,
  *  slot is non-invertible.  Not used on the fold hot path (challenges
  *  are scalar); provided to validate the algebra and for the
  *  R_q↔R_q^{(e)} consistency tooling. */
-int chipmunk_mring_ext_invert(chipmunk_mring_ext_t *a_out,
-                              const chipmunk_mring_ext_t *a);
+int chipmunk_fq6_ext_invert(chipmunk_fq6_ext_t *a_out,
+                              const chipmunk_fq6_ext_t *a);
 
 /* ---- irreducibility self-check (Rabin) for CI --------------------- */
 
 /*  Verify that g(Y) = Φ₉ is irreducible over F_q (Rabin's test).
  *  Returns true iff irreducible.  Lets the unit test re-confirm the
  *  G3.1 §3.1 parameter choice in CI rather than trusting a constant. */
-bool chipmunk_mring_ext_modulus_is_irreducible(void);
+bool chipmunk_fq6_ext_modulus_is_irreducible(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _CHIPMUNK_MRING_EXT_H_ */
+#endif /* _CHIPMUNK_FQ6_EXT_H_ */

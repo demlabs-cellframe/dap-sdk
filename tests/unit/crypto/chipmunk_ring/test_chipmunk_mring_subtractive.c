@@ -28,7 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "chipmunk/chipmunk_mring_ext.h"
+#include "chipmunk/chipmunk_fq6_ext.h"
 #include "chipmunk/chipmunk_poly.h"
 
 #define LOG_TAG "test_chipmunk_mring_subtractive"
@@ -43,9 +43,9 @@ static int32_t s_canon(int32_t a_v)
     return r;
 }
 
-static bool s_ext_eq(const chipmunk_mring_ext_t *a, const chipmunk_mring_ext_t *b)
+static bool s_ext_eq(const chipmunk_fq6_ext_t *a, const chipmunk_fq6_ext_t *b)
 {
-    for (int j = 0; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         for (int i = 0; i < CHIPMUNK_N; ++i) {
             if (s_canon(a->c[j].coeffs[i]) != s_canon(b->c[j].coeffs[i])) {
                 return false;
@@ -55,10 +55,10 @@ static bool s_ext_eq(const chipmunk_mring_ext_t *a, const chipmunk_mring_ext_t *
     return true;
 }
 
-static bool s_ext_is_one(const chipmunk_mring_ext_t *a)
+static bool s_ext_is_one(const chipmunk_fq6_ext_t *a)
 {
-    chipmunk_mring_ext_t one;
-    chipmunk_mring_ext_one(&one);
+    chipmunk_fq6_ext_t one;
+    chipmunk_fq6_ext_one(&one);
     return s_ext_eq(a, &one);
 }
 
@@ -76,38 +76,38 @@ static bool s_test_determinism(void)
     s_make_hash(h, 0x5Au);
 
     for (uint32_t ctr = 0; ctr < 8u; ++ctr) {
-        chipmunk_mring_ext_t a, b;
-        dap_assert(chipmunk_mring_ext_sample_challenge(&a, h, ctr) == 0,
+        chipmunk_fq6_ext_t a, b;
+        dap_assert(chipmunk_fq6_ext_sample_challenge(&a, h, ctr) == 0,
                    "sample challenge a");
-        dap_assert(chipmunk_mring_ext_sample_challenge(&b, h, ctr) == 0,
+        dap_assert(chipmunk_fq6_ext_sample_challenge(&b, h, ctr) == 0,
                    "sample challenge b (replay)");
         dap_assert(s_ext_eq(&a, &b),
                    "same (fs_hash, counter) ⇒ identical challenge");
 
         /* challenge must be scalar (diagonal F_{q⁶}) */
-        int32_t coords[CHIPMUNK_MRING_EXT_DEG];
-        dap_assert(chipmunk_mring_ext_scalar_get(coords, &a) == 0,
+        int32_t coords[CHIPMUNK_FQ6_EXT_DEG];
+        dap_assert(chipmunk_fq6_ext_scalar_get(coords, &a) == 0,
                    "challenge is a scalar element");
         bool nonzero = false;
-        for (int j = 0; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
+        for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
             if (coords[j] != 0) { nonzero = true; }
         }
         dap_assert(nonzero, "challenge is nonzero (zero is rejection-sampled)");
 
         /* and invertible (since nonzero in a field) */
-        chipmunk_mring_ext_t inv, prod;
-        dap_assert(chipmunk_mring_ext_scalar_invert(&inv, &a) == 0,
+        chipmunk_fq6_ext_t inv, prod;
+        dap_assert(chipmunk_fq6_ext_scalar_invert(&inv, &a) == 0,
                    "challenge invertible");
-        dap_assert(chipmunk_mring_ext_mul(&prod, &a, &inv) == 0, "mul");
+        dap_assert(chipmunk_fq6_ext_mul(&prod, &a, &inv) == 0, "mul");
         dap_assert(s_ext_is_one(&prod), "x·x⁻¹ == 1");
     }
 
     /* different fs_hash ⇒ different challenge (overwhelming probability) */
     uint8_t h2[32];
     s_make_hash(h2, 0xA5u);
-    chipmunk_mring_ext_t c1, c2;
-    dap_assert(chipmunk_mring_ext_sample_challenge(&c1, h, 0u) == 0, "sample");
-    dap_assert(chipmunk_mring_ext_sample_challenge(&c2, h2, 0u) == 0, "sample");
+    chipmunk_fq6_ext_t c1, c2;
+    dap_assert(chipmunk_fq6_ext_sample_challenge(&c1, h, 0u) == 0, "sample");
+    dap_assert(chipmunk_fq6_ext_sample_challenge(&c2, h2, 0u) == 0, "sample");
     dap_assert(!s_ext_eq(&c1, &c2),
                "distinct fs_hash ⇒ distinct challenge");
     return true;
@@ -119,13 +119,13 @@ static bool s_test_subtractive(void)
     uint8_t h[32];
     s_make_hash(h, 0x33u);
 
-    static chipmunk_mring_ext_t s_chal[SUB_BATCH];
-    static int32_t s_coords[SUB_BATCH][CHIPMUNK_MRING_EXT_DEG];
+    static chipmunk_fq6_ext_t s_chal[SUB_BATCH];
+    static int32_t s_coords[SUB_BATCH][CHIPMUNK_FQ6_EXT_DEG];
     for (int i = 0; i < SUB_BATCH; ++i) {
-        dap_assert(chipmunk_mring_ext_sample_challenge(&s_chal[i], h,
+        dap_assert(chipmunk_fq6_ext_sample_challenge(&s_chal[i], h,
                                                        (uint32_t)i) == 0,
                    "sample batch challenge");
-        dap_assert(chipmunk_mring_ext_scalar_get(s_coords[i], &s_chal[i]) == 0,
+        dap_assert(chipmunk_fq6_ext_scalar_get(s_coords[i], &s_chal[i]) == 0,
                    "batch challenge is scalar");
     }
 
@@ -135,16 +135,16 @@ static bool s_test_subtractive(void)
         for (int k = i + 1; k < SUB_BATCH; ++k) {
             /* distinctness */
             bool l_equal = true;
-            for (int j = 0; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
+            for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
                 if (s_coords[i][j] != s_coords[k][j]) { l_equal = false; break; }
             }
             dap_assert(!l_equal, "batch challenges are pairwise distinct");
 
             /* subtractive: diff = c_i − c_k must be invertible */
-            chipmunk_mring_ext_t l_diff, l_inv;
-            dap_assert(chipmunk_mring_ext_sub(&l_diff, &s_chal[i], &s_chal[k]) == 0,
+            chipmunk_fq6_ext_t l_diff, l_inv;
+            dap_assert(chipmunk_fq6_ext_sub(&l_diff, &s_chal[i], &s_chal[k]) == 0,
                        "sub");
-            const int rc = chipmunk_mring_ext_scalar_invert(&l_inv, &l_diff);
+            const int rc = chipmunk_fq6_ext_scalar_invert(&l_inv, &l_diff);
             dap_assert(rc == 0,
                        "EVERY pairwise difference must be invertible "
                        "(subtractive-set property)");
@@ -152,8 +152,8 @@ static bool s_test_subtractive(void)
 
             /* full ext-multiply spot-check on a sparse sample */
             if (((i * 7 + k) % 997) == 0 && l_full_checks < 16u) {
-                chipmunk_mring_ext_t l_prod;
-                dap_assert(chipmunk_mring_ext_mul(&l_prod, &l_diff, &l_inv) == 0,
+                chipmunk_fq6_ext_t l_prod;
+                dap_assert(chipmunk_fq6_ext_mul(&l_prod, &l_diff, &l_inv) == 0,
                            "mul");
                 dap_assert(s_ext_is_one(&l_prod),
                            "diff · diff⁻¹ == 1 (full R_q^{(e)} multiply)");

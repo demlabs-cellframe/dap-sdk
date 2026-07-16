@@ -72,8 +72,8 @@ int chipmunk_mring_transcript_fold_round_fs(
     uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
     const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES],
     uint32_t a_round,
-    const chipmunk_mring_ext_t *a_CL,
-    const chipmunk_mring_ext_t *a_CR);
+    const chipmunk_fq6_ext_t *a_CL,
+    const chipmunk_fq6_ext_t *a_CR);
 
 /*
  * Bind-block FS digest absorbing fold commitments + scalars (on-wire b*).
