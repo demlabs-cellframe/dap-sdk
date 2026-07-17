@@ -1,26 +1,11 @@
 /*
- * Authors:
- * Dmitry A. Gerasimov <ceo@cellframe.net>
- * DeM Labs Inc.   https://demlabs.net
- * DeM Labs Open source community https://gitlab.demlabs.net/cellframe
- * Copyright  (c) 2017-2024
- * All rights reserved.
-
- This file is part of DAP (Distributed Applications Platform) the open source project
-
-    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    DAP is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ * chipmunk_ntt.h — 512-point NTT for chipmunk lattice cryptography.
+ *
+ * Uses dap_ntt Montgomery kernels with R = 2^32 and SIMD dispatch.
+ * All twiddle tables are computed at runtime — no hardcoded constants.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 
 #pragma once
 
@@ -29,36 +14,30 @@
 #include "chipmunk.h"
 #include "dap_ntt.h"
 
-// NTT parameters for q = 3168257 (corrected from original Rust implementation)
-#define CHIPMUNK_ZETAS_MONT_LEN 128
-
-// Montgomery parameters for q = 3168257
-#define CHIPMUNK_MONT_R          (1U << 22)    // Montgomery reduction parameter R = 2^22
-#define CHIPMUNK_MONT_R_INV      202470        // R^(-1) mod q
-#define CHIPMUNK_QINV            202470        // R^(-1) mod q
-
-/* ===== Phase 9.14a: Per-q NTT context ===== */
+/* ===== Per-q NTT context ===== */
 
 /**
- * @brief Per-q NTT context (Phase 9.14a).
+ * @brief Per-q NTT context.
  *
  * Wraps dap_ntt_params_t with ownership tracking for heap-allocated twiddle
  * tables. Built by chipmunk_ntt_params_compute(), freed by chipmunk_ntt_ctx_free().
+ * Montgomery R = 2^32 is used to match dap_ntt32 SIMD kernel guard.
  */
 typedef struct chipmunk_ntt_ctx {
-    dap_ntt_params_t params;   ///< The underlying NTT parameters
-    uint64_t         q;        ///< The prime modulus (copy for convenience)
-    bool             owns_tables; ///< True if zetas/zetas_inv are heap-allocated
+    dap_ntt_params_t params;
+    uint64_t         q;
+    bool             owns_tables;
 } chipmunk_ntt_ctx_t;
 
 /**
  * @brief Compute NTT parameters for an arbitrary prime q.
  *
- * Fills a_ctx with Montgomery constants and builds twiddle tables.
+ * Fills a_ctx with Montgomery constants (R = 2^32) and builds twiddle
+ * tables in Montgomery form: omega^{brv9(i)} * R mod q.
  * The context must be freed with chipmunk_ntt_ctx_free().
  *
  * @param a_ctx Output context.
- * @param q Prime modulus (must be odd, < 2^22).
+ * @param q Prime modulus (must be odd, < 2^31).
  * @return 0 on success, negative on error.
  */
 int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q);
@@ -66,45 +45,49 @@ int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q);
 /** @brief Free heap resources in a per-q NTT context. */
 void chipmunk_ntt_ctx_free(chipmunk_ntt_ctx_t *a_ctx);
 
-/** @brief Per-q forward NTT. */
+/** @brief Per-q forward NTT (SIMD-dispatched Montgomery kernel). */
 void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx);
 
-/** @brief Per-q inverse NTT. */
+/** @brief Per-q inverse NTT + post-pass (cancel R, apply 1/N, center). */
 void chipmunk_invntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx);
 
-/** @brief Per-q Montgomery multiply with explicit constants. */
-int32_t chipmunk_ntt_montgomery_multiply_q(int32_t a_a, int32_t a_b, uint64_t q,
-                                             uint32_t qinv_neg, uint32_t mont_r_bits,
-                                             uint32_t mont_r_mask);
-
-/** @brief Per-q pointwise Montgomery multiply. */
+/** @brief Per-q pointwise Montgomery multiply (SIMD-dispatched). */
 int chipmunk_ntt_pointwise_montgomery_q(int32_t a_c[CHIPMUNK_N],
                                           const int32_t a_a[CHIPMUNK_N],
                                           const int32_t a_b[CHIPMUNK_N],
                                           const chipmunk_ntt_ctx_t *a_ctx);
 
+/** @brief Per-q scalar Montgomery multiply with explicit constants. */
+int32_t chipmunk_ntt_montgomery_multiply_q(int32_t a_a, int32_t a_b, uint64_t q,
+                                             uint32_t qinv_neg, uint32_t mont_r_bits,
+                                             uint32_t mont_r_mask);
+
+/* ===== Domain conversion helpers ===== */
+
 /**
- * @brief Transform polynomial to NTT form (CHIPMUNK_Q wrapper).
- * Delegates to chipmunk_ntt_q() with global context.
- * @param[in,out] a_r Polynomial coefficients array
+ * @brief Convert a standard-form coefficient to Montgomery domain.
+ * @return a_c * R mod q (Montgomery form).
  */
+int32_t chipmunk_ntt_to_mont(int32_t a_c, const chipmunk_ntt_ctx_t *a_ctx);
+
+/**
+ * @brief Convert a Montgomery-domain coefficient to standard form.
+ * @return a_c * R^{-1} mod q (standard form in [0,q)).
+ */
+int32_t chipmunk_ntt_from_mont(int32_t a_c, const chipmunk_ntt_ctx_t *a_ctx);
+
+/* ===== Global CHIPMUNK_Q wrappers ===== */
+
+/** @brief Get the global NTT params (lazy-built for CHIPMUNK_Q). */
+const dap_ntt_params_t *chipmunk_ntt_global_params(void);
+
+/** @brief Forward NTT using global CHIPMUNK_Q context. */
 void chipmunk_ntt(int32_t a_r[CHIPMUNK_N]);
 
-/**
- * @brief Inverse transform from NTT form (CHIPMUNK_Q wrapper).
- * Delegates to chipmunk_invntt_q() with global context.
- * @param[in,out] a_r Polynomial coefficients array
- */
+/** @brief Inverse NTT using global CHIPMUNK_Q context. */
 void chipmunk_invntt(int32_t a_r[CHIPMUNK_N]);
 
-/**
- * @brief Pointwise Montgomery multiply in NTT domain (CHIPMUNK_Q wrapper).
- * Delegates to chipmunk_ntt_pointwise_montgomery_q() with global context.
- * @param[out] a_c Output polynomial coefficients
- * @param[in] a_a First polynomial coefficients
- * @param[in] a_b Second polynomial coefficients
- * @return Returns 0 on success, negative error code on failure
- */
+/** @brief Pointwise Montgomery multiply using global CHIPMUNK_Q context. */
 int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
                                      const int32_t a_a[CHIPMUNK_N],
                                      const int32_t a_b[CHIPMUNK_N]);

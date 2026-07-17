@@ -36,7 +36,7 @@
 
 #define LOG_TAG "chipmunk_batch_verify"
 
-extern const dap_ntt_params_t g_chipmunk_ntt_params;
+/* g_chipmunk_ntt_params is no longer a global symbol — use chipmunk_ntt_global_params(). */
 
 typedef struct {
     chipmunk_public_key_t pk;
@@ -61,7 +61,7 @@ static void s_gpu_plan_cleanup(void)
 
 static void s_gpu_plan_init(void)
 {
-    const dap_ntt_params_t *p = &g_chipmunk_ntt_params;
+    const dap_ntt_params_t *p = chipmunk_ntt_global_params();
     if (dap_gpu_is_available()) {
         dap_gpu_ntt_plan_create_plain(p->n, p->q, p->one_over_n,
                                       p->zetas, p->zetas_inv,
@@ -107,7 +107,7 @@ int chipmunk_batch_verify_hots_q(
     if (!a_count || !a_public_keys || !a_messages || !a_signatures || !a_results)
         return -1;
 
-    const dap_ntt_params_t *l_ntt = &g_chipmunk_ntt_params;
+    const dap_ntt_params_t *l_ntt = chipmunk_ntt_global_params();
 
     s_chipmunk_ctx_t *l_ctx = DAP_NEW_Z_COUNT(s_chipmunk_ctx_t, a_count);
     if (!l_ctx) return -1;
