@@ -89,6 +89,7 @@ static int s_build_hots_params(const uint8_t a_rho_seed[32],
                                uint64_t q)
 {
     memset(a_params, 0, sizeof(*a_params));
+    a_params->q = q;  /* Set field modulus before any arithmetic uses it */
     for (int i = 0; i < CHIPMUNK_GAMMA; ++i) {
         if (dap_chipmunk_hash_sample_matrix_q(a_params->a[i].coeffs,
                                               a_rho_seed,

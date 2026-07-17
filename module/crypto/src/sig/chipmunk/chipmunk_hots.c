@@ -68,7 +68,12 @@ int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_setup");
         return -EINVAL;
     }
-    
+
+    /* Set the field modulus — callers zero-init the struct, so q would be 0
+     * (causing divide-by-zero in chipmunk_mod_q_q). This is the single point
+     * where q is assigned for HOTS. */
+    a_params->q = (uint64_t)CHIPMUNK_Q;
+
     debug_if(s_debug_more, L_INFO, "🔧 HOTS setup: Generating public parameters...");
 
     // CR-D5 fix: the previous implementation zero-initialised only 4 of the 36

@@ -433,6 +433,7 @@ int chipmunk_sign(uint8_t *a_private_key, const uint8_t *a_message,
         }
         chipmunk_poly_ntt(&l_hots_params.a[i]);
     }
+    l_hots_params.q = (uint64_t)CHIPMUNK_Q;
 
     /* CR-D3: derive (s0, s1) for the current leaf_index using the
      * domain-separated SHA3 derivation shared with chipmunk_keypair so that
@@ -555,7 +556,8 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
         // Преобразуем в NTT домен
         chipmunk_poly_ntt(&l_hots_params.a[i]);
     }
-    
+    l_hots_params.q = (uint64_t)CHIPMUNK_Q;
+
     // Создаем HOTS публичный ключ
     chipmunk_hots_pk_t l_hots_pk = {0};
     memcpy(&l_hots_pk.v0, &l_pk.v0, sizeof(chipmunk_poly_t));

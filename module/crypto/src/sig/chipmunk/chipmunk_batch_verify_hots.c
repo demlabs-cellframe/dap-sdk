@@ -123,6 +123,8 @@ int chipmunk_batch_verify_hots_q(
         if (chipmunk_poly_from_hash(&l_ctx[i].hm, a_messages[i], a_msg_lens[i]) != 0)
             continue;
 
+        l_ctx[i].hots_params.q = q;  /* Set before any arithmetic */
+
         bool l_a_ok = true;
         for (int j = 0; j < CHIPMUNK_GAMMA && l_a_ok; j++) {
             if (dap_chipmunk_hash_sample_matrix_q(l_ctx[i].hots_params.a[j].coeffs,
