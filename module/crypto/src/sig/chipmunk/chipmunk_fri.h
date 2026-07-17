@@ -305,6 +305,13 @@ bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
                            const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
                            chipmunk_fri_verify_result_t *result);
 
+/** @brief Per-q variant of chipmunk_fri_verify (Phase 9.14). */
+bool chipmunk_fri_verify_q(const chipmunk_fri_proof_t *proof,
+                             const uint8_t domain[16],
+                             const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                             uint64_t q,
+                             chipmunk_fri_verify_result_t *result);
+
 /**
  * @brief Fast FRI proof verification (verifier-side, no grinding search).
  *
@@ -324,6 +331,14 @@ bool chipmunk_fri_verify_fast(const chipmunk_fri_proof_t *proof,
                               const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
                               uint32_t grinding_nonce,
                               chipmunk_fri_verify_result_t *result);
+
+/** @brief Per-q variant of chipmunk_fri_verify_fast (Phase 9.14). */
+bool chipmunk_fri_verify_fast_q(const chipmunk_fri_proof_t *proof,
+                                  const uint8_t domain[16],
+                                  const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                                  uint32_t grinding_nonce,
+                                  uint64_t q,
+                                  chipmunk_fri_verify_result_t *result);
 
 /**
  * @brief Derive FRI query indices from transcript.

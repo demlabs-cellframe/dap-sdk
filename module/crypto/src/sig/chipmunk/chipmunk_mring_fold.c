@@ -67,20 +67,25 @@ static uint64_t s_leaf_xof_u64(leaf_xof_reader_t *a_r)
            | ((uint64_t)l_b[7] << 56);
 }
 
-static int64_t s_center_coeff_i64(int32_t a_c)
+static int64_t s_center_coeff_i64_q(int32_t a_c, uint64_t q)
 {
     int64_t l_v = a_c;
-    const int64_t l_half = (int64_t)CHIPMUNK_Q / 2;
-    const int64_t l_q = (int64_t)CHIPMUNK_Q;
+    const int64_t l_half = (int64_t)q / 2;
+    const int64_t l_q = (int64_t)q;
     /* Branchless: mask is -1 (all ones) when condition holds, 0 otherwise. */
     const int64_t l_hi = -(int64_t)(l_v > l_half);
     const int64_t l_lo = -(int64_t)(l_v < -l_half);
     return l_v - (l_q & l_hi) + (l_q & l_lo);
 }
 
-static int32_t s_reduce_coeff_i64(int64_t a_v)
+static int64_t s_center_coeff_i64(int32_t a_c)
 {
-    const int64_t l_q = (int64_t)CHIPMUNK_Q;
+    return s_center_coeff_i64_q(a_c, (uint64_t)CHIPMUNK_Q);
+}
+
+static int32_t s_reduce_coeff_i64_q(int64_t a_v, uint64_t q)
+{
+    const int64_t l_q = (int64_t)q;
     int64_t l_r = a_v % l_q;
     const int64_t l_half = l_q / 2;
     /* Branchless: normalize into [-half, half). */
@@ -89,6 +94,11 @@ static int32_t s_reduce_coeff_i64(int64_t a_v)
     l_r += l_q & l_neg;
     l_r -= l_q & l_hi;
     return (int32_t)l_r;
+}
+
+static int32_t s_reduce_coeff_i64(int64_t a_v)
+{
+    return s_reduce_coeff_i64_q(a_v, (uint64_t)CHIPMUNK_Q);
 }
 
 static int s_leaf_mask_inf_norm(const int64_t a_coeffs[CHIPMUNK_MRING_N],
@@ -115,9 +125,11 @@ static void s_ext_apply_leaf_mask(chipmunk_fq6_ext_t *a_b,
                                   int32_t a_sign)
 {
     for (size_t i = 0u; i < CHIPMUNK_MRING_N; ++i) {
-        int64_t l_v = s_center_coeff_i64(a_b->c[0].coeffs[i]);
+        int64_t l_v = s_center_coeff_i64_q(a_b->c[0].coeffs[i],
+                                           (uint64_t)CHIPMUNK_Q);
         l_v += (int64_t)a_sign * a_omega[i];
-        a_b->c[0].coeffs[i] = s_reduce_coeff_i64(l_v);
+        a_b->c[0].coeffs[i] = s_reduce_coeff_i64_q(l_v,
+                                                    (uint64_t)CHIPMUNK_Q);
     }
     chipmunk_fq6_ext_canonicalize(a_b);
 }
@@ -728,7 +740,8 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
     }
 
     chipmunk_poly_t l_rho_base;
-    rc = chipmunk_mring_eval_public_rho(&l_rho_base, a_c, a_t, a_Y_pk);
+    rc = chipmunk_mring_eval_public_rho_q(&l_rho_base, a_c, a_t, a_Y_pk,
+                                          (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         s_extvec_free(&l_P);
         s_extvec_free(&l_b);
@@ -816,7 +829,8 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
     }
 
     chipmunk_poly_t l_rho_base;
-    rc = chipmunk_mring_eval_public_rho(&l_rho_base, a_c, a_t, a_Y_pk);
+    rc = chipmunk_mring_eval_public_rho_q(&l_rho_base, a_c, a_t, a_Y_pk,
+                                          (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         s_extvec_free(&l_P);
         return rc;

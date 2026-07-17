@@ -20,14 +20,19 @@
 static bool s_debug_more = false;
 
 // Вспомогательная функция для редукции коэффициента по модулю q — branchless
-static inline int32_t chipmunk_poly_reduce_coeff(int32_t coeff) {
-    int32_t t = coeff % CHIPMUNK_Q;
-    /* Branchless: shift t into [-Q/2, Q/2] range */
-    int32_t mask_gt = (int32_t)(((uint32_t)t - (uint32_t)CHIPMUNK_Q_OVER_TWO) >> 31) - 1;
-    t -= mask_gt & CHIPMUNK_Q;
-    int32_t mask_lt = (int32_t)(((uint32_t)(-CHIPMUNK_Q_OVER_TWO) - (uint32_t)t) >> 31) - 1;
-    t += mask_lt & CHIPMUNK_Q;
+static inline int32_t chipmunk_poly_reduce_coeff_q(int32_t coeff, uint64_t q) {
+    int32_t t = (int32_t)chipmunk_mod_q_q((int64_t)coeff, q);
+    /* Branchless: shift t into [-q/2, q/2] range */
+    int32_t q_half = (int32_t)(q / 2);
+    int32_t mask_gt = (int32_t)(((uint32_t)t - (uint32_t)q_half) >> 31) - 1;
+    t -= mask_gt & (int32_t)q;
+    int32_t mask_lt = (int32_t)(((uint32_t)(-q_half) - (uint32_t)t) >> 31) - 1;
+    t += mask_lt & (int32_t)q;
     return t;
+}
+
+static inline int32_t chipmunk_poly_reduce_coeff(int32_t coeff) {
+    return chipmunk_poly_reduce_coeff_q(coeff, (uint64_t)CHIPMUNK_Q);
 }
 
 /**
@@ -42,12 +47,12 @@ static inline int32_t chipmunk_poly_reduce_coeff(int32_t coeff) {
  *
  * Branchless: uses sign-bit extraction instead of conditional branch.
  */
+static inline int32_t s_canonicalize_mod_q_q(int32_t a_coeff, uint64_t q) {
+    return chipmunk_mod_q_q((int64_t)a_coeff, q);
+}
+
 static inline int32_t s_canonicalize_mod_q(int32_t a_coeff) {
-    int32_t l_t = a_coeff % CHIPMUNK_Q;
-    /* Branchless: mask_lt = (l_t < 0) ? 0xFFFFFFFF : 0 */
-    int32_t mask_lt = l_t >> 31;
-    l_t += mask_lt & CHIPMUNK_Q;
-    return l_t;
+    return s_canonicalize_mod_q_q(a_coeff, (uint64_t)CHIPMUNK_Q);
 }
 
 /**
@@ -65,7 +70,7 @@ static void s_randomizer_to_poly_ntt(const chipmunk_randomizer_t *a_randomizer,
                                      chipmunk_poly_t *a_ntt_out) {
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int32_t l_coeff = (int32_t)a_randomizer->coeffs[i];
-        a_ntt_out->coeffs[i] = s_canonicalize_mod_q(l_coeff);
+        a_ntt_out->coeffs[i] = s_canonicalize_mod_q_q(l_coeff, (uint64_t)CHIPMUNK_Q);
     }
     chipmunk_ntt(a_ntt_out->coeffs);
 }
@@ -99,7 +104,7 @@ static bool s_verify_pk_leaf_binding(const chipmunk_hots_public_key_t *a_hots_pk
 
     chipmunk_hvc_poly_t l_recomputed;
     memset(&l_recomputed, 0, sizeof(l_recomputed));
-    int l_rc = chipmunk_hots_pk_to_hvc_poly(&l_full_pk, &l_recomputed);
+    int l_rc = chipmunk_hots_pk_to_hvc_poly_q(&l_full_pk, &l_recomputed, (uint64_t)CHIPMUNK_Q);
     if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to recompute HVC leaf for binding check: %d", l_rc);
         return false;
@@ -279,7 +284,7 @@ int chipmunk_hots_sig_randomize(const chipmunk_hots_signature_t *sig,
         // Bring sigma[i] into NTT domain.
         chipmunk_poly_t l_sigma_ntt = sig->sigma[i];
         for (int j = 0; j < CHIPMUNK_N; j++) {
-            l_sigma_ntt.coeffs[j] = s_canonicalize_mod_q(l_sigma_ntt.coeffs[j]);
+            l_sigma_ntt.coeffs[j] = s_canonicalize_mod_q_q(l_sigma_ntt.coeffs[j], (uint64_t)CHIPMUNK_Q);
         }
         chipmunk_ntt(l_sigma_ntt.coeffs);
 
@@ -290,7 +295,7 @@ int chipmunk_hots_sig_randomize(const chipmunk_hots_signature_t *sig,
         // Back to time domain.
         chipmunk_invntt(l_prod_ntt.coeffs);
         for (int j = 0; j < CHIPMUNK_N; j++) {
-            randomized_sig->sigma[i].coeffs[j] = s_canonicalize_mod_q(l_prod_ntt.coeffs[j]);
+            randomized_sig->sigma[i].coeffs[j] = s_canonicalize_mod_q_q(l_prod_ntt.coeffs[j], (uint64_t)CHIPMUNK_Q);
         }
     }
 
@@ -333,7 +338,7 @@ int chipmunk_hots_aggregate_with_randomizers(const chipmunk_hots_signature_t *si
         for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
             chipmunk_poly_t l_sigma_ntt = signatures[j].sigma[i];
             for (int k = 0; k < CHIPMUNK_N; k++) {
-                l_sigma_ntt.coeffs[k] = s_canonicalize_mod_q(l_sigma_ntt.coeffs[k]);
+                l_sigma_ntt.coeffs[k] = s_canonicalize_mod_q_q(l_sigma_ntt.coeffs[k], (uint64_t)CHIPMUNK_Q);
             }
             chipmunk_ntt(l_sigma_ntt.coeffs);
 
@@ -348,7 +353,7 @@ int chipmunk_hots_aggregate_with_randomizers(const chipmunk_hots_signature_t *si
         chipmunk_poly_t l_time = l_accum_ntt[i];
         chipmunk_invntt(l_time.coeffs);
         for (int k = 0; k < CHIPMUNK_N; k++) {
-            aggregated->sigma[i].coeffs[k] = s_canonicalize_mod_q(l_time.coeffs[k]);
+            aggregated->sigma[i].coeffs[k] = s_canonicalize_mod_q_q(l_time.coeffs[k], (uint64_t)CHIPMUNK_Q);
         }
     }
 
@@ -499,8 +504,9 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
 
         chipmunk_public_key_t l_full_pk;
         s_hots_pk_to_full_pk(&individual_sigs[i].hots_pk, &l_full_pk);
-        int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly(&l_full_pk,
-                                                     &multi_sig->public_key_roots[valid_idx]);
+        int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly_q(&l_full_pk,
+                                                        &multi_sig->public_key_roots[valid_idx],
+                                                        (uint64_t)CHIPMUNK_Q);
         if (l_rc_leaf != CHIPMUNK_ERROR_SUCCESS) {
             DAP_DELETE(is_valid);
             DAP_DELETE(hots_sigs);
@@ -632,8 +638,9 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
 
         chipmunk_public_key_t l_full_pk;
         s_hots_pk_to_full_pk(&individual_sigs[i].hots_pk, &l_full_pk);
-        int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly(&l_full_pk,
-                                                     &multi_sig->public_key_roots[valid_idx]);
+        int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly_q(&l_full_pk,
+                                                        &multi_sig->public_key_roots[valid_idx],
+                                                        (uint64_t)CHIPMUNK_Q);
         if (l_rc_leaf != CHIPMUNK_ERROR_SUCCESS) {
             DAP_DELETE(is_valid);
             DAP_DELETE(hots_sigs);
@@ -818,7 +825,7 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         chipmunk_poly_t l_sigma_ntt = multi_sig->aggregated_hots.sigma[i];
         for (int k = 0; k < CHIPMUNK_N; k++) {
-            l_sigma_ntt.coeffs[k] = s_canonicalize_mod_q(l_sigma_ntt.coeffs[k]);
+            l_sigma_ntt.coeffs[k] = s_canonicalize_mod_q_q(l_sigma_ntt.coeffs[k], (uint64_t)CHIPMUNK_Q);
         }
         chipmunk_ntt(l_sigma_ntt.coeffs);
 
@@ -841,8 +848,8 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
         chipmunk_poly_t l_v0 = multi_sig->hots_pks[j].v0;
         chipmunk_poly_t l_v1 = multi_sig->hots_pks[j].v1;
         for (int k = 0; k < CHIPMUNK_N; k++) {
-            l_v0.coeffs[k] = s_canonicalize_mod_q(l_v0.coeffs[k]);
-            l_v1.coeffs[k] = s_canonicalize_mod_q(l_v1.coeffs[k]);
+            l_v0.coeffs[k] = s_canonicalize_mod_q_q(l_v0.coeffs[k], (uint64_t)CHIPMUNK_Q);
+            l_v1.coeffs[k] = s_canonicalize_mod_q_q(l_v1.coeffs[k], (uint64_t)CHIPMUNK_Q);
         }
         chipmunk_ntt(l_v0.coeffs);
         chipmunk_ntt(l_v1.coeffs);

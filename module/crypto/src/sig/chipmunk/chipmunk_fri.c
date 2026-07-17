@@ -553,6 +553,15 @@ bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
                            const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
                            chipmunk_fri_verify_result_t *result)
 {
+    return chipmunk_fri_verify_q(proof, domain, alphas, (uint64_t)CHIPMUNK_Q, result);
+}
+
+bool chipmunk_fri_verify_q(const chipmunk_fri_proof_t *proof,
+                             const uint8_t domain[16],
+                             const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                             uint64_t q,
+                             chipmunk_fri_verify_result_t *result)
+{
     if (!proof || !domain || !alphas) {
         if (result) {
             memset(result, 0, sizeof(*result));
@@ -567,6 +576,7 @@ bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
     /* 1. Initialize transcript with domain separator. */
     chipmunk_fri_transcript_t tr;
     int rc = chipmunk_fri_transcript_init(&tr, domain);
+    tr.q = q;  /* Phase 9.14: per-q transcript */
     if (rc != 0) {
         if (result) memcpy(result->reason, "transcript init", 16);
         return false;
@@ -642,7 +652,7 @@ bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
             return false;
         }
 
-        if (!chipmunk_fri_verify_query(proof, qi, alphas)) {
+        if (!chipmunk_fri_verify_query_q(proof, qi, alphas, q)) {
             if (result) {
                 result->failed_query = qi;
                 /* Determine which round failed. */
@@ -664,10 +674,10 @@ bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
                         uint32_t l_half = l_n / 2u;
                         uint32_t l_leaf_idx = proof->queries[qi].idx % l_n;
                         uint32_t l_canonical = (l_leaf_idx < l_half) ? l_leaf_idx : (l_leaf_idx - l_half);
-                        int32_t l_inv2 = chipmunk_field_inv(2);
+                        int32_t l_inv2 = chipmunk_field_inv_q(2, q);
 
                         /* Compute inv(x) where x = g·ω^(canonical·2^r). */
-                        int32_t l_inv_g = chipmunk_field_inv((int32_t)CHIPMUNK_RS_COSET_G);
+                        int32_t l_inv_g = chipmunk_field_inv_q((int32_t)CHIPMUNK_RS_COSET_G, q);
                         int32_t l_omega_inv = chipmunk_field_omega_2048_inv();
                         int32_t l_inv_omega_exp = 1;
                         {
@@ -675,12 +685,12 @@ bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
                             uint32_t l_exp = l_canonical * (1u << r);
                             while (l_exp > 0) {
                                 if (l_exp & 1u)
-                                    l_inv_omega_exp = s_fqmul(l_inv_omega_exp, l_base);
-                                l_base = s_fqmul(l_base, l_base);
+                                    l_inv_omega_exp = s_fqmul_q(l_inv_omega_exp, l_base, q);
+                                l_base = s_fqmul_q(l_base, l_base, q);
                                 l_exp >>= 1u;
                             }
                         }
-                        int32_t l_inv_x = s_fqmul(l_inv_g, l_inv_omega_exp);
+                        int32_t l_inv_x = s_fqmul_q(l_inv_g, l_inv_omega_exp, q);
 
                         int32_t l_first, l_second;
                         if (l_leaf_idx < l_half) {
@@ -692,18 +702,18 @@ bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
                         }
 
                         int64_t l_even_sum = (int64_t)l_first + (int64_t)l_second;
-                        l_even_sum = l_even_sum % (int64_t)CHIPMUNK_Q;
-                        int32_t l_even = (int32_t)(l_even_sum * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q);
+                        l_even_sum = l_even_sum % (int64_t)q;
+                        int32_t l_even = (int32_t)(l_even_sum * (int64_t)l_inv2 % (int64_t)q);
 
                         int64_t l_odd_diff = (int64_t)l_first - (int64_t)l_second;
-                        l_odd_diff = l_odd_diff % (int64_t)CHIPMUNK_Q;
-                        if (l_odd_diff < 0) l_odd_diff += (int64_t)CHIPMUNK_Q;
-                        int32_t l_odd = s_fqmul(
-                            (int32_t)(l_odd_diff * (int64_t)l_inv2 % (int64_t)CHIPMUNK_Q),
-                            l_inv_x);
+                        l_odd_diff = l_odd_diff % (int64_t)q;
+                        if (l_odd_diff < 0) l_odd_diff += (int64_t)q;
+                        int32_t l_odd = s_fqmul_q(
+                            (int32_t)(l_odd_diff * (int64_t)l_inv2 % (int64_t)q),
+                            l_inv_x, q);
 
-                        int32_t l_folded = l_even + s_fqmul(alphas[r], l_odd);
-                        if (l_folded >= (int32_t)CHIPMUNK_Q) l_folded -= (int32_t)CHIPMUNK_Q;
+                        int32_t l_folded = l_even + s_fqmul_q(alphas[r], l_odd, q);
+                        if (l_folded >= (int32_t)q) l_folded -= (int32_t)q;
                         if (l_folded != proof->queries[qi].leaf_values[r + 1u]) {
                             result->failed_round = r;
                             snprintf(result->reason, sizeof(result->reason),
@@ -729,6 +739,17 @@ bool chipmunk_fri_verify_fast(const chipmunk_fri_proof_t *proof,
                               uint32_t grinding_nonce,
                               chipmunk_fri_verify_result_t *result)
 {
+    return chipmunk_fri_verify_fast_q(proof, domain, alphas, grinding_nonce,
+                                        (uint64_t)CHIPMUNK_Q, result);
+}
+
+bool chipmunk_fri_verify_fast_q(const chipmunk_fri_proof_t *proof,
+                                  const uint8_t domain[16],
+                                  const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                                  uint32_t grinding_nonce,
+                                  uint64_t q,
+                                  chipmunk_fri_verify_result_t *result)
+{
     if (!proof || !domain || !alphas) {
         if (result) {
             memset(result, 0, sizeof(*result));
@@ -743,6 +764,7 @@ bool chipmunk_fri_verify_fast(const chipmunk_fri_proof_t *proof,
     /* 1. Initialize transcript with domain separator. */
     chipmunk_fri_transcript_t tr;
     int rc = chipmunk_fri_transcript_init(&tr, domain);
+    tr.q = q;  /* Phase 9.14: per-q transcript */
     if (rc != 0) {
         if (result) memcpy(result->reason, "transcript init", 16);
         return false;
@@ -817,7 +839,7 @@ bool chipmunk_fri_verify_fast(const chipmunk_fri_proof_t *proof,
             return false;
         }
 
-        if (!chipmunk_fri_verify_query(proof, qi, alphas)) {
+        if (!chipmunk_fri_verify_query_q(proof, qi, alphas, q)) {
             if (result) {
                 result->failed_query = qi;
                 snprintf(result->reason, sizeof(result->reason),

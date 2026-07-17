@@ -124,8 +124,8 @@ int chipmunk_batch_verify_hots(
 
         bool l_a_ok = true;
         for (int j = 0; j < CHIPMUNK_GAMMA && l_a_ok; j++) {
-            if (dap_chipmunk_hash_sample_matrix(l_ctx[i].hots_params.a[j].coeffs,
-                                                l_ctx[i].pk.rho_seed, j) != 0)
+            if (dap_chipmunk_hash_sample_matrix_q(l_ctx[i].hots_params.a[j].coeffs,
+                                                  l_ctx[i].pk.rho_seed, j, (uint64_t)CHIPMUNK_Q) != 0)
                 l_a_ok = false;
         }
         if (!l_a_ok) continue;

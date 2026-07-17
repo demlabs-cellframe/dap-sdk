@@ -186,6 +186,12 @@ int chipmunk_mring_eval_public_P(chipmunk_mring_polyvec_t *a_P_tilde,
  *  t is the Hamming weight; the lift Z → R_q is loss-free because
  *  N_MAX < q (G2 v2 §A2 / static assert in chipmunk_mring_params.h).
  */
+int chipmunk_mring_eval_public_rho_q(chipmunk_poly_t *a_rho,
+                                     const chipmunk_poly_t *a_c,
+                                     uint32_t a_t,
+                                     const chipmunk_poly_t *a_Y_pk,
+                                     uint64_t q);
+
 int chipmunk_mring_eval_public_rho(chipmunk_poly_t *a_rho,
                                    const chipmunk_poly_t *a_c,
                                    uint32_t a_t,
@@ -240,6 +246,10 @@ int chipmunk_mring_inner_product(chipmunk_poly_t *a_out,
  *  Challenges are PUBLIC Fiat-Shamir values, so the non-constant-time
  *  extended-Euclid modular inverse used internally is acceptable.
  * ------------------------------------------------------------------------ */
+int chipmunk_mring_poly_invert_q(chipmunk_poly_t *a_inv_out,
+                                 const chipmunk_poly_t *a_x,
+                                 uint64_t q);
+
 int chipmunk_mring_poly_invert(chipmunk_poly_t *a_inv_out,
                                const chipmunk_poly_t *a_x);
 

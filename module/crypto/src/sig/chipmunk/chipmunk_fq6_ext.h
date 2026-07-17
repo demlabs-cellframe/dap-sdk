@@ -38,6 +38,10 @@
 #include "chipmunk.h"
 #include "chipmunk_mring_params.h"
 
+/* Forward declaration for per-q NTT context (Phase 9.14). */
+struct chipmunk_ntt_ctx;
+typedef struct chipmunk_ntt_ctx chipmunk_ntt_ctx_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -177,6 +181,13 @@ int chipmunk_fq6_ext_sample_challenge_q(chipmunk_fq6_ext_t *a_out,
  *  R_q↔R_q^{(e)} consistency tooling. */
 int chipmunk_fq6_ext_invert(chipmunk_fq6_ext_t *a_out,
                               const chipmunk_fq6_ext_t *a);
+
+/** @brief Per-q variant of chipmunk_fq6_ext_invert (Phase 9.14).
+ *  Uses per-q NTT context when provided, otherwise falls back to global NTT. */
+int chipmunk_fq6_ext_invert_q(chipmunk_fq6_ext_t *a_out,
+                                const chipmunk_fq6_ext_t *a,
+                                uint64_t q,
+                                const chipmunk_ntt_ctx_t *ntt_ctx);
 
 /* ---- irreducibility self-check (Rabin) for CI --------------------- */
 

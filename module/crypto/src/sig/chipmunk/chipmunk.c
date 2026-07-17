@@ -177,7 +177,7 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
     secure_clean(&l_rho_hash, sizeof(l_rho_hash));
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        if (dap_chipmunk_hash_sample_matrix(l_hots_params->a[i].coeffs, l_rho_seed, i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(l_hots_params->a[i].coeffs, l_rho_seed, i, (uint64_t)CHIPMUNK_Q) != 0) {
             log_it(L_ERROR, "Failed to generate public matrix polynomial A[%d]", i);
             l_result = CHIPMUNK_ERROR_HASH_FAILED;
             goto cleanup;
@@ -426,7 +426,7 @@ int chipmunk_sign(uint8_t *a_private_key, const uint8_t *a_message,
     }
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        if (dap_chipmunk_hash_sample_matrix(l_hots_params.a[i].coeffs, l_sk.pk.rho_seed, i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(l_hots_params.a[i].coeffs, l_sk.pk.rho_seed, i, (uint64_t)CHIPMUNK_Q) != 0) {
             log_it(L_ERROR, "Failed to generate public matrix polynomial A[%d]", i);
             l_result = CHIPMUNK_ERROR_HASH_FAILED;
             goto sign_cleanup;
@@ -548,7 +548,7 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
     // Генерируем HOTS параметры из rho_seed
     chipmunk_hots_params_t l_hots_params = {0};
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        if (dap_chipmunk_hash_sample_matrix(l_hots_params.a[i].coeffs, l_pk.rho_seed, i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(l_hots_params.a[i].coeffs, l_pk.rho_seed, i, (uint64_t)CHIPMUNK_Q) != 0) {
             log_it(L_ERROR, "Failed to generate polynomial A[%d]", i);
             return CHIPMUNK_ERROR_HASH_FAILED;
         }
@@ -901,7 +901,7 @@ int chipmunk_keypair_from_seed(const uint8_t a_seed[32],
     secure_clean(&l_rho_hash, sizeof(l_rho_hash));
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        if (dap_chipmunk_hash_sample_matrix(l_hots_params->a[i].coeffs, l_rho_seed, i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(l_hots_params->a[i].coeffs, l_rho_seed, i, (uint64_t)CHIPMUNK_Q) != 0) {
             log_it(L_ERROR, "Failed to generate public matrix polynomial A[%d]", i);
             l_result = CHIPMUNK_ERROR_HASH_FAILED;
             goto cleanup;

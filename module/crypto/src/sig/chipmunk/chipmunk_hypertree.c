@@ -89,9 +89,9 @@ static int s_build_hots_params(const uint8_t a_rho_seed[32],
 {
     memset(a_params, 0, sizeof(*a_params));
     for (int i = 0; i < CHIPMUNK_GAMMA; ++i) {
-        if (dap_chipmunk_hash_sample_matrix(a_params->a[i].coeffs,
-                                            a_rho_seed,
-                                            i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(a_params->a[i].coeffs,
+                                              a_rho_seed,
+                                              i, (uint64_t)CHIPMUNK_Q) != 0) {
             log_it(L_ERROR, "Failed to sample A[%d] from rho_seed", i);
             return CHIPMUNK_ERROR_HASH_FAILED;
         }
@@ -114,7 +114,7 @@ static int s_leaf_digest_from_hots_pk(const chipmunk_hots_pk_t *a_hots_pk,
     memset(&l_wrap, 0, sizeof(l_wrap));
     memcpy(&l_wrap.v0, &a_hots_pk->v0, sizeof(chipmunk_poly_t));
     memcpy(&l_wrap.v1, &a_hots_pk->v1, sizeof(chipmunk_poly_t));
-    return chipmunk_hots_pk_to_hvc_poly(&l_wrap, a_digest_out);
+    return chipmunk_hots_pk_to_hvc_poly_q(&l_wrap, a_digest_out, (uint64_t)CHIPMUNK_Q);
 }
 
 /*

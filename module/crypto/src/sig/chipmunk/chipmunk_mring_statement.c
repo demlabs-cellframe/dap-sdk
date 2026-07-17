@@ -216,7 +216,8 @@ int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
     }
 
     chipmunk_poly_t a_inv;
-    rc = chipmunk_mring_poly_invert(&a_inv, &a_gens->a);
+    rc = chipmunk_mring_poly_invert_q(&a_inv, &a_gens->a,
+                                      (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         return rc;
     }
@@ -392,10 +393,11 @@ int chipmunk_mring_eval_public_P(chipmunk_mring_polyvec_t *a_P_tilde,
     return 0;
 }
 
-int chipmunk_mring_eval_public_rho(chipmunk_poly_t *a_rho,
-                                   const chipmunk_poly_t *a_c,
-                                   uint32_t a_t,
-                                   const chipmunk_poly_t *a_Y_pk)
+int chipmunk_mring_eval_public_rho_q(chipmunk_poly_t *a_rho,
+                                     const chipmunk_poly_t *a_c,
+                                     uint32_t a_t,
+                                     const chipmunk_poly_t *a_Y_pk,
+                                     uint64_t q)
 {
     if (!a_rho || !a_c || !a_Y_pk) {
         return -EINVAL;
@@ -412,9 +414,9 @@ int chipmunk_mring_eval_public_rho(chipmunk_poly_t *a_rho,
          * NTT layer expects coefficients in (−q, q); we centre into
          * [−q/2, q/2] for canonical form. */
         const int64_t l_prod = (int64_t)a_c->coeffs[k] * (int64_t)a_t;
-        int64_t l_red = l_prod % (int64_t)CHIPMUNK_Q;
-        if (l_red >  (int64_t)(CHIPMUNK_Q / 2)) l_red -= (int64_t)CHIPMUNK_Q;
-        if (l_red <= -(int64_t)(CHIPMUNK_Q / 2)) l_red += (int64_t)CHIPMUNK_Q;
+        int64_t l_red = l_prod % (int64_t)q;
+        if (l_red >  (int64_t)(q / 2)) l_red -= (int64_t)q;
+        if (l_red <= -(int64_t)(q / 2)) l_red += (int64_t)q;
         term1.coeffs[k] = (int32_t)l_red;
     }
 
@@ -428,6 +430,15 @@ int chipmunk_mring_eval_public_rho(chipmunk_poly_t *a_rho,
     if (rc != 0) return rc;
 
     return chipmunk_poly_add(a_rho, &term1, &term2);
+}
+
+int chipmunk_mring_eval_public_rho(chipmunk_poly_t *a_rho,
+                                   const chipmunk_poly_t *a_c,
+                                   uint32_t a_t,
+                                   const chipmunk_poly_t *a_Y_pk)
+{
+    return chipmunk_mring_eval_public_rho_q(a_rho, a_c, a_t, a_Y_pk,
+                                            (uint64_t)CHIPMUNK_Q);
 }
 
 int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
@@ -493,13 +504,13 @@ int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
  * a ≠ 0, but checked anyway).  Not constant-time: only used on PUBLIC
  * Fiat-Shamir challenges.
  */
-static int32_t s_modinv_q(int32_t a_val)
+static int32_t s_modinv_q(int32_t a_val, uint64_t q)
 {
     if (a_val <= 0) {
         return -1;
     }
     int64_t l_t = 0, l_newt = 1;
-    int64_t l_r = (int64_t)CHIPMUNK_Q, l_newr = (int64_t)a_val;
+    int64_t l_r = (int64_t)q, l_newr = (int64_t)a_val;
     while (l_newr != 0) {
         int64_t l_quot = l_r / l_newr;
         int64_t l_tmp = l_t - l_quot * l_newt;
@@ -513,13 +524,14 @@ static int32_t s_modinv_q(int32_t a_val)
         return -1; /* not invertible */
     }
     if (l_t < 0) {
-        l_t += (int64_t)CHIPMUNK_Q;
+        l_t += (int64_t)q;
     }
     return (int32_t)l_t;
 }
 
-int chipmunk_mring_poly_invert(chipmunk_poly_t *a_inv_out,
-                               const chipmunk_poly_t *a_x)
+int chipmunk_mring_poly_invert_q(chipmunk_poly_t *a_inv_out,
+                                 const chipmunk_poly_t *a_x,
+                                 uint64_t q)
 {
     if (!a_inv_out || !a_x) {
         return -EINVAL;
@@ -531,11 +543,11 @@ int chipmunk_mring_poly_invert(chipmunk_poly_t *a_inv_out,
     }
     chipmunk_poly_t l_invn;
     for (int i = 0; i < CHIPMUNK_N; ++i) {
-        int32_t l_v = l_xn.coeffs[i] % (int32_t)CHIPMUNK_Q;
+        int32_t l_v = l_xn.coeffs[i] % (int32_t)q;
         if (l_v < 0) {
-            l_v += (int32_t)CHIPMUNK_Q;
+            l_v += (int32_t)q;
         }
-        const int32_t l_iv = s_modinv_q(l_v);
+        const int32_t l_iv = s_modinv_q(l_v, q);
         if (l_iv < 0) {
             /* Some NTT coordinate is zero ⇒ x is not invertible in R_q. */
             return -EDOM;
@@ -544,6 +556,13 @@ int chipmunk_mring_poly_invert(chipmunk_poly_t *a_inv_out,
     }
     *a_inv_out = l_invn;
     return chipmunk_poly_invntt(a_inv_out);
+}
+
+int chipmunk_mring_poly_invert(chipmunk_poly_t *a_inv_out,
+                               const chipmunk_poly_t *a_x)
+{
+    return chipmunk_mring_poly_invert_q(a_inv_out, a_x,
+                                        (uint64_t)CHIPMUNK_Q);
 }
 
 /* =========================================================================

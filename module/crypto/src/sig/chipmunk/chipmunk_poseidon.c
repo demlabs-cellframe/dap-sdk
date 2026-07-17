@@ -17,6 +17,7 @@
 #include "chipmunk_poly.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "dap_common.h"
 #include "dap_hash_shake256.h"
@@ -24,29 +25,31 @@
 
 #define LOG_TAG "chipmunk_poseidon"
 
+/* Lazily-initialized default params for CHIPMUNK_Q.
+ * Defined below, after s_mds and s_rc arrays. */
+static chipmunk_poseidon_params_t s_default_params;
+static bool s_default_params_init = false;
+static void s_ensure_default_params(void);
+
 /* =========================================================================
  * Internal helpers
  * ========================================================================= */
+
+/* Forward declarations for _q variants (defined in Phase 9.14g section). */
+static inline int32_t s_freduce_q(int64_t a_val, uint64_t q);
+static inline int32_t s_sbox_q(int32_t x, uint64_t q);
 
 /** Safe modular reduction: arbitrary int64_t → [0, q).
  *  Works for any a_val (uses % operator, handles negatives). */
 static inline int32_t s_freduce(int64_t a_val)
 {
-    int64_t l_r = a_val % (int64_t)CHIPMUNK_Q;
-    if (l_r < 0)
-        l_r += (int64_t)CHIPMUNK_Q;
-    return (int32_t)l_r;
+    return s_freduce_q(a_val, (uint64_t)CHIPMUNK_Q);
 }
 
 /** S-box: x → x^5 mod q.  Two multiplications: x^2 * x^2 * x. */
 static inline int32_t s_sbox(int32_t x)
 {
-    int64_t x2 = (int64_t)x * x;
-    x2 %= (int64_t)CHIPMUNK_Q;
-    int64_t x4 = x2 * x2;
-    x4 %= (int64_t)CHIPMUNK_Q;
-    int64_t x5 = x4 * (int64_t)x;
-    return s_freduce(x5);
+    return s_sbox_q(x, (uint64_t)CHIPMUNK_Q);
 }
 
 /* =========================================================================
@@ -106,6 +109,25 @@ static const int32_t s_rc[CHIPMUNK_POSEIDON_R][CHIPMUNK_POSEIDON_T] = {
     /* Round 29 (FULL) */ { 1530088,  660968, 1675463 }
 };
 
+/* Implementation of s_ensure_default_params (forward-declared above).
+ * Uses the original hardcoded MDS and round constants rather than
+ * recomputing them (the generation was one-time and the exact values
+ * must match for backward compatibility with existing proofs). */
+static void s_ensure_default_params(void)
+{
+    if (!s_default_params_init) {
+        memset(&s_default_params, 0, sizeof(s_default_params));
+        s_default_params.q = (uint64_t)CHIPMUNK_Q;
+        for (unsigned i = 0; i < 3u; ++i)
+            for (unsigned j = 0; j < 3u; ++j)
+                s_default_params.mds[i][j] = s_mds[i][j];
+        for (unsigned r = 0; r < CHIPMUNK_POSEIDON_R; ++r)
+            for (unsigned t = 0; t < CHIPMUNK_POSEIDON_T; ++t)
+                s_default_params.rc[r][t] = s_rc[r][t];
+        s_default_params_init = true;
+    }
+}
+
 /* =========================================================================
  * MDS matrix-vector multiply (manually unrolled for 3x3)
  *
@@ -143,45 +165,14 @@ int chipmunk_poseidon_init(void)
 
 void chipmunk_poseidon_perm(int32_t state[CHIPMUNK_POSEIDON_T])
 {
-    int32_t s0 = state[0], s1 = state[1], s2 = state[2];
-    int32_t m0, m1, m2;
-    uint32_t i;
-
-    for (i = 0; i < CHIPMUNK_POSEIDON_R; i++) {
-        /* ---- Add round constants ---- */
-        s0 = s_freduce((int64_t)s0 + s_rc[i][0]);
-        s1 = s_freduce((int64_t)s1 + s_rc[i][1]);
-        s2 = s_freduce((int64_t)s2 + s_rc[i][2]);
-
-        /* ---- S-box (x^5) ---- */
-        if (i < 4u || i >= 26u) {
-            /* Full round: apply to all 3 words */
-            s0 = s_sbox(s0);
-            s1 = s_sbox(s1);
-            s2 = s_sbox(s2);
-        } else {
-            /* Partial round: apply to first word only */
-            s0 = s_sbox(s0);
-        }
-
-        /* ---- MDS matrix multiply ---- */
-        int32_t tmp[3] = { s0, s1, s2 };
-        s_mds_mul(tmp, state);
-        s0 = state[0];
-        s1 = state[1];
-        s2 = state[2];
-    }
-
-    state[0] = s0;
-    state[1] = s1;
-    state[2] = s2;
+    s_ensure_default_params();
+    chipmunk_poseidon_perm_q(state, &s_default_params);
 }
 
 int32_t chipmunk_poseidon_hash2(int32_t left, int32_t right)
 {
-    int32_t state[3] = { 0, left, right };  /* capacity=0, rate=inputs */
-    chipmunk_poseidon_perm(state);
-    return state[0];  /* squeeze capacity word */
+    s_ensure_default_params();
+    return chipmunk_poseidon_hash2_q(left, right, &s_default_params);
 }
 
 /* =========================================================================
