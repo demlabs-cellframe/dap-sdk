@@ -18,6 +18,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 
 #include <errno.h>
@@ -487,6 +488,11 @@ static void test_tampered_bstar_rejected(void)
 
 int main(void)
 {
+    dap_set_appname("test_chipmunk_mring_fold");
+    dap_common_init(dap_get_appname(), NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
+
     log_it(L_INFO, "=== MRNG M4 fold tests ===");
 
     test_fold_dim_formulas();

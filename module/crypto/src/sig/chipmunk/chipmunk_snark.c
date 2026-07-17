@@ -1274,24 +1274,10 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    /* 9. Verify quotient relation: z(X) = q(X) * (X - alpha_scalar)
-     * Multiple independent checks at random F_q points.
-     * Each check has soundness ~2/Q ~ 2^{-21.6}.
-     * With 11 checks: 11 * 21.6 ~ 238 bits > 128 bits.
-     *
-     * Phase 7: Fixed test point sampling:
-     *   - Uses SHAKE256 XOF instead of SHA3-256 + 4-byte truncation
-     *   - Loops until rejection sampling succeeds (never skips a check)
-     *   - This guarantees all 11 checks execute, maintaining 238-bit soundness
-     *
-     * We use alpha_scalar = alpha.c[0].coeffs[0] for the quotient relation
-     * in R_q (the Y^0 component). The extension check above (step 8)
-     * already ensures z vanishes at the full alpha. */
+    /* 9. Verify quotient relation: z(X) = q(X) * (X - alpha_scalar) */
     {
         int32_t l_alpha_scalar = l_alpha.c[0].coeffs[0];
 
-        /* Initialize SHAKE256 XOF for test point generation.
-         * Seed: transcript_hash || msg_hash — binds to the specific proof. */
         uint64_t l_xof_state[25];
         memset(l_xof_state, 0, sizeof(l_xof_state));
         {
@@ -1302,41 +1288,31 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
 
         for (int l_check = 0; l_check < CHIPMUNK_SNARK_QUOTIENT_CHECKS; ++l_check) {
-            /* Phase 7.3: Loop until rejection sampling succeeds.
-             * With q = 3168257, acceptance probability per sample is ~73.8%.
-             * Expected iterations: 1/0.738 ≈ 1.35. Max iterations capped at 100. */
             int32_t l_test_point = -1;
             for (int l_attempt = 0; l_attempt < 100; ++l_attempt) {
-                /* Squeeze from XOF. squeezeblocks writes DAP_SHAKE256_RATE (136) bytes.
-                 * Use scratch buffer and consume only the first 4 bytes. */
                 uint8_t l_sample_buf[DAP_SHAKE256_RATE];
                 dap_hash_shake256_squeezeblocks(l_sample_buf, 1, l_xof_state);
                 l_test_point = chipmunk_sample_reject4(l_sample_buf, (uint32_t)l_mod_q);
                 if (l_test_point >= 0) break;
             }
             if (l_test_point < 0) {
-                /* Should never happen with 100 attempts (prob ~ 10^{-13}) */
                 log_it(L_ERROR, "SNARK verify: test point sampling failed after 100 attempts");
                 return 0;
             }
             if (l_test_point == 0) l_test_point = 1;
 
-            /* Evaluate z(test_point) via Horner's method in F_q */
             int64_t l_z_eval = 0;
             for (int i = (int)l_d - 1; i >= 0; --i) {
                 l_z_eval = (int64_t)s_mod_q((int64_t)l_test_point * l_z_eval + l_z.coeffs[i], l_mod_q);
             }
 
-            /* Evaluate q(test_point) via Horner's method in F_q */
             int64_t l_q_eval = 0;
             for (int i = (int)l_d - 1; i >= 0; --i) {
                 l_q_eval = (int64_t)s_mod_q((int64_t)l_test_point * l_q_eval + l_q.coeffs[i], l_mod_q);
             }
 
-            /* Compute q(test_point) * (test_point - alpha_scalar) */
             int64_t l_rhs = (int64_t)s_mod_q(l_q_eval * s_mod_q((int64_t)l_test_point - l_alpha_scalar, l_mod_q), l_mod_q);
 
-            /* Check z(test_point) == q(test_point) * (test_point - alpha_scalar) */
             if (s_mod_q(l_z_eval, l_mod_q) != s_mod_q(l_rhs, l_mod_q)) {
                 log_it(L_ERROR, "SNARK verify: quotient relation FAILED at check %d", l_check);
                 return 0;
@@ -1344,20 +1320,9 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    /* 10. Summary of soundness:
-     * - Extension alpha check (step 8): ~129 bits from |S| = q^6 - 1
-     * - Quotient relation checks (step 9): ~238 bits from 11 random F_q points
-     * - FRI proximity (step 6): ~8 bits from 8 queries
-     * - Grinding PoW (step 6): ~16 bits from nonce search
-     * - Combined: ~391 bits >> 128-bit post-quantum target
-     * - Ring binding via QROM transcript: ring_hash → randomizer → alpha
-     * - w_commit is a random nonce: does not leak witness information
-     * - Constraint polynomial (C1 + r*C2) verified implicitly:
-     *   z(alpha)=0 with high probability implies z ≡ 0, hence
-     *   C1 = 0 (binary) and C2 = 0 (exactly-one signer) */
-
     debug_if(1, L_DEBUG, "SNARK verify: all checks passed (ext alpha + %d quotient checks + FRI, >> 128-bit soundness)",
              CHIPMUNK_SNARK_QUOTIENT_CHECKS);
+    #undef CHIPMUNK_SNARK_QUOTIENT_CHECKS
     return 1;
 }
 

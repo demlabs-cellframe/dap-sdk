@@ -22,8 +22,7 @@
 
 #include "dap_client_helpers.h"
 #include "dap_client_fsm.h"
-#include "dap_client_trans_ctx.h"
-#include "dap_net_trans_ctx.h"
+#include "dap_client_esocket.h"
 #include "dap_worker.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
@@ -40,9 +39,9 @@
 typedef struct {
     dap_client_t *client;
     const char *expected_channels;
+    bool is_ready;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
-    bool is_ready;
 } channels_ready_ctx_t;
 
 /**
@@ -55,17 +54,18 @@ static void s_check_channels_ready_callback(void *a_arg)
         return;
     }
     
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_ctx->client);
-    if (!l_fsm || !l_fsm->trans_ctx || !l_fsm->trans_ctx->stream) {
+    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_ctx->client);
+    if (!l_client_esocket || !l_client_esocket->stream) {
         l_ctx->is_ready = false;
         pthread_mutex_lock(&l_ctx->mutex);
         pthread_cond_signal(&l_ctx->cond);
         pthread_mutex_unlock(&l_ctx->mutex);
         return;
     }
-
+    
+    // Check if all expected channels exist
     l_ctx->is_ready = true;
-    dap_stream_t *l_stream = l_fsm->trans_ctx->stream;
+    dap_stream_t *l_stream = l_client_esocket->stream;
     for (const char *l_ch = l_ctx->expected_channels; *l_ch != '\0'; l_ch++) {
         dap_stream_ch_t *l_ch_obj = dap_stream_ch_by_id_unsafe(l_stream, *l_ch);
         if (!l_ch_obj) {
@@ -157,8 +157,9 @@ bool dap_client_wait_for_channels(dap_client_t *a_client, const char *a_expected
         return false;
     }
     
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm || !l_fsm->worker) {
+    // Get client's worker
+    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(a_client);
+    if (!l_client_esocket || !l_client_esocket->worker) {
         return false;
     }
     
@@ -178,7 +179,7 @@ bool dap_client_wait_for_channels(dap_client_t *a_client, const char *a_expected
     
     while (l_elapsed < a_timeout_ms) {
         // Execute callback on worker thread
-        dap_worker_exec_callback_on(l_fsm->worker, s_check_channels_ready_callback, &l_ctx);
+        dap_worker_exec_callback_on(l_client_esocket->worker, s_check_channels_ready_callback, &l_ctx);
         
         // Wait for callback completion with timeout
         pthread_mutex_lock(&l_ctx.mutex);

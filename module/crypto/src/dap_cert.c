@@ -316,6 +316,55 @@ dap_cert_t * dap_cert_generate(const char * a_cert_name
     return NULL;
 }
 
+static bool s_cert_has_signing_key(const dap_cert_t *a_cert)
+{
+    return a_cert && a_cert->enc_key && a_cert->enc_key->priv_key_data
+           && a_cert->enc_key->priv_key_data_size > 0;
+}
+
+dap_cert_t *dap_cert_ensure_node_addr(const char *a_cert_name, dap_enc_key_type_t a_key_type)
+{
+    if (!a_cert_name || !a_cert_name[0])
+        return NULL;
+
+    dap_cert_t *l_cert = dap_cert_find_by_name(a_cert_name);
+    if (s_cert_has_signing_key(l_cert))
+        return l_cert;
+
+    if (l_cert)
+        log_it(L_WARNING, "Certificate '%s' has no usable private signing key, regenerating",
+               a_cert_name);
+
+    const char *l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
+    if (!l_folder) {
+        if (!g_sys_dir_path) {
+            log_it(L_ERROR, "No cert folder and no sys_dir for '%s'", a_cert_name);
+            return NULL;
+        }
+        char *l_default = dap_strdup_printf("%s/certs", g_sys_dir_path);
+        dap_cert_add_folder(l_default);
+        DAP_DELETE(l_default);
+        l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
+    }
+    if (!l_folder)
+        return log_it(L_ERROR, "No cert folder for '%s'", a_cert_name), NULL;
+
+    dap_mkdir_with_parents(l_folder);
+    char *l_path = dap_strdup_printf("%s/%s.dcert", l_folder, a_cert_name);
+    if (!l_path)
+        return NULL;
+    unlink(l_path);
+
+    l_cert = dap_cert_generate(a_cert_name, l_path, a_key_type);
+    DAP_DELETE(l_path);
+    if (!l_cert)
+        log_it(L_ERROR, "Failed to generate certificate '%s'", a_cert_name);
+    else
+        log_it(L_NOTICE, "Generated certificate '%s' (%s)",
+               a_cert_name, dap_enc_get_type_name(a_key_type));
+    return l_cert;
+}
+
 /**
  * @brief dap_cert_delete_by_name
  * delete certificate object, finding by name

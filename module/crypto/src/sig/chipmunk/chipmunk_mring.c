@@ -113,7 +113,7 @@ chipmunk_ring_error_t chipmunk_mring_header_read(
     }
 
     memset(a_hdr_out, 0, sizeof(*a_hdr_out));
-    dap_serialize_result_t l_res = dap_serialize_from_buffer_raw(
+    dap_serialize_result_t l_res = dap_serialize_from_buffer_raw_zero(
         &s_mring_header_schema, a_buf, a_buf_size, a_hdr_out, NULL);
     if (l_res.error_code != 0) {
         return CHIPMUNK_RING_ERR_BUFFER_TOO_SMALL;

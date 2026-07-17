@@ -3,6 +3,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 #include <errno.h>
 #include <stdint.h>
@@ -138,6 +139,8 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_range_proof");
     dap_common_init("test_chipmunk_range_proof", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     test_prove_verify();
     test_zero_value();

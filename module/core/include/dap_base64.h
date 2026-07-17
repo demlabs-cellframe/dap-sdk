@@ -59,6 +59,23 @@ char *dap_strdup_to_base64(const char *a_string);
  */
 char *dap_strdup_from_base64(const char *a_string_base64);
 
+/**
+ * @brief Decode base64 string and return newly allocated result
+ * @param a_string_base64 Input base64 string
+ * @return Newly allocated decoded string or NULL on error
+ */
+char *dap_strdup_from_base64(const char *a_string_base64);
+
+/**
+ * @brief Decode percent-encoded URL string
+ * @param a_in Input URL-encoded string
+ * @param a_in_size Input string size
+ * @param a_out Output buffer
+ * @param a_out_size_max Maximum output buffer size
+ * @return Output size, or 0 on error
+ */
+size_t dap_url_decode(const char *a_in, size_t a_in_size, void *a_out, size_t a_out_size_max);
+
 // Legacy names for compatibility
 #define DAP_ENC_BASE64_ENCODE_SIZE  DAP_BASE64_ENCODE_SIZE
 #define DAP_ENC_BASE64_DECODE_SIZE  DAP_BASE64_DECODE_SIZE

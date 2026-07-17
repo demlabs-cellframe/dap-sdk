@@ -303,13 +303,20 @@ bool dap_json_iterator_get_string(
     size_t l_len = 0;
     
     if (l_str[0] != '"') {
-        log_it(L_ERROR, "String does not start with quote at offset %"PRIu64, l_offset);
+        debug_if(dap_json_get_debug(), L_DEBUG, "String does not start with offset %"PRIu64" (tolerated)", l_offset);
         return false;
     }
-    
+
     l_str++;  // Skip opening quote
     l_offset++;
-    
+
+    /* Empty string: opening quote immediately followed by closing quote */
+    if (l_offset < a_iter->input_len && l_str[0] == '"') {
+        *out_str = l_str;
+        *out_len = 0;
+        return true;
+    }
+
     while (l_offset + l_len < a_iter->input_len && l_str[l_len] != '"') {
         if (l_str[l_len] == '\\') {
             l_len++;  // Skip escape character

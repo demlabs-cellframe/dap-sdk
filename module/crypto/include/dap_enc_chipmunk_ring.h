@@ -87,15 +87,15 @@ void dap_enc_chipmunk_ring_key_delete(dap_enc_key_t *a_key);
 /* Public-key serialization. */
 uint8_t *dap_enc_chipmunk_ring_write_public_key(const void *a_key, size_t *a_buflen_out);
 void    *dap_enc_chipmunk_ring_read_public_key(const uint8_t *a_buf, size_t a_buflen);
-size_t   dap_enc_chipmunk_ring_ser_public_key_size(const void *a_key);
-size_t   dap_enc_chipmunk_ring_deser_public_key_size(const void *a_buf);
+uint64_t dap_enc_chipmunk_ring_ser_public_key_size(const void *a_key);
+uint64_t dap_enc_chipmunk_ring_deser_public_key_size(const void *a_buf);
 void     dap_enc_chipmunk_ring_public_key_delete(void *a_pub_key);
 
 /* Private-key serialization. */
 uint8_t *dap_enc_chipmunk_ring_write_private_key(const void *a_key, size_t *a_buflen_out);
 void    *dap_enc_chipmunk_ring_read_private_key(const uint8_t *a_buf, size_t a_buflen);
-size_t   dap_enc_chipmunk_ring_ser_private_key_size(const void *a_key);
-size_t   dap_enc_chipmunk_ring_deser_private_key_size(const void *a_buf);
+uint64_t dap_enc_chipmunk_ring_ser_private_key_size(const void *a_key);
+uint64_t dap_enc_chipmunk_ring_deser_private_key_size(const void *a_buf);
 void     dap_enc_chipmunk_ring_private_key_delete(void *a_priv_key);
 
 #ifdef __cplusplus

@@ -88,27 +88,10 @@ static void s_deinit_plugin(void);
 /* ========================================================================= */
 
 #ifdef DAP_OS_WASM
+static void s_init_memfs(void);
+
 #ifdef DAP_OS_WASM_MT
 #include <emscripten/wasmfs.h>
-#include <pthread.h>
-
-static void *s_opfs_mount_thread(void *a_arg)
-{
-    const char *l_mount = (const char *)a_arg;
-    backend_t l_opfs = wasmfs_create_opfs_backend();
-    if (!l_opfs) {
-        log_it(L_WARNING, "wasmfs_create_opfs_backend() returned NULL");
-        return (void *)(intptr_t)-1;
-    }
-    rmdir(l_mount);
-    int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
-    if (l_rc != 0) {
-        log_it(L_WARNING, "wasmfs_create_directory('%s') failed: rc=%d errno=%d (%s)",
-               l_mount, l_rc, errno, strerror(errno));
-        return (void *)(intptr_t)-1;
-    }
-    return (void *)(intptr_t)0;
-}
 
 static bool s_wasmfs_done = false;
 
@@ -122,21 +105,18 @@ int dap_sdk_wasmfs_init(const char *a_mount)
     if (!g_sys_dir_path)
         g_sys_dir_path = dap_strdup(l_mount);
 
-    pthread_t l_tid;
-    void *l_retval = (void *)(intptr_t)-1;
-    if (pthread_create(&l_tid, NULL, s_opfs_mount_thread, (void *)l_mount) == 0) {
-        pthread_join(l_tid, &l_retval);
-    }
-
-    if ((intptr_t)l_retval == 0) {
-        log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
-    } else {
-        log_it(L_WARNING, "OPFS unavailable, using WASMFS in-memory at %s", g_sys_dir_path);
-        dap_mkdir_with_parents(g_sys_dir_path);
-    }
+    // Emscripten >= 6.0 requires JSPI or a worker context to create the OPFS
+    // backend.  confcall_wasm_init() runs on the main browser thread and has no
+    // JSPI guarantee, so fall back to MEMFS (in-memory, non-persistent) which
+    // works everywhere.  Persistent cert storage can be re-added later via
+    // IndexedDB or a dedicated WASMFS worker init path.
+    log_it(L_WARNING, "WASMFS/OPFS disabled — using MEMFS "
+           "(Emscripten >= 6.0 main-thread OPFS restriction)");
+    s_init_memfs();
     return 0;
 }
-#else
+#endif
+
 static void s_init_memfs(void)
 {
     if (!g_sys_dir_path) {
@@ -145,7 +125,6 @@ static void s_init_memfs(void)
     }
     log_it(L_NOTICE, "Filesystem: Emscripten MEMFS at %s (in-memory, non-persistent)", g_sys_dir_path);
 }
-#endif
 #endif
 
 /* ========================================================================= */
@@ -379,34 +358,11 @@ static int s_init_net_notify(const dap_sdk_config_t *a_config)
 
 static int s_ensure_node_addr_cert(void)
 {
-    dap_cert_t *l_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-    if (!l_cert) {
-        const char *l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
-        if (!l_folder) {
-            if (!g_sys_dir_path)
-                return log_it(L_CRITICAL, "No cert folder and no sys_dir — "
-                              "set [resources] ca_folders in config"), -1;
-            char *l_default = dap_strdup_printf("%s/certs", g_sys_dir_path);
-            dap_cert_add_folder(l_default);
-            DAP_DELETE(l_default);
-            l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
-        }
-        dap_mkdir_with_parents(l_folder);
-
-        char *l_path = dap_strdup_printf("%s/%s.dcert", l_folder,
-                                         DAP_STREAM_NODE_ADDR_CERT_NAME);
-        l_cert = dap_cert_generate(DAP_STREAM_NODE_ADDR_CERT_NAME,
-                                   l_path,
-                                   DAP_STREAM_NODE_ADDR_CERT_TYPE);
-        DAP_DELETE(l_path);
-        if (!l_cert)
-            return log_it(L_CRITICAL, "Failed to generate %s certificate",
-                          DAP_STREAM_NODE_ADDR_CERT_NAME), -2;
-
-        log_it(L_NOTICE, "Generated %s certificate (%s)",
-               DAP_STREAM_NODE_ADDR_CERT_NAME,
-               dap_enc_get_type_name(DAP_STREAM_NODE_ADDR_CERT_TYPE));
-    }
+    dap_cert_t *l_cert = dap_cert_ensure_node_addr(DAP_STREAM_NODE_ADDR_CERT_NAME,
+                                                   DAP_STREAM_NODE_ADDR_CERT_TYPE);
+    if (!l_cert)
+        return log_it(L_CRITICAL, "Failed to ensure %s certificate",
+                      DAP_STREAM_NODE_ADDR_CERT_NAME), -2;
     g_node_addr = dap_cluster_node_addr_from_cert(l_cert);
     return 0;
 }

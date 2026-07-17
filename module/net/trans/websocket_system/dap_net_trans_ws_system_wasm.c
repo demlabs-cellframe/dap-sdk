@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <stdatomic.h>
 
 #include <emscripten.h>
 #include <emscripten/html5.h>
@@ -48,6 +49,7 @@
 #include "dap_net_trans_ctx.h"
 #include "dap_net_trans_types.h"
 #include "dap_net_trans_websocket_system.h"
+#include "dap_net_trans_wasm_uplink.h"
 #include "dap_http_client_simple.h"
 #include "dap_stream.h"
 #include "dap_stream_session.h"
@@ -151,14 +153,102 @@ extern void js_ws_destroy(int a_handle);
 extern void js_ws_init_callbacks(void);
 
 #ifdef DAP_OS_WASM_MT
-/* ── MT: proxy wrappers to call JS from worker threads ───────────────── */
+/* ── MT: outbound ring (worker enqueue) + main-thread drain ─────────── */
 
 typedef struct { const char *url; int result; } ws_create_args_t;
-typedef struct { int handle; const void *data; int len; int result; } ws_send_args_t;
 typedef struct { int handle; int code; } ws_close_args_t;
 
+#define WS_OUT_RING_CAP   256u
+#define WS_OUT_DATA_MAX   (20u * 1024u)
+#define WS_OUT_DRAIN_BATCH 64u
+
+typedef struct ws_out_slot {
+    int      handle;
+    uint32_t len;
+    uint8_t  data[WS_OUT_DATA_MAX];
+} ws_out_slot_t;
+
+static ws_out_slot_t   *s_ws_out_slots = NULL;
+static _Atomic uint32_t s_ws_out_wr;
+static _Atomic uint32_t s_ws_out_rd;
+
+static void s_ws_out_init_once(void)
+{
+    static bool s_done;
+    if (s_done)
+        return;
+    s_done = true;
+    s_ws_out_slots = DAP_NEW_Z_COUNT(ws_out_slot_t, WS_OUT_RING_CAP);
+    if (!s_ws_out_slots)
+        log_it(L_ERROR, "WS outbound ring alloc failed");
+}
+
+static bool s_ws_out_push(int a_handle, const void *a_data, int a_len)
+{
+    s_ws_out_init_once();
+    if (!s_ws_out_slots || a_len <= 0 || a_len > (int)WS_OUT_DATA_MAX)
+        return false;
+
+    uint32_t l_wr, l_next;
+    do {
+        l_wr = atomic_load_explicit(&s_ws_out_wr, memory_order_relaxed);
+        uint32_t l_rd = atomic_load_explicit(&s_ws_out_rd, memory_order_acquire);
+        if (l_wr - l_rd >= WS_OUT_RING_CAP) {
+            static _Atomic uint64_t s_drop_full;
+            uint64_t n = atomic_fetch_add(&s_drop_full, 1);
+            if (n < 3 || (n % 200) == 0)
+                log_it(L_WARNING, "WS outbound ring full (count=%" PRIu64 ")", n);
+            return false;
+        }
+        l_next = l_wr + 1;
+    } while (!atomic_compare_exchange_weak_explicit(
+        &s_ws_out_wr, &l_wr, l_next, memory_order_acq_rel, memory_order_relaxed));
+
+    ws_out_slot_t *l_slot = &s_ws_out_slots[l_wr % WS_OUT_RING_CAP];
+    l_slot->handle = a_handle;
+    l_slot->len = (uint32_t)a_len;
+    memcpy(l_slot->data, a_data, (size_t)a_len);
+    return true;
+}
+
+void dap_net_trans_ws_system_drain_outbound(void)
+{
+    if (!pthread_equal(pthread_self(), emscripten_main_runtime_thread_id()))
+        return;
+
+    s_ws_out_init_once();
+    if (!s_ws_out_slots)
+        return;
+
+    uint32_t l_rd = atomic_load_explicit(&s_ws_out_rd, memory_order_relaxed);
+
+    for (unsigned l_round = 0; l_round < 8u; l_round++) {
+        uint32_t l_wr = atomic_load_explicit(&s_ws_out_wr, memory_order_acquire);
+        uint32_t l_batch = 0;
+
+        while (l_rd < l_wr && l_batch < WS_OUT_DRAIN_BATCH) {
+            ws_out_slot_t *l_slot = &s_ws_out_slots[l_rd % WS_OUT_RING_CAP];
+            int l_ret = js_ws_send(l_slot->handle, l_slot->data, (int)l_slot->len);
+            if (l_ret <= 0) {
+                static _Atomic uint64_t s_drain_fail;
+                uint64_t n = atomic_fetch_add(&s_drain_fail, 1);
+                if (n < 3 || (n % 200) == 0)
+                    log_it(L_ERROR, "WS drain send failed handle=%d size=%u ret=%d (count=%" PRIu64 ")",
+                           l_slot->handle, l_slot->len, l_ret, n);
+                atomic_store_explicit(&s_ws_out_rd, l_rd, memory_order_release);
+                return;
+            }
+            l_rd++;
+            l_batch++;
+        }
+        atomic_store_explicit(&s_ws_out_rd, l_rd, memory_order_release);
+
+        if (l_rd >= atomic_load_explicit(&s_ws_out_wr, memory_order_acquire))
+            break;
+    }
+}
+
 static void s_proxy_ws_create(void *a_arg)  { ws_create_args_t *l = a_arg; l->result = js_ws_create(l->url); }
-static void s_proxy_ws_send(void *a_arg)    { ws_send_args_t *l = a_arg; l->result = js_ws_send(l->handle, l->data, l->len); }
 static void s_proxy_ws_close(void *a_arg)   { ws_close_args_t *l = a_arg; js_ws_close(l->handle, l->code); }
 static void s_proxy_ws_destroy(void *a_arg) { ws_close_args_t *l = a_arg; js_ws_destroy(l->handle); }
 
@@ -170,11 +260,16 @@ static int s_ws_create_on_main(const char *a_url) {
     return l.result;
 }
 static int s_ws_send_on_main(int a_h, const void *d, int n) {
+    if (n <= 0)
+        return -1;
     if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id()))
         return js_ws_send(a_h, d, n);
-    ws_send_args_t l = { .handle = a_h, .data = d, .len = n, .result = -1 };
-    emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_send, &l);
-    return l.result;
+    /* Worker thread: copy into outbound ring; main thread drains via
+     * dap_net_trans_ws_system_drain_outbound() from the JS event loop.
+     * emscripten_proxy_async stalls when main never yields (video capture). */
+    if (!s_ws_out_push(a_h, d, n))
+        return -1;
+    return n;
 }
 static void s_ws_close_on_main(int a_h, int c) {
     if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
@@ -419,16 +514,24 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
 
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
+    /* TLS detection: use HTTPS when the page is served over HTTPS, when the
+     * port is the standard HTTPS port (443), or when the port is a commonly
+     * used HTTPS port for self-hosted services (e.g. 8443, 4443).
+     * This allows the WASM client to connect via TLS even when the page
+     * itself is served over plain HTTP behind a reverse proxy on port 4000,
+     * while the DAP server is on a different HTTPS port (e.g. 4443). */
+    const bool l_port_is_https = (a_params->port == 443) || (a_params->port == 8443)
+                               || (a_params->port == 4443);
 #ifdef DAP_OS_WASM_MT
     if (s_wasm_main_document_https < 0) {
         log_it(L_WARNING, "HTTPS detection not initialized, assuming secure context");
         s_wasm_main_document_https = 1;
     }
-    l_conn->use_tls = (a_params->port == 443) || (s_wasm_main_document_https > 0);
+    l_conn->use_tls = l_port_is_https || (s_wasm_main_document_https > 0);
     log_it(L_DEBUG, "WS connect: port=%u, https_flag=%d, use_tls=%d",
            a_params->port, s_wasm_main_document_https, l_conn->use_tls);
 #else
-    l_conn->use_tls = (a_params->port == 443) || js_page_is_secure();
+    l_conn->use_tls = l_port_is_https || js_page_is_secure();
 #endif
     l_conn->client_ctx = a_params->client_ctx;
 
@@ -487,6 +590,8 @@ static int s_ws_handshake_init(dap_stream_t *a_stream,
     if (!a_stream || !a_params || !a_stream->_server_session) return -1;
     ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
 
+    dap_net_trans_wasm_normalize_handshake_params(a_params);
+
     size_t l_b64_size = DAP_BASE64_ENCODE_SIZE(a_params->alice_pub_key_size) + 1;
     char *l_b64_body = DAP_NEW_Z_SIZE(char, l_b64_size);
     size_t l_b64_len = dap_enc_base64_encode(a_params->alice_pub_key,
@@ -494,15 +599,18 @@ static int s_ws_handshake_init(dap_stream_t *a_stream,
                                               l_b64_body, DAP_ENC_DATA_TYPE_B64);
 
     const char *l_scheme = l_conn->use_tls ? "https" : "http";
+    char l_suffix[768];
     char l_url[1024];
-    snprintf(l_url, sizeof(l_url),
-             "%s://%s:%u/enc_init/gd4y5yh78w42aaagh"
+    snprintf(l_suffix, sizeof(l_suffix),
+             "enc_init/gd4y5yh78w42aaagh"
              "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu"
              ",block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-             l_scheme, l_conn->host, l_conn->port,
              a_params->enc_type, a_params->pkey_exchange_type,
              a_params->pkey_exchange_size, a_params->block_key_size,
              a_params->protocol_version, a_params->sign_count);
+    if (dap_net_trans_wasm_format_uplink_url(l_url, sizeof(l_url), l_scheme, l_conn->host,
+                                             l_conn->port, l_suffix) < 0)
+        return -1;
 
     ws_handshake_ctx_t *l_ctx = DAP_NEW_Z(ws_handshake_ctx_t);
     if (!l_ctx) { DAP_DELETE(l_b64_body); DAP_DELETE(a_params->alice_pub_key); return -1; }
@@ -543,10 +651,43 @@ static void s_ws_session_create_response(void *a_resp, size_t a_resp_size, int a
 
     size_t l_dec_max = a_resp_size + 256;
     char *l_dec = DAP_NEW_Z_SIZE(char, l_dec_max);
+
+    // Self-test: encrypt then decrypt with the same key on WASM side
+    {
+        const char *l_test_pt = "ROUND_TRIP_TEST_1234567890";
+        size_t l_test_pt_len = strlen(l_test_pt);
+        size_t l_test_enc_max = dap_enc_code_out_size(l_ctx->session_key, l_test_pt_len, DAP_ENC_DATA_TYPE_RAW);
+        uint8_t *l_test_enc = DAP_NEW_Z_SIZE(uint8_t, l_test_enc_max);
+        size_t l_test_enc_len = dap_enc_code(l_ctx->session_key, l_test_pt, l_test_pt_len,
+                                              l_test_enc, l_test_enc_max, DAP_ENC_DATA_TYPE_RAW);
+        char l_test_dec[64] = {0};
+        size_t l_test_dec_len = dap_enc_decode(l_ctx->session_key, l_test_enc, l_test_enc_len,
+                                                l_test_dec, sizeof(l_test_dec), DAP_ENC_DATA_TYPE_RAW);
+        log_it(L_NOTICE, "WASM self-test: pt='%s' enc=%zu dec=%zu match=%d",
+               l_test_pt, l_test_enc_len, l_test_dec_len,
+               l_test_dec_len == l_test_pt_len && memcmp(l_test_pt, l_test_dec, l_test_pt_len) == 0);
+        DAP_DELETE(l_test_enc);
+    }
+
     size_t l_dec_len = dap_enc_decode(l_ctx->session_key, a_resp, a_resp_size,
                                        l_dec, l_dec_max, DAP_ENC_DATA_TYPE_RAW);
     if (l_dec_len == 0) {
-        log_it(L_ERROR, "stream_ctl decryption failed");
+        const uint8_t *l_kb = l_ctx->session_key && l_ctx->session_key->priv_key_data
+            ? (const uint8_t *)l_ctx->session_key->priv_key_data : NULL;
+        if (l_kb)
+            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu key_type=%d key_size=%zu key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x resp[0..3]=%02x%02x%02x%02x)",
+                   a_resp_size,
+                   l_ctx->session_key->type,
+                   l_ctx->session_key->priv_key_data_size,
+                   l_kb[0], l_kb[1], l_kb[2], l_kb[3],
+                   l_kb[4], l_kb[5], l_kb[6], l_kb[7],
+                   ((const uint8_t *)a_resp)[0], ((const uint8_t *)a_resp)[1],
+                   ((const uint8_t *)a_resp)[2], ((const uint8_t *)a_resp)[3]);
+        else
+            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu, no session key priv_data=%p dec_na=%p)",
+                   a_resp_size,
+                   l_ctx->session_key ? (void*)l_ctx->session_key->priv_key_data : NULL,
+                   l_ctx->session_key ? (void*)l_ctx->session_key->dec_na : NULL);
         DAP_DELETE(l_dec);
         if (l_ctx->callback) l_ctx->callback(l_ctx->stream, 0, NULL, 0, -1);
         DAP_DELETE(l_ctx);
@@ -606,10 +747,17 @@ static int s_ws_session_create(dap_stream_t *a_stream,
 
     l_sub_enc[l_sub_len] = '\0';
     l_q_enc[l_q_len] = '\0';
+    char l_suffix[1536];
     char l_url[2048];
-    snprintf(l_url, sizeof(l_url), "%s://%s:%u/stream_ctl/%s?%s",
+    snprintf(l_suffix, sizeof(l_suffix), "stream_ctl/%s?%s", l_sub_enc, l_q_enc);
+    if (dap_net_trans_wasm_format_uplink_url(l_url, sizeof(l_url),
              l_conn->use_tls ? "https" : "http",
-             l_conn->host, l_conn->port, l_sub_enc, l_q_enc);
+             l_conn->host, l_conn->port, l_suffix) < 0) {
+        DAP_DELETE(l_sub_enc);
+        DAP_DELETE(l_q_enc);
+        DAP_DELETE(l_b_enc);
+        return -1;
+    }
     DAP_DELETE(l_sub_enc);
     DAP_DELETE(l_q_enc);
 
@@ -650,11 +798,16 @@ static void *s_session_start_thread(void *a_arg)
     ws_session_start_args_t *l_a = (ws_session_start_args_t *)a_arg;
     ws_system_conn_t *l_conn = l_a->conn;
 
+    char l_suffix[128];
     char l_ws_url[1024];
-    snprintf(l_ws_url, sizeof(l_ws_url),
-             "%s://%s:%u/stream/globaldb?session_id=%u",
+    snprintf(l_suffix, sizeof(l_suffix), "stream/globaldb?session_id=%u", l_a->session_id);
+    if (dap_net_trans_wasm_format_uplink_url(l_ws_url, sizeof(l_ws_url),
              l_conn->use_tls ? "wss" : "ws",
-             l_conn->host, l_conn->port, l_a->session_id);
+             l_conn->host, l_conn->port, l_suffix) < 0) {
+        if (l_a->callback) l_a->callback(l_a->stream, -1);
+        DAP_DELETE(l_a);
+        return NULL;
+    }
 
     int l_handle = s_ws_create_on_main(l_ws_url);
     if (l_handle < 0) {
@@ -723,11 +876,15 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     if (!a_stream || !a_stream->_server_session) return -1;
     ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
 
+    char l_suffix[128];
     char l_ws_url[1024];
-    snprintf(l_ws_url, sizeof(l_ws_url),
-             "%s://%s:%u/stream/globaldb?session_id=%u",
+    snprintf(l_suffix, sizeof(l_suffix), "stream/globaldb?session_id=%u", a_session_id);
+    if (dap_net_trans_wasm_format_uplink_url(l_ws_url, sizeof(l_ws_url),
              l_conn->use_tls ? "wss" : "ws",
-             l_conn->host, l_conn->port, a_session_id);
+             l_conn->host, l_conn->port, l_suffix) < 0) {
+        if (a_callback) a_callback(a_stream, -1);
+        return 0;
+    }
 
     int l_handle = js_ws_create(l_ws_url);
     if (l_handle < 0) {
@@ -785,10 +942,25 @@ static ssize_t s_ws_system_write(dap_stream_t *a_stream, const void *a_data, siz
 {
     if (!a_stream || !a_stream->_server_session) return -1;
     ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
-    if (l_conn->state != DAP_WS_SYSTEM_STATE_OPEN) return -1;
+    if (l_conn->state != DAP_WS_SYSTEM_STATE_OPEN) {
+        static _Atomic uint64_t s_not_open_count;
+        uint64_t n = atomic_fetch_add(&s_not_open_count, 1);
+        if (n < 3 || (n % 200) == 0)
+            log_it(L_ERROR, "ws write: socket not open (handle=%d state=%d, count=%" PRIu64 ")",
+                   l_conn->js_handle, (int)l_conn->state, n);
+        return -1;
+    }
 
     int l_sent = s_ws_send_on_main(l_conn->js_handle, a_data, (int)a_size);
-    if (l_sent > 0) l_conn->bytes_sent += (uint64_t)l_sent;
+    if (l_sent <= 0) {
+        static _Atomic uint64_t s_send_fail_count;
+        uint64_t n = atomic_fetch_add(&s_send_fail_count, 1);
+        if (n < 3 || (n % 200) == 0)
+            log_it(L_ERROR, "ws write failed: handle=%d size=%zu ret=%d (count=%" PRIu64 ")",
+                   l_conn->js_handle, a_size, l_sent, n);
+        return -1;
+    }
+    l_conn->bytes_sent += (uint64_t)l_sent;
     return (ssize_t)l_sent;
 }
 

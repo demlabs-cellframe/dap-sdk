@@ -244,13 +244,13 @@ void *dap_enc_chipmunk_ring_read_public_key(const uint8_t *a_buf, size_t a_bufle
     return l_pk;
 }
 
-size_t dap_enc_chipmunk_ring_ser_public_key_size(const void *a_key)
+uint64_t dap_enc_chipmunk_ring_ser_public_key_size(const void *a_key)
 {
     (void)a_key;
     return sizeof(chipmunk_lrs_public_key_t);
 }
 
-size_t dap_enc_chipmunk_ring_deser_public_key_size(const void *a_buf)
+uint64_t dap_enc_chipmunk_ring_deser_public_key_size(const void *a_buf)
 {
     (void)a_buf;
     return sizeof(chipmunk_lrs_public_key_t);
@@ -287,13 +287,13 @@ void *dap_enc_chipmunk_ring_read_private_key(const uint8_t *a_buf, size_t a_bufl
     return l_sk;
 }
 
-size_t dap_enc_chipmunk_ring_ser_private_key_size(const void *a_key)
+uint64_t dap_enc_chipmunk_ring_ser_private_key_size(const void *a_key)
 {
     (void)a_key;
     return sizeof(chipmunk_lrs_secret_key_t);
 }
 
-size_t dap_enc_chipmunk_ring_deser_private_key_size(const void *a_buf)
+uint64_t dap_enc_chipmunk_ring_deser_private_key_size(const void *a_buf)
 {
     (void)a_buf;
     return sizeof(chipmunk_lrs_secret_key_t);

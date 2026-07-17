@@ -10,6 +10,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 
 #include <stdint.h>
@@ -131,6 +132,8 @@ int main(void)
 {
     dap_set_appname("test_lotrs_security");
     dap_common_init("test_lotrs_security", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     test_wrong_message();
     test_wrong_ring();

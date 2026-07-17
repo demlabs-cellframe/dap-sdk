@@ -45,19 +45,8 @@ static int     s_fqx_gcd_deg_q(const int32_t a_a[FQX_MAX],
 /*  F_q scalar arithmetic                                              */
 /* ------------------------------------------------------------------ */
 
-static inline int32_t s_fq_norm(int64_t a_v)
-{
-    int32_t l_r = (int32_t)(a_v % (int64_t)CHIPMUNK_Q);
-    if (l_r < 0) { l_r += (int32_t)CHIPMUNK_Q; }
-    return l_r;
-}
-
-static inline int32_t s_fq_mul(int32_t a_a, int32_t a_b)
-{
-    return s_fq_norm((int64_t)a_a * (int64_t)a_b);
-}
-
-/* Parameterized variants (Phase 9.13): operate on an arbitrary prime q. */
+/* Phase 9.13: All F_q arithmetic operates on an arbitrary prime q.
+ * Non-_q wrappers removed — every caller passes q explicitly. */
 static inline int32_t s_fq_norm_q(int64_t a_v, uint64_t q)
 {
     int32_t l_r = (int32_t)(a_v % (int64_t)q);
@@ -70,26 +59,8 @@ static inline int32_t s_fq_mul_q(int32_t a_a, int32_t a_b, uint64_t q)
     return s_fq_norm_q((int64_t)a_a * (int64_t)a_b, q);
 }
 
-/* Modular inverse mod q via extended Euclid; q is prime so every
- * nonzero residue is invertible.  Returns -1 for a ≡ 0. */
-static int32_t s_fq_inv(int32_t a_a)
-{
-    int32_t l_a = s_fq_norm(a_a);
-    if (l_a == 0) { return -1; }
-    int64_t l_t = 0, l_newt = 1;
-    int64_t l_r = (int64_t)CHIPMUNK_Q, l_newr = l_a;
-    while (l_newr != 0) {
-        int64_t l_quot = l_r / l_newr;
-        int64_t l_tmp;
-        l_tmp = l_t - l_quot * l_newt; l_t = l_newt; l_newt = l_tmp;
-        l_tmp = l_r - l_quot * l_newr; l_r = l_newr; l_newr = l_tmp;
-    }
-    if (l_r != 1) { return -1; } /* not coprime — impossible for prime q */
-    if (l_t < 0) { l_t += (int64_t)CHIPMUNK_Q; }
-    return (int32_t)l_t;
-}
-
-/* Parameterized extended Euclid inverse mod arbitrary prime q. */
+/* Modular inverse mod arbitrary prime q via extended Euclid.
+ * Returns -1 for a ≡ 0. */
 static int32_t s_fq_inv_q(int32_t a_a, uint64_t q)
 {
     int32_t l_a = s_fq_norm_q(a_a, q);

@@ -46,4 +46,6 @@ void polyveck_decompose_p(polyveck *v1, polyveck *v0, const polyveck *v, const d
 unsigned int polyveck_make_hint_p(polyveck *h, const polyveck *u, const polyveck *v, const dilithium_param_t *p);
 void polyveck_use_hint_p(polyveck *w, const polyveck *v, const polyveck *h, const dilithium_param_t *p);
 
+void dilithium_polyvec_dispatch_init(void);
+
 #endif

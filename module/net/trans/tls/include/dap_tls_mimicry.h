@@ -44,6 +44,17 @@ void               dap_tls_mimicry_free(dap_tls_mimicry_t *a_m);
 void dap_tls_mimicry_set_sni(dap_tls_mimicry_t *a_m, const char *a_hostname);
 
 /**
+ * Set TLS fingerprint profile for ClientHello generation.
+ * When set, create_client_hello() uses the profile template instead of
+ * building ClientHello from inline constants.
+ * @param a_profile  Profile object, or NULL to disable
+ * @return 0 on success, -1 on error
+ */
+struct dap_tls_fp_profile;
+int dap_tls_mimicry_set_profile(dap_tls_mimicry_t *a_m,
+                                const struct dap_tls_fp_profile *a_profile);
+
+/**
  * Client: generate a TLS 1.3 ClientHello.
  * Caller must free(*a_out) with DAP_DELETE.
  */
@@ -77,7 +88,8 @@ int dap_tls_mimicry_wrap(dap_tls_mimicry_t *a_m,
 
 /**
  * Unwrap TLS Application Data records from raw wire data.
- * *a_consumed = bytes consumed from a_data (may be < a_size if partial record).
+ * Non-APPLICATION_DATA records (e.g. CCS after handshake) are silently skipped.
+ * *a_consumed = bytes consumed from a_data (includes skipped records).
  * Caller must free(*a_out) with DAP_DELETE.
  * @return 0 on success, 1 if need more data, -1 on error
  */

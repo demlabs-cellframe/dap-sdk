@@ -119,6 +119,6 @@ static inline int dap_link_info_unpack(const uint8_t *a_wire, size_t a_wire_size
     if (!a_wire || !a_mem || a_wire_size < DAP_LINK_INFO_WIRE_SIZE)
         return -1;
     dap_deserialize_result_t l_r =
-        dap_deserialize_from_buffer_raw(&g_dap_link_info_schema, a_wire, a_wire_size, a_mem, NULL);
+        dap_deserialize_from_buffer_raw_zero(&g_dap_link_info_schema, a_wire, a_wire_size, a_mem, NULL);
     return l_r.error_code;
 }

@@ -22,6 +22,7 @@
 */
 
 #include <string.h>
+#include <arpa/inet.h>
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -30,21 +31,21 @@
 #include "dap_net_trans.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
-#include "dap_timerfd.h"
+#include "dap_timerfd.h"  // For handshake retransmission timer
 #include "dap_net.h"
-#include "dap_enc_key.h"
-#include "dap_transport_obfuscation.h"
-#include "dap_json.h"
-#include "dap_io_flow.h"
-#include "dap_io_flow_ctrl.h"
-#include "dap_io_flow_datagram.h"
-#include "dap_arena.h"
+#include "dap_enc_kyber.h"  // For Kyber512 KEM functions
+#include "newhope_cpakem.h"  // CRYPTO_CIPHERTEXTBYTES for UDP handshake wire format
+#include "dap_transport_obfuscation.h"  // For handshake obfuscation
+#include "dap_json.h"  // For JSON API
+#include "dap_io_flow.h"        // For dap_io_flow_t
+#include "dap_io_flow_ctrl.h"  // For Flow Control
+#include "dap_io_flow_datagram.h"  // For datagram flow API
+#include "dap_arena.h"          // For arena allocator
 
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
-#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>
@@ -53,13 +54,10 @@
 #endif
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
-#include "dap_stream_session.h"
-#include "dap_stream_ch.h"
-#include "dap_stream_esocket_ops.h"
 #include "dap_server.h"
 #include "dap_enc_server.h"
 #include "dap_client.h"
-#include "dap_rand.h"
+#include "rand/dap_rand.h"
 #include "dap_enc_key.h"
 #include "dap_enc.h"
 #include "dap_enc_kdf.h"
@@ -70,9 +68,6 @@
 #include "dap_json.h"  // For JSON API
 
 #define LOG_TAG "dap_stream_trans_udp"
-
-// Stream creation counter (from dap_stream.c)
-extern _Atomic uint64_t dap_stream_created_count;
 
 // Debug flags
 static bool s_debug_more = false;  // Extra verbose debugging
@@ -120,8 +115,6 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
                                const dap_net_stage_prepare_params_t *a_params,
                                dap_net_stage_prepare_result_t *a_result);
 static size_t s_udp_get_max_packet_size(dap_net_trans_t *a_trans);
-static void s_udp_check_session_op(dap_net_trans_t *a_trans, uint32_t a_session_id,
-                                   dap_events_socket_t *a_esocket);
 
 // UDP trans operations table
 static const dap_net_trans_ops_t s_udp_ops = {
@@ -141,7 +134,6 @@ static const dap_net_trans_ops_t s_udp_ops = {
     .register_server_handlers = NULL,
     .stage_prepare = s_udp_stage_prepare,
     .get_client_context = s_udp_get_client_context,
-    .check_session = s_udp_check_session_op,
     .get_max_packet_size = s_udp_get_max_packet_size
 };
 
@@ -206,7 +198,12 @@ static int s_client_flow_ctrl_packet_prepare_cb(
         .session_id = l_ctx->session_id,
     };
     
-    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
+    // Serialize header
+    size_t l_hdr_size = dap_serialize_calc_size_raw(&g_udp_full_header_schema, NULL, &l_hdr, NULL);
+    if (l_hdr_size == 0) {
+        log_it(L_ERROR, "CLIENT FC prepare: failed to calc header size");
+        return -2;
+    }
     
     // Allocate [header + payload]
     size_t l_cleartext_size = l_hdr_size + a_payload_size;
@@ -216,8 +213,17 @@ static int s_client_flow_ctrl_packet_prepare_cb(
         return -3;
     }
     
-    if (dap_stream_trans_udp_full_header_wire_pack(&l_hdr, l_cleartext, l_cleartext_size) != 0) {
-        log_it(L_ERROR, "CLIENT FC prepare: failed to serialize UDP full header (FC base schema)");
+    // Serialize header into cleartext
+    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
+        &g_udp_full_header_schema,
+        &l_hdr,
+        l_cleartext,
+        l_hdr_size,
+        NULL  // context
+    );
+    if (l_ser_result.error_code != 0) {
+        log_it(L_ERROR, "CLIENT FC prepare: failed to serialize header: %s",
+               l_ser_result.error_message ? l_ser_result.error_message : "unknown");
         DAP_DELETE(l_cleartext);
         return -4;
     }
@@ -264,7 +270,7 @@ static int s_client_flow_ctrl_packet_prepare_cb(
     *a_packet_size_out = l_final_encrypted_size;
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT FC prepare: seq=%" DAP_UINT64_FORMAT_U ", ack=%" DAP_UINT64_FORMAT_U ", type=%u, payload=%zu → packet=%zu bytes",
+             "CLIENT FC prepare: seq=%lu, ack=%lu, type=%u, payload=%zu → packet=%zu bytes",
              a_metadata->seq_num, a_metadata->ack_seq, l_hdr.type, a_payload_size, l_final_encrypted_size);
     
     return 0;
@@ -325,16 +331,34 @@ static int s_client_flow_ctrl_packet_parse_cb(
         return -4;
     }
     
+    // Deserialize full header
     dap_stream_trans_udp_full_header_t l_hdr;
-    if (dap_stream_trans_udp_full_header_wire_unpack(l_decrypted, l_final_decrypted_size, &l_hdr) != 0) {
-        log_it(L_ERROR, "CLIENT FC parse: UDP full header unpack failed (decrypted_size=%zu)", l_final_decrypted_size);
+    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw_zero(
+        &g_udp_full_header_schema,
+        l_decrypted,
+        sizeof(dap_stream_trans_udp_full_header_t),
+        &l_hdr,
+        NULL
+    );
+    
+    if (l_deser_result.error_code != 0) {
+        log_it(L_ERROR, "CLIENT FC parse: deserialize failed: %s (decrypted_size=%zu)",
+               l_deser_result.error_message ? l_deser_result.error_message : "unknown",
+               l_final_decrypted_size);
         DAP_DELETE(l_decrypted);
         return -5;
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT FC parse: AFTER deserialize: seq_num=%" DAP_UINT64_FORMAT_U ", ack_seq=%" DAP_UINT64_FORMAT_U ", type=%u",
+             "CLIENT FC parse: AFTER deserialize: seq_num=%lu, ack_seq=%lu, type=%u",
              l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type);
+    
+    if (l_deser_result.error_code != 0) {
+        log_it(L_ERROR, "CLIENT FC parse: failed to deserialize header: %s",
+               l_deser_result.error_message ? l_deser_result.error_message : "unknown");
+        DAP_DELETE(l_decrypted);
+        return -5;
+    }
     
     // Fill metadata
     a_metadata_out->seq_num = l_hdr.seq_num;
@@ -349,7 +373,7 @@ static int s_client_flow_ctrl_packet_parse_cb(
     a_metadata_out->private_ctx = l_decrypted;
     
     // Payload starts after header
-    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
+    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
     size_t l_payload_size = (l_final_decrypted_size > l_hdr_size) ? 
                             (l_final_decrypted_size - l_hdr_size) : 0;
     
@@ -368,7 +392,7 @@ static int s_client_flow_ctrl_packet_parse_cb(
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT FC parse: seq=%" DAP_UINT64_FORMAT_U ", ack=%" DAP_UINT64_FORMAT_U ", type=%u, payload=%zu bytes",
+             "CLIENT FC parse: seq=%lu, ack=%lu, type=%u, payload=%zu bytes",
              l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type, *a_payload_size_out);
     
     return 0;
@@ -407,7 +431,7 @@ static int s_client_flow_ctrl_packet_send_cb(
         static uint64_t s_addr_log_count = 0;
         s_addr_log_count++;
         if (s_addr_log_count % 100 == 0 || s_addr_log_count < 5) {
-            log_it(L_INFO, "CLIENT FC send: dest=%s:%u (count=%" DAP_UINT64_FORMAT_U ")",
+            log_it(L_INFO, "CLIENT FC send: dest=%s:%u (count=%lu)",
                    l_addr_str, ntohs(l_sin->sin_port), s_addr_log_count);
         }
     }
@@ -428,7 +452,7 @@ static int s_client_flow_ctrl_packet_send_cb(
     static uint64_t s_send_count = 0;
     s_send_count++;
     if (s_send_count % 50 == 0 || s_send_count < 10) {
-        log_it(L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%" DAP_UINT64_FORMAT_U ")", l_written, s_send_count);
+        log_it(L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%lu)", l_written, s_send_count);
     }
     
     return 0;
@@ -487,7 +511,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             uint64_t l_kdf_counter = be64toh(l_counter_be);
             
             debug_if(s_debug_more, L_DEBUG,
-                     "CLIENT FC deliver: KDF counter=%" DAP_UINT64_FORMAT_U "", l_kdf_counter);
+                     "CLIENT FC deliver: KDF counter=%lu", l_kdf_counter);
             
             // Derive session key
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
@@ -522,7 +546,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             l_stream->session->key = l_session_key;
             l_stream->session->id = l_ctx->session_id;
             
-            log_it(L_INFO, "CLIENT FC deliver: session key installed (session_id=0x%" DAP_UINT64_FORMAT_x ")", l_ctx->session_id);
+            log_it(L_INFO, "CLIENT FC deliver: session key installed (session_id=0x%lx)", l_ctx->session_id);
             
             // Call session_create callback
             if (l_trans_ctx->session_create_cb) {
@@ -839,14 +863,14 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     }
 
     debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
-             a_es, a_es->fd, (size_t)a_es->buf_in_size, a_es->callbacks.arg);
+             a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
 
     // Get trans_ctx from callbacks.arg (NOT _inheritor!)
     // _inheritor may point to client (dap_client_t), not trans_ctx!
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->callbacks.arg;
 
     if (!l_trans_ctx) {
-        log_it(L_WARNING, "UDP client esocket has no trans_ctx (callbacks.arg is NULL), dropping %zu bytes", (size_t)a_es->buf_in_size);
+        log_it(L_WARNING, "UDP client esocket has no trans_ctx (callbacks.arg is NULL), dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -854,7 +878,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     // CRITICAL: Validate stream pointer - may be NULL during cleanup!
     if (!l_trans_ctx->stream) {
         log_it(L_WARNING, "UDP client trans_ctx %p has no stream (stream is NULL), dropping %zu bytes", 
-               l_trans_ctx, (size_t)a_es->buf_in_size);
+               l_trans_ctx, a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -866,7 +890,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     
     // Validate stream pointer first
     if (!l_stream) {
-        log_it(L_WARNING, "UDP client stream pointer is NULL (stream closed?), dropping %zu bytes", (size_t)a_es->buf_in_size);
+        log_it(L_WARNING, "UDP client stream pointer is NULL (stream closed?), dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -874,7 +898,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     // Validate stream->trans before accessing it
     // Check if stream has been deleted (trans would be NULL or invalid)
     if (!l_stream->trans) {
-        log_it(L_WARNING, "UDP client stream has NULL trans (use-after-free?), dropping %zu bytes", (size_t)a_es->buf_in_size);
+        log_it(L_WARNING, "UDP client stream has NULL trans (use-after-free?), dropping %zu bytes", a_es->buf_in_size);
         // Clear the dangling pointer to prevent future issues
         l_trans_ctx->stream = NULL;
         a_es->buf_in_size = 0;
@@ -883,7 +907,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     
     // Validate trans operations
     if (!l_stream->trans->ops || !l_stream->trans->ops->read) {
-        log_it(L_ERROR, "UDP client stream has invalid trans, dropping %zu bytes", (size_t)a_es->buf_in_size);
+        log_it(L_ERROR, "UDP client stream has invalid trans, dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -898,13 +922,13 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         size_t l_buf_in_size_before = a_es->buf_in_size;
         
         debug_if(s_debug_more, L_DEBUG, "Processing UDP packet from buf_in, buf_in_size=%zu (iteration %d)", 
-                 (size_t)a_es->buf_in_size, l_iterations);
+                 a_es->buf_in_size, l_iterations);
         
         // Process one packet from buffer (s_udp_read will shrink buf_in)
         ssize_t l_result = s_udp_read(l_stream, NULL, 0);
         
         debug_if(s_debug_more, L_DEBUG, "CLIENT: s_udp_read returned %zd, buf_in_size now=%zu", 
-                 l_result, (size_t)a_es->buf_in_size);
+                 l_result, a_es->buf_in_size);
         
         // If buf_in_size didn't change, break to prevent infinite loop
         if (a_es->buf_in_size == l_buf_in_size_before) {
@@ -916,7 +940,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     }
     
     if (l_iterations >= l_max_iterations) {
-        log_it(L_WARNING, "UDP client read callback: max iterations reached, %zu bytes remaining", (size_t)a_es->buf_in_size);
+        log_it(L_WARNING, "UDP client read callback: max iterations reached, %zu bytes remaining", a_es->buf_in_size);
     }
 }
 
@@ -1309,7 +1333,7 @@ static int s_udp_listen(dap_net_trans_t *a_trans, const char *a_addr, uint16_t a
     l_priv->server = a_server;
     
     // UDP listening is handled by dap_server_t which creates dap_events_socket_t
-    // The server will call callbacks registered via dap_net_trans_udp_stream_add_proc()
+    // The server will call callbacks registered via dap_stream_add_proc_udp()
     // which use dap_events_socket for all I/O operations
     log_it(L_INFO, "UDP trans listening on %s:%u (via dap_events_socket)", 
            a_addr ? a_addr : "0.0.0.0", a_port);
@@ -1407,7 +1431,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     }
     
     // Generate random session ID for THIS stream
-    if (dap_random_bytes((uint8_t*)&l_udp_ctx->session_id, sizeof(l_udp_ctx->session_id)) != 0) {
+    if (randombytes((uint8_t*)&l_udp_ctx->session_id, sizeof(l_udp_ctx->session_id)) != 0) {
         log_it(L_ERROR, "Failed to generate random session ID");
         return -1;
     }
@@ -1418,7 +1442,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         dap_enc_key_delete(l_udp_ctx->alice_key);
     }
     
-    l_udp_ctx->alice_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, 0);
+    l_udp_ctx->alice_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
     if (!l_udp_ctx->alice_key) {
         log_it(L_ERROR, "Failed to generate Alice key for UDP handshake");
         return -1;
@@ -1470,7 +1494,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         log_it(L_ERROR, "HANDSHAKE: NO WORKER AVAILABLE, timer NOT started (esocket=%p)", l_ctx->esocket);
     }
     
-    log_it(L_INFO, "UDP handshake init sent: %zd bytes (session_id=%" DAP_UINT64_FORMAT_U ")", 
+    log_it(L_INFO, "UDP handshake init sent: %zd bytes (session_id=%lu)", 
            l_sent, l_udp_ctx->session_id);
     
     return 0;
@@ -1492,13 +1516,15 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     }
 
     log_it(L_DEBUG, "UDP handshake response: processing %zu bytes", a_data_size);
-
-    if (a_data_size <= sizeof(uint64_t)) {
-        log_it(L_ERROR, "Handshake response too small: %zu bytes (need ciphertext + 8 session_id)", a_data_size);
+    
+    // Validate size: Bob's ciphertext (768 bytes) + session_id (8 bytes) = 776 bytes
+    const size_t EXPECTED_SIZE = CRYPTO_CIPHERTEXTBYTES + sizeof(uint64_t);
+    if (a_data_size != EXPECTED_SIZE) {
+        log_it(L_ERROR, "Invalid handshake response size: %zu (expected %zu = %d ciphertext + 8 session_id)",
+               a_data_size, EXPECTED_SIZE, CRYPTO_CIPHERTEXTBYTES);
         return -1;
     }
-    const size_t l_ciphertext_size = a_data_size - sizeof(uint64_t);
-
+    
     // Get Alice's key from UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (!l_udp_ctx) {
@@ -1509,24 +1535,25 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         log_it(L_ERROR, "UDP handshake response: no Alice key");
         return -1;
     }
-
-    uint8_t *l_bob_ciphertext = (uint8_t *)alloca(l_ciphertext_size);
+    
+    // Deserialize: Bob's ciphertext (CRYPTO_CIPHERTEXTBYTES) + session_id (8 bytes)
+    uint8_t l_bob_ciphertext[CRYPTO_CIPHERTEXTBYTES];
     uint64_t l_session_id_be;
-
+    
     int l_ret = dap_deserialize_multy(a_data, a_data_size,
-                                      l_bob_ciphertext, (uint64_t)l_ciphertext_size,
+                                      l_bob_ciphertext, (uint64_t)CRYPTO_CIPHERTEXTBYTES,
                                       &l_session_id_be, sizeof(uint64_t),
                                       DOOF_PTR);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to deserialize handshake response");
         return -1;
     }
-
+    
     uint64_t l_server_session_id = be64toh(l_session_id_be);
-
+    
     debug_if(s_debug_more, L_DEBUG,
-             "HANDSHAKE response: ciphertext=%zu bytes, server_session_id=0x%" DAP_UINT64_FORMAT_x " (replacing client's 0x%" DAP_UINT64_FORMAT_x ")",
-             l_ciphertext_size, l_server_session_id, l_udp_ctx->session_id);
+             "HANDSHAKE response: ciphertext=%zu bytes, server_session_id=0x%lx (replacing client's 0x%lx)",
+             (size_t)CRYPTO_CIPHERTEXTBYTES, l_server_session_id, l_udp_ctx->session_id);
     
     // CRITICAL: Replace client's session_id with server's session_id!
     // All subsequent packets MUST use server's session_id
@@ -1554,17 +1581,21 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     log_it(L_DEBUG, "UDP handshake response: alice_key=%p, gen_alice_shared_key=%p", 
            l_alice_key, l_alice_key->gen_alice_shared_key);
     
+    // UDP uses BINARY protocol, not JSON!
+    // Server sends: Bob's ciphertext (768 bytes) + session_id (8 bytes)
+    // We already extracted session_id above, now use ciphertext for KEM
+    
     // Perform KEM decapsulation (Alice side) using received ciphertext
     if (!l_alice_key->gen_alice_shared_key) {
         log_it(L_ERROR, "Alice key doesn't support KEM decapsulation");
-        return -1;
-    }
-
+            return -1;
+        }
+    
     size_t l_shared_key_size = l_alice_key->gen_alice_shared_key(
         l_alice_key,
-        NULL,
-        l_ciphertext_size,
-        (uint8_t*)l_bob_ciphertext
+        NULL,  // Alice's private key (already in l_alice_key->_inheritor)
+        CRYPTO_CIPHERTEXTBYTES,  // Size of Bob's ciphertext
+        (uint8_t*)l_bob_ciphertext  // Bob's ciphertext (extracted above)
     );
     
     if (l_shared_key_size == 0 || !l_alice_key->shared_key) {
@@ -1604,7 +1635,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     s_cancel_handshake_timer(l_udp_ctx);
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT: stored handshake_key=%p for session_id=0x%" DAP_UINT64_FORMAT_x "",
+             "CLIENT: stored handshake_key=%p for session_id=0x%lx",
              l_udp_ctx->handshake_key, l_udp_ctx->session_id);
     
     // Create session if it doesn't exist
@@ -1646,7 +1677,8 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
         log_it(L_INFO, "SERVER received Alice public key (first 16 bytes): %s", l_hex);
     }
     
-    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, 0);
+    // Generate ephemeral Bob key (Kyber512)
+    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
     if (!l_bob_key) {
         log_it(L_ERROR, "Failed to generate Bob key");
         return -1;
@@ -1820,7 +1852,7 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT: encrypting SESSION_CREATE with handshake_key=%p (session_id=0x%" DAP_UINT64_FORMAT_x ")",
+             "CLIENT: encrypting SESSION_CREATE with handshake_key=%p (session_id=0x%lx)",
              l_udp_ctx->handshake_key, l_udp_ctx->session_id);
     
     // Prepare JSON payload (NO session_id - it's already in internal header!)
@@ -2009,7 +2041,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     }
 
     debug_if(s_debug_more, L_DEBUG, "s_udp_read: ctx=%p, es=%p, buf_in=%p, buf_in_size=%zu", 
-             l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? (size_t)l_es->buf_in_size : (size_t)0);
+             l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? l_es->buf_in_size : 0);
 
     // NEW PROTOCOL: Two modes (CLIENT uses l_es->buf_in, SERVER uses a_buffer)
     if (!l_es) {
@@ -2040,7 +2072,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return 0;  // No data available
     }
     
-    debug_if(s_debug_more, L_DEBUG, "UDP CLIENT: buf_in_size=%zu", (size_t)l_es->buf_in_size);
+    debug_if(s_debug_more, L_DEBUG, "UDP CLIENT: buf_in_size=%zu", l_es->buf_in_size);
     
     // Get UDP context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(a_stream);
@@ -2101,7 +2133,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     
     log_it(L_DEBUG, "CLIENT: udp_ctx=%p, flow_ctrl=%p, fc_creating=%d, buf_in_size=%zu", 
            l_udp_ctx, l_udp_ctx ? l_udp_ctx->flow_ctrl : NULL, l_udp_ctx ? l_udp_ctx->fc_creating : 0,
-           (size_t)l_es->buf_in_size);
+           l_es->buf_in_size);
     
     // BUFFER PATH: FC is being created (after SESSION_CREATE, before SESSION_START complete)
     if (l_udp_ctx->fc_creating || !l_udp_ctx->flow_ctrl) {
@@ -2128,24 +2160,34 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                                                  l_decrypted, l_decrypted_max,
                                                  DAP_ENC_DATA_TYPE_RAW);
         
-        if (l_decrypted_size == 0 || l_decrypted_size < DAP_STREAM_UDP_FULL_HEADER_SIZE) {
+        if (l_decrypted_size == 0 || l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t)) {
             log_it(L_ERROR, "CLIENT: failed to decrypt or packet too small");
             DAP_DELETE(l_decrypted);
             dap_events_socket_shrink_buf_in(l_es, l_es->buf_in_size);
             return -1;
         }
         
+        // Parse header
         dap_stream_trans_udp_full_header_t l_header;
-        if (dap_stream_trans_udp_full_header_wire_unpack(l_decrypted, l_decrypted_size, &l_header) != 0) {
-            log_it(L_ERROR, "CLIENT: failed to parse header (FC base schema + UDP tail)");
+        dap_deserialize_result_t l_deser = dap_deserialize_from_buffer_raw_zero(
+            &g_udp_full_header_schema,
+            l_decrypted,
+            sizeof(dap_stream_trans_udp_full_header_t),
+            &l_header,
+            NULL
+        );
+        
+        if (l_deser.error_code != 0) {
+            log_it(L_ERROR, "CLIENT: failed to parse header: %s",
+                   l_deser.error_message ? l_deser.error_message : "unknown");
             DAP_DELETE(l_decrypted);
             dap_events_socket_shrink_buf_in(l_es, l_es->buf_in_size);
             return -1;
         }
         
         uint8_t l_type = l_header.type;
-        size_t l_payload_size = l_decrypted_size - DAP_STREAM_UDP_FULL_HEADER_SIZE;
-        const uint8_t *l_payload = l_decrypted + DAP_STREAM_UDP_FULL_HEADER_SIZE;
+        size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
+        const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
         
         log_it(L_NOTICE, "CLIENT: First packet type=%u (SESSION_CREATE=0x%02x, DATA=0x%02x)",
                l_type, DAP_STREAM_UDP_PKT_SESSION_CREATE, DAP_STREAM_UDP_PKT_DATA);
@@ -2168,7 +2210,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             memcpy(&l_kdf_counter_be, l_payload, sizeof(l_kdf_counter_be));
             uint64_t l_kdf_counter = be64toh(l_kdf_counter_be);
             
-            log_it(L_INFO, "CLIENT: Deriving session key with KDF counter=%" DAP_UINT64_FORMAT_U "", l_kdf_counter);
+            log_it(L_INFO, "CLIENT: Deriving session key with KDF counter=%lu", l_kdf_counter);
             
             // Derive session key
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
@@ -2210,7 +2252,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             a_stream->session->key = l_session_key;
             a_stream->session->id = l_udp_ctx->session_id;
             
-            log_it(L_INFO, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%" DAP_UINT64_FORMAT_x ")",
+            log_it(L_INFO, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%lx)",
                    a_stream, a_stream->session, a_stream->session->key, l_udp_ctx->session_id);
             
             // Call session_create_cb for client stage transition
@@ -2242,7 +2284,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         } else {
             // DATA or other packet - buffer for FC processing
             debug_if(s_debug_more, L_DEBUG,
-                     "CLIENT: Buffering packet type=%u (%zu bytes) for FC", l_type, (size_t)l_es->buf_in_size);
+                     "CLIENT: Buffering packet type=%u (%zu bytes) for FC", l_type, l_es->buf_in_size);
             
             DAP_DELETE(l_decrypted);  // Don't need decrypted version - FC will decrypt again
             
@@ -2293,7 +2335,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     } else {
         // FLOW CONTROL PATH: FC is ready - pass packet directly
         debug_if(s_debug_more, L_DEBUG,
-                 "CLIENT: Passing packet to FC (%p), size=%zu", l_udp_ctx->flow_ctrl, (size_t)l_es->buf_in_size);
+                 "CLIENT: Passing packet to FC (%p), size=%zu", l_udp_ctx->flow_ctrl, l_es->buf_in_size);
         
         int l_ret = dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, l_es->buf_in, l_es->buf_in_size);
         
@@ -2443,11 +2485,21 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         .session_id = l_udp_ctx->session_id,
     };
     
-    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
-    uint8_t l_hdr_buffer[DAP_STREAM_UDP_FULL_HEADER_SIZE];
+    // Serialize using dap_serialize
+    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
+    uint8_t l_hdr_buffer[sizeof(dap_stream_trans_udp_full_header_t)];
     
-    if (dap_stream_trans_udp_full_header_wire_pack(&l_full_hdr, l_hdr_buffer, sizeof(l_hdr_buffer)) != 0) {
-        log_it(L_ERROR, "Failed to serialize full header (FC base schema + UDP tail)");
+    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
+        &g_udp_full_header_schema,
+        &l_full_hdr,
+        l_hdr_buffer,
+        l_hdr_size,
+        NULL
+    );
+    
+    if (l_ser_result.error_code != 0) {
+        log_it(L_ERROR, "Failed to serialize full header: %s",
+               l_ser_result.error_message ? l_ser_result.error_message : "unknown");
         return -1;
     }
     
@@ -2526,7 +2578,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     }
 
     debug_if(s_debug_more, L_DEBUG,
-             "Encrypted packet sent: type=%u, session=0x%" DAP_UINT64_FORMAT_x ", encrypted_size=%zu",
+             "Encrypted packet sent: type=%u, session=0x%lx, encrypted_size=%zu",
              a_pkt_type, l_udp_ctx->session_id, l_encrypted_size);
     
     return l_sent;
@@ -2564,7 +2616,7 @@ static void s_udp_close(dap_stream_t *a_stream)
     // Get UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (l_udp_ctx) {
-        log_it(L_INFO, "Closing UDP trans session 0x%" DAP_UINT64_FORMAT_x "", l_udp_ctx->session_id);
+        log_it(L_INFO, "Closing UDP trans session 0x%lx", l_udp_ctx->session_id);
         
         // Clean up Flow Control if present
         if (l_udp_ctx->flow_ctrl) {
@@ -2632,7 +2684,7 @@ static void s_udp_close(dap_stream_t *a_stream)
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
     if (l_ctx && l_ctx->esocket_uuid && l_ctx->esocket_worker) {
         debug_if(s_debug_more, L_DEBUG, 
-               "UDP close: queueing esocket deletion (UUID 0x%016" DAP_UINT64_FORMAT_x ") on its worker",
+               "UDP close: queueing esocket deletion (UUID 0x%016lx) on its worker",
                l_ctx->esocket_uuid);
         
         // CRITICAL: Clear callbacks BEFORE async delete to prevent use-after-free!
@@ -2708,7 +2760,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
-    l_es->is_initalized = 1;  // CRITICAL: Mark as initialized for write operations!
+    l_es->is_initalized = true;  // CRITICAL: Mark as initialized for write operations!
     
     // Set UDP read callback for client esocket
     // NO write_callback needed - reactor handles packet_queue automatically!
@@ -2749,13 +2801,13 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // Set LARGE socket buffers (64 MB) to prevent packet loss under high load with many clients
     int l_buffer_size = 64 * 1024 * 1024;  // 64 MB
-    if (setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+    if (setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
         log_it(L_INFO, "Set SO_RCVBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
     }
     
-    if (setsockopt(l_es->socket, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+    if (setsockopt(l_es->socket, SOL_SOCKET, SO_SNDBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
         log_it(L_INFO, "Set SO_SNDBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
@@ -2765,7 +2817,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     struct sockaddr_in l_local_addr;
     socklen_t l_local_addr_len = sizeof(l_local_addr);
     if (getsockname(l_es->socket, (struct sockaddr *)&l_local_addr, &l_local_addr_len) == 0) {
-        log_it(L_INFO, "UDP socket fd=%" DAP_FORMAT_SOCKET " bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
+        log_it(L_INFO, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
     }
     
     // CRITICAL: Add socket to worker AFTER bind() so reactor monitors properly configured socket!
@@ -2805,7 +2857,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // CRITICAL: Set callbacks.arg so read_callback can retrieve trans_ctx!
     l_es->callbacks.arg = l_ctx;
-    debug_if(s_debug_more, L_INFO, "UDP CLIENT CREATED: esocket=%p (fd=%" DAP_FORMAT_SOCKET "), stream=%p, trans_ctx=%p", 
+    log_it(L_INFO, "UDP CLIENT CREATED: esocket=%p (fd=%d), stream=%p, trans_ctx=%p", 
            l_es, l_es->socket, l_stream, l_ctx);
     
     // Create UDP per-stream context and store client_ctx
@@ -2832,7 +2884,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
         char l_addr_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        debug_if(s_debug_more, L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
+        log_it(L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
                l_addr_str, ntohs(l_sin->sin_port));
     }
     
@@ -2853,12 +2905,12 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     // _inheritor is for client infrastructure ownership, we use callbacks.arg for trans_ctx
     l_es->callbacks.arg = l_ctx;
     
-    debug_if(s_debug_more,L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
+    log_it(L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
     
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    debug_if(s_debug_more,L_DEBUG, "UDP socket and stream prepared for %s:%u", a_params->host, a_params->port);
+    log_it(L_DEBUG, "UDP socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 
@@ -2963,131 +3015,6 @@ static size_t s_udp_get_max_packet_size(dap_net_trans_t *a_trans)
     // Conservative UDP payload size to avoid fragmentation
     // Actual UDP packet will be larger due to headers + encryption
     return DAP_STREAM_UDP_MAX_PAYLOAD_SIZE;  // 1200 bytes
-}
-
-//===================================================================
-// UDP STREAM SERVER CALLBACKS (moved from dap_stream.c)
-//===================================================================
-
-static void s_udp_esocket_new(dap_events_socket_t *a_esocket, void *a_arg);
-
-/**
- * @brief Create new stream instance for UDP client
- * @param a_esocket Event socket for the UDP connection
- * @return New stream instance or NULL
- */
-dap_stream_t *dap_net_trans_udp_stream_new(dap_events_socket_t *a_esocket)
-{
-    dap_stream_t *l_stm = DAP_NEW_Z(dap_stream_t);
-    assert(l_stm);
-    if (!l_stm) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
-    atomic_fetch_add(&dap_stream_created_count, 1);
-
-    l_stm->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
-    if (l_stm->trans_ctx) {
-        l_stm->trans_ctx->esocket = a_esocket;
-        l_stm->trans_ctx->esocket_uuid = a_esocket->uuid;
-        l_stm->trans_ctx->esocket_worker = a_esocket->worker;
-        l_stm->trans_ctx->stream = l_stm;
-        dap_strncpy(l_stm->trans_ctx->remote_addr_str, a_esocket->remote_addr_str,
-                    sizeof(l_stm->trans_ctx->remote_addr_str) - 1);
-        l_stm->trans_ctx->remote_port = a_esocket->remote_port;
-    }
-
-    a_esocket->_inheritor = l_stm->trans_ctx;
-    dap_stream_add_to_list(l_stm);
-    debug_if(s_debug_more, L_INFO, "New stream instance udp");
-    return l_stm;
-}
-
-/**
- * @brief Check session status, open if needed (UDP SERVICE_PACKET handler)
- * @param a_id Session ID
- * @param a_esocket Stream event socket
- */
-static void s_udp_check_session(unsigned int a_id, dap_events_socket_t *a_esocket)
-{
-    dap_stream_session_t *l_session = dap_stream_session_id_mt(a_id);
-
-    if (l_session == NULL) {
-        log_it(L_ERROR, "No session id %u was found", a_id);
-        return;
-    }
-
-    log_it(L_INFO, "Session id %u was found with media_id = %d", a_id, l_session->media_id);
-
-    if (dap_stream_session_open(l_session) != 0) {
-        log_it(L_ERROR, "Can't open session id %u", a_id);
-        return;
-    }
-
-    dap_stream_t *l_stream;
-    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
-    if (!l_trans_ctx || !l_trans_ctx->stream)
-        l_stream = dap_net_trans_udp_stream_new(a_esocket);
-    else
-        l_stream = l_trans_ctx->stream;
-
-    l_stream->session = l_session;
-
-    if (l_session->create_empty)
-    debug_if(s_debug_more,L_INFO, "Session created empty");
-
-    debug_if(s_debug_more,L_INFO, "Opened stream session technical and data channels");
-
-    for (size_t i = 0; i < sizeof(l_session->active_channels); i++)
-        if (l_session->active_channels[i])
-            dap_stream_ch_new(l_stream, l_session->active_channels[i]);
-
-    dap_stream_states_update(l_stream);
-
-#ifdef DAP_EVENTS_CAPS_IOCP
-    a_esocket->flags |= DAP_SOCK_READY_TO_READ;
-#else
-    dap_events_socket_set_readable_unsafe(a_esocket, true);
-#endif
-}
-
-/**
- * @brief New connection callback for UDP client
- */
-static void s_udp_esocket_new(dap_events_socket_t *a_esocket, UNUSED_ARG void *a_arg)
-{
-    dap_net_trans_udp_stream_new(a_esocket);
-}
-
-/**
- * @brief Add processor callbacks for UDP streaming
- * @param a_udp_server UDP server instance
- */
-void dap_net_trans_udp_stream_add_proc(dap_server_t *a_udp_server)
-{
-    a_udp_server->client_callbacks.read_callback = dap_stream_esocket_read_cb;
-    a_udp_server->client_callbacks.write_callback = dap_stream_esocket_write_cb;
-    a_udp_server->client_callbacks.delete_callback = dap_stream_esocket_delete_cb;
-    a_udp_server->client_callbacks.new_callback = s_udp_esocket_new;
-    a_udp_server->client_callbacks.worker_assign_callback = dap_stream_esocket_worker_assign_cb;
-    a_udp_server->client_callbacks.worker_unassign_callback = dap_stream_esocket_worker_unassign_cb;
-}
-
-/**
- * @brief Check session for UDP stream (called from dap_stream on SERVICE_PACKET)
- * @param a_id Session ID
- * @param a_esocket Event socket
- */
-void dap_net_trans_udp_stream_check_session(unsigned int a_id, dap_events_socket_t *a_esocket)
-{
-    s_udp_check_session(a_id, a_esocket);
-}
-
-static void s_udp_check_session_op(dap_net_trans_t *a_trans, uint32_t a_session_id,
-                                   dap_events_socket_t *a_esocket)
-{
-    UNUSED(a_trans);
-    s_udp_check_session(a_session_id, a_esocket);
 }
 
 /**

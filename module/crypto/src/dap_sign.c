@@ -698,7 +698,6 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
     }
 
     size_t l_sign_data_size = a_chain_sign->header.sign_size;
-    // deserialize signature
     uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key->type, l_sign_data_ser, &l_sign_data_size);
 
     if ( !l_sign_data ){
@@ -767,16 +766,16 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
 uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 {
     if (!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL) {
-        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        debug_if(s_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
     dap_sign_hdr_mem_t l_mem;
     if (dap_sign_hdr_unpack((const uint8_t *)&a_chain_sign->header, DAP_SIGN_HDR_WIRE_SIZE, &l_mem) != 0) {
-        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        debug_if(s_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
     if (l_mem.type_raw == (uint32_t)SIG_TYPE_NULL) {
-        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        debug_if(s_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
     return (uint64_t)sizeof(dap_sign_t) + l_mem.sign_size + l_mem.sign_pkey_size;

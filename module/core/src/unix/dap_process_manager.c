@@ -64,7 +64,12 @@ pid_t get_pid_from_file(const char* file_path) {
  * @return
  */
 bool daemonize_process() {
+#ifdef DAP_OS_WASM
+    /* WASM cannot daemonize — no fork(), no setsid(). Treat as success. */
+    return true;
+#else
     return daemon(1,1) == 0;
+#endif
 }
 
 /**

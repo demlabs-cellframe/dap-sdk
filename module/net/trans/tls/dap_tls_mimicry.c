@@ -27,7 +27,9 @@
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
-#include "dap_rand.h"
+#include "dap_events.h"
+#include "rand/dap_rand.h"
+#include "dap_tls_fingerprint.h"
 #include "dap_tls_mimicry.h"
 
 #define LOG_TAG "dap_tls_mimicry"
@@ -82,6 +84,7 @@ struct dap_tls_mimicry {
     bool is_server;
     dap_tls_mimicry_state_t state;
     char *sni_hostname;
+    const dap_tls_fp_profile_t *profile;
     uint8_t session_id[32];
     uint8_t client_random[32];
     uint8_t server_random[32];
@@ -151,6 +154,15 @@ void dap_tls_mimicry_set_sni(dap_tls_mimicry_t *a_m, const char *a_hostname)
         a_m->sni_hostname = dap_strdup(a_hostname);
 }
 
+int dap_tls_mimicry_set_profile(dap_tls_mimicry_t *a_m,
+                                const dap_tls_fp_profile_t *a_profile)
+{
+    if (!a_m)
+        return -1;
+    a_m->profile = a_profile;
+    return 0;
+}
+
 dap_tls_mimicry_state_t dap_tls_mimicry_get_state(const dap_tls_mimicry_t *a_m)
 {
     return a_m ? a_m->state : DAP_TLS_MIMICRY_STATE_INIT;
@@ -215,7 +227,7 @@ static size_t s_build_extension_key_share_ch(uint8_t *buf)
 {
     uint8_t *p = buf;
     uint8_t l_fake_pubkey[32];
-    dap_random_bytes(l_fake_pubkey, 32);
+    randombytes(l_fake_pubkey, 32);
 
     s_put_u16be(p, TLS_EXT_KEY_SHARE); p += 2;
     s_put_u16be(p, 2 + 2 + 2 + 32); p += 2; /* ext data len */
@@ -266,8 +278,59 @@ int dap_tls_mimicry_create_client_hello(dap_tls_mimicry_t *a_m,
     if (!a_m || !a_out || !a_out_size || a_m->is_server)
         return -1;
 
-    dap_random_bytes(a_m->client_random, 32);
-    dap_random_bytes(a_m->session_id, 32);
+    randombytes(a_m->client_random, 32);
+    randombytes(a_m->session_id, 32);
+
+    /* If a fingerprint profile is set, use template-based generation */
+    if (a_m->profile) {
+        void *l_body = NULL;
+        size_t l_body_size = 0;
+
+        if (dap_tls_fp_build_clienthello(a_m->profile, a_m->sni_hostname,
+                                         &l_body, &l_body_size) != 0)
+            return -1;
+
+        /*
+         * Template includes 4-byte handshake header prefix:
+         *   [0]    handshake type (0x01 = ClientHello)
+         *   [1..3] 3-byte length (placeholder 0x000000)
+         * Body starts at offset 4:
+         *   [4..5]   legacy_version
+         *   [6..37]  random (32 bytes)
+         *   [38]     session_id_length (0 = empty, template default)
+         */
+        uint8_t *l_tpl = (uint8_t *)l_body;
+        if (l_body_size >= 4 + 2 + 32) {
+            /* Patch random at template offset 6 */
+            memcpy(l_tpl + 6, a_m->client_random, 32);
+            /* Leave session_id as-is (empty, per template) */
+        }
+
+        /* Output: TLS record header + full template (handshake header + body) */
+        size_t l_total = 5 + l_body_size;
+        uint8_t *l_out = DAP_NEW_SIZE(uint8_t, l_total);
+        if (!l_out) {
+            DAP_DELETE(l_body);
+            return -1;
+        }
+
+        /* TLS record header */
+        l_out[0] = TLS_CT_HANDSHAKE;
+        l_out[1] = TLS_VER_1_0_HI;
+        l_out[2] = TLS_VER_1_0_LO;
+        s_put_u16be(l_out + 3, (uint16_t)l_body_size);
+
+        /* Copy template (includes 4-byte handshake header + body) */
+        memcpy(l_out + 5, l_body, l_body_size);
+        DAP_DELETE(l_body);
+
+        *a_out = l_out;
+        *a_out_size = l_total;
+        a_m->state = DAP_TLS_MIMICRY_STATE_CLIENT_HELLO_SENT;
+        return 0;
+    }
+
+    /* Fallback: inline build (original path) */
 
     /* Build ClientHello body into a temp buffer (max ~1KB is plenty) */
     uint8_t l_body[2048];
@@ -377,10 +440,10 @@ int dap_tls_mimicry_process_client_hello(dap_tls_mimicry_t *a_m,
     if (l_sid_len > 0)
         memcpy(a_m->session_id, body + 35, l_sid_len);
     else
-        dap_random_bytes(a_m->session_id, 32);
+        randombytes(a_m->session_id, 32);
 
     /* Generate server random */
-    dap_random_bytes(a_m->server_random, 32);
+    randombytes(a_m->server_random, 32);
 
     /* ---- Build ServerHello ---- */
     uint8_t l_sh_body[256];
@@ -417,7 +480,7 @@ int dap_tls_mimicry_process_client_hello(dap_tls_mimicry_t *a_m,
 
     /* key_share (server) */
     uint8_t l_fake_pubkey[32];
-    dap_random_bytes(l_fake_pubkey, 32);
+    randombytes(l_fake_pubkey, 32);
     s_put_u16be(l_sh_ext + l_sh_ext_len, TLS_EXT_KEY_SHARE);
     l_sh_ext_len += 2;
     s_put_u16be(l_sh_ext + l_sh_ext_len, 2 + 2 + 32);
@@ -467,7 +530,7 @@ int dap_tls_mimicry_process_client_hello(dap_tls_mimicry_t *a_m,
     /* Fake EncryptedExtensions (Application Data record with random payload) */
     s_write_record_header(w, TLS_CT_APPLICATION_DATA, l_fake_len);
     w += 5;
-    dap_random_bytes(w, l_fake_len);
+    randombytes(w, l_fake_len);
     w += l_fake_len;
 
     *a_response = l_out;
@@ -529,7 +592,7 @@ int dap_tls_mimicry_process_server_hello(dap_tls_mimicry_t *a_m,
     /* Fake Finished */
     s_write_record_header(w, TLS_CT_APPLICATION_DATA, l_fin_len);
     w += 5;
-    dap_random_bytes(w, l_fin_len);
+    randombytes(w, l_fin_len);
     w += l_fin_len;
 
     *a_response = l_out;
@@ -600,10 +663,19 @@ int dap_tls_mimicry_unwrap(dap_tls_mimicry_t *a_m,
     size_t l_pos = 0;
     size_t l_payload_total = 0;
 
-    /* First pass: count total payload */
+    /* First pass: count total payload, skip non-APPLICATION_DATA records (CCS, etc.) */
     while (l_pos + DAP_TLS_MIMICRY_RECORD_HDR_SIZE <= a_size) {
-        if (d[l_pos] != TLS_CT_APPLICATION_DATA)
-            break;
+        if (d[l_pos] != TLS_CT_APPLICATION_DATA) {
+            /* Skip non-APPLICATION_DATA record (e.g. CCS after handshake) */
+            uint16_t l_skip_len = s_get_u16be(d + l_pos + 3);
+            if (l_pos + DAP_TLS_MIMICRY_RECORD_HDR_SIZE + l_skip_len > a_size)
+                break; /* partial record — wait for more data */
+            debug_if(g_debug_reactor, L_DEBUG,
+                     "unwrap: skipping non-APP_DATA record type=0x%02X len=%u at pos=%zu",
+                     d[l_pos], l_skip_len, l_pos);
+            l_pos += DAP_TLS_MIMICRY_RECORD_HDR_SIZE + l_skip_len;
+            continue;
+        }
         uint16_t l_rec_len = s_get_u16be(d + l_pos + 3);
         if (l_pos + DAP_TLS_MIMICRY_RECORD_HDR_SIZE + l_rec_len > a_size)
             break; /* partial record */
@@ -622,13 +694,15 @@ int dap_tls_mimicry_unwrap(dap_tls_mimicry_t *a_m,
     if (!l_out)
         return -1;
 
-    /* Second pass: copy payloads */
+    /* Second pass: copy APPLICATION_DATA payloads, skip others */
     size_t l_pos2 = 0;
     size_t l_out_pos = 0;
     while (l_pos2 < l_pos) {
         uint16_t l_rec_len = s_get_u16be(d + l_pos2 + 3);
-        memcpy(l_out + l_out_pos, d + l_pos2 + DAP_TLS_MIMICRY_RECORD_HDR_SIZE, l_rec_len);
-        l_out_pos += l_rec_len;
+        if (d[l_pos2] == TLS_CT_APPLICATION_DATA) {
+            memcpy(l_out + l_out_pos, d + l_pos2 + DAP_TLS_MIMICRY_RECORD_HDR_SIZE, l_rec_len);
+            l_out_pos += l_rec_len;
+        }
         l_pos2 += DAP_TLS_MIMICRY_RECORD_HDR_SIZE + l_rec_len;
     }
 

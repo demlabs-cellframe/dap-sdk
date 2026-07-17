@@ -18,6 +18,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 
 #include <errno.h>
@@ -303,6 +304,8 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_mring_statement_vcom");
     dap_common_init("test_chipmunk_mring_statement_vcom", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     int rc = 0;
     if (!s_test_generators_determinism_and_independence()) rc = 1;

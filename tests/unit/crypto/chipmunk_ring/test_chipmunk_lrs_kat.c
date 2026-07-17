@@ -6,6 +6,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_hash_sha3.h>
 #include <dap_test.h>
 
@@ -749,6 +750,8 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_lrs_kat");
     dap_common_init("test_chipmunk_lrs_kat", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     int rc = 0;
     if (!s_test_qpack_roundtrip_and_reject()) rc = 1;

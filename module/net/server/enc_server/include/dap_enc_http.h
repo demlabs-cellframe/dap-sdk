@@ -81,4 +81,9 @@ void enc_http_delegate_delete(enc_http_delegate_t * dg);
 
 void enc_http_add_proc(struct dap_http_server *sh, const char * url);
 
+/* Direct call interface for non-HTTP transports (e.g. TLS mimicry server).
+ * enc_http_proc() is normally registered as a dap_http_simple_proc callback,
+ * but non-HTTP transports need to call it directly with a synthetic struct. */
+void enc_http_proc(struct dap_http_simple *cl_st, void *arg);
+
 #endif

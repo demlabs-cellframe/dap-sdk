@@ -333,6 +333,12 @@ dap_net_trans_type_t dap_net_trans_type_from_str(const char *a_str)
     if (strcmp(a_str, "websocket") == 0 || strcmp(a_str, "ws") == 0) {
         return DAP_NET_TRANS_WEBSOCKET;
     }
+    if (strcmp(a_str, "websocket-system") == 0 || strcmp(a_str, "ws_system") == 0) {
+        return DAP_NET_TRANS_WEBSOCKET_SYSTEM;
+    }
+    if (strcmp(a_str, "webrtc") == 0) {
+        return DAP_NET_TRANS_WEBRTC;
+    }
     
     // TLS Direct
     if (strcmp(a_str, "tls") == 0 || strcmp(a_str, "tls_direct") == 0) {
@@ -590,12 +596,14 @@ int dap_net_trans_stage_prepare(dap_net_trans_type_t a_trans_type,
         return -1;
     }
     
+    // Fail-fast: trans must provide stage_prepare callback
     if (!l_trans->ops || !l_trans->ops->stage_prepare) {
         log_it(L_ERROR, "Trans type %d does not provide stage_prepare callback", a_trans_type);
         a_result->error_code = -2;
         return -2;
     }
     
+    // Delegate to trans-specific implementation
     int l_ret = l_trans->ops->stage_prepare(l_trans, a_params, a_result);
     if (l_ret != 0) {
         log_it(L_ERROR, "Trans stage_prepare failed for type %d: %d", a_trans_type, l_ret);
@@ -603,13 +611,15 @@ int dap_net_trans_stage_prepare(dap_net_trans_type_t a_trans_type,
         return l_ret;
     }
     
+    /* Browser WASM transports (websocket-system, webrtc) prepare stream only. */
     if (!a_result->esocket && !a_result->stream) {
-        log_it(L_ERROR, "Trans stage_prepare returned neither esocket nor stream for type %d", a_trans_type);
+        log_it(L_ERROR, "Trans stage_prepare returned success but esocket and stream are NULL for type %d",
+               a_trans_type);
         a_result->error_code = -3;
         return -3;
     }
-    
-    log_it(L_DEBUG, "Trans %d stage_prepare ok (esocket=%p, stream=%p)",
+
+    log_it(L_DEBUG, "Trans %d prepared via stage_prepare (esocket=%p stream=%p)",
            a_trans_type, (void *)a_result->esocket, (void *)a_result->stream);
     return 0;
 }

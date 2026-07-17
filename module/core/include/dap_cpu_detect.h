@@ -55,16 +55,24 @@ typedef enum {
 } dap_cpu_vendor_t;
 
 /* Platform detection (mirrors dap_arch_dispatch.h, usable in this header) */
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if defined(DAP_OS_WASM)
+/* WASM has no host SIMD — always use scalar reference backends. */
+#  define DAP_CPU_DETECT_X86 0
+#  define DAP_CPU_DETECT_ARM 0
+#elif defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 #  define DAP_CPU_DETECT_X86 1
 #else
 #  define DAP_CPU_DETECT_X86 0
 #endif
 
-#if defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64)
-#  define DAP_CPU_DETECT_ARM 1
-#else
-#  define DAP_CPU_DETECT_ARM 0
+#if !defined(DAP_CPU_DETECT_ARM)
+#  if defined(DAP_OS_WASM)
+#    define DAP_CPU_DETECT_ARM 0
+#  elif defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64)
+#    define DAP_CPU_DETECT_ARM 1
+#  else
+#    define DAP_CPU_DETECT_ARM 0
+#  endif
 #endif
 
 /**

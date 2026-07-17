@@ -246,9 +246,9 @@ int chipmunk_ring_link(const chipmunk_ring_sig_t *a_sig1, const chipmunk_ring_si
     if (a_sig1->len < l_hdr_bytes || a_sig2->len < l_hdr_bytes) return -EINVAL;
 
     chipmunk_ring_header_t l_hdr1 = {0}, l_hdr2 = {0};
-    dap_deserialize_result_t l_d1 = dap_serialize_from_buffer_raw(&s_chipmunk_ring_header_schema,
+    dap_deserialize_result_t l_d1 = dap_serialize_from_buffer_raw_zero(&s_chipmunk_ring_header_schema,
                                                                    a_sig1->data, l_hdr_bytes, &l_hdr1, NULL);
-    dap_deserialize_result_t l_d2 = dap_serialize_from_buffer_raw(&s_chipmunk_ring_header_schema,
+    dap_deserialize_result_t l_d2 = dap_serialize_from_buffer_raw_zero(&s_chipmunk_ring_header_schema,
                                                                    a_sig2->data, l_hdr_bytes, &l_hdr2, NULL);
     if (l_d1.error_code != 0 || l_d2.error_code != 0) return -EINVAL;
 
@@ -857,7 +857,7 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
 
     /* Read header. */
     chipmunk_ring_header_t l_hdr = {0};
-    dap_deserialize_result_t l_deser = dap_serialize_from_buffer_raw(&s_chipmunk_ring_header_schema,
+    dap_deserialize_result_t l_deser = dap_serialize_from_buffer_raw_zero(&s_chipmunk_ring_header_schema,
                                                                      a_sig->data, l_hdr_bytes,
                                                                      &l_hdr, NULL);
     if (l_deser.error_code != 0) return -EINVAL;

@@ -37,6 +37,7 @@
 
 #pragma once
 
+#include <sys/socket.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "dap_events_socket.h"
