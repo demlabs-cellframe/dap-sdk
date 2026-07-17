@@ -5,6 +5,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_hash_sha3.h>
 #include <dap_test.h>
 
@@ -579,6 +580,8 @@ int main(void)
 {
     dap_set_appname("test_lotrs_basic");
     dap_common_init("test_lotrs_basic", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     test_keygen();
     test_wire_format();

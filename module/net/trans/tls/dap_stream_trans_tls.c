@@ -33,6 +33,7 @@
 #include "dap_stream_pkt.h"
 #include "dap_tls_mimicry.h"
 #include "dap_stream_trans_tls.h"
+#include "dap_net_trans_tls_server.h"
 
 #define LOG_TAG "dap_stream_trans_tls"
 
@@ -138,6 +139,7 @@ static int s_tls_init(dap_net_trans_t *a_trans, dap_config_t *a_cfg)
             s_config.sni_hostname = dap_strdup(l_sni);
         }
     }
+    dap_net_trans_tls_server_init();
     log_it(L_INFO, "TLS Mimicry transport initialized (SNI=%s)",
            s_config.sni_hostname ? s_config.sni_hostname : "<none>");
     return 0;
@@ -146,6 +148,7 @@ static int s_tls_init(dap_net_trans_t *a_trans, dap_config_t *a_cfg)
 static void s_tls_deinit(dap_net_trans_t *a_trans)
 {
     UNUSED(a_trans);
+    dap_net_trans_tls_server_deinit();
     DAP_DEL_Z(s_config.sni_hostname);
     log_it(L_DEBUG, "TLS Mimicry transport deinitialized");
 }

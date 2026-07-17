@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <dap_enc.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -398,6 +399,10 @@ static void s_bench_chacha20_encrypt(void)
 
 int main(void)
 {
+    dap_set_appname("test");
+    dap_common_init(dap_get_appname(), NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
     dap_print_module_name("PQC & New Symmetric Algorithms");
 
     s_test_mldsa();

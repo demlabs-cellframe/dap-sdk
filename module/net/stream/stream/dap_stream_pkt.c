@@ -108,7 +108,13 @@ size_t dap_stream_pkt_read_unsafe( dap_stream_t * a_stream, dap_stream_pkt_t * a
         memcpy(a_buf_out, a_pkt->data, l_copy_size);
         return l_copy_size;
     }
-    
+
+    if (!a_stream->session->key->dec_na) {
+        log_it(L_ERROR, "dap_stream_pkt_read_unsafe: dec_na is NULL for key type %d! stream=%p",
+               a_stream->session->key->type, a_stream);
+        return 0;
+    }
+
     size_t l_result = a_stream->session->key->dec_na(a_stream->session->key,a_pkt->data,a_pkt->hdr.size,a_buf_out, a_buf_out_size);
     
     debug_if(s_debug_more, L_DEBUG, "dap_stream_pkt_read_unsafe: RETURNED dec_na result=%zu (stream=%p, session=%p, key=%p)",
@@ -222,9 +228,8 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
     l_msg->data_size = sizeof(*l_pkt_hdr) + dap_enc_code(a_key, a_data, a_data_size,
         ((byte_t*)l_msg->data) + sizeof(*l_pkt_hdr), l_msg->data_size, DAP_ENC_DATA_TYPE_RAW);
 
-    size_t l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Can't send msg to queue");
+    if (!dap_context_queue_push(a_w->queue_es_io, l_msg)) {
+        log_it(L_ERROR, "Can't push msg to worker queue");
         DAP_DEL_MULTY(l_msg->data, l_msg);
         return 0;
     }

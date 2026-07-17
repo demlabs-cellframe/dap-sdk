@@ -27,6 +27,10 @@
 #include "dap_events_socket.h"
 #include "dap_events.h"
 
+/* Forward declaration — full definition in dap_context_queue.h */
+struct dap_context_queue;
+typedef struct dap_context_queue dap_context_queue_t;
+
 typedef struct dap_context dap_context_t;
 typedef struct dap_timerfd dap_timerfd_t;
 typedef struct dap_proc_thread dap_proc_thread_t;
@@ -34,13 +38,13 @@ typedef struct dap_worker {
     uint32_t  id;
     dap_proc_thread_t *proc_queue_input;
 #ifndef DAP_EVENTS_CAPS_IOCP
-    // worker control queues
-    dap_events_socket_t *queue_es_new;      // Queue socket for new event socket
-    dap_events_socket_t *queue_es_delete;   // Queue socket for remove event socket
-    dap_events_socket_t *queue_es_reassign; // Queue for reassign event socket between workers
-    dap_events_socket_t *queue_es_io;       // Queue socket for io ops
+    // worker control queues (ring-buffer based, replaces old pipe-based queues)
+    dap_context_queue_t *queue_es_new;      // Queue for new event socket
+    dap_context_queue_t *queue_es_delete;   // Queue for remove event socket
+    dap_context_queue_t *queue_es_reassign; // Queue for reassign event socket between workers
+    dap_context_queue_t *queue_es_io;       // Queue for io ops
 #endif
-    dap_events_socket_t *queue_callback;  /* Queue for pure callback on worker */
+    dap_context_queue_t *queue_callback;    /* Queue for pure callback on worker */
 
     dap_timerfd_t * timer_check_activity;
 

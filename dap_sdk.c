@@ -87,6 +87,8 @@ static void s_deinit_plugin(void);
 /* ========================================================================= */
 
 #ifdef DAP_OS_WASM
+static void s_init_memfs(void);
+
 #ifdef DAP_OS_WASM_MT
 #include <emscripten/wasmfs.h>
 
@@ -102,27 +104,18 @@ int dap_sdk_wasmfs_init(const char *a_mount)
     if (!g_sys_dir_path)
         g_sys_dir_path = dap_strdup(l_mount);
 
-    // Synchronous OPFS mount — no threads, no races, no timeouts
-    backend_t l_opfs = wasmfs_create_opfs_backend();
-    if (!l_opfs) {
-        log_it(L_ERROR, "wasmfs_create_opfs_backend() failed — OPFS not available");
-        return -1;
-    }
-    // Check if directory already exists before creating
-    struct stat l_st;
-    if (stat(l_mount, &l_st) == 0) {
-        log_it(L_NOTICE, "Filesystem: OPFS directory '%s' already exists, skipping create", l_mount);
-    } else {
-        int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
-        if (l_rc != 0) {
-            log_it(L_ERROR, "wasmfs_create_directory('%s') failed: rc=%d", l_mount, l_rc);
-            return -1;
-        }
-    }
-    log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
+    // Emscripten >= 6.0 requires JSPI or a worker context to create the OPFS
+    // backend.  confcall_wasm_init() runs on the main browser thread and has no
+    // JSPI guarantee, so fall back to MEMFS (in-memory, non-persistent) which
+    // works everywhere.  Persistent cert storage can be re-added later via
+    // IndexedDB or a dedicated WASMFS worker init path.
+    log_it(L_WARNING, "WASMFS/OPFS disabled — using MEMFS "
+           "(Emscripten >= 6.0 main-thread OPFS restriction)");
+    s_init_memfs();
     return 0;
 }
-#else
+#endif
+
 static void s_init_memfs(void)
 {
     if (!g_sys_dir_path) {
@@ -131,7 +124,6 @@ static void s_init_memfs(void)
     }
     log_it(L_NOTICE, "Filesystem: Emscripten MEMFS at %s (in-memory, non-persistent)", g_sys_dir_path);
 }
-#endif
 #endif
 
 /* ========================================================================= */

@@ -1,3 +1,4 @@
+#include <dap_enc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -266,7 +267,8 @@ int main(int argc, char *argv[])
     dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);  // Clean output without timestamps/modules
 
     // Initialize Chipmunk module
-    dap_enc_chipmunk_init();
+    dap_common_init("chipmunk-performance-test", NULL);
+    dap_enc_init();  /* Full crypto init (chipmunk + SIMD dispatch) */
 
     // Allow enabling debug output via environment variable or command line
     char *debug_env = getenv("CHIPMUNK_DEBUG");

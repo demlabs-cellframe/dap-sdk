@@ -30,6 +30,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 
 #include <errno.h>
@@ -355,6 +356,8 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_mring_statement_eval");
     dap_common_init("test_chipmunk_mring_statement_eval", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     int rc = 0;
     if (!s_test_augmented_dim())              rc = 1;

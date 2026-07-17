@@ -18,6 +18,7 @@
  *   4. Priming the stack with a *different* pattern and repeating
  */
 
+#include <dap_enc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -71,6 +72,8 @@ static int s_params_equal(const chipmunk_hots_params_t *a_lhs,
 int main(void)
 {
     dap_common_init("chipmunk-hots-setup-determinism", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     chipmunk_hots_params_t l_reference;
     if (s_run_setup(&l_reference, 0xAA) != 0) {

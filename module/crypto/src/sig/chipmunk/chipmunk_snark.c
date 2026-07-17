@@ -581,15 +581,9 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
             return 0;
         }
     }
-    #undef CHIPMUNK_SNARK_QUOTIENT_CHECKS
-
-    /* 7. C1, C2, C3, C4 are verified implicitly:
-     *    z(X) = C1 + r*C2 + r^2*C3 + r^3*C4 and z(alpha)=0
-     *    with high probability over the random alpha from the subtractive set,
-     *    implies each Ci(alpha)=0. No need to expose b in the proof. */
-
     debug_if(1, L_DEBUG, "SNARK verify: all checks passed (%d quotient checks, ~138-bit soundness)",
              CHIPMUNK_SNARK_QUOTIENT_CHECKS);
+    #undef CHIPMUNK_SNARK_QUOTIENT_CHECKS
     return 1;
 }
 

@@ -23,11 +23,29 @@
 
 #include "dap_ring_buffer.h"
 #include "dap_common.h"
-#include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
 
 #define LOG_TAG "dap_ring_buffer"
+
+/**
+ * @brief Spin-wait pause hint for MPSC producer spinlock.
+ * Uses architecture-specific pause/yield instructions to reduce
+ * CPU power consumption and memory bus contention while spinning.
+ *
+ * TODO: move to dap_common.h if other code needs spin-wait hints.
+ *       DAP_AtomicLock/DAP_AtomicUnlock there lack this optimization.
+ */
+#if defined(DAP_PLATFORM_X86_64) || defined(DAP_PLATFORM_X86)
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#define DAP_SPIN_PAUSE() _mm_pause()
+#endif
+#elif defined(DAP_PLATFORM_ARM64) || defined(DAP_PLATFORM_ARM)
+#define DAP_SPIN_PAUSE() __asm__ volatile("yield" ::: "memory")
+#else
+#define DAP_SPIN_PAUSE() ((void)0)
+#endif
 
 /**
  * @brief Round up to next power of 2
@@ -57,23 +75,24 @@ dap_ring_buffer_t *dap_ring_buffer_create(size_t a_capacity) {
     
     // Round up to power of 2
     size_t l_capacity = s_next_power_of_2(a_capacity);
-    
+
     // Allocate ring buffer with flexible array member
     size_t l_size = sizeof(dap_ring_buffer_t) + l_capacity * sizeof(void*);
-    dap_ring_buffer_t *l_rb = (dap_ring_buffer_t*)aligned_alloc(DAP_RING_BUFFER_CACHE_LINE, l_size);
-    
+    dap_ring_buffer_t *l_rb = (dap_ring_buffer_t*)DAP_ALMALLOC(DAP_RING_BUFFER_CACHE_LINE, l_size);
+
     if (!l_rb) {
         log_it(L_CRITICAL, "Failed to allocate ring buffer of size %zu", l_size);
         return NULL;
     }
-    
+
     memset(l_rb, 0, l_size);
-    
+
     l_rb->capacity = l_capacity;
     l_rb->mask = l_capacity - 1;
-    
-    // Initialize atomics
+
+    // Initialize atomics and MPSC spinlock
     atomic_store_explicit(&l_rb->write_pos, 0, memory_order_relaxed);
+    atomic_flag_clear_explicit(&l_rb->write_lock, memory_order_relaxed);
     atomic_store_explicit(&l_rb->read_pos, 0, memory_order_relaxed);
     atomic_store_explicit(&l_rb->total_pushes, 0, memory_order_relaxed);
     atomic_store_explicit(&l_rb->total_pops, 0, memory_order_relaxed);
@@ -101,38 +120,48 @@ void dap_ring_buffer_delete(dap_ring_buffer_t *a_rb) {
     
     log_it(L_DEBUG, "Deleting ring buffer: capacity=%zu, total_pushes=%" PRIu64 ", total_pops=%" PRIu64 ", total_full=%" PRIu64 ", total_empty=%" PRIu64,
            a_rb->capacity, l_pushes, l_pops, l_full, l_empty);
-    
-    free(a_rb);
+
+    DAP_ALFREE(a_rb);
 }
 
 /**
- * @brief Push pointer into ring buffer (producer side)
+ * @brief Push pointer into ring buffer (producer side, MPSC-safe)
+ *
+ * Multiple producers synchronize via a lightweight spinlock on the write side.
+ * The single consumer (owning worker) pops lock-free.
  */
 bool dap_ring_buffer_push(dap_ring_buffer_t *a_rb, void *a_ptr) {
     if (!a_rb || !a_ptr) {
         return false;
     }
-    
-    // Load current positions
+
+    // Acquire producer spinlock with pause hint
+    while (atomic_flag_test_and_set_explicit(&a_rb->write_lock, memory_order_acquire))
+        DAP_SPIN_PAUSE();
+
+    // Load current positions (under spinlock, relaxed write_pos read is safe)
     size_t l_write = atomic_load_explicit(&a_rb->write_pos, memory_order_relaxed);
-    size_t l_read = atomic_load_explicit(&a_rb->read_pos, memory_order_acquire);
-    
+    size_t l_read  = atomic_load_explicit(&a_rb->read_pos, memory_order_acquire);
+
     // Check if full (next write position would equal read position)
     size_t l_next_write = (l_write + 1) & a_rb->mask;
     if (l_next_write == (l_read & a_rb->mask)) {
+        atomic_flag_clear_explicit(&a_rb->write_lock, memory_order_release);
         atomic_fetch_add_explicit(&a_rb->total_full, 1, memory_order_relaxed);
         return false;  // Buffer is full
     }
-    
+
     // Write data at current write position
     a_rb->data[l_write & a_rb->mask] = a_ptr;
-    
+
     // Advance write position with release semantics
-    // This ensures all previous writes are visible before updating write_pos
     atomic_store_explicit(&a_rb->write_pos, l_next_write, memory_order_release);
-    
+
+    // Release producer spinlock
+    atomic_flag_clear_explicit(&a_rb->write_lock, memory_order_release);
+
     atomic_fetch_add_explicit(&a_rb->total_pushes, 1, memory_order_relaxed);
-    
+
     return true;
 }
 

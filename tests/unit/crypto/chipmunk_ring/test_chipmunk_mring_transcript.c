@@ -10,6 +10,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 
 #include <errno.h>
@@ -238,6 +239,8 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_mring_transcript");
     dap_common_init("test_chipmunk_mring_transcript", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     test_ring_hash_canonical();
     test_ctx_msg_hash();

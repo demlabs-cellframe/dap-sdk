@@ -288,9 +288,12 @@ if(UNIX)
         endif()
         set(_LOPT "-sFORCE_FILESYSTEM=1")
         set(_LOPT "${_LOPT} -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','stringToUTF8']")
-        if(WASM_ENABLE_PTHREADS)
-            set(_LOPT "${_LOPT} -sWASMFS -lopfs.js")
-        endif()
+        # NOTE: WASMFS/OPFS disabled — Emscripten >= 6.0 requires JSPI or
+        # worker context for OPFS backend creation.  MEMFS is used instead.
+        # Re-enable when a worker-based init path is implemented.
+        # if(WASM_ENABLE_PTHREADS)
+        #     set(_LOPT "${_LOPT} -sWASMFS -lopfs.js")
+        # endif()
     endif()
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT}")

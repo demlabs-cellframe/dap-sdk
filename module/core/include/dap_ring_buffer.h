@@ -31,19 +31,21 @@
 #include <stdalign.h>
 
 /**
- * @brief Lock-free SPSC (Single Producer Single Consumer) ring buffer for inter-worker communication
- * 
+ * @brief MPSC (Multiple Producer Single Consumer) ring buffer for inter-worker communication
+ *
  * High-performance ring buffer optimized for passing pointers between worker threads.
- * Uses atomic operations for synchronization without locks.
- * 
+ * Multiple producers are synchronized via a lightweight spinlock on the write side;
+ * the single consumer (owning worker) pops without locking.
+ *
  * Features:
- * - Lock-free SPSC design (one producer, one consumer)
+ * - MPSC safe: multiple threads can push concurrently
+ * - Single consumer pops without locking (lock-free read side)
  * - Cache-line aligned to prevent false sharing
  * - Power-of-2 capacity for fast modulo operations
  * - Suitable for high-throughput inter-worker packet forwarding
- * 
+ *
  * Memory ordering:
- * - Producer uses release semantics for write_pos
+ * - Producer spinlock uses acquire/release semantics
  * - Consumer uses acquire semantics for read_pos
  * - Ensures proper memory visibility between threads
  */
@@ -53,7 +55,8 @@
 typedef struct dap_ring_buffer {
     // Producer-side (write) - isolated on own cache line
     alignas(DAP_RING_BUFFER_CACHE_LINE) atomic_size_t write_pos;
-    
+    atomic_flag write_lock;  // Spinlock for MPSC producer synchronization
+
     // Consumer-side (read) - isolated on own cache line
     alignas(DAP_RING_BUFFER_CACHE_LINE) atomic_size_t read_pos;
     

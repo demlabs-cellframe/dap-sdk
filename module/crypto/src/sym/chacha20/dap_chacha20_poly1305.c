@@ -129,7 +129,13 @@ static inline void s_chacha20_encrypt_dispatch(uint8_t *a_out, const uint8_t *a_
         const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
         const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE], uint32_t a_counter)
 {
-    if (a_len >= 256) {
+    /* SIMD ChaCha20 processes CHACHA_LANES blocks (64 bytes each) per iteration.
+     * AVX2/AVX2-512VL use 8 lanes → 512 bytes per iteration.
+     * The SIMD tail calls back into dap_chacha20_encrypt() → dispatch.
+     * If the threshold is smaller than the SIMD block size, data between
+     * [threshold, block_size) recurses infinitely.  Use 512 to cover all
+     * current SIMD variants (SSE2=256, AVX2=512, AVX2-512VL=512). */
+    if (a_len >= 512) {
         DAP_DISPATCH_INLINE_CALL(dap_chacha20_encrypt, a_out, a_in, a_len, a_key, a_nonce, a_counter);
         return;
     }
