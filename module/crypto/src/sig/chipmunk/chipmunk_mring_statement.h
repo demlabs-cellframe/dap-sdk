@@ -91,14 +91,16 @@ int chipmunk_mring_vcom_pack_b(chipmunk_poly_t *a_b_poly,
 int chipmunk_mring_vcom_commit(chipmunk_poly_t *a_Cb,
                                const chipmunk_mring_vcom_gens_t *a_gens,
                                const chipmunk_poly_t *a_b_poly,
-                               const chipmunk_poly_t a_r_b[CHIPMUNK_MRING_K_PK]);
+                               const chipmunk_poly_t a_r_b[CHIPMUNK_MRING_K_PK],
+                               uint64_t q);
 
 /*  Open a single-poly commitment:  v = a⁻¹ · (C − ⟨H′, r⟩).  Returns 0
  *  on success, -EDOM if the projection generator a is non-invertible. */
 int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
                              const chipmunk_poly_t *a_C,
                              const chipmunk_mring_vcom_gens_t *a_gens,
-                             const chipmunk_poly_t a_r[CHIPMUNK_MRING_K_PK]);
+                             const chipmunk_poly_t a_r[CHIPMUNK_MRING_K_PK],
+                             uint64_t q);
 
 /* ------------------------------------------------------------------------ *
  *  Norm check helper.  Returns 0 if every coefficient of `a_poly` is in
@@ -108,7 +110,8 @@ int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
  *  reconstruction of z_x.
  * ------------------------------------------------------------------------ */
 
-int chipmunk_mring_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound);
+int chipmunk_mring_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound,
+                           uint64_t q);
 
 /* ------------------------------------------------------------------------ *
  *  Unified inner-product statement (G2 v2.1 §3) — M3.2 surface.
@@ -178,7 +181,8 @@ int chipmunk_mring_augment_witness(chipmunk_mring_polyvec_t *a_b_tilde,
 int chipmunk_mring_eval_public_P(chipmunk_mring_polyvec_t *a_P_tilde,
                                  const chipmunk_poly_t *a_c,
                                  const chipmunk_poly_t *a_pks,
-                                 uint32_t a_n_ring);
+                                 uint32_t a_n_ring,
+                                 uint64_t q);
 
 /*
  *  Public target ρ(c) = c · t + c³ · Y_pk  ∈ R_q.
@@ -192,11 +196,6 @@ int chipmunk_mring_eval_public_rho_q(chipmunk_poly_t *a_rho,
                                      const chipmunk_poly_t *a_Y_pk,
                                      uint64_t q);
 
-int chipmunk_mring_eval_public_rho(chipmunk_poly_t *a_rho,
-                                   const chipmunk_poly_t *a_c,
-                                   uint32_t a_t,
-                                   const chipmunk_poly_t *a_Y_pk);
-
 /*
  *  Aggregate witness X = Σ_i b_i · x_i ∈ R_q^{K_PK}.
  *  Each x_i is laid out as K_PK consecutive polynomials in a_x flat:
@@ -207,7 +206,8 @@ int chipmunk_mring_eval_public_rho(chipmunk_poly_t *a_rho,
 int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
                                const uint8_t *a_b_indicator,
                                const chipmunk_poly_t *a_x_flat,
-                               uint32_t a_n_ring);
+                               uint32_t a_n_ring,
+                               uint64_t q);
 
 /*
  *  Inner product  ⟨b̃, P̃⟩ = Σ_i b̃_i · P̃_i  ∈ R_q.
@@ -217,7 +217,8 @@ int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
  */
 int chipmunk_mring_inner_product(chipmunk_poly_t *a_out,
                                  const chipmunk_mring_polyvec_t *a_b_tilde,
-                                 const chipmunk_mring_polyvec_t *a_P_tilde);
+                                 const chipmunk_mring_polyvec_t *a_P_tilde,
+                                 uint64_t q);
 
 /* ------------------------------------------------------------------------ *
  *  R_q inversion (M4.0a) — required by the halving fold to compute x_i⁻¹.
@@ -249,9 +250,6 @@ int chipmunk_mring_inner_product(chipmunk_poly_t *a_out,
 int chipmunk_mring_poly_invert_q(chipmunk_poly_t *a_inv_out,
                                  const chipmunk_poly_t *a_x,
                                  uint64_t q);
-
-int chipmunk_mring_poly_invert(chipmunk_poly_t *a_inv_out,
-                               const chipmunk_poly_t *a_x);
 
 /* ------------------------------------------------------------------------ *
  *  Bind-block helpers (G2 v2.1 §4) — M3.3.
@@ -308,7 +306,8 @@ int chipmunk_mring_bind_mask_sample(chipmunk_poly_t a_rho_x_out[CHIPMUNK_MRING_K
 int chipmunk_mring_bind_prove_z_x(chipmunk_poly_t a_z_x_out[CHIPMUNK_MRING_K_PK],
                                   const chipmunk_poly_t a_rho_x[CHIPMUNK_MRING_K_PK],
                                   const chipmunk_poly_t *a_c_star,
-                                  const chipmunk_poly_t a_X[CHIPMUNK_MRING_K_PK]);
+                                  const chipmunk_poly_t a_X[CHIPMUNK_MRING_K_PK],
+                                  uint64_t q);
 
 /*
  *  Verifier-side Schnorr-style reconstruction (G2 v2.1 §4):
@@ -329,7 +328,8 @@ int chipmunk_mring_bind_verify_reconstruct(chipmunk_poly_t *a_M_pk_out,
                                            const chipmunk_poly_t a_z_x[CHIPMUNK_MRING_K_PK],
                                            const chipmunk_poly_t *a_c_star,
                                            const chipmunk_poly_t *a_Y_pk,
-                                           const chipmunk_poly_t *a_T);
+                                           const chipmunk_poly_t *a_T,
+                                           uint64_t q);
 
 #ifdef __cplusplus
 }

@@ -349,15 +349,15 @@ int chipmunk_mring_transcript_bind_fs(
     uint8_t l_c_qpack[CHIPMUNK_MRING_POLY_QPACK];
     uint8_t l_mpk_qpack[CHIPMUNK_MRING_POLY_QPACK];
     uint8_t l_mt_qpack[CHIPMUNK_MRING_POLY_QPACK];
-    int rc = chipmunk_lrs_poly_qpack(l_c_qpack, a_c);
+    int rc = chipmunk_lrs_poly_qpack(l_c_qpack, a_c, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         return rc;
     }
-    rc = chipmunk_lrs_poly_qpack(l_mpk_qpack, a_M_pk);
+    rc = chipmunk_lrs_poly_qpack(l_mpk_qpack, a_M_pk, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         return rc;
     }
-    rc = chipmunk_lrs_poly_qpack(l_mt_qpack, a_M_T);
+    rc = chipmunk_lrs_poly_qpack(l_mt_qpack, a_M_T, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         return rc;
     }

@@ -86,7 +86,8 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
                               const uint8_t a_ring_hash[CHIPMUNK_MRING_HASH_BYTES],
                               const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES],
                               const uint8_t a_fold_opening_seed
-                                  [CHIPMUNK_MRING_FOLD_OPENING_BYTES]);
+                                  [CHIPMUNK_MRING_FOLD_OPENING_BYTES],
+                              uint64_t q);
 
 /*
  *  Verifier: open C_L/C_R via seed-derived openings, re-derive challenges,
@@ -99,7 +100,8 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
                                uint32_t a_t,
                                const chipmunk_poly_t *a_Y_pk,
                                const uint8_t a_ring_hash[CHIPMUNK_MRING_HASH_BYTES],
-                               const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES]);
+                               const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES],
+                               uint64_t q);
 
 /* ------------------------------------------------------------------------ *
  *  M4.1 wire pack/unpack (G3.1 §8 / M4.2 VCom commitments / M4.3 leaf-mask).
@@ -114,7 +116,8 @@ int chipmunk_fq6_ext_qpack(uint8_t *a_out, size_t a_out_size,
                              const chipmunk_fq6_ext_t *a_x);
 
 int chipmunk_fq6_ext_qunpack(chipmunk_fq6_ext_t *a_out,
-                               const uint8_t *a_in, size_t a_in_size);
+                               const uint8_t *a_in, size_t a_in_size,
+                               uint64_t q);
 
 int chipmunk_mring_fold_write(uint8_t *a_buf, size_t a_buf_size,
                               uint32_t a_fold_depth,
@@ -122,7 +125,8 @@ int chipmunk_mring_fold_write(uint8_t *a_buf, size_t a_buf_size,
 
 int chipmunk_mring_fold_read(chipmunk_mring_fold_proof_t *a_proof,
                              uint32_t a_fold_depth,
-                             const uint8_t *a_buf, size_t a_buf_size);
+                             const uint8_t *a_buf, size_t a_buf_size,
+                             uint64_t q);
 
 #ifdef __cplusplus
 }
