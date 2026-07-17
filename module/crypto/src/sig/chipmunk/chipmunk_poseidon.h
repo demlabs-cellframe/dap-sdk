@@ -81,6 +81,40 @@ int32_t chipmunk_poseidon_hash2(int32_t left, int32_t right);
  */
 int chipmunk_poseidon_init(void);
 
+/* ===== Phase 9.14g: Per-q Poseidon ===== */
+
+/** Per-q Poseidon parameters (heap-allocated MDS + round constants). */
+typedef struct chipmunk_poseidon_params {
+    uint64_t  q;                              /* field modulus */
+    int32_t   mds[CHIPMUNK_POSEIDON_T][CHIPMUNK_POSEIDON_T]; /* Cauchy MDS */
+    int32_t   rc[CHIPMUNK_POSEIDON_R][CHIPMUNK_POSEIDON_T];  /* round constants */
+} chipmunk_poseidon_params_t;
+
+/**
+ * @brief Compute Poseidon parameters for an arbitrary prime q.
+ *
+ * Builds the Cauchy MDS matrix M[i][j] = (x_i + y_j)^{-1} mod q
+ * (x = {0,1,2}, y = {3,4,5}) and generates round constants via
+ * SHAKE256("ChipmunkPoseidon-FRI-Poseidon1" || counter) with rejection
+ * sampling into [0, q).
+ *
+ * @param a_out  Output parameters struct.
+ * @param q      Prime modulus.
+ * @return 0 on success, negative on error.
+ */
+int chipmunk_poseidon_params_compute(chipmunk_poseidon_params_t *a_out, uint64_t q);
+
+/** @brief Free heap resources (currently no-op since MDS+RC are inline). */
+void chipmunk_poseidon_params_free(chipmunk_poseidon_params_t *a_params);
+
+/** @brief Per-q Poseidon permutation. */
+void chipmunk_poseidon_perm_q(int32_t state[CHIPMUNK_POSEIDON_T],
+                                const chipmunk_poseidon_params_t *a_params);
+
+/** @brief Per-q Poseidon hash2. */
+int32_t chipmunk_poseidon_hash2_q(int32_t left, int32_t right,
+                                    const chipmunk_poseidon_params_t *a_params);
+
 #ifdef __cplusplus
 }
 #endif

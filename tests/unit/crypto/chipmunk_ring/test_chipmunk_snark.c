@@ -47,7 +47,10 @@ static void s_setup_basic(chipmunk_snark_ctx_t *ctx,
     memset(stmt, 0, sizeof(*stmt));
     stmt->ring = ring;
     stmt->ring_size = 2;
-    const uint8_t msg[] = "test-message";
+    /* FIX: use static to avoid dangling pointer after function return.
+     * The original code used a stack-local msg[] which became invalid
+     * after s_setup_basic returned, causing prover/verifier msg_hash mismatch. */
+    static const uint8_t msg[] = "test-message";
     stmt->message = msg;
     stmt->message_size = sizeof(msg);
 

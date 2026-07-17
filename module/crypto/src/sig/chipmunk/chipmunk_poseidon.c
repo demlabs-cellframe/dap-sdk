@@ -13,9 +13,14 @@
  */
 
 #include "chipmunk_poseidon.h"
+#include "chipmunk_field.h"
+#include "chipmunk_poly.h"
 #include <string.h>
+#include <stdlib.h>
 
 #include "dap_common.h"
+#include "dap_hash_shake256.h"
+#include "dap_memwipe.h"
 
 #define LOG_TAG "chipmunk_poseidon"
 
@@ -177,4 +182,148 @@ int32_t chipmunk_poseidon_hash2(int32_t left, int32_t right)
     int32_t state[3] = { 0, left, right };  /* capacity=0, rate=inputs */
     chipmunk_poseidon_perm(state);
     return state[0];  /* squeeze capacity word */
+}
+
+/* =========================================================================
+ * Phase 9.14g: Per-q Poseidon
+ * ========================================================================= */
+
+/* Parameterized modular reduction. */
+static inline int32_t s_freduce_q(int64_t a_val, uint64_t q)
+{
+    int64_t l_r = a_val % (int64_t)q;
+    if (l_r < 0) l_r += (int64_t)q;
+    return (int32_t)l_r;
+}
+
+/* Parameterized S-box: x → x^5 mod q. */
+static inline int32_t s_sbox_q(int32_t x, uint64_t q)
+{
+    int64_t x2 = (int64_t)x * x;
+    x2 %= (int64_t)q;
+    int64_t x4 = x2 * x2;
+    x4 %= (int64_t)q;
+    int64_t x5 = x4 * (int64_t)x;
+    return s_freduce_q(x5, q);
+}
+
+int chipmunk_poseidon_params_compute(chipmunk_poseidon_params_t *a_out, uint64_t q)
+{
+    if (!a_out || q == 0 || (q & 1u) == 0) return -1;
+
+    memset(a_out, 0, sizeof(*a_out));
+    a_out->q = q;
+
+    /* Build Cauchy MDS matrix: M[i][j] = (x_i + y_j)^{-1} mod q.
+     * x = {0, 1, 2}, y = {3, 4, 5}. */
+    static const int32_t s_x[3] = {0, 1, 2};
+    static const int32_t s_y[3] = {3, 4, 5};
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            int32_t l_denom = s_x[i] + s_y[j];
+            a_out->mds[i][j] = chipmunk_field_inv_q(l_denom, q);
+            if (a_out->mds[i][j] == 0) {
+                log_it(L_ERROR, "Poseidon: MDS element (%d,%d) not invertible for q=%lu",
+                       i, j, (unsigned long)q);
+                return -1;
+            }
+        }
+    }
+
+    /* Generate round constants via SHAKE256.
+     * Domain: "ChipmunkPoseidon-FRI-Poseidon1" || counter (4 bytes LE).
+     * Rejection-sample each value into [0, q). */
+    const char *l_domain = "ChipmunkPoseidon-FRI-Poseidon1";
+    const size_t l_domain_len = strlen(l_domain);
+
+    uint64_t l_state[25];
+    memset(l_state, 0, sizeof(l_state));
+    dap_hash_shake256_absorb(l_state, (const uint8_t *)l_domain, l_domain_len);
+
+    uint8_t l_block[DAP_SHAKE256_RATE];
+    size_t l_pos = DAP_SHAKE256_RATE;  /* force squeeze on first use */
+    size_t l_avail = 0;
+
+    for (uint32_t r = 0; r < CHIPMUNK_POSEIDON_R; ++r) {
+        for (uint32_t t = 0; t < CHIPMUNK_POSEIDON_T; ++t) {
+            /* Rejection-sample 3 bytes → [0, q).
+             * q < 2^22 for our primes, so 3 bytes (24 bits) suffice. */
+            for (;;) {
+                if (l_pos + 3 > l_avail) {
+                    dap_hash_shake256_squeezeblocks(l_block, 1, l_state);
+                    l_pos = 0;
+                    l_avail = DAP_SHAKE256_RATE;
+                }
+                uint32_t l_val = (uint32_t)l_block[l_pos]
+                               | ((uint32_t)l_block[l_pos + 1] << 8)
+                               | ((uint32_t)l_block[l_pos + 2] << 16);
+                l_pos += 3;
+                if (l_val < (uint32_t)q) {
+                    a_out->rc[r][t] = (int32_t)l_val;
+                    break;
+                }
+            }
+        }
+    }
+
+    dap_memwipe(l_block, sizeof(l_block));
+    dap_memwipe(l_state, sizeof(l_state));
+
+    log_it(L_DEBUG, "Poseidon: per-q params computed for q=%lu", (unsigned long)q);
+    return 0;
+}
+
+void chipmunk_poseidon_params_free(chipmunk_poseidon_params_t *a_params)
+{
+    (void)a_params;
+    /* MDS and RC are inline arrays — nothing to free. */
+}
+
+void chipmunk_poseidon_perm_q(int32_t state[CHIPMUNK_POSEIDON_T],
+                                const chipmunk_poseidon_params_t *a_params)
+{
+    uint64_t l_q = a_params->q;
+    int32_t s0 = state[0], s1 = state[1], s2 = state[2];
+
+    for (uint32_t i = 0; i < CHIPMUNK_POSEIDON_R; i++) {
+        /* Add round constants */
+        s0 = s_freduce_q((int64_t)s0 + a_params->rc[i][0], l_q);
+        s1 = s_freduce_q((int64_t)s1 + a_params->rc[i][1], l_q);
+        s2 = s_freduce_q((int64_t)s2 + a_params->rc[i][2], l_q);
+
+        /* S-box */
+        if (i < 4u || i >= 26u) {
+            s0 = s_sbox_q(s0, l_q);
+            s1 = s_sbox_q(s1, l_q);
+            s2 = s_sbox_q(s2, l_q);
+        } else {
+            s0 = s_sbox_q(s0, l_q);
+        }
+
+        /* MDS multiply */
+        int64_t r0 = (int64_t)a_params->mds[0][0] * s0
+                    + (int64_t)a_params->mds[0][1] * s1
+                    + (int64_t)a_params->mds[0][2] * s2;
+        int64_t r1 = (int64_t)a_params->mds[1][0] * s0
+                    + (int64_t)a_params->mds[1][1] * s1
+                    + (int64_t)a_params->mds[1][2] * s2;
+        int64_t r2 = (int64_t)a_params->mds[2][0] * s0
+                    + (int64_t)a_params->mds[2][1] * s1
+                    + (int64_t)a_params->mds[2][2] * s2;
+        s0 = s_freduce_q(r0, l_q);
+        s1 = s_freduce_q(r1, l_q);
+        s2 = s_freduce_q(r2, l_q);
+    }
+
+    state[0] = s0;
+    state[1] = s1;
+    state[2] = s2;
+}
+
+int32_t chipmunk_poseidon_hash2_q(int32_t left, int32_t right,
+                                    const chipmunk_poseidon_params_t *a_params)
+{
+    int32_t state[3] = { 0, left, right };
+    chipmunk_poseidon_perm_q(state, a_params);
+    return state[0];
 }

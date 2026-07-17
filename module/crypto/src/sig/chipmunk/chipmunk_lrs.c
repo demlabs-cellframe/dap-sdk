@@ -336,9 +336,11 @@ int chipmunk_lrs_poly_chknorm_centered(const chipmunk_poly_t *a_poly,
             return -EINVAL;
         }
         l_c = s_center_q(l_c);
-        /* Half-open interval [-bound, bound) to match zpack encoding
-         * which stores coeff + bias in [0, 2*bias-1] using Z_BITS bits. */
-        if (l_c < -a_bound || l_c >= a_bound) {
+        /* Closed interval [-bound, bound] to match h_to_short_poly which
+         * generates coefficients in [-bound, +bound] inclusive (range = 2*bound+1).
+         * The previous half-open [-bound, bound) incorrectly rejected the
+         * maximum value +bound, causing "witness within B_x" test failures. */
+        if (l_c < -a_bound || l_c > a_bound) {
             return 1;
         }
     }
