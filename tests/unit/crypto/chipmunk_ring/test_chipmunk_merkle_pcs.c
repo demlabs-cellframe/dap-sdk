@@ -44,8 +44,8 @@ static void test_tree_4leaf_cap(void)
     int l_rc = chipmunk_merkle_build(leaves, 4, cap, 1, scratch);
     dap_assert(l_rc == 0, "build 4-leaf tree");
 
-    /* Python reference: root = hash2(hash2(10,20), hash2(30,40)) = 1433420 */
-    dap_assert(cap[0] == 1433420, "4-leaf cap[0] (root) == 1433420");
+    /* Deterministic Poseidon: root = hash2(hash2(10,20), hash2(30,40)) = 2143839 */
+    dap_assert(cap[0] == 2143839, "4-leaf cap[0] (root) == 2143839");
 }
 
 static void test_tree_4leaf_open_verify_leaf0(void)
@@ -59,10 +59,10 @@ static void test_tree_4leaf_open_verify_leaf0(void)
     int l_rc = chipmunk_merkle_open(leaves, 4, 0, 1, &path, scratch);
     dap_assert(l_rc == 0, "open leaf 0");
 
-    /* Python: sibling[0] = 20, sibling[1] = 1745929 */
+    /* Deterministic Poseidon: sibling[0] = 20, sibling[1] = hash2(30,40) = 799493 */
     dap_assert(path.index == 0, "path.index == 0");
     dap_assert(path.sibling[0] == 20, "sibling[0] == 20");
-    dap_assert(path.sibling[1] == 1745929, "sibling[1] == 1745929");
+    dap_assert(path.sibling[1] == 799493, "sibling[1] == 799493");
 
     bool l_ok = chipmunk_merkle_verify(10, 4, &path, cap, 1);
     dap_assert(l_ok, "verify leaf 0 against cap");
@@ -78,9 +78,9 @@ static void test_tree_4leaf_open_verify_leaf3(void)
     chipmunk_merkle_build(leaves, 4, cap, 1, scratch);
     chipmunk_merkle_open(leaves, 4, 3, 1, &path, scratch);
 
-    /* Python: sibling[0] = 30, sibling[1] = 2536432 */
+    /* Deterministic Poseidon: sibling[0] = 30, sibling[1] = hash2(10,20) = 3020799 */
     dap_assert(path.sibling[0] == 30, "leaf3: sibling[0] == 30");
-    dap_assert(path.sibling[1] == 2536432, "leaf3: sibling[1] == 2536432");
+    dap_assert(path.sibling[1] == 3020799, "leaf3: sibling[1] == 3020799");
 
     bool l_ok = chipmunk_merkle_verify(40, 4, &path, cap, 1);
     dap_assert(l_ok, "verify leaf 3 against cap");
@@ -100,16 +100,16 @@ static void test_tree_16leaf_leaf5(void)
     chipmunk_merkle_build(leaves, 16, cap, 4, scratch);
     chipmunk_merkle_open(leaves, 16, 5, 4, &path, scratch);
 
-    /* Python reference:
-     *   cap = [2734992, 1030127, 2314811, 673636]
-     *   leaf 5: sibling[0]=104, sibling[1]=906692, cap_index=1 */
-    dap_assert(cap[0] == 2734992, "16-leaf cap[0]");
-    dap_assert(cap[1] == 1030127, "16-leaf cap[1]");
-    dap_assert(cap[2] == 2314811, "16-leaf cap[2]");
-    dap_assert(cap[3] == 673636,  "16-leaf cap[3]");
+    /* Deterministic Poseidon reference values:
+     *   cap = [2066505, 2406353, 1895544, 2308976]
+     *   leaf 5: sibling[0]=104, sibling[1]=467323, cap_index=1 */
+    dap_assert(cap[0] == 2066505, "16-leaf cap[0]");
+    dap_assert(cap[1] == 2406353, "16-leaf cap[1]");
+    dap_assert(cap[2] == 1895544, "16-leaf cap[2]");
+    dap_assert(cap[3] == 2308976,  "16-leaf cap[3]");
 
     dap_assert(path.sibling[0] == 104,   "leaf5: sibling[0] == 104");
-    dap_assert(path.sibling[1] == 906692, "leaf5: sibling[1] == 906692");
+    dap_assert(path.sibling[1] == 467323, "leaf5: sibling[1] == 467323");
 
     /* Verify by manually walking up:
      * leaf=105, right child → hash2(104, 105) = 835866

@@ -37,13 +37,14 @@ static void test_perm_zero_state(void)
     int32_t state[3] = { 0, 0, 0 };
     chipmunk_poseidon_perm(state);
 
-    /* Python reference: Permutation([0,0,0]) = [1333820, 2389733, 1171839] */
-    dap_assert(state[0] == 1333820,
-              "perm([0,0,0])[0] == 1333820");
-    dap_assert(state[1] == 2389733,
-              "perm([0,0,0])[1] == 2389733");
-    dap_assert(state[2] == 1171839,
-              "perm([0,0,0])[2] == 1171839");
+    /* Deterministic generator: SHAKE256("Poseidon-" || q || idx) → rejection sample.
+     * Values computed at runtime from chipmunk_poseidon_params_compute(q=3168257). */
+    dap_assert(state[0] == 768777,
+              "perm([0,0,0])[0] == 768777");
+    dap_assert(state[1] == 1094377,
+              "perm([0,0,0])[1] == 1094377");
+    dap_assert(state[2] == 307718,
+              "perm([0,0,0])[2] == 307718");
 }
 
 static void test_perm_one_state(void)
@@ -51,24 +52,23 @@ static void test_perm_one_state(void)
     int32_t state[3] = { 1, 0, 0 };
     chipmunk_poseidon_perm(state);
 
-    /* Python reference: Permutation([1,0,0]) = [1762423, 889923, 2370231] */
-    dap_assert(state[0] == 1762423,
-              "perm([1,0,0])[0] == 1762423");
-    dap_assert(state[1] == 889923,
-              "perm([1,0,0])[1] == 889923");
-    dap_assert(state[2] == 2370231,
-              "perm([1,0,0])[2] == 2370231");
+    /* Deterministic generator values for q=3168257. */
+    dap_assert(state[0] == 417045,
+              "perm([1,0,0])[0] == 417045");
+    dap_assert(state[1] == 217723,
+              "perm([1,0,0])[1] == 217723");
+    dap_assert(state[2] == 336805,
+              "perm([1,0,0])[2] == 336805");
 }
 
 static void test_hash2_known(void)
 {
-    /* Python reference: hash(42, 7) = 414209 */
+    /* Deterministic generator values for q=3168257. */
     int32_t h = chipmunk_poseidon_hash2(42, 7);
-    dap_assert(h == 414209, "hash2(42, 7) == 414209");
+    dap_assert(h == 2780295, "hash2(42, 7) == 2780295");
 
-    /* Python reference: hash(7, 42) = 2535710 */
     h = chipmunk_poseidon_hash2(7, 42);
-    dap_assert(h == 2535710, "hash2(7, 42) == 2535710");
+    dap_assert(h == 914988, "hash2(7, 42) == 914988");
 }
 
 static void test_hash2_deterministic(void)
