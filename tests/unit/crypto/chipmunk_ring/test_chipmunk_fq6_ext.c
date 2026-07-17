@@ -265,7 +265,7 @@ static bool s_test_embed_project(void)
             chipmunk_poly_t la = a, lb = b;
             dap_assert(chipmunk_poly_ntt(&la) == 0, "ntt");
             dap_assert(chipmunk_poly_ntt(&lb) == 0, "ntt");
-            chipmunk_poly_mul_ntt(&ab, &la, &lb);
+            chipmunk_poly_mul_ntt_q(&ab, &la, &lb, (uint64_t)CHIPMUNK_Q);
             dap_assert(chipmunk_poly_invntt(&ab) == 0, "invntt");
         }
         chipmunk_fq6_ext_embed(&eab_rhs, &ab);
@@ -370,7 +370,7 @@ static bool s_test_frobenius_trace(void)
         dap_assert(chipmunk_fq6_ext_trace(&ta, &a) == 0, "Tr(a)");
         dap_assert(chipmunk_fq6_ext_trace(&tb, &b) == 0, "Tr(b)");
         dap_assert(chipmunk_fq6_ext_trace(&tab, &ab) == 0, "Tr(a+b)");
-        dap_assert(chipmunk_poly_add(&ta_plus_tb, &ta, &tb) == 0, "poly add");
+        dap_assert(chipmunk_poly_add_q(&ta_plus_tb, &ta, &tb, (uint64_t)CHIPMUNK_Q) == 0, "poly add");
         dap_assert(s_poly_eq(&tab, &ta_plus_tb), "Tr(a+b) == Tr(a)+Tr(b)");
     }
     return true;

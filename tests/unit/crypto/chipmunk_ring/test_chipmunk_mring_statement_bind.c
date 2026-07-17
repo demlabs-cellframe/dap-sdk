@@ -215,8 +215,8 @@ static bool s_run_bind_round(uint8_t a_salt,
 
     /* Y_pk = A_pk · X,  T = A_T · X. */
     chipmunk_poly_t Y_pk, T;
-    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
-    dap_assert(chipmunk_lrs_relation_eval(&T,    A_T,  X) == 0, "T");
+    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X, (uint64_t)CHIPMUNK_Q) == 0, "Y_pk");
+    dap_assert(chipmunk_lrs_relation_eval(&T,    A_T,  X, (uint64_t)CHIPMUNK_Q) == 0, "T");
 
     /* Sample mask ρ_x and the bind challenge c*. */
     uint8_t mask_seed[32];
@@ -244,7 +244,7 @@ static bool s_run_bind_round(uint8_t a_salt,
             dap_assert(chipmunk_mring_bind_mask_sample(rho_x, mask_seed, att) == 0,
                        "ρ_x resample");
         }
-        rc_prove = chipmunk_mring_bind_prove_z_x(z_x, rho_x, &c_star, X);
+        rc_prove = chipmunk_mring_bind_prove_z_x(z_x, rho_x, &c_star, X, (uint64_t)CHIPMUNK_Q);
     }
     dap_assert(rc_prove == 0,
                "bind_prove must converge within MAX_ATTEMPTS for honest X");
@@ -260,16 +260,16 @@ static bool s_run_bind_round(uint8_t a_salt,
         chipmunk_mring_bind_verify_reconstruct(&M_pk, &M_T,
                                                A_pk, A_T,
                                                z_x, &c_star,
-                                               &Y_pk, &T);
+                                               &Y_pk, &T, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc_verify == 0,
                "bind_verify_reconstruct must succeed (norm in range)");
 
     /* Honest reconstruction: M_pk should equal A_pk · ρ_x, and M_T should
      * equal A_T · ρ_x.  If z_x is tampered, this must FAIL. */
     chipmunk_poly_t expected_M_pk, expected_M_T;
-    dap_assert(chipmunk_lrs_relation_eval(&expected_M_pk, A_pk, rho_x) == 0,
+    dap_assert(chipmunk_lrs_relation_eval(&expected_M_pk, A_pk, rho_x, (uint64_t)CHIPMUNK_Q) == 0,
                "expected M_pk");
-    dap_assert(chipmunk_lrs_relation_eval(&expected_M_T, A_T, rho_x) == 0,
+    dap_assert(chipmunk_lrs_relation_eval(&expected_M_T, A_T, rho_x, (uint64_t)CHIPMUNK_Q) == 0,
                "expected M_T");
 
     const bool match_pk = s_polys_equal(&M_pk, &expected_M_pk);
@@ -334,7 +334,7 @@ static bool s_test_verify_norm_gate(void)
         chipmunk_mring_bind_verify_reconstruct(&M_pk, &M_T,
                                                A_pk, A_T,
                                                z_x, &c_star,
-                                               &Y_pk, &T);
+                                               &Y_pk, &T, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc == -ERANGE,
                "verify_reconstruct: out-of-range z_x must return -ERANGE");
     return true;
@@ -370,7 +370,7 @@ static bool s_test_prove_abort_eagain(void)
     s_sample_c_star(&c_star, 0xBE);
 
     chipmunk_poly_t z_x[CHIPMUNK_MRING_K_PK];
-    const int rc = chipmunk_mring_bind_prove_z_x(z_x, rho_x, &c_star, X);
+    const int rc = chipmunk_mring_bind_prove_z_x(z_x, rho_x, &c_star, X, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc == -EAGAIN,
                "bind_prove: oversized witness must trigger -EAGAIN abort");
     return true;

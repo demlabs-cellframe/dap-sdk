@@ -673,9 +673,6 @@ int main(void)
 
     int rc = chipmunk_field_init();
     dap_assert(rc == 0, "chipmunk_field_init");
-    rc = chipmunk_fri_ntt_init();
-    dap_assert(rc == 0, "chipmunk_fri_ntt_init");
-
     log_it(L_INFO, "=== FRI commit phase tests ===");
 
     test_fri_zero_poly();

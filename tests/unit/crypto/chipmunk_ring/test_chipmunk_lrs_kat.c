@@ -187,8 +187,8 @@ static bool s_test_qpack_roundtrip_and_reject(void)
 
     uint8_t packed[CHIPMUNK_LRS_POLY_QPACK_BYTES];
     chipmunk_poly_t q;
-    dap_assert(chipmunk_lrs_poly_qpack(packed, &p) == 0, "qpack accepts centered/q coefficients");
-    dap_assert(chipmunk_lrs_poly_qunpack(&q, packed) == 0, "qunpack accepts canonical qpack");
+    dap_assert(chipmunk_lrs_poly_qpack(packed, &p, (uint64_t)CHIPMUNK_Q) == 0, "qpack accepts centered/q coefficients");
+    dap_assert(chipmunk_lrs_poly_qunpack(&q, packed, (uint64_t)CHIPMUNK_Q) == 0, "qunpack accepts canonical qpack");
     bool roundtrip_ok = true;
     for (size_t i = 0; i < CHIPMUNK_N; ++i) {
         int32_t expected = p.coeffs[i] < 0 ? p.coeffs[i] + CHIPMUNK_Q : p.coeffs[i];
@@ -200,7 +200,7 @@ static bool s_test_qpack_roundtrip_and_reject(void)
     packed[0] = (uint8_t)CHIPMUNK_Q;
     packed[1] = (uint8_t)(CHIPMUNK_Q >> 8);
     packed[2] = (uint8_t)(CHIPMUNK_Q >> 16);
-    dap_assert(chipmunk_lrs_poly_qunpack(&q, packed) != 0,
+    dap_assert(chipmunk_lrs_poly_qunpack(&q, packed, (uint64_t)CHIPMUNK_Q) != 0,
                "qunpack rejects coeff == q");
     return true;
 }
@@ -218,7 +218,7 @@ static bool s_test_deterministic_primitives(void)
     ok &= s_check_or_dump("k_expected_A_pk0_sha3", h, k_expected_A_pk0_sha3);
 
     dap_assert(chipmunk_lrs_derive_witness(x, k_x_seed) == 0, "derive witness");
-    dap_assert(chipmunk_lrs_poly_chknorm_centered(&x[0], CHIPMUNK_LRS_WITNESS_BOUND) == 0,
+    dap_assert(chipmunk_lrs_poly_chknorm_centered(&x[0], CHIPMUNK_LRS_WITNESS_BOUND, (uint64_t)CHIPMUNK_Q) == 0,
                "witness within B_x");
     s_poly_hash(&x[0], h);
     ok &= s_check_or_dump("k_expected_x0_sha3", h, k_expected_x0_sha3);
@@ -331,9 +331,9 @@ static bool s_test_pop_roundtrip_and_gates(void)
                "PoP keypair generation");
 
     dap_assert(chipmunk_lrs_pop_create(pop, CHIPMUNK_LRS_POP_BYTES, &sk,
-                                       k_pop_randomness_seed) == 0,
+                                       k_pop_randomness_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "PoP create accepts fixed randomness");
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) == 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk, (uint64_t)CHIPMUNK_Q) == 0,
                "PoP verify accepts honest proof");
 
     /* Wire layout self-check: header + responses must equal exactly POP_BYTES. */
@@ -349,50 +349,50 @@ static bool s_test_pop_roundtrip_and_gates(void)
     uint8_t *pop2 = DAP_NEW_Z_SIZE(uint8_t, CHIPMUNK_LRS_POP_BYTES);
     dap_assert(pop2 != NULL, "PoP buffer alloc 2");
     dap_assert(chipmunk_lrs_pop_create(pop2, CHIPMUNK_LRS_POP_BYTES, &sk,
-                                       k_pop_randomness_seed) == 0,
+                                       k_pop_randomness_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "PoP create deterministic re-run");
     dap_assert(memcmp(pop, pop2, CHIPMUNK_LRS_POP_BYTES) == 0,
                "PoP create reproducible for identical inputs");
     DAP_DELETE(pop2);
 
     /* Negative: wrong size. */
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES - 1u, &pk) != 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES - 1u, &pk, (uint64_t)CHIPMUNK_Q) != 0,
                "PoP verify rejects short buffer");
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES + 1u, &pk) != 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES + 1u, &pk, (uint64_t)CHIPMUNK_Q) != 0,
                "PoP verify rejects long buffer");
 
     /* Negative: bad magic. */
     pop[0] ^= 0xff;
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk, (uint64_t)CHIPMUNK_Q) != 0,
                "PoP verify rejects bad magic");
     pop[0] ^= 0xff;
 
     /* Negative: non-zero reserved. */
     pop[20] = 1;
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk, (uint64_t)CHIPMUNK_Q) != 0,
                "PoP verify rejects non-zero reserved0");
     pop[20] = 0;
 
     /* Negative: tamper pk_hash (offset 32..63). */
     pop[32] ^= 0x01;
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk, (uint64_t)CHIPMUNK_Q) != 0,
                "PoP verify rejects tampered pk hash");
     pop[32] ^= 0x01;
 
     /* Negative: tamper challenge_seed (offset 64..95). */
     pop[64] ^= 0x01;
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk, (uint64_t)CHIPMUNK_Q) != 0,
                "PoP verify rejects tampered challenge seed");
     pop[64] ^= 0x01;
 
     /* Negative: tamper a response coefficient (first byte of first z poly). */
     pop[CHIPMUNK_LRS_POP_HEADER_BYTES] ^= 0x01;
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk, (uint64_t)CHIPMUNK_Q) != 0,
                "PoP verify rejects tampered response");
     pop[CHIPMUNK_LRS_POP_HEADER_BYTES] ^= 0x01;
 
     /* After untampering it must verify again. */
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) == 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk, (uint64_t)CHIPMUNK_Q) == 0,
                "PoP verify recovers after untampering");
 
     /* Negative: PoP bound to one key must not validate against a different key. */
@@ -404,7 +404,7 @@ static bool s_test_pop_roundtrip_and_gates(void)
     dap_assert(chipmunk_lrs_keypair_from_seeds(&pk_other, &sk_other,
                                                other_x_seed) == 0,
                "Other keypair generation");
-    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk_other) != 0,
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk_other, (uint64_t)CHIPMUNK_Q) != 0,
                "PoP verify rejects unrelated CLPK");
 
     DAP_DELETE(pop);
@@ -436,10 +436,10 @@ static bool s_test_sign_verify_and_gates(void)
 
     int rc = chipmunk_lrs_sign(sig, sig_size, &sk_a, ring, 2,
                                k_sig_message, sizeof(k_sig_message) - 1u,
-                               k_sig_randomness_seed);
+                               k_sig_randomness_seed, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc == 0, "sign accepts honest input");
     dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) == 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) == 0,
                "verify accepts honest signature");
 
     /* Determinism */
@@ -447,7 +447,7 @@ static bool s_test_sign_verify_and_gates(void)
     dap_assert(sig2 != NULL, "sig2 alloc");
     dap_assert(chipmunk_lrs_sign(sig2, sig_size, &sk_a, ring, 2,
                                  k_sig_message, sizeof(k_sig_message) - 1u,
-                                 k_sig_randomness_seed) == 0,
+                                 k_sig_randomness_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "sign deterministic re-run");
     dap_assert(memcmp(sig, sig2, sig_size) == 0, "signature byte-identical for same randomness");
     DAP_DELETE(sig2);
@@ -462,10 +462,10 @@ static bool s_test_sign_verify_and_gates(void)
     dap_assert(sig_b != NULL, "sig_b alloc");
     dap_assert(chipmunk_lrs_sign(sig_b, sig_size, &sk_b, ring, 2,
                                  k_sig_message, sizeof(k_sig_message) - 1u,
-                                 k_sig_randomness_seed) == 0,
+                                 k_sig_randomness_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "sign with key B");
     dap_assert(chipmunk_lrs_verify(sig_b, sig_size, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) == 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) == 0,
                "verify signature from key B");
     const size_t img_off = 8u * 4u + 32u;
     dap_assert(memcmp(sig + img_off, sig_b + img_off, CHIPMUNK_LRS_POLY_QPACK_BYTES) != 0,
@@ -478,7 +478,7 @@ static bool s_test_sign_verify_and_gates(void)
     const uint8_t other_msg[] = "another payload, same signer";
     dap_assert(chipmunk_lrs_sign(sig_a_other_msg, sig_size, &sk_a, ring, 2,
                                  other_msg, sizeof(other_msg) - 1u,
-                                 k_sig_randomness_seed) == 0,
+                                 k_sig_randomness_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "sign A with different message");
     dap_assert(memcmp(sig + img_off, sig_a_other_msg + img_off,
                       CHIPMUNK_LRS_POLY_QPACK_BYTES) == 0,
@@ -488,28 +488,28 @@ static bool s_test_sign_verify_and_gates(void)
     /* Wire gates: bad magic. */
     sig[0] ^= 0xff;
     dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects bad magic");
     sig[0] ^= 0xff;
 
     /* Wire gates: non-zero flags. */
     sig[12] = 1;
     dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects non-zero flags");
     sig[12] = 0;
 
     /* Wire gates: non-zero reserved0. */
     sig[24] = 1;
     dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects non-zero reserved0");
     sig[24] = 0;
 
     /* Wire gates: tampered ring_hash. */
     sig[32] ^= 0x01;
     dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects tampered ring hash");
     sig[32] ^= 0x01;
 
@@ -519,7 +519,7 @@ static bool s_test_sign_verify_and_gates(void)
         memcpy(saved, sig + img_off, sizeof(saved));
         memset(sig + img_off, 0, sizeof(saved));
         dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                       k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                       k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                    "verify rejects zero key image");
         memcpy(sig + img_off, saved, sizeof(saved));
     }
@@ -528,20 +528,20 @@ static bool s_test_sign_verify_and_gates(void)
     const size_t seed_off = 8u * 4u + 32u + CHIPMUNK_LRS_POLY_QPACK_BYTES;
     sig[seed_off] ^= 0x01;
     dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects tampered c0 seed");
     sig[seed_off] ^= 0x01;
 
     /* Wire gates: tampered response coefficient. */
     sig[CHIPMUNK_LRS_SIG_HEADER_BYTES] ^= 0x01;
     dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects tampered response");
     sig[CHIPMUNK_LRS_SIG_HEADER_BYTES] ^= 0x01;
 
     /* Wire gates: untampered must still verify. */
     dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) == 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) == 0,
                "verify recovers after untampering");
 
     /* Verify rejects modified message. */
@@ -549,7 +549,7 @@ static bool s_test_sign_verify_and_gates(void)
     memcpy(bad_msg, k_sig_message, sizeof(k_sig_message));
     bad_msg[0] ^= 0xa5;
     dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, 2,
-                                   bad_msg, sizeof(k_sig_message) - 1u) != 0,
+                                   bad_msg, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects modified message");
 
     /* Verify rejects unrelated ring (replace member with a fresh key). */
@@ -562,29 +562,29 @@ static bool s_test_sign_verify_and_gates(void)
                "decoy keypair generation");
     chipmunk_lrs_public_key_t bad_ring[2] = { pk_a, pk_c };
     dap_assert(chipmunk_lrs_verify(sig, sig_size, bad_ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects ring with substituted member");
 
     /* Verify rejects buffer size mismatch. */
     dap_assert(chipmunk_lrs_verify(sig, sig_size - 1u, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects short buffer");
     dap_assert(chipmunk_lrs_verify(sig, sig_size + 1u, ring, 2,
-                                   k_sig_message, sizeof(k_sig_message) - 1u) != 0,
+                                   k_sig_message, sizeof(k_sig_message) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                "verify rejects long buffer");
 
     /* Sign rejects ring without signer. */
     chipmunk_lrs_public_key_t bad_signer_ring[2] = { pk_c, pk_b };
     int rc_no = chipmunk_lrs_sign(sig, sig_size, &sk_a, bad_signer_ring, 2,
                                   k_sig_message, sizeof(k_sig_message) - 1u,
-                                  k_sig_randomness_seed);
+                                  k_sig_randomness_seed, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc_no != 0, "sign rejects ring without signer's CLPK");
 
     /* Sign rejects ring containing duplicates. */
     chipmunk_lrs_public_key_t dup_ring[2] = { pk_a, pk_a };
     int rc_dup = chipmunk_lrs_sign(sig, sig_size, &sk_a, dup_ring, 2,
                                    k_sig_message, sizeof(k_sig_message) - 1u,
-                                   k_sig_randomness_seed);
+                                   k_sig_randomness_seed, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc_dup != 0, "sign rejects ring with duplicate CLPK");
 
     DAP_DELETE(sig);
@@ -630,10 +630,10 @@ static bool s_test_larger_rings_and_signer_obliviousness(void)
     const uint8_t msg[] = "ring8 obliviousness regression";
     for (size_t s = 0; s < N; ++s) {
         int rc = chipmunk_lrs_sign(sigs[s], sig_size, &sk[s], ring, N,
-                                   msg, sizeof(msg) - 1u, k_sig_randomness_seed);
+                                   msg, sizeof(msg) - 1u, k_sig_randomness_seed, (uint64_t)CHIPMUNK_Q);
         dap_assert(rc == 0, "ring8 sign from each member");
         dap_assert(chipmunk_lrs_verify(sigs[s], sig_size, ring, N,
-                                       msg, sizeof(msg) - 1u) == 0,
+                                       msg, sizeof(msg) - 1u, (uint64_t)CHIPMUNK_Q) == 0,
                    "ring8 verify from each member");
     }
 
@@ -652,7 +652,7 @@ static bool s_test_larger_rings_and_signer_obliviousness(void)
     dap_assert(sig_alt != NULL, "ring8 alt msg buffer");
     const uint8_t alt_msg[] = "ring8 different payload";
     dap_assert(chipmunk_lrs_sign(sig_alt, sig_size, &sk[3], ring, N,
-                                 alt_msg, sizeof(alt_msg) - 1u, k_sig_randomness_seed) == 0,
+                                 alt_msg, sizeof(alt_msg) - 1u, k_sig_randomness_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "ring8 sign sk[3] alt message");
     dap_assert(memcmp(sigs[3] + img_off, sig_alt + img_off,
                       CHIPMUNK_LRS_POLY_QPACK_BYTES) == 0,
@@ -723,15 +723,15 @@ static bool s_test_wide_rings(void)
         dap_assert(sig != NULL, "wide ring sig buffer");
 
         int rc = chipmunk_lrs_sign(sig, sig_size, &signer_sk, ring, N,
-                                   msg, sizeof(msg) - 1u, k_sig_randomness_seed);
+                                   msg, sizeof(msg) - 1u, k_sig_randomness_seed, (uint64_t)CHIPMUNK_Q);
         dap_assert(rc == 0, "wide ring sign accepts");
         dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, N,
-                                       msg, sizeof(msg) - 1u) == 0,
+                                       msg, sizeof(msg) - 1u, (uint64_t)CHIPMUNK_Q) == 0,
                    "wide ring verify accepts");
 
         /* Boundary: verifier must refuse claimed ring_size != on-wire ring_size. */
         dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, N - 1u,
-                                       msg, sizeof(msg) - 1u) != 0,
+                                       msg, sizeof(msg) - 1u, (uint64_t)CHIPMUNK_Q) != 0,
                    "wide ring verify rejects shrunk ring");
 
         DAP_DELETE(sig);

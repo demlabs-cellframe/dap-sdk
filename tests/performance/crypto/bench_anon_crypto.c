@@ -158,7 +158,7 @@ static void bench_hots_sign_verify(void)
         chipmunk_hots_signature_t l_sig;
 
         clock_gettime(CLOCK_MONOTONIC, &l_start);
-        chipmunk_hots_sign(&l_sk, l_msg, sizeof(l_msg), &l_sig);
+        chipmunk_hots_sign(&l_sk, l_msg, sizeof(l_msg), &l_sig, &l_params);
         clock_gettime(CLOCK_MONOTONIC, &l_end);
         l_sign_total += time_ms(&l_start, &l_end);
 

@@ -274,7 +274,7 @@ static void test_pedersen_conservation(void)
     chipmunk_pedersen_derive_blinding(l_rr1, l_r1);
     chipmunk_pedersen_derive_blinding(l_rr2, l_r2);
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j)
-        chipmunk_poly_add(&l_rr_comb[j], &l_rr1[j], &l_rr2[j]);
+        chipmunk_poly_add_q(&l_rr_comb[j], &l_rr1[j], &l_rr2[j], (uint64_t)CHIPMUNK_Q);
 
     /* Expected: commit(500, r1+r2) should equal sum of output commitments */
     chipmunk_pedersen_commit_t l_c_expected;
@@ -480,9 +480,9 @@ static void test_hots_aggregation_pipeline(void)
     /* Sign with both keys */
     const uint8_t l_msg[] = "aggregation-test";
     chipmunk_hots_signature_t l_sig1, l_sig2;
-    l_rc = chipmunk_hots_sign(&l_sk1, l_msg, sizeof(l_msg), &l_sig1);
+    l_rc = chipmunk_hots_sign(&l_sk1, l_msg, sizeof(l_msg), &l_sig1, &l_params);
     dap_assert(l_rc == 0, "sign 1 OK");
-    l_rc = chipmunk_hots_sign(&l_sk2, l_msg, sizeof(l_msg), &l_sig2);
+    l_rc = chipmunk_hots_sign(&l_sk2, l_msg, sizeof(l_msg), &l_sig2, &l_params);
     dap_assert(l_rc == 0, "sign 2 OK");
 
     /* Verify individual signatures */

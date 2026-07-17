@@ -162,7 +162,7 @@ static void test_bind_joint_roundtrip(void)
                        &pks[i], A_pk, &x_flat[i * CHIPMUNK_LRS_K]) == 0,
                    "pk_i");
     }
-    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING) == 0,
+    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "aggregate X");
 
     chipmunk_poly_t Y_pk;
@@ -188,7 +188,8 @@ static void test_bind_joint_roundtrip(void)
     chipmunk_mring_fold_proof_t *l_proof = s_proof_new(l_depth);
     dap_assert(chipmunk_mring_fold_prove(l_proof, b_ind, N_RING, pks, &c,
                                          T_THRESH, &Y_pk, ring_hash, fs_seed,
-                                         opening_seed) == 0,
+                                         opening_seed,
+                                         (uint64_t)CHIPMUNK_Q) == 0,
                "fold prove");
 
     chipmunk_poly_t rho_x[CHIPMUNK_LRS_K];
@@ -218,18 +219,19 @@ static void test_bind_joint_roundtrip(void)
         dap_assert(chipmunk_mring_transcript_sample_c_star(&c_star, bind_fs)
                    == 0,
                    "c*");
-        rc_prove = chipmunk_mring_bind_prove_z_x(z_x, rho_x, &c_star, X);
+        rc_prove = chipmunk_mring_bind_prove_z_x(z_x, rho_x, &c_star, X, (uint64_t)CHIPMUNK_Q);
     }
     dap_assert(rc_prove == 0, "z_x prove converged");
 
     chipmunk_poly_t M_pk_v, M_T_v;
     dap_assert(chipmunk_mring_bind_verify_reconstruct(
-                   &M_pk_v, &M_T_v, A_pk, A_T, z_x, &c_star, &Y_pk, &T_tag)
+                   &M_pk_v, &M_T_v, A_pk, A_T, z_x, &c_star, &Y_pk, &T_tag, (uint64_t)CHIPMUNK_Q)
                == 0,
                "bind verify");
 
     dap_assert(chipmunk_mring_fold_verify(l_proof, N_RING, pks, &c, T_THRESH,
-                                          &Y_pk, ring_hash, fs_seed) == 0,
+                                          &Y_pk, ring_hash, fs_seed,
+                                          (uint64_t)CHIPMUNK_Q) == 0,
                "fold verify after bind path");
 
     s_proof_delete(l_proof);

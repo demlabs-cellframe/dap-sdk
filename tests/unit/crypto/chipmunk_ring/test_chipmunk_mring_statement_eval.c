@@ -105,12 +105,12 @@ static bool s_check_claim1_once(const chipmunk_poly_t *a_pks,
                "derive A_pk");
 
     chipmunk_poly_t X[CHIPMUNK_LRS_K];
-    dap_assert(chipmunk_mring_aggregate_X(X, a_b_indicator, a_x_flat, N_RING) == 0,
+    dap_assert(chipmunk_mring_aggregate_X(X, a_b_indicator, a_x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "aggregate_X");
 
     /* Y_pk = relation_eval(A_pk, X). */
     chipmunk_poly_t Y_pk;
-    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0,
+    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X, (uint64_t)CHIPMUNK_Q) == 0,
                "Y_pk = relation_eval(A_pk, X)");
 
     if (a_break_y_pk) {
@@ -145,15 +145,15 @@ static bool s_check_claim1_once(const chipmunk_poly_t *a_pks,
     dap_assert(chipmunk_mring_polyvec_alloc(
                    &P_tilde, chipmunk_mring_augmented_dim(N_RING)) == 0,
                "polyvec_alloc(P̃)");
-    dap_assert(chipmunk_mring_eval_public_P(&P_tilde, &c, a_pks, N_RING) == 0,
+    dap_assert(chipmunk_mring_eval_public_P(&P_tilde, &c, a_pks, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "eval_public_P");
 
     chipmunk_poly_t rho;
-    dap_assert(chipmunk_mring_eval_public_rho(&rho, &c, T_THRESH, &Y_pk) == 0,
+    dap_assert(chipmunk_mring_eval_public_rho_q(&rho, &c, T_THRESH, &Y_pk, (uint64_t)CHIPMUNK_Q) == 0,
                "eval_public_rho");
 
     chipmunk_poly_t lhs;
-    dap_assert(chipmunk_mring_inner_product(&lhs, &b_tilde, &P_tilde) == 0,
+    dap_assert(chipmunk_mring_inner_product(&lhs, &b_tilde, &P_tilde, (uint64_t)CHIPMUNK_Q) == 0,
                "inner_product");
 
     const bool passed = s_polys_equal(&lhs, &rho);
@@ -240,10 +240,10 @@ static bool s_test_aggregate_X_linearity(void)
 
     const uint8_t b00[2] = { 0, 0 }, b10[2] = { 1, 0 }, b01[2] = { 0, 1 }, b11[2] = { 1, 1 };
 
-    dap_assert(chipmunk_mring_aggregate_X(X_b00, b00, x_flat, N) == 0, "X(0,0)");
-    dap_assert(chipmunk_mring_aggregate_X(X_b10, b10, x_flat, N) == 0, "X(1,0)");
-    dap_assert(chipmunk_mring_aggregate_X(X_b01, b01, x_flat, N) == 0, "X(0,1)");
-    dap_assert(chipmunk_mring_aggregate_X(X_b11, b11, x_flat, N) == 0, "X(1,1)");
+    dap_assert(chipmunk_mring_aggregate_X(X_b00, b00, x_flat, N, (uint64_t)CHIPMUNK_Q) == 0, "X(0,0)");
+    dap_assert(chipmunk_mring_aggregate_X(X_b10, b10, x_flat, N, (uint64_t)CHIPMUNK_Q) == 0, "X(1,0)");
+    dap_assert(chipmunk_mring_aggregate_X(X_b01, b01, x_flat, N, (uint64_t)CHIPMUNK_Q) == 0, "X(0,1)");
+    dap_assert(chipmunk_mring_aggregate_X(X_b11, b11, x_flat, N, (uint64_t)CHIPMUNK_Q) == 0, "X(1,1)");
 
     /* X(0,0) must be zero. */
     for (uint32_t j = 0u; j < CHIPMUNK_LRS_K; ++j) {
@@ -253,7 +253,7 @@ static bool s_test_aggregate_X_linearity(void)
     }
     /* X(1,1) must equal X(1,0) + X(0,1). */
     for (uint32_t j = 0u; j < CHIPMUNK_LRS_K; ++j) {
-        dap_assert(chipmunk_poly_add(&X_sum[j], &X_b10[j], &X_b01[j]) == 0, "add");
+        dap_assert(chipmunk_poly_add_q(&X_sum[j], &X_b10[j], &X_b01[j]) == 0, "add", (uint64_t)CHIPMUNK_Q);
         dap_assert(s_polys_equal(&X_sum[j], &X_b11[j]),
                    "aggregate_X linearity: X(1,1) = X(1,0) + X(0,1)");
     }
@@ -272,7 +272,7 @@ static bool s_test_claim1_multiple_challenges(void)
         s_derive_x_for_member(&x_flat[i * CHIPMUNK_LRS_K], i);
         dap_assert(chipmunk_lrs_relation_eval(&pks[i], A_pk,
                                               &x_flat[i * CHIPMUNK_LRS_K]) == 0,
-                   "pk_i = relation_eval(A_pk, x_i)");
+                   "pk_i = relation_eval(A_pk, x_i)", (uint64_t)CHIPMUNK_Q);
     }
     const uint8_t b_indicator[N_RING] = { 1, 0, 1, 0 };  /* subset {0,2}, t=2 */
 
@@ -302,7 +302,7 @@ static bool s_test_soundness_tampered_y_pk(void)
         s_derive_x_for_member(&x_flat[i * CHIPMUNK_LRS_K], i);
         dap_assert(chipmunk_lrs_relation_eval(&pks[i], A_pk,
                                               &x_flat[i * CHIPMUNK_LRS_K]) == 0,
-                   "pk_i");
+                   "pk_i", (uint64_t)CHIPMUNK_Q);
     }
     const uint8_t b_indicator[N_RING] = { 1, 0, 1, 0 };
 
@@ -334,7 +334,7 @@ static bool s_test_soundness_tampered_b_square(void)
         s_derive_x_for_member(&x_flat[i * CHIPMUNK_LRS_K], i);
         dap_assert(chipmunk_lrs_relation_eval(&pks[i], A_pk,
                                               &x_flat[i * CHIPMUNK_LRS_K]) == 0,
-                   "pk_i");
+                   "pk_i", (uint64_t)CHIPMUNK_Q);
     }
     const uint8_t b_indicator[N_RING] = { 1, 0, 1, 0 };
 

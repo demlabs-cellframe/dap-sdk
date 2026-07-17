@@ -143,7 +143,7 @@ static void test_honest_fold_roundtrip(uint8_t a_fs_salt)
                "A_pk");
 
     chipmunk_poly_t X[CHIPMUNK_LRS_K];
-    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING) == 0,
+    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "aggregate X");
 
     chipmunk_poly_t Y_pk;
@@ -189,7 +189,7 @@ static void test_tampered_L_rejected(void)
     dap_assert(chipmunk_lrs_derive_A_pk(A_pk, CHIPMUNK_LRS_PARAMS_C0) == 0,
                "A_pk");
     chipmunk_poly_t X[CHIPMUNK_LRS_K];
-    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING) == 0,
+    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "X");
     chipmunk_poly_t Y_pk;
     dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
@@ -238,7 +238,7 @@ static void s_prove_fixture(chipmunk_mring_fold_proof_t *a_proof,
     dap_assert(chipmunk_lrs_derive_A_pk(A_pk, CHIPMUNK_LRS_PARAMS_C0) == 0,
                "A_pk");
     chipmunk_poly_t X[CHIPMUNK_LRS_K];
-    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING) == 0,
+    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "X");
     dap_assert(chipmunk_lrs_relation_eval(a_Y_pk, A_pk, X) == 0, "Y_pk");
 
@@ -372,11 +372,11 @@ static void test_vcom_commit_open_roundtrip(void)
     l_msg.coeffs[7] = -2;
 
     chipmunk_poly_t l_C;
-    dap_assert(chipmunk_mring_vcom_commit(&l_C, &gens, &l_msg, l_r) == 0,
+    dap_assert(chipmunk_mring_vcom_commit(&l_C, &gens, &l_msg, l_r, (uint64_t)CHIPMUNK_Q) == 0,
                "vcom commit");
 
     chipmunk_poly_t l_opened;
-    dap_assert(chipmunk_mring_vcom_open(&l_opened, &l_C, &gens, l_r) == 0,
+    dap_assert(chipmunk_mring_vcom_open(&l_opened, &l_C, &gens, l_r, (uint64_t)CHIPMUNK_Q) == 0,
                "vcom open");
 
     for (size_t i = 0u; i < CHIPMUNK_N; ++i) {
@@ -455,7 +455,7 @@ static void test_tampered_bstar_rejected(void)
     dap_assert(chipmunk_lrs_derive_A_pk(A_pk, CHIPMUNK_LRS_PARAMS_C0) == 0,
                "A_pk");
     chipmunk_poly_t X[CHIPMUNK_LRS_K];
-    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING) == 0,
+    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "X");
     chipmunk_poly_t Y_pk;
     dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
