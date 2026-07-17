@@ -30,6 +30,9 @@
 /* q = 3168257 */
 #define Q  CHIPMUNK_Q
 
+/* Per-q NTT context for encode_q calls. */
+static chipmunk_fri_ntt_ctx_t s_ntt_ctx;
+
 /* ========================================================================
  * Test 1: Zero polynomial — all evaluations should be 0.
  * ======================================================================== */
@@ -39,7 +42,7 @@ static void test_rs_zero_poly(void)
     int32_t codeword[2048];
 
     memset(poly, 0, sizeof(poly));
-    int rc = chipmunk_rs_encode(codeword, poly);
+    int rc = chipmunk_rs_encode_q(codeword, poly, &s_ntt_ctx);
     dap_assert(rc == 0, "zero poly encode rc");
 
     for (int i = 0; i < 2048; ++i) {
@@ -48,7 +51,7 @@ static void test_rs_zero_poly(void)
 
     /* Roundtrip */
     int32_t recovered[512];
-    rc = chipmunk_rs_interpolate(recovered, codeword);
+    rc = chipmunk_rs_interpolate_q(recovered, codeword, (uint64_t)Q, NULL);
     dap_assert(rc == 0, "zero poly interp rc");
     for (int i = 0; i < 512; ++i) {
         dap_assert(recovered[i] == 0, "zero poly roundtrip coeff");
@@ -66,7 +69,7 @@ static void test_rs_constant_poly(void)
 
     memset(poly, 0, sizeof(poly));
     poly[0] = 42;
-    int rc = chipmunk_rs_encode(codeword, poly);
+    int rc = chipmunk_rs_encode_q(codeword, poly, &s_ntt_ctx);
     dap_assert(rc == 0, "const poly encode rc");
 
     for (int i = 0; i < 2048; ++i) {
@@ -75,7 +78,7 @@ static void test_rs_constant_poly(void)
 
     /* Roundtrip */
     int32_t recovered[512];
-    rc = chipmunk_rs_interpolate(recovered, codeword);
+    rc = chipmunk_rs_interpolate_q(recovered, codeword, (uint64_t)Q, NULL);
     dap_assert(rc == 0, "const poly interp rc");
     dap_assert(recovered[0] == 42, "const poly roundtrip c0");
     for (int i = 1; i < 512; ++i) {
@@ -105,7 +108,7 @@ static void test_rs_linear_poly(void)
 
     memset(poly, 0, sizeof(poly));
     poly[1] = 1;  /* f(x) = x */
-    int rc = chipmunk_rs_encode(codeword, poly);
+    int rc = chipmunk_rs_encode_q(codeword, poly, &s_ntt_ctx);
     dap_assert(rc == 0, "linear poly encode rc");
 
     for (int t = 0; t < 6; ++t) {
@@ -115,7 +118,7 @@ static void test_rs_linear_poly(void)
 
     /* Roundtrip */
     int32_t recovered[512];
-    rc = chipmunk_rs_interpolate(recovered, codeword);
+    rc = chipmunk_rs_interpolate_q(recovered, codeword, (uint64_t)Q, NULL);
     dap_assert(rc == 0, "linear poly interp rc");
     dap_assert(recovered[0] == 0, "linear roundtrip c0");
     dap_assert(recovered[1] == 1, "linear roundtrip c1");
@@ -144,7 +147,7 @@ static void test_rs_quadratic_poly(void)
 
     memset(poly, 0, sizeof(poly));
     poly[2] = 1;  /* f(x) = x^2 */
-    int rc = chipmunk_rs_encode(codeword, poly);
+    int rc = chipmunk_rs_encode_q(codeword, poly, &s_ntt_ctx);
     dap_assert(rc == 0, "quadratic poly encode rc");
 
     for (int t = 0; t < 6; ++t) {
@@ -154,7 +157,7 @@ static void test_rs_quadratic_poly(void)
 
     /* Roundtrip */
     int32_t recovered[512];
-    rc = chipmunk_rs_interpolate(recovered, codeword);
+    rc = chipmunk_rs_interpolate_q(recovered, codeword, (uint64_t)Q, NULL);
     dap_assert(rc == 0, "quadratic poly interp rc");
     dap_assert(recovered[0] == 0, "quadratic roundtrip c0");
     dap_assert(recovered[1] == 0, "quadratic roundtrip c1");
@@ -187,7 +190,7 @@ static void test_rs_specific_poly(void)
     poly[1] = 3;
     poly[2] = 7;
     poly[5] = 2;
-    int rc = chipmunk_rs_encode(codeword, poly);
+    int rc = chipmunk_rs_encode_q(codeword, poly, &s_ntt_ctx);
     dap_assert(rc == 0, "specific poly encode rc");
 
     for (int t = 0; t < 6; ++t) {
@@ -199,13 +202,13 @@ static void test_rs_specific_poly(void)
     int32_t domain[2048];
     chipmunk_fri_ntt_coset_domain(domain, CHIPMUNK_RS_COSET_G);
     for (int t = 0; t < 6; ++t) {
-        int32_t h = chipmunk_rs_eval(poly, 6, domain[k_indices[t]]);
+        int32_t h = chipmunk_rs_eval_q(poly, 6, domain[k_indices[t]], (uint64_t)Q);
         dap_assert(h == expected[t], "specific poly Horner cross-check");
     }
 
     /* Roundtrip */
     int32_t recovered[512];
-    rc = chipmunk_rs_interpolate(recovered, codeword);
+    rc = chipmunk_rs_interpolate_q(recovered, codeword, (uint64_t)Q, NULL);
     dap_assert(rc == 0, "specific poly interp rc");
     for (int i = 0; i < 512; ++i) {
         int32_t exp = (i < 6) ? ((int[]){5, 3, 7, 0, 0, 2})[i] : 0;
@@ -236,7 +239,7 @@ static void test_rs_dense_poly(void)
     for (int i = 0; i < 512; ++i)
         poly[i] = i + 1;
 
-    int rc = chipmunk_rs_encode(codeword, poly);
+    int rc = chipmunk_rs_encode_q(codeword, poly, &s_ntt_ctx);
     dap_assert(rc == 0, "dense poly encode rc");
 
     for (int t = 0; t < 8; ++t) {
@@ -246,7 +249,7 @@ static void test_rs_dense_poly(void)
 
     /* Roundtrip */
     int32_t recovered[512];
-    rc = chipmunk_rs_interpolate(recovered, codeword);
+    rc = chipmunk_rs_interpolate_q(recovered, codeword, (uint64_t)Q, NULL);
     dap_assert(rc == 0, "dense poly interp rc");
     for (int i = 0; i < 512; ++i) {
         dap_assert(recovered[i] == (int32_t)(i + 1), "dense poly roundtrip coeff");
@@ -263,7 +266,7 @@ static void test_rs_horner_eval(void)
     int32_t poly[] = {5, 3, 7, 0, 0, 2};
     /* 5 + 300 + 70000 + 2*100^5 = 5 + 300 + 70000 + 20000000000
      * = 20000703005 mod 3168257 = ? */
-    int32_t val = chipmunk_rs_eval(poly, 6, 100);
+    int32_t val = chipmunk_rs_eval_q(poly, 6, 100, (uint64_t)Q);
     /* Python: (5 + 3*100 + 7*10000 + 2*100**5) % 3168257 */
     /* 100^5 = 10000000000.  2*10000000000 = 20000000000.
      * 20000000000 % 3168257 = 20000000000 - 6315*3168257 = 20000000000 - 20000004855
@@ -275,18 +278,18 @@ static void test_rs_horner_eval(void)
 
     /* f(x) = 1 at x = anything should be 1 */
     int32_t poly1[] = {1};
-    val = chipmunk_rs_eval(poly1, 1, 0);
+    val = chipmunk_rs_eval_q(poly1, 1, 0, (uint64_t)Q);
     dap_assert(val == 1, "Horner constant at x=0");
-    val = chipmunk_rs_eval(poly1, 1, Q - 1);
+    val = chipmunk_rs_eval_q(poly1, 1, Q - 1, (uint64_t)Q);
     dap_assert(val == 1, "Horner constant at x=q-1");
 
     /* f(x) = x at x = 42 should be 42 */
     int32_t poly_x[] = {0, 1};
-    val = chipmunk_rs_eval(poly_x, 2, 42);
+    val = chipmunk_rs_eval_q(poly_x, 2, 42, (uint64_t)Q);
     dap_assert(val == 42, "Horner x at x=42");
 
     /* f(x) = x at x = q-1 should be q-1 */
-    val = chipmunk_rs_eval(poly_x, 2, Q - 1);
+    val = chipmunk_rs_eval_q(poly_x, 2, Q - 1, (uint64_t)Q);
     dap_assert(val == Q - 1, "Horner x at x=q-1");
 }
 
@@ -303,7 +306,7 @@ static void test_rs_aliasing(void)
     memset(buf + 512, 0, 1536 * sizeof(int32_t));
 
     /* Encode in-place */
-    int rc = chipmunk_rs_encode(buf, buf);
+    int rc = chipmunk_rs_encode_q(buf, buf, &s_ntt_ctx);
     dap_assert(rc == 0, "alias encode rc");
 
     /* Verify first few evaluations match the dense poly reference */
@@ -315,7 +318,7 @@ static void test_rs_aliasing(void)
 
     /* Interpolate back */
     int32_t poly[512];
-    rc = chipmunk_rs_interpolate(poly, buf);
+    rc = chipmunk_rs_interpolate_q(poly, buf, (uint64_t)Q, NULL);
     dap_assert(rc == 0, "alias interp rc");
     for (int i = 0; i < 512; ++i) {
         dap_assert(poly[i] == (int32_t)(i + 1), "alias roundtrip coeff");
@@ -333,7 +336,7 @@ static void test_rs_codeword_range(void)
     for (int i = 0; i < 512; ++i)
         poly[i] = (i * 12345 + 67890) % Q;
 
-    int rc = chipmunk_rs_encode(codeword, poly);
+    int rc = chipmunk_rs_encode_q(codeword, poly, &s_ntt_ctx);
     dap_assert(rc == 0, "range encode rc");
 
     for (int i = 0; i < 2048; ++i) {
@@ -361,8 +364,8 @@ static void test_rs_injectivity(void)
         memcpy(poly2, poly, sizeof(poly));
         poly2[0] = (poly2[0] + 1) % Q;
 
-        chipmunk_rs_encode(cw1, poly);
-        chipmunk_rs_encode(cw2, poly2);
+        chipmunk_rs_encode_q(cw1, poly, &s_ntt_ctx);
+        chipmunk_rs_encode_q(cw2, poly2, &s_ntt_ctx);
 
         int same = 1;
         for (int i = 0; i < 2048 && same; ++i) {
@@ -385,8 +388,8 @@ static void test_rs_determinism(void)
     for (int i = 0; i < 512; ++i)
         poly[i] = (i * 7919 + 104729) % Q;
 
-    chipmunk_rs_encode(cw1, poly);
-    chipmunk_rs_encode(cw2, poly);
+    chipmunk_rs_encode_q(cw1, poly, &s_ntt_ctx);
+    chipmunk_rs_encode_q(cw2, poly, &s_ntt_ctx);
 
     for (int i = 0; i < 2048; ++i) {
         dap_assert(cw1[i] == cw2[i], "determinism");
@@ -409,12 +412,12 @@ static void test_rs_ntt_vs_horner(void)
         for (int i = 0; i < 512; ++i)
             poly[i] = (int32_t)((uint32_t)(trial * 31337 + i * 7919 + 1) % (uint32_t)Q);
 
-        chipmunk_rs_encode(codeword, poly);
+        chipmunk_rs_encode_q(codeword, poly, &s_ntt_ctx);
 
         /* Check 10 random-ish points */
         for (int t = 0; t < 10; ++t) {
             int k = (trial * 97 + t * 211) % 2048;
-            int32_t h = chipmunk_rs_eval(poly, 512, domain[k]);
+            int32_t h = chipmunk_rs_eval_q(poly, 512, domain[k], (uint64_t)Q);
             dap_assert(h == codeword[k], "NTT vs Horner");
         }
     }
@@ -436,12 +439,12 @@ static void test_rs_interpolate_horner_codeword(void)
         poly[i] = i + 1;
 
     for (int k = 0; k < 2048; ++k) {
-        codeword[k] = chipmunk_rs_eval(poly, 512, domain[k]);
+        codeword[k] = chipmunk_rs_eval_q(poly, 512, domain[k], (uint64_t)Q);
     }
 
     /* Interpolate back */
     int32_t recovered[512];
-    int rc = chipmunk_rs_interpolate(recovered, codeword);
+    int rc = chipmunk_rs_interpolate_q(recovered, codeword, (uint64_t)Q, NULL);
     dap_assert(rc == 0, "interp horner cw rc");
 
     for (int i = 0; i < 512; ++i) {
@@ -459,19 +462,19 @@ static void test_rs_invalid_args(void)
     memset(poly, 0, sizeof(poly));
 
     /* NULL pointers */
-    int rc = chipmunk_rs_encode(NULL, poly);
+    int rc = chipmunk_rs_encode_q(NULL, poly, &s_ntt_ctx);
     dap_assert(rc < 0, "encode NULL codeword");
-    rc = chipmunk_rs_encode(cw, NULL);
+    rc = chipmunk_rs_encode_q(cw, NULL, &s_ntt_ctx);
     dap_assert(rc < 0, "encode NULL poly");
-    rc = chipmunk_rs_interpolate(NULL, cw);
+    rc = chipmunk_rs_interpolate_q(NULL, cw, (uint64_t)Q, NULL);
     dap_assert(rc < 0, "interp NULL poly");
-    rc = chipmunk_rs_interpolate(poly, NULL);
+    rc = chipmunk_rs_interpolate_q(poly, NULL, (uint64_t)Q, NULL);
     dap_assert(rc < 0, "interp NULL codeword");
 
     /* chipmunk_rs_eval with NULL */
-    int32_t v = chipmunk_rs_eval(NULL, 10, 42);
+    int32_t v = chipmunk_rs_eval_q(NULL, 10, 42, (uint64_t)Q);
     dap_assert(v == 0, "eval NULL poly");
-    v = chipmunk_rs_eval(poly, 0, 42);
+    v = chipmunk_rs_eval_q(poly, 0, 42, (uint64_t)Q);
     dap_assert(v == 0, "eval zero n");
 }
 
@@ -491,6 +494,8 @@ int main(void)
     dap_assert(rc == 0, "chipmunk_field_init");
     rc = chipmunk_fri_ntt_init();
     dap_assert(rc == 0, "chipmunk_fri_ntt_init");
+    rc = chipmunk_fri_ntt_ctx_init(&s_ntt_ctx, (uint64_t)Q, CHIPMUNK_FRI_NTT_LOG);
+    dap_assert(rc == 0, "chipmunk_fri_ntt_ctx_init");
 
     log_it(L_INFO, "=== Reed-Solomon encoding tests ===");
 

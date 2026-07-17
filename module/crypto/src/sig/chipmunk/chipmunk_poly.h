@@ -37,54 +37,24 @@ extern "C" {
 #endif
 
 /**
- * @brief Transform polynomial to NTT form
- * 
+ * @brief Transform polynomial to NTT form (uses global NTT params for CHIPMUNK_Q).
+ *
  * @param a_poly Polynomial to transform
  * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
  */
 int chipmunk_poly_ntt(chipmunk_poly_t *a_poly);
 
 /**
- * @brief Inverse transform from NTT form
- * 
+ * @brief Inverse transform from NTT form (uses global NTT params for CHIPMUNK_Q).
+ *
  * @param a_poly Polynomial to transform
  * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
  */
 int chipmunk_poly_invntt(chipmunk_poly_t *a_poly);
 
 /**
- * @brief Add two polynomials modulo q
- * 
- * @param a_result Result polynomial
- * @param a_a First polynomial
- * @param a_b Second polynomial
- * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
- */
-int chipmunk_poly_add(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b);
-
-/**
- * @brief Subtract two polynomials modulo q
- * 
- * @param a_result Result polynomial
- * @param a_a First polynomial
- * @param a_b Second polynomial
- * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
- */
-int chipmunk_poly_sub(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b);
-
-/**
- * @brief Multiply two polynomials in NTT form
- * 
- * @param a_result Result polynomial
- * @param a_a First polynomial
- * @param a_b Second polynomial
- * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
- */
-int chipmunk_poly_pointwise(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b);
-
-/**
  * @brief Fill polynomial with uniformly distributed coefficients
- * 
+ *
  * @param a_poly Polynomial to fill
  * @param a_seed 32-byte seed for deterministic generation
  * @param a_nonce Nonce value to use with seed
@@ -94,7 +64,7 @@ int chipmunk_poly_uniform(chipmunk_poly_t *a_poly, const uint8_t a_seed[32], uin
 
 /**
  * @brief Generate challenge polynomial from hash
- * 
+ *
  * @param c Output challenge polynomial
  * @param hash Input hash bytes
  * @param hash_len Length of hash
@@ -104,16 +74,17 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
 
 /**
  * @brief Check polynomial norm
- * 
+ *
  * @param a_poly Polynomial to check
  * @param a_bound Maximum absolute value that coefficients can have
  * @return Returns 0 if all coefficients are within the bound, 1 otherwise
  */
 int chipmunk_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound);
+int chipmunk_poly_chknorm_q(const chipmunk_poly_t *a_poly, int32_t a_bound, uint64_t q);
 
 /**
  * @brief Create polynomial from hash of message
- * 
+ *
  * @param a_poly Output polynomial
  * @param a_message Message to hash
  * @param a_message_len Message length
@@ -122,60 +93,12 @@ int chipmunk_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound);
 int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, size_t a_message_len);
 
 /**
- * @brief Multiply two polynomials in NTT domain
- * 
- * @param a_result Output polynomial (can be same as input)
- * @param a_poly1 First polynomial (in NTT domain)
- * @param a_poly2 Second polynomial (in NTT domain)
- */
-void chipmunk_poly_mul_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
-
-/**
- * @brief Add two polynomials in NTT domain
- * 
- * @param a_result Output polynomial (can be same as input)
- * @param a_poly1 First polynomial (in NTT domain)
- * @param a_poly2 Second polynomial (in NTT domain)
- */
-void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
-
-void chipmunk_poly_sub_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
-
-/**
- * @brief Check if two polynomials are equal
- * 
- * @param a_poly1 First polynomial
- * @param a_poly2 Second polynomial
- * @return true if equal, false otherwise
- */
-bool chipmunk_poly_equal(const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
-
-/**
  * @brief Generate uniform polynomial with coefficients in range [-bound, bound]
  */
 int chipmunk_poly_uniform_mod_p(chipmunk_poly_t *a_poly, const uint8_t a_seed[36], int32_t a_bound);
 
 /**
- * @brief Safe modular reduction of a signed 64-bit value into [0, CHIPMUNK_Q).
- *
- * Centralised replacement for the three private copies of s_mod_q that lived in
- * chipmunk_lrs.c, chipmunk_snark.c, and chipmunk_range_proof.c.
- *
- * @param a_val  Signed 64-bit value to reduce.
- * @return       Value in [0, CHIPMUNK_Q).
- */
-static inline int32_t chipmunk_mod_q(int64_t a_val)
-{
-    int64_t l_r = a_val % (int64_t)CHIPMUNK_Q;
-    if (l_r < 0)
-        l_r += CHIPMUNK_Q;
-    return (int32_t)l_r;
-}
-
-/**
- * @brief Parameterized modular reduction into [0, q) (Phase 9.14a).
- *
- * Same as chipmunk_mod_q but for an arbitrary prime modulus.
+ * @brief Parameterized modular reduction into [0, q).
  *
  * @param a_val  Signed 64-bit value to reduce.
  * @param a_q    Prime modulus.
@@ -233,7 +156,7 @@ static inline int32_t chipmunk_sample_reject1(uint8_t a_raw, uint32_t a_range)
     return (int32_t)(a_raw % a_range);
 }
 
-/* ===== Phase 9.14a: Per-q polynomial operations ===== */
+/* ===== Per-q polynomial operations ===== */
 
 int chipmunk_poly_ntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_ctx);
 int chipmunk_poly_invntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_ctx);

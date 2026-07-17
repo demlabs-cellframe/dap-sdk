@@ -92,28 +92,7 @@ int chipmunk_deep_compose(chipmunk_deep_prover_t *prov,
                           int32_t z_point,
                           const int32_t gammas[]);
 
-/**
- * Verify DEEP composition at a single F_q test point x.
- *
- * Checks that:
- *   H(x) = Σ γ_i · [f_i(x) - f_i(z)] / (x - z)
- *
- * @param opening     DEEP opening (z_point, evals f_i(z)).
- * @param polys       The original committed polynomials.
- * @param num_polys   Number of polynomials.
- * @param gammas      Random combination weights.
- * @param composition The committed composition polynomial H(X).
- * @param x           Test point in F_q (must differ from z_point).
- * @return true if the relation holds, false otherwise.
- */
-bool chipmunk_deep_verify(const chipmunk_deep_opening_t *opening,
-                          const chipmunk_poly_t polys[],
-                          uint32_t num_polys,
-                          const int32_t gammas[],
-                          const int32_t composition[CHIPMUNK_N],
-                          int32_t x);
-
-/** @brief Per-q variant of chipmunk_deep_verify (Phase 9.13h). */
+/** @brief Verify DEEP composition at a single F_q test point x. */
 bool chipmunk_deep_verify_q(const chipmunk_deep_opening_t *opening,
                               const chipmunk_poly_t polys[],
                               uint32_t num_polys,

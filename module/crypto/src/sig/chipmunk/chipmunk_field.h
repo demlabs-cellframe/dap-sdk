@@ -30,62 +30,16 @@ extern "C" {
 #endif
 
 /* -------------------------------------------------------------------------
- * Modular inverse in F_q
- *
- * Returns a^{-1} mod CHIPMUNK_Q in [1, q), or 0 if a ≡ 0 (not invertible).
- *
- * Uses Fermat's little theorem: a^{-1} = a^{q-2} mod q.
- * Since q is prime and a ∈ [1, q-1], this always succeeds.
- *
- * For a = 0, returns 0 (caller should check before dividing).
+ * Non-_q wrappers: delegate to _q variants with CHIPMUNK_Q.
  * ---------------------------------------------------------------------- */
 
-/**
- * @brief Modular inverse via Fermat's little theorem.
- *
- * @param a  Element of F_q in [0, q).  If a == 0, returns 0.
- * @return   a^{-1} mod q in [1, q), or 0 if a == 0.
- */
+/** @brief Modular inverse via Fermat: a^{-1} mod CHIPMUNK_Q. */
 int32_t chipmunk_field_inv(int32_t a);
 
-/* -------------------------------------------------------------------------
- * Modular exponentiation in F_q
- *
- * Computes a^e mod q using square-and-multiply (binary method).
- * Handles negative bases by canonicalising to [0, q) first.
- * ---------------------------------------------------------------------- */
-
-/**
- * @brief Modular exponentiation: base^exp mod CHIPMUNK_Q.
- *
- * @param base  Base element (any int32_t, canonicalised internally).
- * @param exp   Exponent (unsigned, any value).
- * @return      base^exp mod q in [0, q).
- */
+/** @brief Modular exponentiation: base^exp mod CHIPMUNK_Q. */
 int32_t chipmunk_field_pow(int32_t base, uint32_t exp);
 
-/* -------------------------------------------------------------------------
- * Primitive root of unity of order 2^k
- *
- * Finds omega ∈ F_q* such that:
- *   - omega^{2^k} ≡ 1 (mod q)
- *   - omega^{2^{k-1}} ≡ q-1 ≡ -1 (mod q)  [order is exactly 2^k]
- *
- * This exists iff k ≤ 2-adicity(q-1) = 11 for CHIPMUNK_Q.
- *
- * Algorithm: probe generators g = 2, 3, 4, ... and compute
- *   omega = g^{(q-1)/2^k} mod q, then verify omega^N == q-1 where N = 2^{k-1}.
- * Since (q-1)/2^k is odd for k = 11 (specifically 1547 = 7×13×17), the first
- * few generators almost always work.
- * ---------------------------------------------------------------------- */
-
-/**
- * @brief Find a primitive 2^k-th root of unity in F_q.
- *
- * @param k        Exponent: find omega of order 2^k.  Must be ≤ 11 for CHIPMUNK_Q.
- * @param out_omega  Output: omega in [1, q).
- * @return          0 on success, -1 if no such root exists (k > 2-adicity).
- */
+/** @brief Primitive root of order 2^k in F_{CHIPMUNK_Q}. */
 int chipmunk_field_primitive_root_2k(uint32_t k, int32_t *out_omega);
 
 /* -------------------------------------------------------------------------

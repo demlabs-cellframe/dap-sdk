@@ -14,15 +14,6 @@
 
 #define LOG_TAG "chipmunk_rs"
 
-/* Field multiplication in [0, q). */
-static inline int32_t s_fqmul(int32_t a_a, int32_t a_b)
-{
-    int64_t l_t = (int64_t)a_a * (int64_t)a_b;
-    int32_t l_r = (int32_t)(l_t % (int64_t)CHIPMUNK_Q);
-    if (l_r < 0) l_r += (int32_t)CHIPMUNK_Q;
-    return l_r;
-}
-
 /* Parameterized field multiplication (Phase 9.13h). */
 static inline int32_t s_fqmul_q(int32_t a_a, int32_t a_b, uint64_t q)
 {
@@ -30,26 +21,6 @@ static inline int32_t s_fqmul_q(int32_t a_a, int32_t a_b, uint64_t q)
     int32_t l_r = (int32_t)(l_t % (int64_t)q);
     if (l_r < 0) l_r += (int32_t)q;
     return l_r;
-}
-
-int chipmunk_rs_encode(int32_t codeword[CHIPMUNK_RS_CODE_LEN],
-                        const int32_t poly[CHIPMUNK_RS_MSG_LEN])
-{
-    if (!codeword || !poly)
-        return -1;
-
-    if (codeword != poly) {
-        memcpy(codeword, poly, (size_t)CHIPMUNK_RS_MSG_LEN * sizeof(int32_t));
-        memset(codeword + CHIPMUNK_RS_MSG_LEN, 0,
-               (size_t)(CHIPMUNK_RS_CODE_LEN - CHIPMUNK_RS_MSG_LEN) * sizeof(int32_t));
-    } else {
-        memset(codeword + CHIPMUNK_RS_MSG_LEN, 0,
-               (size_t)(CHIPMUNK_RS_CODE_LEN - CHIPMUNK_RS_MSG_LEN) * sizeof(int32_t));
-    }
-
-    chipmunk_fri_ntt_coset_forward(codeword, CHIPMUNK_RS_COSET_G);
-
-    return 0;
 }
 
 int chipmunk_rs_encode_q(int32_t codeword[CHIPMUNK_RS_CODE_LEN],
@@ -71,12 +42,6 @@ int chipmunk_rs_encode_q(int32_t codeword[CHIPMUNK_RS_CODE_LEN],
     chipmunk_fri_ntt_coset_forward_q(codeword, CHIPMUNK_RS_COSET_G, ntt_ctx);
 
     return 0;
-}
-
-int chipmunk_rs_interpolate(int32_t poly[CHIPMUNK_RS_MSG_LEN],
-                              const int32_t codeword[CHIPMUNK_RS_CODE_LEN])
-{
-    return chipmunk_rs_interpolate_q(poly, codeword, (uint64_t)CHIPMUNK_Q, NULL);
 }
 
 int chipmunk_rs_interpolate_q(int32_t poly[CHIPMUNK_RS_MSG_LEN],
@@ -106,11 +71,6 @@ int chipmunk_rs_interpolate_q(int32_t poly[CHIPMUNK_RS_MSG_LEN],
     }
 
     return 0;
-}
-
-int32_t chipmunk_rs_eval(const int32_t *poly, uint32_t n, int32_t x)
-{
-    return chipmunk_rs_eval_q(poly, n, x, (uint64_t)CHIPMUNK_Q);
 }
 
 int32_t chipmunk_rs_eval_q(const int32_t *poly, uint32_t n, int32_t x, uint64_t q)

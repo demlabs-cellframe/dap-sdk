@@ -97,51 +97,25 @@ int chipmunk_poly_uniform(chipmunk_poly_t *a_poly, const uint8_t a_seed[32], uin
  * @return Returns 0 if all coefficients are within the bound, 1 otherwise
  */
 int chipmunk_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound) {
+    return chipmunk_poly_chknorm_q(a_poly, a_bound, (uint64_t)CHIPMUNK_Q);
+}
+
+int chipmunk_poly_chknorm_q(const chipmunk_poly_t *a_poly, int32_t a_bound, uint64_t q) {
     if (!a_poly) {
-        log_it(L_ERROR, "NULL input parameter in chipmunk_poly_chknorm");
-        return 1;  // Error condition
+        log_it(L_ERROR, "NULL input parameter in chipmunk_poly_chknorm_q");
+        return 1;
     }
-    
-    int l_count_exceeding = 0;
-    int32_t l_max_val = 0;
-    
+
+    int32_t l_q_half = (int32_t)(q / 2u);
     for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        // Получаем коэффициент в диапазоне [0, CHIPMUNK_Q-1]
         int32_t l_t = a_poly->coeffs[l_i];
-        
-        // Приводим к центрированному представлению [-CHIPMUNK_Q/2, CHIPMUNK_Q/2]
-        if (l_t >= CHIPMUNK_Q / 2)
-            l_t -= CHIPMUNK_Q;
-        
-        // Абсолютное значение для проверки нормы
+        if (l_t >= l_q_half)
+            l_t -= (int32_t)q;
         int32_t l_abs_val = (l_t < 0) ? -l_t : l_t;
-        
-        // Отслеживаем максимальное значение для отладки
-        if (l_abs_val > l_max_val) {
-            l_max_val = l_abs_val;
-        }
-        
-        // Проверка нормы
-        if (l_abs_val > a_bound) {
-            l_count_exceeding++;
-            
-            // Выводим детальную информацию о превышающих норму коэффициентах
-            if (l_count_exceeding <= 5) {  // Ограничиваем количество выводимых сообщений
-                log_it(L_DEBUG, "Coefficient at index %d exceeds bound: %d (bound: %d)", 
-                       l_i, l_t, a_bound);
-            }
-        }
+        if (l_abs_val > a_bound)
+            return 1;
     }
-    
-    if (l_count_exceeding > 0) {
-        log_it(L_INFO, "Polynomial norm check failed: %d coefficients exceed bound %d, max value: %d", 
-               l_count_exceeding, a_bound, l_max_val);
-        return 1;  // Norm exceeded
-    }
-    
-    log_it(L_DEBUG, "Polynomial norm check passed: all coefficients within bound %d, max value: %d", 
-           a_bound, l_max_val);
-    return 0;  // Norm within bounds
+    return 0;
 }
 
 /**

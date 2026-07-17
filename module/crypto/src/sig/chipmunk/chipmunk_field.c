@@ -20,15 +20,6 @@
  * Internal: safe modular reduction into [0, q)
  * ---------------------------------------------------------------------- */
 
-static inline int32_t s_freduce(int64_t a_val)
-{
-    int64_t l_r = a_val % (int64_t)CHIPMUNK_Q;
-    if (l_r < 0) {
-        l_r += (int64_t)CHIPMUNK_Q;
-    }
-    return (int32_t)l_r;
-}
-
 /* Parameterized modular reduction into [0, q). */
 static inline int32_t s_freduce_q(int64_t a_val, uint64_t q)
 {
@@ -48,16 +39,20 @@ static inline int32_t s_freduce_q(int64_t a_val, uint64_t q)
  * For a = 0, returns 0 (not invertible).
  * ---------------------------------------------------------------------- */
 
+/* Non-_q wrappers: delegate to _q variants with CHIPMUNK_Q. */
 int32_t chipmunk_field_inv(int32_t a)
 {
-    if (a <= 0 || a >= (int32_t)CHIPMUNK_Q) {
-        /* Canonicalise first */
-        a = s_freduce((int64_t)a);
-    }
-    if (a == 0) {
-        return 0;
-    }
-    return chipmunk_field_pow(a, (uint32_t)CHIPMUNK_Q - 2u);
+    return chipmunk_field_inv_q(a, (uint64_t)CHIPMUNK_Q);
+}
+
+int32_t chipmunk_field_pow(int32_t base, uint32_t exp)
+{
+    return chipmunk_field_pow_q(base, exp, (uint64_t)CHIPMUNK_Q);
+}
+
+int chipmunk_field_primitive_root_2k(uint32_t k, int32_t *out_omega)
+{
+    return chipmunk_field_primitive_root_2k_q(k, out_omega, (uint64_t)CHIPMUNK_Q);
 }
 
 /* Parameterized modular inverse via Fermat's little theorem. */
@@ -75,24 +70,6 @@ int32_t chipmunk_field_inv_q(int32_t a, uint64_t q)
 /* -------------------------------------------------------------------------
  * Modular exponentiation: binary square-and-multiply
  * ---------------------------------------------------------------------- */
-
-int32_t chipmunk_field_pow(int32_t base, uint32_t exp)
-{
-    /* Canonicalise base into [0, q) */
-    int64_t l_result = 1;
-    int64_t l_b = s_freduce((int64_t)base);
-    uint32_t l_e = exp;
-
-    while (l_e) {
-        if (l_e & 1u) {
-            l_result = s_freduce(l_result * l_b);
-        }
-        l_b = s_freduce(l_b * l_b);
-        l_e >>= 1;
-    }
-
-    return (int32_t)l_result;
-}
 
 /* Parameterized modular exponentiation: base^exp mod q. */
 int32_t chipmunk_field_pow_q(int32_t base, uint32_t exp, uint64_t q)
@@ -121,37 +98,6 @@ int32_t chipmunk_field_pow_q(int32_t base, uint32_t exp, uint64_t q)
  *   3. For g = 2, 3, ..., 99: compute omega = g^exp mod q
  *   4. Verify omega^{2^{k-1}} ≡ -1 (mod q)  — proves exact order 2^k
  * ---------------------------------------------------------------------- */
-
-int chipmunk_field_primitive_root_2k(uint32_t k, int32_t *out_omega)
-{
-    if (!out_omega || k == 0 || k > CHIPMUNK_FIELD_TWO_ADICITY) {
-        return -1;
-    }
-
-    /* exp = (q - 1) / 2^k */
-    uint32_t l_exp = ((uint32_t)CHIPMUNK_Q - 1u) >> k;
-
-    for (uint32_t l_g = 2; l_g < 100; ++l_g) {
-        int32_t l_o = chipmunk_field_pow((int32_t)l_g, l_exp);
-        if (l_o <= 1) {
-            continue;
-        }
-
-        /*
-         * Verify exact order 2^k: omega^{2^{k-1}} must equal q-1 (i.e. -1).
-         * If omega^{2^k} = 1 and omega^{2^{k-1}} = -1, the order is exactly 2^k.
-         */
-        int32_t l_half = chipmunk_field_pow(l_o, 1u << (k - 1));
-        if (l_half == (int32_t)CHIPMUNK_Q - 1) {
-            *out_omega = l_o;
-            return 0;
-        }
-    }
-
-    log_it(L_ERROR, "chipmunk_field: no primitive 2^%u-th root of unity found (q=%u)",
-           k, (unsigned)CHIPMUNK_Q);
-    return -1;
-}
 
 /* Parameterized primitive root of order 2^k in F_q.
  * Caller must ensure 2^k | (q-1) (checked via two-adicity elsewhere). */
@@ -208,48 +154,49 @@ static pthread_mutex_t g_field_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int s_field_init_locked(void)
 {
     int l_rc;
+    const uint64_t l_q = (uint64_t)CHIPMUNK_Q;
 
     /* omega_2048: primitive 2048-th root of unity */
-    l_rc = chipmunk_field_primitive_root_2k(11, &g_field_consts.omega_2048);
+    l_rc = chipmunk_field_primitive_root_2k_q(11, &g_field_consts.omega_2048, l_q);
     if (l_rc != 0) {
         log_it(L_CRITICAL, "chipmunk_field: failed to find omega_2048");
         return l_rc;
     }
 
     /* omega_2048^{-1} = omega_2048^{2047} */
-    g_field_consts.omega_2048_inv = chipmunk_field_pow(
-        g_field_consts.omega_2048, CHIPMUNK_FIELD_FRI_DOMAIN - 1u);
+    g_field_consts.omega_2048_inv = chipmunk_field_pow_q(
+        g_field_consts.omega_2048, CHIPMUNK_FIELD_FRI_DOMAIN - 1u, l_q);
 
     /* omega_512: primitive 512-th root = omega_2048^{4} */
-    g_field_consts.omega_512 = chipmunk_field_pow(g_field_consts.omega_2048, 4);
+    g_field_consts.omega_512 = chipmunk_field_pow_q(g_field_consts.omega_2048, 4, l_q);
 
     /* omega_512^{-1} = omega_512^{511} */
-    g_field_consts.omega_512_inv = chipmunk_field_pow(
-        g_field_consts.omega_512, CHIPMUNK_N - 1u);
+    g_field_consts.omega_512_inv = chipmunk_field_pow_q(
+        g_field_consts.omega_512, CHIPMUNK_N - 1u, l_q);
 
     /* N^{-1} mod q */
-    g_field_consts.inv_2048 = chipmunk_field_pow(
-        (int32_t)CHIPMUNK_FIELD_FRI_DOMAIN, (uint32_t)CHIPMUNK_Q - 2u);
-    g_field_consts.inv_512 = chipmunk_field_pow(
-        (int32_t)CHIPMUNK_N, (uint32_t)CHIPMUNK_Q - 2u);
+    g_field_consts.inv_2048 = chipmunk_field_pow_q(
+        (int32_t)CHIPMUNK_FIELD_FRI_DOMAIN, (uint32_t)CHIPMUNK_Q - 2u, l_q);
+    g_field_consts.inv_512 = chipmunk_field_pow_q(
+        (int32_t)CHIPMUNK_N, (uint32_t)CHIPMUNK_Q - 2u, l_q);
 
     /* Verification: omega^{2048} must be 1 */
-    int32_t l_check = chipmunk_field_pow(g_field_consts.omega_2048, CHIPMUNK_FIELD_FRI_DOMAIN);
+    int32_t l_check = chipmunk_field_pow_q(g_field_consts.omega_2048, CHIPMUNK_FIELD_FRI_DOMAIN, l_q);
     if (l_check != 1) {
         log_it(L_CRITICAL, "chipmunk_field: omega_2048^2048 = %d (expected 1)", l_check);
         return -1;
     }
 
     /* Verification: omega^{1024} must be -1 */
-    l_check = chipmunk_field_pow(g_field_consts.omega_2048, CHIPMUNK_FIELD_FRI_DOMAIN / 2);
+    l_check = chipmunk_field_pow_q(g_field_consts.omega_2048, CHIPMUNK_FIELD_FRI_DOMAIN / 2, l_q);
     if (l_check != (int32_t)CHIPMUNK_Q - 1) {
         log_it(L_CRITICAL, "chipmunk_field: omega_2048^1024 = %d (expected q-1)", l_check);
         return -1;
     }
 
     /* Verification: omega * omega_inv == 1 */
-    l_check = s_freduce((int64_t)g_field_consts.omega_2048 *
-                          (int64_t)g_field_consts.omega_2048_inv);
+    l_check = s_freduce_q((int64_t)g_field_consts.omega_2048 *
+                          (int64_t)g_field_consts.omega_2048_inv, l_q);
     if (l_check != 1) {
         log_it(L_CRITICAL, "chipmunk_field: omega * omega_inv = %d (expected 1)", l_check);
         return -1;

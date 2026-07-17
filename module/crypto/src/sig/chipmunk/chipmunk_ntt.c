@@ -261,95 +261,6 @@ const dap_ntt_params_t g_chipmunk_ntt_params = {
 };
 
 /**
- * @brief Barrett reduction implementation for HOTS q=3168257
- *
- * Branchless: uses sign-bit extraction and conditional masks instead of
- * data-dependent branches, preventing timing leaks in secret-dependent contexts.
- */
-int32_t chipmunk_ntt_barrett_reduce(int32_t a_value) {
-    // Barrett reduction constants for q = 3168257
-    // v = floor(2^26 / q) = floor(67108864 / 3168257) = 21
-    int32_t l_v = ((int64_t)a_value * 21) >> 26;
-    int32_t l_t = l_v * CHIPMUNK_Q;
-    l_t = a_value - l_t;
-
-    /* Branchless: mask_ge = (l_t >= Q) ? 0xFFFFFFFF : 0 */
-    int32_t mask_ge = (int32_t)(((uint32_t)l_t - (uint32_t)CHIPMUNK_Q) >> 31) - 1;
-    l_t -= mask_ge & CHIPMUNK_Q;
-
-    /* Branchless: mask_lt = (l_t < 0) ? 0xFFFFFFFF : 0 */
-    int32_t mask_lt = l_t >> 31;  /* arithmetic right shift: -1 if negative, 0 otherwise */
-    l_t += mask_lt & CHIPMUNK_Q;
-
-    return l_t;
-}
-
-/**
- * @brief Modulo q reduction for HOTS q=3168257
- *
- * Branchless: uses sign-bit extraction instead of conditional branch.
- */
-int32_t chipmunk_ntt_mod_reduce(int32_t a_value) {
-    int32_t l_t = a_value % CHIPMUNK_Q;
-    /* Branchless: mask_lt = (l_t < 0) ? 0xFFFFFFFF : 0 */
-    int32_t mask_lt = l_t >> 31;
-    l_t += mask_lt & CHIPMUNK_Q;
-    return l_t;
-}
-
-/**
- * @brief Montgomery reduction for HOTS q=3168257
- */
-void chipmunk_ntt_montgomery_reduce(int32_t *a_r) {
-    // Montgomery constants for q = 3168257, R = 2^22
-    const uint32_t QINV_HOTS = 3166785; // -q^(-1) mod 2^22 for q=3168257
-    
-    int64_t l_a = *a_r;
-    uint32_t l_u = (uint32_t)(l_a & 0x3FFFFF) * QINV_HOTS; // Mask for 22 bits
-    l_u &= 0x3FFFFF; // Keep only 22 bits
-    l_a += (int64_t)l_u * CHIPMUNK_Q;
-    *a_r = (int32_t)(l_a >> 22); // Shift by 22 for R = 2^22
-    
-    // Final reduction — branchless
-    int32_t mask_ge = (int32_t)(((uint32_t)*a_r - (uint32_t)CHIPMUNK_Q) >> 31) - 1;
-    *a_r -= mask_ge & CHIPMUNK_Q;
-    int32_t mask_lt = *a_r >> 31;
-    *a_r += mask_lt & CHIPMUNK_Q;
-}
-
-/**
- * @brief Montgomery multiplication for HOTS q=3168257
- */
-int32_t chipmunk_ntt_montgomery_multiply(int32_t a_a, int32_t a_b) {
-    // Montgomery multiplication for q = 3168257, R = 2^22
-    const uint32_t QINV_HOTS = 3166785; // -q^(-1) mod 2^22 for q=3168257
-    
-    int64_t l_t = (int64_t)a_a * a_b;
-    uint32_t l_u = (uint32_t)(l_t & 0x3FFFFF) * QINV_HOTS; // Mask for 22 bits
-    l_u &= 0x3FFFFF; // Keep only 22 bits
-    l_t += (int64_t)l_u * CHIPMUNK_Q;
-    int32_t result = (int32_t)(l_t >> 22); // Shift by 22 for R = 2^22
-    
-    // Final reduction — branchless
-    int32_t mask_ge = (int32_t)(((uint32_t)result - (uint32_t)CHIPMUNK_Q) >> 31) - 1;
-    result -= mask_ge & CHIPMUNK_Q;
-    int32_t mask_lt = result >> 31;
-    result += mask_lt & CHIPMUNK_Q;
-    
-    return result;
-}
-
-/**
- * @brief Convert to Montgomery form for HOTS q=3168257
- */
-int32_t chipmunk_ntt_mont_factor(int32_t a_value) {
-    // R mod q for q = 3168257, R = 2^22 = 4194304
-    // R mod 3168257 = 1026047
-    const int32_t R_MOD_Q = 1026047;
-    return chipmunk_ntt_montgomery_multiply(a_value, R_MOD_Q);
-}
-
-/**
  * @brief Transform polynomial to NTT form.
  * Delegates to unified dap_ntt_forward() with Chipmunk parameters.
  */
@@ -363,20 +274,6 @@ void chipmunk_ntt(int32_t a_r[CHIPMUNK_N]) {
  */
 void chipmunk_invntt(int32_t a_r[CHIPMUNK_N]) {
     dap_ntt_inverse(a_r, &g_chipmunk_ntt_params);
-}
-
-/**
- * @brief Pointwise multiplication in NTT form
- */
-int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
-                                     const int32_t a_a[CHIPMUNK_N], 
-                                     const int32_t a_b[CHIPMUNK_N]) {
-    if (!a_c || !a_a || !a_b) {
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++)
-        a_c[l_i] = chipmunk_ntt_montgomery_multiply(a_a[l_i], a_b[l_i]);
-    return CHIPMUNK_ERROR_SUCCESS;
 }
 
 /* =========================================================================

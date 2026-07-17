@@ -83,7 +83,7 @@ int chipmunk_deep_prover_init(chipmunk_deep_prover_t *prov)
         return -1;
 
     memset(prov, 0, sizeof(*prov));
-    prov->q = (uint64_t)CHIPMUNK_Q;  /* default; caller may override before compose */
+    prov->q = 0;  /* caller MUST set q before compose */
     return 0;
 }
 
@@ -132,17 +132,6 @@ int chipmunk_deep_compose(chipmunk_deep_prover_t *prov,
 
     prov->composed = true;
     return 0;
-}
-
-bool chipmunk_deep_verify(const chipmunk_deep_opening_t *opening,
-                          const chipmunk_poly_t polys[],
-                          uint32_t num_polys,
-                          const int32_t gammas[],
-                          const int32_t composition[CHIPMUNK_N],
-                          int32_t x)
-{
-    return chipmunk_deep_verify_q(opening, polys, num_polys, gammas,
-                                    composition, x, (uint64_t)CHIPMUNK_Q);
 }
 
 bool chipmunk_deep_verify_q(const chipmunk_deep_opening_t *opening,

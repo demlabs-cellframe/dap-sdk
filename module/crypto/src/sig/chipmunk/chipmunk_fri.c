@@ -19,15 +19,6 @@
 /* Total elements across all rounds + final: 2048+1024+512+256+128+64+32+16 = 4080 */
 #define FRI_TOTAL_DATA  4080u
 
-/* Field multiplication in [0, q). */
-static inline int32_t s_fqmul(int32_t a_a, int32_t a_b)
-{
-    int64_t l_t = (int64_t)a_a * (int64_t)a_b;
-    int32_t l_r = (int32_t)(l_t % (int64_t)CHIPMUNK_Q);
-    if (l_r < 0) l_r += (int32_t)CHIPMUNK_Q;
-    return l_r;
-}
-
 /* Parameterized field multiplication in [0, q) (Phase 9.13h). */
 static inline int32_t s_fqmul_q(int32_t a_a, int32_t a_b, uint64_t q)
 {
@@ -106,7 +97,7 @@ int chipmunk_fri_prover_init(chipmunk_fri_prover_t *prover)
 
     /* 2^{-1} mod q. */
     prover->q = (uint64_t)CHIPMUNK_Q;  /* default; overridden by _q variant */
-    prover->inv_2 = chipmunk_field_inv(2);
+    prover->inv_2 = chipmunk_field_inv_q(2, (uint64_t)CHIPMUNK_Q);
 
     prover->committed = false;
     return 0;
@@ -141,25 +132,21 @@ int chipmunk_fri_commit(chipmunk_fri_prover_t *prover,
         return -1;
 
     /* Step 1: RS-encode polynomial → 2048 evaluations.
-     * Phase 9.13h: use per-q NTT tables when q != CHIPMUNK_Q. */
+     * Always use per-q NTT tables. */
     int32_t *l_cur = prover->round_data;  /* round 0 codeword */
     int l_rc;
-    if (prover->q != (uint64_t)CHIPMUNK_Q) {
-        if (!prover->ntt_ctx_ready) {
-            /* NTT log is always 11 (2048-pt). Caller set prover->q before commit. */
-            l_rc = chipmunk_fri_ntt_ctx_init(&prover->ntt_ctx, prover->q,
-                                               CHIPMUNK_FRI_NTT_LOG);
-            if (l_rc != 0) {
-                log_it(L_ERROR, "FRI commit: per-q NTT ctx init failed for q=%lu",
-                       (unsigned long)prover->q);
-                return l_rc;
-            }
-            prover->ntt_ctx_ready = true;
+    if (!prover->ntt_ctx_ready) {
+        /* NTT log is always 11 (2048-pt). Caller set prover->q before commit. */
+        l_rc = chipmunk_fri_ntt_ctx_init(&prover->ntt_ctx, prover->q,
+                                           CHIPMUNK_FRI_NTT_LOG);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "FRI commit: per-q NTT ctx init failed for q=%lu",
+                   (unsigned long)prover->q);
+            return l_rc;
         }
-        l_rc = chipmunk_rs_encode_q(l_cur, poly, &prover->ntt_ctx);
-    } else {
-        l_rc = chipmunk_rs_encode(l_cur, poly);
+        prover->ntt_ctx_ready = true;
     }
+    l_rc = chipmunk_rs_encode_q(l_cur, poly, &prover->ntt_ctx);
     if (l_rc != 0) {
         log_it(L_ERROR, "FRI commit: RS encode failed");
         return l_rc;
@@ -325,7 +312,7 @@ bool chipmunk_fri_verify_fold(const int32_t *h_r, const int32_t *h_r1,
                                uint32_t l)
 {
     return chipmunk_fri_verify_fold_q(h_r, h_r1, n_r, alpha, round, l,
-                                        (uint64_t)CHIPMUNK_Q);
+                                      (uint64_t)CHIPMUNK_Q);
 }
 
 bool chipmunk_fri_verify_fold_q(const int32_t *h_r, const int32_t *h_r1,
@@ -445,9 +432,9 @@ bool chipmunk_fri_verify_query(const chipmunk_fri_proof_t *proof,
 }
 
 bool chipmunk_fri_verify_query_q(const chipmunk_fri_proof_t *proof,
-                                   uint32_t q,
-                                   const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
-                                   uint64_t fq)
+                                  uint32_t q,
+                                  const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                                  uint64_t fq)
 {
     if (!proof || q >= CHIPMUNK_FRI_NUM_QUERIES)
         return false;
@@ -546,14 +533,6 @@ int chipmunk_fri_derive_query_indices(chipmunk_fri_transcript_t *tr,
         out[i] = (uint32_t)val % domain_size;
     }
     return 0;
-}
-
-bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
-                           const uint8_t domain[16],
-                           const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
-                           chipmunk_fri_verify_result_t *result)
-{
-    return chipmunk_fri_verify_q(proof, domain, alphas, (uint64_t)CHIPMUNK_Q, result);
 }
 
 bool chipmunk_fri_verify_q(const chipmunk_fri_proof_t *proof,
@@ -731,16 +710,6 @@ bool chipmunk_fri_verify_q(const chipmunk_fri_proof_t *proof,
     if (result)
         result->valid = true;
     return true;
-}
-
-bool chipmunk_fri_verify_fast(const chipmunk_fri_proof_t *proof,
-                              const uint8_t domain[16],
-                              const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
-                              uint32_t grinding_nonce,
-                              chipmunk_fri_verify_result_t *result)
-{
-    return chipmunk_fri_verify_fast_q(proof, domain, alphas, grinding_nonce,
-                                        (uint64_t)CHIPMUNK_Q, result);
 }
 
 bool chipmunk_fri_verify_fast_q(const chipmunk_fri_proof_t *proof,

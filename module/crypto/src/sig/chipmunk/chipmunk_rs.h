@@ -47,67 +47,20 @@ extern "C" {
 #define CHIPMUNK_RS_COSET_G   3
 
 /**
- * @brief Reed-Solomon encode: degree-511 polynomial → 2048 evaluations.
+ * @brief RS encode using a per-q NTT context (Phase 9.13h).
  *
- * Takes 512 coefficients (poly[0] + poly[1]·x + ... + poly[511]·x^511),
- * pads to 2048 with zeros, applies coset shift, and evaluates via NTT.
- *
- * Output (codeword[k] for k=0..2047) = f(g·ω^k) in natural order,
- * where g = CHIPMUNK_RS_COSET_G, ω = omega_2048.
- *
- * Requires chipmunk_fri_ntt_init() and chipmunk_field_init() to have
- * been called.
- *
- * @param codeword  Output array of CHIPMUNK_RS_CODE_LEN elements (may alias poly).
- * @param poly      Input array of CHIPMUNK_RS_MSG_LEN coefficients.
- * @return          0 on success, negative on error.
- */
-int chipmunk_rs_encode(int32_t codeword[CHIPMUNK_RS_CODE_LEN],
-                        const int32_t poly[CHIPMUNK_RS_MSG_LEN]);
-
-/**
- * @brief Per-q RS encode using a per-q NTT context (Phase 9.13h).
- *
- * Identical to chipmunk_rs_encode() but uses ntt_ctx's per-q twiddle tables.
- * Required for q != CHIPMUNK_Q.
+ * Takes 512 coefficients, pads to 2048 with zeros, applies coset shift,
+ * and evaluates via per-q NTT. ntt_ctx must be valid.
  */
 int chipmunk_rs_encode_q(int32_t codeword[CHIPMUNK_RS_CODE_LEN],
                           const int32_t poly[CHIPMUNK_RS_MSG_LEN],
                           const chipmunk_fri_ntt_ctx_t *ntt_ctx);
-
-/**
- * @brief Reed-Solomon interpolate: 2048 coset-domain evaluations → degree-511 poly.
- *
- * Inverse of chipmunk_rs_encode.  Takes 2048 evaluations f(g·ω^k),
- * applies inverse coset NTT to recover the 512 low-degree coefficients.
- * The 1536 high-degree coefficients must be zero (enforced by the
- * commitment scheme; this function does not check them).
- *
- * @param poly      Output array of CHIPMUNK_RS_MSG_LEN coefficients.
- * @param codeword  Input array of CHIPMUNK_RS_CODE_LEN evaluations.
- * @return          0 on success, negative on error.
- */
-int chipmunk_rs_interpolate(int32_t poly[CHIPMUNK_RS_MSG_LEN],
-                              const int32_t codeword[CHIPMUNK_RS_CODE_LEN]);
 
 /** @brief Per-q RS interpolate (Phase 9.13h). ntt_ctx may be NULL for q==CHIPMUNK_Q. */
 int chipmunk_rs_interpolate_q(int32_t poly[CHIPMUNK_RS_MSG_LEN],
                                 const int32_t codeword[CHIPMUNK_RS_CODE_LEN],
                                 uint64_t q,
                                 const chipmunk_fri_ntt_ctx_t *ntt_ctx);
-
-/**
- * @brief Evaluate a single polynomial at a point (naive Horner's method).
- *
- * Not used in the encoding hot path, but useful for verification and testing.
- * Computes f(x) = poly[0] + poly[1]·x + ... + poly[n-1]·x^{n-1} mod q.
- *
- * @param poly  Coefficient array.
- * @param n     Number of coefficients (degree + 1).
- * @param x     Evaluation point in F_q.
- * @return      f(x) mod q.
- */
-int32_t chipmunk_rs_eval(const int32_t *poly, uint32_t n, int32_t x);
 
 /** @brief Per-q polynomial evaluation via Horner (Phase 9.13h). */
 int32_t chipmunk_rs_eval_q(const int32_t *poly, uint32_t n, int32_t x, uint64_t q);
