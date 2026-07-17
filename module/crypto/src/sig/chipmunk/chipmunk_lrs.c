@@ -549,32 +549,39 @@ int chipmunk_lrs_relation_eval(chipmunk_poly_t *a_out,
         return -EINVAL;
     }
 
-    memset(a_out, 0, sizeof(*a_out));
+    /* NTT-native: accumulate Σ A[j]*x[j] pointwise in NTT domain.
+     * Eliminates K-1 redundant invNTTs (was K round-trips, now 1 invNTT). */
+    chipmunk_poly_t l_acc_ntt;
+    memset(&l_acc_ntt, 0, sizeof(l_acc_ntt));
 
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
         chipmunk_poly_t l_A = a_A[j];
         chipmunk_poly_t l_x = a_x[j];
-        chipmunk_poly_t l_prod;
 
         int l_rc = chipmunk_poly_ntt(&l_A);
-        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
-            return l_rc;
-        }
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
         l_rc = chipmunk_poly_ntt(&l_x);
-        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
-            return l_rc;
-        }
-        chipmunk_poly_mul_ntt_q(&l_prod, &l_A, &l_x, q);
-        l_rc = chipmunk_poly_invntt(&l_prod);
-        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
-            return l_rc;
-        }
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
 
+        chipmunk_poly_t l_prod;
+        chipmunk_poly_mul_ntt_q(&l_prod, &l_A, &l_x, q);
         for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-            a_out->coeffs[i] = chipmunk_mod_q_q((int64_t)a_out->coeffs[i] + l_prod.coeffs[i], q);
+            int64_t l_s = (int64_t)l_acc_ntt.coeffs[i] + l_prod.coeffs[i];
+            int32_t l_r = (int32_t)(l_s % (int64_t)q);
+            if (l_r < 0) l_r += (int32_t)q;
+            l_acc_ntt.coeffs[i] = l_r;
         }
     }
 
+    /* Single invNTT → time-domain result */
+    int l_rc = chipmunk_poly_invntt(&l_acc_ntt);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
+
+    /* Canonicalize to [0,q) */
+    for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+        if (l_acc_ntt.coeffs[i] < 0) l_acc_ntt.coeffs[i] += (int32_t)q;
+        a_out->coeffs[i] = l_acc_ntt.coeffs[i];
+    }
     return 0;
 }
 
