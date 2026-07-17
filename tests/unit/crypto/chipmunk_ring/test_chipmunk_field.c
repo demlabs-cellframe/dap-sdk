@@ -26,22 +26,22 @@
 static void test_inv_basic(void)
 {
     /* 1 * 1^{-1} = 1 */
-    int32_t l_inv1 = chipmunk_field_inv(1);
+    int32_t l_inv1 = chipmunk_field_inv_q(1, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_inv1 == 1, "inv(1) == 1");
 
     /* (q-1)^{-1} = q-1 (since (q-1)^2 = 1 mod q for prime q) */
-    int32_t l_inv_qm1 = chipmunk_field_inv((int32_t)CHIPMUNK_Q - 1);
+    int32_t l_inv_qm1 = chipmunk_field_inv_q((int32_t)CHIPMUNK_Q - 1, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_inv_qm1 == (int32_t)CHIPMUNK_Q - 1, "inv(q-1) == q-1");
 
     /* inv(0) == 0 (not invertible) */
-    int32_t l_inv0 = chipmunk_field_inv(0);
+    int32_t l_inv0 = chipmunk_field_inv_q(0, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_inv0 == 0, "inv(0) == 0");
 
     /* inv(inv(a)) == a for random a */
     int32_t l_a = 42;
-    int32_t l_ia = chipmunk_field_inv(l_a);
+    int32_t l_ia = chipmunk_field_inv_q(l_a, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_ia != 0, "inv(42) nonzero");
-    int32_t l_iia = chipmunk_field_inv(l_ia);
+    int32_t l_iia = chipmunk_field_inv_q(l_ia, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_iia == l_a, "inv(inv(42)) == 42");
 
     /* a * inv(a) == 1 mod q */
@@ -57,7 +57,7 @@ static void test_inv_basic(void)
 static void test_inv_exhaustive_small(void)
 {
     for (int32_t a = 1; a <= 100; ++a) {
-        int32_t l_ia = chipmunk_field_inv(a);
+        int32_t l_ia = chipmunk_field_inv_q(a, (uint64_t)CHIPMUNK_Q);
         dap_assert(l_ia != 0, "inv nonzero for a <= 100");
         int64_t l_prod = (int64_t)a * (int64_t)l_ia;
         int32_t l_check = chipmunk_mod_q(l_prod);
@@ -78,19 +78,19 @@ static void test_inv_exhaustive_small(void)
 static void test_pow_basic(void)
 {
     /* a^0 = 1 */
-    dap_assert(chipmunk_field_pow(42, 0) == 1, "42^0 == 1");
+    dap_assert(chipmunk_field_pow_q(42, 0, (uint64_t)CHIPMUNK_Q) == 1, "42^0 == 1");
 
     /* a^1 = a */
-    dap_assert(chipmunk_field_pow(42, 1) == 42, "42^1 == 42");
+    dap_assert(chipmunk_field_pow_q(42, 1, (uint64_t)CHIPMUNK_Q) == 42, "42^1 == 42");
 
     /* 1^e = 1 */
-    dap_assert(chipmunk_field_pow(1, 9999) == 1, "1^e == 1");
+    dap_assert(chipmunk_field_pow_q(1, 9999, (uint64_t)CHIPMUNK_Q) == 1, "1^e == 1");
 
     /* 0^e = 0 for e > 0 */
-    dap_assert(chipmunk_field_pow(0, 7) == 0, "0^7 == 0");
+    dap_assert(chipmunk_field_pow_q(0, 7, (uint64_t)CHIPMUNK_Q) == 0, "0^7 == 0");
 
     /* Fermat: a^(q-1) == 1 mod q */
-    int32_t l_check = chipmunk_field_pow(42, (uint32_t)CHIPMUNK_Q - 1u);
+    int32_t l_check = chipmunk_field_pow_q(42, (uint32_t)CHIPMUNK_Q - 1u, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "42^(q-1) == 1 (Fermat)");
 }
 
@@ -101,7 +101,7 @@ static void test_pow_basic(void)
 static void test_pow_fermat_many(void)
 {
     for (int32_t a = 2; a <= 199; ++a) {
-        int32_t l_check = chipmunk_field_pow(a, (uint32_t)CHIPMUNK_Q - 1u);
+        int32_t l_check = chipmunk_field_pow_q(a, (uint32_t)CHIPMUNK_Q - 1u, (uint64_t)CHIPMUNK_Q);
         if (l_check != 1) {
             char l_msg[64];
             snprintf(l_msg, sizeof(l_msg), "a^(q-1)==1 for a=%d (got %d)", a, l_check);
@@ -119,15 +119,15 @@ static void test_pow_fermat_many(void)
 static void test_pow_negative_base(void)
 {
     /* (-1)^2 = 1 */
-    int32_t l_r = chipmunk_field_pow(-1, 2);
+    int32_t l_r = chipmunk_field_pow_q(-1, 2, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_r == 1, "(-1)^2 == 1");
 
     /* (-1)^3 = q-1 (= -1 mod q) */
-    l_r = chipmunk_field_pow(-1, 3);
+    l_r = chipmunk_field_pow_q(-1, 3, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_r == (int32_t)CHIPMUNK_Q - 1, "(-1)^3 == q-1");
 
     /* (-5)^2 = 25 */
-    l_r = chipmunk_field_pow(-5, 2);
+    l_r = chipmunk_field_pow_q(-5, 2, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_r == 25, "(-5)^2 == 25");
 }
 
@@ -139,18 +139,18 @@ static void test_primitive_root_order(void)
 {
     /* k=1: primitive square root of unity = -1 */
     int32_t l_omega;
-    int l_rc = chipmunk_field_primitive_root_2k(1, &l_omega);
+    int l_rc = chipmunk_field_primitive_root_2k_q(1, &l_omega, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_rc == 0, "root_2k(k=1) OK");
     dap_assert(l_omega == (int32_t)CHIPMUNK_Q - 1, "omega_1 == q-1");
 
     /* k=9: primitive 512-th root */
-    l_rc = chipmunk_field_primitive_root_2k(9, &l_omega);
+    l_rc = chipmunk_field_primitive_root_2k_q(9, &l_omega, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_rc == 0, "root_2k(k=9) OK");
 
     /* Verify order exactly 512 */
-    int32_t l_check = chipmunk_field_pow(l_omega, 512);
+    int32_t l_check = chipmunk_field_pow_q(l_omega, 512, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "omega_9^512 == 1");
-    l_check = chipmunk_field_pow(l_omega, 256);
+    l_check = chipmunk_field_pow_q(l_omega, 256, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == (int32_t)CHIPMUNK_Q - 1, "omega_9^256 == q-1");
 }
 
@@ -161,19 +161,19 @@ static void test_primitive_root_order(void)
 static void test_primitive_root_2048(void)
 {
     int32_t l_omega;
-    int l_rc = chipmunk_field_primitive_root_2k(11, &l_omega);
+    int l_rc = chipmunk_field_primitive_root_2k_q(11, &l_omega, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_rc == 0, "omega_2048 found");
 
     /* omega^2048 == 1 */
-    int32_t l_check = chipmunk_field_pow(l_omega, 2048);
+    int32_t l_check = chipmunk_field_pow_q(l_omega, 2048, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "omega^2048 == 1");
 
     /* omega^1024 == -1 (q-1) */
-    l_check = chipmunk_field_pow(l_omega, 1024);
+    l_check = chipmunk_field_pow_q(l_omega, 1024, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == (int32_t)CHIPMUNK_Q - 1, "omega^1024 == q-1");
 
     /* omega^512 != -1 (order is > 512) */
-    l_check = chipmunk_field_pow(l_omega, 512);
+    l_check = chipmunk_field_pow_q(l_omega, 512, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check != (int32_t)CHIPMUNK_Q - 1, "omega^512 != q-1 (order > 512)");
 }
 
@@ -184,12 +184,12 @@ static void test_primitive_root_2048(void)
 static void test_primitive_root_omega512_derived(void)
 {
     int32_t l_omega2048;
-    int l_rc = chipmunk_field_primitive_root_2k(11, &l_omega2048);
+    int l_rc = chipmunk_field_primitive_root_2k_q(11, &l_omega2048, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_rc == 0, "omega_2048 found");
 
     /* omega_2048^4 should be a 512-th root */
-    int32_t l_w512 = chipmunk_field_pow(l_omega2048, 4);
-    int32_t l_check = chipmunk_field_pow(l_w512, 512);
+    int32_t l_w512 = chipmunk_field_pow_q(l_omega2048, 4, (uint64_t)CHIPMUNK_Q);
+    int32_t l_check = chipmunk_field_pow_q(l_w512, 512, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "omega_2048^4 is also a 512-th root");
 }
 
@@ -200,7 +200,7 @@ static void test_primitive_root_omega512_derived(void)
 static void test_primitive_root_too_large(void)
 {
     int32_t l_omega;
-    int l_rc = chipmunk_field_primitive_root_2k(12, &l_omega);
+    int l_rc = chipmunk_field_primitive_root_2k_q(12, &l_omega, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_rc != 0, "root_2k(k=12) correctly fails");
 }
 
@@ -218,10 +218,10 @@ static void test_init_cached_constants(void)
     int32_t l_w = chipmunk_field_omega_2048();
     dap_assert(l_w > 1 && l_w < (int32_t)CHIPMUNK_Q, "omega_2048 in range");
 
-    int32_t l_check = chipmunk_field_pow(l_w, 2048);
+    int32_t l_check = chipmunk_field_pow_q(l_w, 2048, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "cached omega_2048^2048 == 1");
 
-    l_check = chipmunk_field_pow(l_w, 1024);
+    l_check = chipmunk_field_pow_q(l_w, 1024, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == (int32_t)CHIPMUNK_Q - 1,
                "cached omega_2048^1024 == q-1");
 
@@ -233,7 +233,7 @@ static void test_init_cached_constants(void)
 
     /* omega_512 = omega_2048^4 */
     int32_t l_w512 = chipmunk_field_omega_512();
-    int32_t l_w512_expected = chipmunk_field_pow(l_w, 4);
+    int32_t l_w512_expected = chipmunk_field_pow_q(l_w, 4, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_w512 == l_w512_expected,
                "omega_512 == omega_2048^4");
 
@@ -279,7 +279,7 @@ static void test_init_idempotent(void)
 static void test_domain_2048_distinct(void)
 {
     int32_t l_omega;
-    int l_rc = chipmunk_field_primitive_root_2k(11, &l_omega);
+    int l_rc = chipmunk_field_primitive_root_2k_q(11, &l_omega, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_rc == 0, "omega_2048 found");
 
     /* Check that all 2048 powers are distinct by accumulating the sum.

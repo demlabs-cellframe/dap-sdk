@@ -275,15 +275,15 @@ static void test_fri_fold_wrong_alpha(void)
     int32_t h_r1[2] = {0, 0};
     uint32_t round = 6;
 
-    int32_t inv2 = chipmunk_field_inv(2);
+    int32_t inv2 = chipmunk_field_inv_q(2, (uint64_t)CHIPMUNK_Q);
     int32_t a = 7;
-    int32_t inv_g = chipmunk_field_inv((int32_t)CHIPMUNK_RS_COSET_G);
+    int32_t inv_g = chipmunk_field_inv_q((int32_t)CHIPMUNK_RS_COSET_G, (uint64_t)CHIPMUNK_Q);
     int32_t omega_inv = chipmunk_field_omega_2048_inv();
 
     /* Compute h_r1 using correct formula with domain points. */
     for (uint32_t l = 0; l < 2; ++l) {
         /* inv(x) = inv(g) · (inv(ω))^(l · 2^round) */
-        int32_t inv_omega_exp = chipmunk_field_pow(omega_inv, l * (1u << round));
+        int32_t inv_omega_exp = chipmunk_field_pow_q(omega_inv, l * (1u << round), (uint64_t)CHIPMUNK_Q);
         int32_t inv_x = s_test_fqmul(inv_g, inv_omega_exp);
 
         int32_t even = (int32_t)(((int64_t)h_r[l] + (int64_t)h_r[l + 2])

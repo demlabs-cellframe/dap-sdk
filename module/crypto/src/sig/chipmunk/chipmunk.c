@@ -444,7 +444,7 @@ int chipmunk_sign(uint8_t *a_private_key, const uint8_t *a_message,
         goto sign_cleanup;
     }
 
-    l_result = chipmunk_hots_sign(&l_hots_sk, a_message, a_message_len, &l_hots_sig);
+    l_result = chipmunk_hots_sign(&l_hots_sk, a_message, a_message_len, &l_hots_sig, &l_hots_params);
     if (l_result != 0) {
         log_it(L_ERROR, "HOTS signature failed with error %d", l_result);
         goto sign_cleanup;

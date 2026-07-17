@@ -84,59 +84,27 @@ int chipmunk_ntt_pointwise_montgomery_q(int32_t a_c[CHIPMUNK_N],
                                           const chipmunk_ntt_ctx_t *a_ctx);
 
 /**
- * @brief Transform polynomial to NTT form
+ * @brief Transform polynomial to NTT form (CHIPMUNK_Q wrapper).
+ * Delegates to chipmunk_ntt_q() with global context.
  * @param[in,out] a_r Polynomial coefficients array
  */
 void chipmunk_ntt(int32_t a_r[CHIPMUNK_N]);
 
 /**
- * @brief Inverse transform from NTT form
+ * @brief Inverse transform from NTT form (CHIPMUNK_Q wrapper).
+ * Delegates to chipmunk_invntt_q() with global context.
  * @param[in,out] a_r Polynomial coefficients array
  */
 void chipmunk_invntt(int32_t a_r[CHIPMUNK_N]);
 
 /**
- * @brief Pointwise multiplication of polynomials in NTT domain using Montgomery reduction
+ * @brief Pointwise Montgomery multiply in NTT domain (CHIPMUNK_Q wrapper).
+ * Delegates to chipmunk_ntt_pointwise_montgomery_q() with global context.
  * @param[out] a_c Output polynomial coefficients
  * @param[in] a_a First polynomial coefficients
  * @param[in] a_b Second polynomial coefficients
  * @return Returns 0 on success, negative error code on failure
  */
 int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
-                                     const int32_t a_a[CHIPMUNK_N], 
+                                     const int32_t a_a[CHIPMUNK_N],
                                      const int32_t a_b[CHIPMUNK_N]);
-
-/**
- * @brief Perform Montgomery reduction for q = 3168257
- * @param[in,out] a_r Value to reduce
- */
-void chipmunk_ntt_montgomery_reduce(int32_t *a_r);
-
-/**
- * @brief Reduce value modulo q = 3168257
- * @param[in] a_value Value to reduce
- * @return Reduced value
- */
-int32_t chipmunk_ntt_mod_reduce(int32_t a_value);
-
-/**
- * @brief Perform Barrett reduction for q = 3168257
- * @param[in] a_value Value to reduce
- * @return Reduced value
- */
-int32_t chipmunk_ntt_barrett_reduce(int32_t a_value);
-
-/**
- * @brief Multiply two values with Montgomery reduction for q = 3168257
- * @param[in] a_a First value
- * @param[in] a_b Second value
- * @return Result of multiplication
- */
-int32_t chipmunk_ntt_montgomery_multiply(int32_t a_a, int32_t a_b);
-
-/**
- * @brief Convert value to Montgomery domain (multiply by R mod q)
- * @param[in] a_value Value to convert
- * @return Value in Montgomery domain
- */
-int32_t chipmunk_ntt_mont_factor(int32_t a_value); 

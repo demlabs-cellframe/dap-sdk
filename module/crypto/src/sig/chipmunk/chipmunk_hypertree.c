@@ -325,7 +325,7 @@ static int s_sign_at_leaf(chipmunk_ht_private_key_t *a_sk,
         log_it(L_ERROR, "Hypertree sign: leaf-%u secret derivation failed", a_leaf_index);
         goto out;
     }
-    l_ret = chipmunk_hots_sign(&l_leaf_sk, a_msg, a_len, &l_hots_sig);
+    l_ret = chipmunk_hots_sign(&l_leaf_sk, a_msg, a_len, &l_hots_sig, &a_sk->hots_params);
     if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Hypertree sign: HOTS sign failed at leaf %u: %d",
                a_leaf_index, l_ret);

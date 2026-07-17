@@ -387,9 +387,14 @@ int chipmunk_create_individual_signature(const uint8_t *message,
         return -2;
     }
 
-    // Generate HOTS signature
+    // Generate HOTS signature — needs params for q
+    chipmunk_hots_params_t l_sign_params;
+    if (chipmunk_hots_setup(&l_sign_params) != 0) {
+        log_it(L_ERROR, "Failed to setup HOTS params for signing");
+        return -1;
+    }
     debug_if(s_debug_more, L_DEBUG, "Generating HOTS signature for leaf index %u", leaf_index);
-    int ret = chipmunk_hots_sign((const chipmunk_hots_sk_t*)secret_key, message, message_len, &individual_sig->hots_sig);
+    int ret = chipmunk_hots_sign((const chipmunk_hots_sk_t*)secret_key, message, message_len, &individual_sig->hots_sig, &l_sign_params);
     if (ret != 0) {
         return ret;
     }

@@ -39,6 +39,7 @@ static void test_deep_zero_poly(void)
 {
     chipmunk_deep_prover_t prov;
     int rc = chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
     dap_assert(rc == 0, "zero init");
 
     chipmunk_poly_t poly;
@@ -63,7 +64,7 @@ static void test_deep_zero_poly(void)
     dap_assert(rc == 0, "zero opening");
 
     for (int x = 1; x < 10; ++x) {
-        bool ok = chipmunk_deep_verify(&opening, &poly, 1, &gamma, h, x);
+        bool ok = chipmunk_deep_verify_q(&opening, &poly, 1, &gamma, h, x, (uint64_t)CHIPMUNK_Q);
         dap_assert(ok, "zero verify");
     }
 
@@ -77,6 +78,7 @@ static void test_deep_constant_poly(void)
 {
     chipmunk_deep_prover_t prov;
     int rc = chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
     dap_assert(rc == 0, "const init");
 
     chipmunk_poly_t poly;
@@ -99,7 +101,7 @@ static void test_deep_constant_poly(void)
     chipmunk_deep_opening_t opening;
     chipmunk_deep_build_opening(&opening, &prov);
 
-    bool ok = chipmunk_deep_verify(&opening, &poly, 1, &gamma, h, 1);
+    bool ok = chipmunk_deep_verify_q(&opening, &poly, 1, &gamma, h, 1, (uint64_t)CHIPMUNK_Q);
     dap_assert(ok, "const verify");
 
     chipmunk_deep_prover_free(&prov);
@@ -112,6 +114,7 @@ static void test_deep_linear_poly(void)
 {
     chipmunk_deep_prover_t prov;
     int rc = chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
     dap_assert(rc == 0, "linear init");
 
     chipmunk_poly_t poly;
@@ -166,7 +169,7 @@ static void test_deep_linear_poly(void)
 
     for (int x = 1; x <= 5; ++x) {
         if (x == 7) continue;
-        bool ok = chipmunk_deep_verify(&opening, &poly, 1, &gamma, h, x);
+        bool ok = chipmunk_deep_verify_q(&opening, &poly, 1, &gamma, h, x, (uint64_t)CHIPMUNK_Q);
         dap_assert(ok, "linear verify");
     }
 
@@ -180,6 +183,7 @@ static void test_deep_quadratic_poly(void)
 {
     chipmunk_deep_prover_t prov;
     int rc = chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
     dap_assert(rc == 0, "quad init");
 
     chipmunk_poly_t poly;
@@ -216,7 +220,7 @@ static void test_deep_quadratic_poly(void)
 
     for (int x = 1; x <= 20; ++x) {
         if (x == 10) continue;
-        bool ok = chipmunk_deep_verify(&opening, &poly, 1, &gamma, h, x);
+        bool ok = chipmunk_deep_verify_q(&opening, &poly, 1, &gamma, h, x, (uint64_t)CHIPMUNK_Q);
         dap_assert(ok, "quad verify");
     }
 
@@ -230,6 +234,7 @@ static void test_deep_two_polys(void)
 {
     chipmunk_deep_prover_t prov;
     int rc = chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
     dap_assert(rc == 0, "two init");
 
     chipmunk_poly_t p1, p2;
@@ -251,9 +256,9 @@ static void test_deep_two_polys(void)
 
     int32_t test_xs[] = {1, 2, 50, 100, 500, 1000, 2000};
     for (unsigned t = 0; t < sizeof(test_xs)/sizeof(test_xs[0]); ++t) {
-        bool ok = chipmunk_deep_verify(&opening,
+        bool ok = chipmunk_deep_verify_q(&opening,
                                         (const chipmunk_poly_t[]){p1, p2},
-                                        2, gammas, h, test_xs[t]);
+                                        2, gammas, h, test_xs[t], (uint64_t)CHIPMUNK_Q);
         dap_assert(ok, "two verify");
     }
 
@@ -267,6 +272,7 @@ static void test_deep_degree_bound(void)
 {
     chipmunk_deep_prover_t prov;
     chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
 
     chipmunk_poly_t poly;
     memset(&poly, 0, sizeof(poly));
@@ -289,7 +295,7 @@ static void test_deep_degree_bound(void)
      * for any x != z. Test at a few points. */
     int32_t x_test = 123;
     int32_t fx = s_horner(poly.coeffs, x_test);
-    int32_t inv_xz = chipmunk_field_inv(chipmunk_mod_q((int64_t)x_test - (int64_t)z));
+    int32_t inv_xz = chipmunk_field_inv_q(chipmunk_mod_q((int64_t)x_test - (int64_t)z), (uint64_t)CHIPMUNK_Q);
     int32_t expected = chipmunk_mod_q((int64_t)gamma *
         chipmunk_mod_q((int64_t)chipmunk_mod_q((int64_t)fx - prov.evals[0]) * inv_xz));
     int32_t actual = s_horner(h, x_test);
@@ -305,6 +311,7 @@ static void test_deep_tampered_eval(void)
 {
     chipmunk_deep_prover_t prov;
     chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
 
     chipmunk_poly_t poly;
     s_fill_poly(&poly, 42);
@@ -319,18 +326,18 @@ static void test_deep_tampered_eval(void)
     chipmunk_deep_build_opening(&opening, &prov);
 
     /* Honest verify should pass. */
-    bool ok = chipmunk_deep_verify(&opening, &poly, 1, &gamma, h, 1);
+    bool ok = chipmunk_deep_verify_q(&opening, &poly, 1, &gamma, h, 1, (uint64_t)CHIPMUNK_Q);
     dap_assert(ok, "tampered: honest pass");
 
     /* Tamper with evaluation. */
     opening.evals[0] ^= 1;
-    ok = chipmunk_deep_verify(&opening, &poly, 1, &gamma, h, 1);
+    ok = chipmunk_deep_verify_q(&opening, &poly, 1, &gamma, h, 1, (uint64_t)CHIPMUNK_Q);
     dap_assert(!ok, "tampered eval rejected");
 
     /* Tamper with z point. */
     chipmunk_deep_build_opening(&opening, &prov);
     opening.z_point ^= 1;
-    ok = chipmunk_deep_verify(&opening, &poly, 1, &gamma, h, 1);
+    ok = chipmunk_deep_verify_q(&opening, &poly, 1, &gamma, h, 1, (uint64_t)CHIPMUNK_Q);
     dap_assert(!ok, "tampered z rejected");
 
     chipmunk_deep_prover_free(&prov);
@@ -343,6 +350,7 @@ static void test_deep_x_equals_z(void)
 {
     chipmunk_deep_prover_t prov;
     chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
 
     chipmunk_poly_t poly;
     s_fill_poly(&poly, 1);
@@ -357,7 +365,7 @@ static void test_deep_x_equals_z(void)
     chipmunk_deep_build_opening(&opening, &prov);
 
     /* x == z should return false (division by zero). */
-    bool ok = chipmunk_deep_verify(&opening, &poly, 1, &gamma, h, z);
+    bool ok = chipmunk_deep_verify_q(&opening, &poly, 1, &gamma, h, z, (uint64_t)CHIPMUNK_Q);
     dap_assert(!ok, "x==z rejected");
 
     chipmunk_deep_prover_free(&prov);
@@ -370,6 +378,7 @@ static void test_deep_invalid_args(void)
 {
     chipmunk_deep_prover_t prov;
     chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
 
     chipmunk_poly_t poly;
     s_fill_poly(&poly, 1);
@@ -410,13 +419,13 @@ static void test_deep_invalid_args(void)
     chipmunk_deep_build_opening(&opening, &prov);
     h = chipmunk_deep_prover_composition(&prov);
 
-    bool ok = chipmunk_deep_verify(NULL, &poly, 1, &gamma, h, 1);
+    bool ok = chipmunk_deep_verify_q(NULL, &poly, 1, &gamma, h, 1, (uint64_t)CHIPMUNK_Q);
     dap_assert(!ok, "verify NULL opening");
-    ok = chipmunk_deep_verify(&opening, NULL, 1, &gamma, h, 1);
+    ok = chipmunk_deep_verify_q(&opening, NULL, 1, &gamma, h, 1, (uint64_t)CHIPMUNK_Q);
     dap_assert(!ok, "verify NULL polys");
-    ok = chipmunk_deep_verify(&opening, &poly, 1, NULL, h, 1);
+    ok = chipmunk_deep_verify_q(&opening, &poly, 1, NULL, h, 1, (uint64_t)CHIPMUNK_Q);
     dap_assert(!ok, "verify NULL gammas");
-    ok = chipmunk_deep_verify(&opening, &poly, 1, &gamma, NULL, 1);
+    ok = chipmunk_deep_verify_q(&opening, &poly, 1, &gamma, NULL, 1, (uint64_t)CHIPMUNK_Q);
     dap_assert(!ok, "verify NULL composition");
 
     chipmunk_deep_prover_free(&prov);
@@ -452,7 +461,7 @@ static void test_deep_three_polys(void)
     /* Verify at many test points. */
     for (int x = 1; x < 30; ++x) {
         if (x == z) continue;
-        bool ok = chipmunk_deep_verify(&opening, polys, 3, gammas, h, x);
+        bool ok = chipmunk_deep_verify_q(&opening, polys, 3, gammas, h, x, (uint64_t)CHIPMUNK_Q);
         dap_assert(ok, "three verify");
     }
 
@@ -515,7 +524,7 @@ static void test_deep_max_polys(void)
 
     for (int x = 1; x < 20; ++x) {
         if (x == z) continue;
-        bool ok = chipmunk_deep_verify(&opening, polys, CHIPMUNK_DEEP_MAX_POLYS, gammas, h, x);
+        bool ok = chipmunk_deep_verify_q(&opening, polys, CHIPMUNK_DEEP_MAX_POLYS, gammas, h, x, (uint64_t)CHIPMUNK_Q);
         dap_assert(ok, "max verify");
     }
 

@@ -262,18 +262,39 @@ const dap_ntt_params_t g_chipmunk_ntt_params = {
 
 /**
  * @brief Transform polynomial to NTT form.
- * Delegates to unified dap_ntt_forward() with Chipmunk parameters.
+ * Delegates to chipmunk_ntt_q() with global CHIPMUNK_Q context.
  */
 void chipmunk_ntt(int32_t a_r[CHIPMUNK_N]) {
-    dap_ntt_forward(a_r, &g_chipmunk_ntt_params);
+    static const chipmunk_ntt_ctx_t s_global_ctx = {
+        .params = g_chipmunk_ntt_params,
+        .q      = CHIPMUNK_Q,
+        .owns_tables = false,
+    };
+    chipmunk_ntt_q(a_r, &s_global_ctx);
 }
 
 /**
  * @brief Inverse transform from NTT form.
- * Delegates to unified dap_ntt_inverse() with Chipmunk parameters.
+ * Delegates to chipmunk_invntt_q() with global CHIPMUNK_Q context.
  */
 void chipmunk_invntt(int32_t a_r[CHIPMUNK_N]) {
-    dap_ntt_inverse(a_r, &g_chipmunk_ntt_params);
+    static const chipmunk_ntt_ctx_t s_global_ctx = {
+        .params = g_chipmunk_ntt_params,
+        .q      = CHIPMUNK_Q,
+        .owns_tables = false,
+    };
+    chipmunk_invntt_q(a_r, &s_global_ctx);
+}
+
+int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
+                                     const int32_t a_a[CHIPMUNK_N],
+                                     const int32_t a_b[CHIPMUNK_N]) {
+    static const chipmunk_ntt_ctx_t s_global_ctx = {
+        .params = g_chipmunk_ntt_params,
+        .q      = CHIPMUNK_Q,
+        .owns_tables = false,
+    };
+    return chipmunk_ntt_pointwise_montgomery_q(a_c, a_a, a_b, &s_global_ctx);
 }
 
 /* =========================================================================
