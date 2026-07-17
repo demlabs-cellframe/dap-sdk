@@ -39,30 +39,27 @@ DAP_STATIC_INLINE void dil_shake256(const dilithium_param_t *p,
                                     uint8_t *out, size_t outlen,
                                     const uint8_t *in, size_t inlen)
 {
-    if (p->is_fips204)
-        dap_hash_shake256(out, outlen, in, inlen);
-    else
-        dap_hash_shake256_legacy(out, outlen, in, inlen);
+    (void)p;
+    /* Node 5.7-41 uses FIPS-202-conformant SHAKE256 (single permute per block).
+     * The former "legacy" double-permute path does not match the node and
+     * caused "Sign verification failed!". Use the correct path for all modes. */
+    dap_hash_shake256(out, outlen, in, inlen);
 }
 
 DAP_STATIC_INLINE void dil_shake256_squeezeblocks(const dilithium_param_t *p,
                                                   uint8_t *out, size_t nblocks,
                                                   uint64_t *state)
 {
-    if (p->is_fips204)
-        dap_hash_shake256_squeezeblocks(out, nblocks, state);
-    else
-        dap_hash_shake256_legacy_squeezeblocks(out, nblocks, state);
+    (void)p;
+    dap_hash_shake256_squeezeblocks(out, nblocks, state);
 }
 
 DAP_STATIC_INLINE void dil_shake128(const dilithium_param_t *p,
                                     uint8_t *out, size_t outlen,
                                     const uint8_t *in, size_t inlen)
 {
-    if (p->is_fips204)
-        dap_hash_shake128(out, outlen, in, inlen);
-    else
-        dap_hash_shake128_legacy(out, outlen, in, inlen);
+    (void)p;
+    dap_hash_shake128(out, outlen, in, inlen);
 }
 
 DAP_STATIC_INLINE void dil_shake256_x4_squeezeblocks(const dilithium_param_t *p,
@@ -71,10 +68,8 @@ DAP_STATIC_INLINE void dil_shake256_x4_squeezeblocks(const dilithium_param_t *p,
                                                      size_t nblocks,
                                                      dap_keccak_x4_state_t *state)
 {
-    if (p->is_fips204)
-        dap_hash_shake256_x4_squeezeblocks(o0, o1, o2, o3, nblocks, state);
-    else
-        dap_hash_shake256_x4_legacy_squeezeblocks(o0, o1, o2, o3, nblocks, state);
+    (void)p;
+    dap_hash_shake256_x4_squeezeblocks(o0, o1, o2, o3, nblocks, state);
 }
 
 DAP_STATIC_INLINE void dil_shake128_x4_squeezeblocks(const dilithium_param_t *p,
@@ -83,8 +78,6 @@ DAP_STATIC_INLINE void dil_shake128_x4_squeezeblocks(const dilithium_param_t *p,
                                                      size_t nblocks,
                                                      dap_keccak_x4_state_t *state)
 {
-    if (p->is_fips204)
-        dap_hash_shake128_x4_squeezeblocks(o0, o1, o2, o3, nblocks, state);
-    else
-        dap_hash_shake128_x4_legacy_squeezeblocks(o0, o1, o2, o3, nblocks, state);
+    (void)p;
+    dap_hash_shake128_x4_squeezeblocks(o0, o1, o2, o3, nblocks, state);
 }

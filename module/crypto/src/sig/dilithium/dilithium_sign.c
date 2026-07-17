@@ -75,7 +75,7 @@ void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, di
         polyw1_pack(inbuf + CRHBYTES + i * p->PARAM_POLW1_SIZE_PACKED, w1->vec + i);
 
     dap_hash_shake256_absorb(state, inbuf, sizeof(inbuf));
-    dap_hash_shake256_legacy_squeezeblocks(outbuf, 1, state);
+    dap_hash_shake256_squeezeblocks(outbuf, 1, state);
 
     signs = 0;
     for(i = 0; i < 8; ++i)
@@ -90,7 +90,7 @@ void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, di
     for(i = 196; i < 256; ++i) {
         do {
             if(pos >= DAP_SHAKE256_RATE) {
-                dap_hash_shake256_legacy_squeezeblocks(outbuf, 1, state);
+                dap_hash_shake256_squeezeblocks(outbuf, 1, state);
                 pos = 0;
             }
 
@@ -229,7 +229,7 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
         return -1;
 
     unsigned int i;
-    unsigned char seedbuf[3*SEEDBYTES];
+    unsigned char seedbuf[3*SEEDBYTES] = {0};
     uint32_t crh = dil_crhbytes(p);
     unsigned char tr[crh];
     unsigned char *rho, *rhoprime, *key;
