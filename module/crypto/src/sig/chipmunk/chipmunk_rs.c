@@ -55,12 +55,9 @@ int chipmunk_rs_interpolate_q(int32_t poly[CHIPMUNK_RS_MSG_LEN],
     int32_t l_work[CHIPMUNK_RS_CODE_LEN];
     memcpy(l_work, codeword, sizeof(l_work));
 
-    if (ntt_ctx) {
-        chipmunk_fri_ntt_inverse_q(l_work, ntt_ctx);
-    } else {
-        /* Fallback to global NTT (only valid for q == CHIPMUNK_Q). */
-        chipmunk_fri_ntt_inverse(l_work);
-    }
+    if (!ntt_ctx)
+        return -1;
+    chipmunk_fri_ntt_inverse_q(l_work, ntt_ctx);
 
     /* Undo coset shift: coeff[i] = work[i] * g^{-i} */
     int32_t l_g_inv = chipmunk_field_inv_q((int32_t)CHIPMUNK_RS_COSET_G, q);

@@ -480,13 +480,18 @@ int chipmunk_fq6_ext_invert_q(chipmunk_fq6_ext_t *a_out,
                                 uint64_t q,
                                 const chipmunk_ntt_ctx_t *ntt_ctx)
 {
-    if (!a_out || !a || !ntt_ctx) { return -EINVAL; }
+    if (!a_out || !a) { return -EINVAL; }
 
     /* NTT each Y-coefficient → 512 slots, each slot an F_{q^6} element. */
     chipmunk_poly_t l_ntt[CHIPMUNK_FQ6_EXT_DEG];
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         l_ntt[j] = a->c[j];
-        int rc = chipmunk_poly_ntt_q(&l_ntt[j], ntt_ctx);
+        int rc;
+        if (ntt_ctx) {
+            rc = chipmunk_poly_ntt_q(&l_ntt[j], ntt_ctx);
+        } else {
+            rc = chipmunk_poly_ntt(&l_ntt[j]);
+        }
         if (rc != 0) { return rc; }
     }
 
@@ -506,7 +511,12 @@ int chipmunk_fq6_ext_invert_q(chipmunk_fq6_ext_t *a_out,
     }
 
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
-        int rc = chipmunk_poly_invntt_q(&l_res[j], ntt_ctx);
+        int rc;
+        if (ntt_ctx) {
+            rc = chipmunk_poly_invntt_q(&l_res[j], ntt_ctx);
+        } else {
+            rc = chipmunk_poly_invntt(&l_res[j]);
+        }
         if (rc != 0) { return rc; }
         a_out->c[j] = l_res[j];
     }

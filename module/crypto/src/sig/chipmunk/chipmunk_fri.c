@@ -54,12 +54,6 @@ int chipmunk_fri_prover_init(chipmunk_fri_prover_t *prover)
         log_it(L_ERROR, "FRI prover: chipmunk_field_init failed");
         return l_rc;
     }
-    l_rc = chipmunk_fri_ntt_init();
-    if (l_rc != 0) {
-        log_it(L_ERROR, "FRI prover: chipmunk_fri_ntt_init failed");
-        return l_rc;
-    }
-
     memset(prover, 0, sizeof(*prover));
 
     prover->round_data = calloc(FRI_TOTAL_DATA, sizeof(int32_t));
