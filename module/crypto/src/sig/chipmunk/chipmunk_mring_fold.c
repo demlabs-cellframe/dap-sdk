@@ -131,7 +131,7 @@ static void s_ext_apply_leaf_mask(chipmunk_fq6_ext_t *a_b,
         a_b->c[0].coeffs[i] = s_reduce_coeff_i64_q(l_v,
                                                     (uint64_t)CHIPMUNK_Q);
     }
-    chipmunk_fq6_ext_canonicalize(a_b);
+    chipmunk_fq6_ext_canonicalize_q(a_b, (uint64_t)CHIPMUNK_Q);
 }
 
 int64_t chipmunk_mring_leaf_bound_for_depth(uint32_t a_fold_depth)
@@ -456,7 +456,7 @@ static int s_ext_vcom_commit(chipmunk_fq6_ext_t *a_C_out,
             return rc;
         }
     }
-    chipmunk_fq6_ext_canonicalize(a_C_out);
+    chipmunk_fq6_ext_canonicalize_q(a_C_out, (uint64_t)CHIPMUNK_Q);
     return 0;
 }
 
@@ -482,7 +482,7 @@ static int s_ext_vcom_open(chipmunk_fq6_ext_t *a_x_out,
             return rc;
         }
     }
-    chipmunk_fq6_ext_canonicalize(a_x_out);
+    chipmunk_fq6_ext_canonicalize_q(a_x_out, (uint64_t)CHIPMUNK_Q);
     return 0;
 }
 
@@ -543,8 +543,8 @@ static int s_one_fold_round(extvec_t *a_b,
         goto cleanup_halves;
     }
 
-    chipmunk_fq6_ext_canonicalize(&l_L);
-    chipmunk_fq6_ext_canonicalize(&l_R);
+    chipmunk_fq6_ext_canonicalize_q(&l_L, (uint64_t)CHIPMUNK_Q);
+    chipmunk_fq6_ext_canonicalize_q(&l_R, (uint64_t)CHIPMUNK_Q);
 
     rc = s_ext_vcom_commit(a_CL_out, a_gens, &l_L,
                            a_fold_opening_seed, a_round_idx, 0u);
@@ -562,11 +562,11 @@ static int s_one_fold_round(extvec_t *a_b,
                                             a_CL_out, a_CR_out);
 
     chipmunk_fq6_ext_t l_x, l_x_inv;
-    rc = chipmunk_fq6_ext_sample_challenge(&l_x, l_fs, 0u);
+    rc = chipmunk_fq6_ext_sample_challenge_q(&l_x, l_fs, 0u, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         goto cleanup_halves;
     }
-    rc = chipmunk_fq6_ext_scalar_invert(&l_x_inv, &l_x);
+    rc = chipmunk_fq6_ext_scalar_invert_q(&l_x_inv, &l_x, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         goto cleanup_halves;
     }
@@ -772,8 +772,8 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
 
     a_proof->b_star = l_b.slots[0];
     a_proof->a_star = l_P.slots[0];
-    chipmunk_fq6_ext_canonicalize(&a_proof->b_star);
-    chipmunk_fq6_ext_canonicalize(&a_proof->a_star);
+    chipmunk_fq6_ext_canonicalize_q(&a_proof->b_star, (uint64_t)CHIPMUNK_Q);
+    chipmunk_fq6_ext_canonicalize_q(&a_proof->a_star, (uint64_t)CHIPMUNK_Q);
 
     const int64_t l_leaf_bound =
         chipmunk_mring_leaf_bound_for_depth(l_depth);
@@ -860,12 +860,12 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
         }
 
         chipmunk_fq6_ext_t l_x, l_x_inv;
-        rc = chipmunk_fq6_ext_sample_challenge(&l_x, l_fs, 0u);
+        rc = chipmunk_fq6_ext_sample_challenge_q(&l_x, l_fs, 0u, (uint64_t)CHIPMUNK_Q);
         if (rc != 0) {
             s_extvec_free(&l_P);
             return rc;
         }
-        rc = chipmunk_fq6_ext_scalar_invert(&l_x_inv, &l_x);
+        rc = chipmunk_fq6_ext_scalar_invert_q(&l_x_inv, &l_x, (uint64_t)CHIPMUNK_Q);
         if (rc != 0) {
             s_extvec_free(&l_P);
             return rc;
@@ -973,9 +973,9 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
     }
 
     chipmunk_fq6_ext_t l_a_cmp = l_P.slots[0];
-    chipmunk_fq6_ext_canonicalize(&l_a_cmp);
+    chipmunk_fq6_ext_canonicalize_q(&l_a_cmp, (uint64_t)CHIPMUNK_Q);
     chipmunk_fq6_ext_t l_a_star = a_proof->a_star;
-    chipmunk_fq6_ext_canonicalize(&l_a_star);
+    chipmunk_fq6_ext_canonicalize_q(&l_a_star, (uint64_t)CHIPMUNK_Q);
     if (!s_ext_equal(&l_a_cmp, &l_a_star)) {
         s_extvec_free(&l_P);
         return -EBADMSG;
@@ -999,8 +999,8 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
         s_extvec_free(&l_P);
         return rc;
     }
-    chipmunk_fq6_ext_canonicalize(&l_prod);
-    chipmunk_fq6_ext_canonicalize(&l_rho);
+    chipmunk_fq6_ext_canonicalize_q(&l_prod, (uint64_t)CHIPMUNK_Q);
+    chipmunk_fq6_ext_canonicalize_q(&l_rho, (uint64_t)CHIPMUNK_Q);
     if (!s_ext_equal(&l_prod, &l_rho)) {
         s_extvec_free(&l_P);
         return -EBADMSG;
@@ -1055,7 +1055,7 @@ int chipmunk_fq6_ext_qunpack(chipmunk_fq6_ext_t *a_out,
         }
         l_p += CHIPMUNK_MRING_POLY_QPACK;
     }
-    chipmunk_fq6_ext_canonicalize(a_out);
+    chipmunk_fq6_ext_canonicalize_q(a_out, (uint64_t)CHIPMUNK_Q);
     return 0;
 }
 

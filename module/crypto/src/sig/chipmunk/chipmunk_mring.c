@@ -438,7 +438,7 @@ static int s_relation_eval_ntt(chipmunk_poly_t *a_out,
         chipmunk_poly_t l_prod;
         int rc = chipmunk_poly_ntt(&l_x);
         if (rc != 0) return rc;
-        chipmunk_poly_mul_ntt(&l_prod, &a_A_ntt[j], &l_x);
+        chipmunk_poly_mul_ntt_q(&l_prod, &a_A_ntt[j], &l_x, (uint64_t)CHIPMUNK_Q);
         rc = chipmunk_poly_invntt(&l_prod);
         if (rc != 0) return rc;
         for (size_t i = 0u; i < CHIPMUNK_N; ++i) {
@@ -1038,14 +1038,14 @@ static int s_mring_verify_core(const uint8_t *a_buf, size_t a_buf_size,
             goto out;
         }
         chipmunk_poly_t l_cY;
-        chipmunk_poly_mul_ntt(&l_cY, &l_cstar_ntt, &l_Ypk_ntt);
+        chipmunk_poly_mul_ntt_q(&l_cY, &l_cstar_ntt, &l_Ypk_ntt, (uint64_t)CHIPMUNK_Q);
         rc = chipmunk_poly_invntt(&l_cY);
         if (rc != 0) {
             chipmunk_mring_fold_proof_free(l_proof);
             DAP_DELETE(l_proof);
             goto out;
         }
-        rc = chipmunk_poly_sub(&l_M_pk, &l_M_pk, &l_cY);
+        rc = chipmunk_poly_sub_q(&l_M_pk, &l_M_pk, &l_cY, (uint64_t)CHIPMUNK_Q);
         if (rc != 0) {
             chipmunk_mring_fold_proof_free(l_proof);
             DAP_DELETE(l_proof);
@@ -1075,14 +1075,14 @@ static int s_mring_verify_core(const uint8_t *a_buf, size_t a_buf_size,
             goto out;
         }
         chipmunk_poly_t l_cT;
-        chipmunk_poly_mul_ntt(&l_cT, &l_cstar_ntt, &l_T_ntt);
+        chipmunk_poly_mul_ntt_q(&l_cT, &l_cstar_ntt, &l_T_ntt, (uint64_t)CHIPMUNK_Q);
         rc = chipmunk_poly_invntt(&l_cT);
         if (rc != 0) {
             chipmunk_mring_fold_proof_free(l_proof);
             DAP_DELETE(l_proof);
             goto out;
         }
-        rc = chipmunk_poly_sub(&l_M_T, &l_M_T, &l_cT);
+        rc = chipmunk_poly_sub_q(&l_M_T, &l_M_T, &l_cT, (uint64_t)CHIPMUNK_Q);
         if (rc != 0) {
             chipmunk_mring_fold_proof_free(l_proof);
             DAP_DELETE(l_proof);

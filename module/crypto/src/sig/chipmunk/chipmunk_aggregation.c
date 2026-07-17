@@ -290,7 +290,7 @@ int chipmunk_hots_sig_randomize(const chipmunk_hots_signature_t *sig,
 
         // Pointwise multiply in NTT domain.
         chipmunk_poly_t l_prod_ntt;
-        chipmunk_poly_mul_ntt(&l_prod_ntt, &l_r_ntt, &l_sigma_ntt);
+        chipmunk_poly_mul_ntt_q(&l_prod_ntt, &l_r_ntt, &l_sigma_ntt, (uint64_t)CHIPMUNK_Q);
 
         // Back to time domain.
         chipmunk_invntt(l_prod_ntt.coeffs);
@@ -343,8 +343,8 @@ int chipmunk_hots_aggregate_with_randomizers(const chipmunk_hots_signature_t *si
             chipmunk_ntt(l_sigma_ntt.coeffs);
 
             chipmunk_poly_t l_prod_ntt;
-            chipmunk_poly_mul_ntt(&l_prod_ntt, &l_r_ntt, &l_sigma_ntt);
-            chipmunk_poly_add_ntt(&l_accum_ntt[i], &l_accum_ntt[i], &l_prod_ntt);
+            chipmunk_poly_mul_ntt_q(&l_prod_ntt, &l_r_ntt, &l_sigma_ntt, (uint64_t)CHIPMUNK_Q);
+            chipmunk_poly_add_ntt_q(&l_accum_ntt[i], &l_accum_ntt[i], &l_prod_ntt, (uint64_t)CHIPMUNK_Q);
         }
     }
 
@@ -830,8 +830,8 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
         chipmunk_ntt(l_sigma_ntt.coeffs);
 
         chipmunk_poly_t l_term;
-        chipmunk_poly_mul_ntt(&l_term, &l_params.a[i], &l_sigma_ntt);
-        chipmunk_poly_add_ntt(&l_lhs_ntt, &l_lhs_ntt, &l_term);
+        chipmunk_poly_mul_ntt_q(&l_term, &l_params.a[i], &l_sigma_ntt, (uint64_t)CHIPMUNK_Q);
+        chipmunk_poly_add_ntt_q(&l_lhs_ntt, &l_lhs_ntt, &l_term, (uint64_t)CHIPMUNK_Q);
     }
 
     // 7. RHS components in NTT domain:
@@ -855,11 +855,11 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
         chipmunk_ntt(l_v1.coeffs);
 
         chipmunk_poly_t l_prod0, l_prod1;
-        chipmunk_poly_mul_ntt(&l_prod0, &l_r_ntt, &l_v0);
-        chipmunk_poly_mul_ntt(&l_prod1, &l_r_ntt, &l_v1);
+        chipmunk_poly_mul_ntt_q(&l_prod0, &l_r_ntt, &l_v0, (uint64_t)CHIPMUNK_Q);
+        chipmunk_poly_mul_ntt_q(&l_prod1, &l_r_ntt, &l_v1, (uint64_t)CHIPMUNK_Q);
 
-        chipmunk_poly_add_ntt(&l_v0_sum_ntt, &l_v0_sum_ntt, &l_prod0);
-        chipmunk_poly_add_ntt(&l_v1_sum_ntt, &l_v1_sum_ntt, &l_prod1);
+        chipmunk_poly_add_ntt_q(&l_v0_sum_ntt, &l_v0_sum_ntt, &l_prod0, (uint64_t)CHIPMUNK_Q);
+        chipmunk_poly_add_ntt_q(&l_v1_sum_ntt, &l_v1_sum_ntt, &l_prod1, (uint64_t)CHIPMUNK_Q);
     }
 
     chipmunk_randomizers_free(&l_randomizers);
@@ -874,12 +874,12 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
 
     // 9. RHS = H(m) · V0_sum + V1_sum  (NTT domain).
     chipmunk_poly_t l_rhs_ntt, l_hm_v0_ntt;
-    chipmunk_poly_mul_ntt(&l_hm_v0_ntt, &l_hm, &l_v0_sum_ntt);
-    chipmunk_poly_add_ntt(&l_rhs_ntt, &l_hm_v0_ntt, &l_v1_sum_ntt);
+    chipmunk_poly_mul_ntt_q(&l_hm_v0_ntt, &l_hm, &l_v0_sum_ntt, (uint64_t)CHIPMUNK_Q);
+    chipmunk_poly_add_ntt_q(&l_rhs_ntt, &l_hm_v0_ntt, &l_v1_sum_ntt, (uint64_t)CHIPMUNK_Q);
 
     // 10. Strict equality check (no slack, no tolerance).  chipmunk_poly_equal
     //      canonicalises both operands, so this is a true Rq-equality.
-    if (!chipmunk_poly_equal(&l_lhs_ntt, &l_rhs_ntt)) {
+    if (!chipmunk_poly_equal_q(&l_lhs_ntt, &l_rhs_ntt, (uint64_t)CHIPMUNK_Q)) {
         log_it(L_ERROR, "Aggregate HOTS identity does not hold");
         return 0;
     }

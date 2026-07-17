@@ -102,7 +102,7 @@ static bool s_ext_is_one(const chipmunk_fq6_ext_t *a)
 
 static bool s_test_irreducible(void)
 {
-    dap_assert(chipmunk_fq6_ext_modulus_is_irreducible(),
+    dap_assert(chipmunk_fq6_ext_modulus_is_irreducible_q((uint64_t)CHIPMUNK_Q),
                "Φ₉ = Y⁶+Y³+1 must be irreducible over F_q (Rabin)");
     return true;
 }
@@ -181,10 +181,10 @@ static bool s_test_scalar_inverse(void)
         if (all_zero) { continue; }
 
         chipmunk_fq6_ext_t x, xinv, prod;
-        chipmunk_fq6_ext_scalar_set(&x, coords);
+        chipmunk_fq6_ext_scalar_set_q(&x, coords, (uint64_t)CHIPMUNK_Q);
 
         /* a nonzero element of F_{q⁶} is always invertible (it is a field) */
-        const int rc = chipmunk_fq6_ext_scalar_invert(&xinv, &x);
+        const int rc = chipmunk_fq6_ext_scalar_invert_q(&xinv, &x, (uint64_t)CHIPMUNK_Q);
         dap_assert(rc == 0, "nonzero F_{q⁶} scalar must be invertible");
 
         dap_assert(chipmunk_fq6_ext_mul(&prod, &x, &xinv) == 0, "mul");
@@ -192,7 +192,7 @@ static bool s_test_scalar_inverse(void)
 
         /* the inverse must itself be scalar (degree-0 in X per Y-coeff) */
         int32_t back[CHIPMUNK_FQ6_EXT_DEG];
-        dap_assert(chipmunk_fq6_ext_scalar_get(back, &xinv) == 0,
+        dap_assert(chipmunk_fq6_ext_scalar_get_q(back, &xinv, (uint64_t)CHIPMUNK_Q) == 0,
                    "inverse of a scalar is scalar");
         ++checked;
     }
@@ -201,8 +201,8 @@ static bool s_test_scalar_inverse(void)
     /* zero scalar → -EDOM */
     int32_t zc[CHIPMUNK_FQ6_EXT_DEG] = {0};
     chipmunk_fq6_ext_t z, zi;
-    chipmunk_fq6_ext_scalar_set(&z, zc);
-    dap_assert(chipmunk_fq6_ext_scalar_invert(&zi, &z) == -EDOM,
+    chipmunk_fq6_ext_scalar_set_q(&z, zc, (uint64_t)CHIPMUNK_Q);
+    dap_assert(chipmunk_fq6_ext_scalar_invert_q(&zi, &z, (uint64_t)CHIPMUNK_Q) == -EDOM,
                "zero scalar must report -EDOM");
 
     /* non-scalar element → -EINVAL on scalar_get/invert */
@@ -210,7 +210,7 @@ static bool s_test_scalar_inverse(void)
     chipmunk_fq6_ext_zero(&nonscalar);
     nonscalar.c[0].coeffs[1] = 7; /* X¹ term ⇒ not a scalar */
     int32_t tmp[CHIPMUNK_FQ6_EXT_DEG];
-    dap_assert(chipmunk_fq6_ext_scalar_get(tmp, &nonscalar) == -EINVAL,
+    dap_assert(chipmunk_fq6_ext_scalar_get_q(tmp, &nonscalar, (uint64_t)CHIPMUNK_Q) == -EINVAL,
                "non-scalar element must report -EINVAL");
     return true;
 }
@@ -223,7 +223,7 @@ static bool s_test_general_inverse(void)
     for (int it = 0; it < 16 && checked < 6u; ++it) {
         chipmunk_fq6_ext_t x, xinv, prod;
         s_rand_ext(&x);
-        const int rc = chipmunk_fq6_ext_invert(&xinv, &x);
+        const int rc = chipmunk_fq6_ext_invert_q(&xinv, &x, (uint64_t)CHIPMUNK_Q, NULL);
         if (rc == -EDOM) {
             continue; /* astronomically unlikely for random x; skip if hit */
         }
@@ -255,7 +255,7 @@ static bool s_test_embed_project(void)
         dap_assert(s_poly_eq(&proj, &a), "project(embed(a)) == a");
 
         /* embedded element is in the base ring */
-        dap_assert(chipmunk_fq6_ext_is_in_base(&ea),
+        dap_assert(chipmunk_fq6_ext_is_in_base_q(&ea, (uint64_t)CHIPMUNK_Q),
                    "embedded R_q element must be in base ring");
 
         /* ring homomorphism: embed(a)·embed(b) == embed(a·b)
@@ -277,7 +277,7 @@ static bool s_test_embed_project(void)
     chipmunk_fq6_ext_t y1;
     chipmunk_fq6_ext_zero(&y1);
     y1.c[1].coeffs[0] = 1; /* the element Y */
-    dap_assert(!chipmunk_fq6_ext_is_in_base(&y1),
+    dap_assert(!chipmunk_fq6_ext_is_in_base_q(&y1, (uint64_t)CHIPMUNK_Q),
                "element Y must NOT be in the base ring");
     return true;
 }
@@ -327,7 +327,7 @@ static bool s_test_frobenius_trace(void)
         chipmunk_fq6_ext_embed(&ep, &p);
         dap_assert(chipmunk_fq6_ext_frobenius(&sep, &ep) == 0, "σ(embed)");
         dap_assert(s_ext_eq(&sep, &ep), "σ(embed(p)) == embed(p) (base ⇒ fixed)");
-        dap_assert(chipmunk_fq6_ext_is_in_base(&ep), "embed(p) in base");
+        dap_assert(chipmunk_fq6_ext_is_in_base_q(&ep, (uint64_t)CHIPMUNK_Q), "embed(p) in base");
 
         /* random general element: NOT σ-fixed AND NOT in base */
         chipmunk_fq6_ext_t g, sg;
@@ -335,7 +335,7 @@ static bool s_test_frobenius_trace(void)
         dap_assert(chipmunk_fq6_ext_frobenius(&sg, &g) == 0, "σ(g)");
         dap_assert(!s_ext_eq(&sg, &g),
                    "random general element is not σ-fixed (¬fixed ⇒ ¬base)");
-        dap_assert(!chipmunk_fq6_ext_is_in_base(&g),
+        dap_assert(!chipmunk_fq6_ext_is_in_base_q(&g, (uint64_t)CHIPMUNK_Q),
                    "random general element not in base");
     }
 
@@ -346,7 +346,7 @@ static bool s_test_frobenius_trace(void)
     chipmunk_fq6_ext_t sy;
     dap_assert(chipmunk_fq6_ext_frobenius(&sy, &y) == 0, "σ(Y)");
     dap_assert(!s_ext_eq(&sy, &y), "σ(Y) ≠ Y");
-    dap_assert(!chipmunk_fq6_ext_is_in_base(&y), "Y not in base");
+    dap_assert(!chipmunk_fq6_ext_is_in_base_q(&y, (uint64_t)CHIPMUNK_Q), "Y not in base");
 
     /* trace: Tr(embed(p)) = e·p, and additivity Tr(a+b)=Tr(a)+Tr(b) */
     for (int it = 0; it < 6; ++it) {

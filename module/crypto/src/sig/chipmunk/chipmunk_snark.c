@@ -161,7 +161,7 @@ typedef struct s_fq6_elem {
 static void s_ext_to_fq6(s_fq6_elem_t *a_out, const chipmunk_fq6_ext_t *a_ext)
 {
     int32_t l_coords[CHIPMUNK_FQ6_EXT_DEG];
-    chipmunk_fq6_ext_scalar_get(l_coords, a_ext);
+    chipmunk_fq6_ext_scalar_get_q(l_coords, a_ext, (uint64_t)CHIPMUNK_Q);
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         a_out->c[j] = l_coords[j];
     }

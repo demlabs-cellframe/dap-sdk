@@ -350,10 +350,10 @@ void dap_chipmunk_compute_hots_pk_internal(const chipmunk_hots_params_t *a_param
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         chipmunk_poly_t l_term_v0_ntt;
-        chipmunk_poly_mul_ntt(&l_term_v0_ntt, &a_params->a[i], &a_hots_sk->s0[i]);
+        chipmunk_poly_mul_ntt_q(&l_term_v0_ntt, &a_params->a[i], &a_hots_sk->s0[i], (uint64_t)CHIPMUNK_Q);
 
         chipmunk_poly_t l_term_v1_ntt;
-        chipmunk_poly_mul_ntt(&l_term_v1_ntt, &a_params->a[i], &a_hots_sk->s1[i]);
+        chipmunk_poly_mul_ntt_q(&l_term_v1_ntt, &a_params->a[i], &a_hots_sk->s1[i], (uint64_t)CHIPMUNK_Q);
 
         chipmunk_poly_t l_term_v0_time = l_term_v0_ntt;
         chipmunk_poly_t l_term_v1_time = l_term_v1_ntt;
@@ -364,8 +364,8 @@ void dap_chipmunk_compute_hots_pk_internal(const chipmunk_hots_params_t *a_param
             l_v0_time_sum = l_term_v0_time;
             l_v1_time_sum = l_term_v1_time;
         } else {
-            chipmunk_poly_add(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time);
-            chipmunk_poly_add(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time);
+            chipmunk_poly_add_q(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time, (uint64_t)CHIPMUNK_Q);
+            chipmunk_poly_add_q(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time, (uint64_t)CHIPMUNK_Q);
         }
     }
 

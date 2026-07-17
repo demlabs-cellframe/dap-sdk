@@ -544,7 +544,7 @@ int chipmunk_lrs_relation_eval(chipmunk_poly_t *a_out,
         if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
             return l_rc;
         }
-        chipmunk_poly_mul_ntt(&l_prod, &l_A, &l_x);
+        chipmunk_poly_mul_ntt_q(&l_prod, &l_A, &l_x, (uint64_t)CHIPMUNK_Q);
         l_rc = chipmunk_poly_invntt(&l_prod);
         if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
             return l_rc;
@@ -889,7 +889,7 @@ static int s_mul_challenge_witness_centered(chipmunk_poly_t a_cx[CHIPMUNK_LRS_K]
             dap_memwipe(&l_c_red, sizeof(l_c_red));
             return l_rc;
         }
-        chipmunk_poly_mul_ntt(&a_cx[j], &l_c_red, &l_x_red);
+        chipmunk_poly_mul_ntt_q(&a_cx[j], &l_c_red, &l_x_red, (uint64_t)CHIPMUNK_Q);
         l_rc = chipmunk_poly_invntt(&a_cx[j]);
         dap_memwipe(&l_x_red, sizeof(l_x_red));
         if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
@@ -1192,7 +1192,7 @@ int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
             l_rc = chipmunk_poly_ntt(&l_P_red);
         }
         if (l_rc == CHIPMUNK_ERROR_SUCCESS) {
-            chipmunk_poly_mul_ntt(&l_cP, &l_c_red, &l_P_red);
+            chipmunk_poly_mul_ntt_q(&l_cP, &l_c_red, &l_P_red, (uint64_t)CHIPMUNK_Q);
             l_rc = chipmunk_poly_invntt(&l_cP);
         }
         dap_memwipe(&l_c_red, sizeof(l_c_red));
@@ -1430,8 +1430,8 @@ static int s_simulate_branch(uint8_t a_T_pk_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES
         if (l_rc == CHIPMUNK_ERROR_SUCCESS) l_rc = chipmunk_poly_ntt(&l_P_red);
         if (l_rc == CHIPMUNK_ERROR_SUCCESS) l_rc = chipmunk_poly_ntt(&l_I_red);
         if (l_rc == CHIPMUNK_ERROR_SUCCESS) {
-            chipmunk_poly_mul_ntt(&l_cP, &l_c_red, &l_P_red);
-            chipmunk_poly_mul_ntt(&l_cI, &l_c_red, &l_I_red);
+            chipmunk_poly_mul_ntt_q(&l_cP, &l_c_red, &l_P_red, (uint64_t)CHIPMUNK_Q);
+            chipmunk_poly_mul_ntt_q(&l_cI, &l_c_red, &l_I_red, (uint64_t)CHIPMUNK_Q);
             l_rc = chipmunk_poly_invntt(&l_cP);
             if (l_rc == CHIPMUNK_ERROR_SUCCESS) l_rc = chipmunk_poly_invntt(&l_cI);
         }

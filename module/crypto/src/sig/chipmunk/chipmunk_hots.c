@@ -212,13 +212,13 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         // a[i] * s0[i] - ALL in NTT domain
         chipmunk_poly_t l_term_v0_ntt;
-        chipmunk_poly_mul_ntt(&l_term_v0_ntt, &a_params->a[i], &a_sk->s0[i]);
+        chipmunk_poly_mul_ntt_q(&l_term_v0_ntt, &a_params->a[i], &a_sk->s0[i], (uint64_t)CHIPMUNK_Q);
         debug_if(s_debug_more, L_DEBUG, "  After a[%d] * s0[%d]: term_v0_ntt[0-3] = %d %d %d %d", i, i,
                l_term_v0_ntt.coeffs[0], l_term_v0_ntt.coeffs[1], l_term_v0_ntt.coeffs[2], l_term_v0_ntt.coeffs[3]);
         
         // a[i] * s1[i] - ALL in NTT domain
         chipmunk_poly_t l_term_v1_ntt;
-        chipmunk_poly_mul_ntt(&l_term_v1_ntt, &a_params->a[i], &a_sk->s1[i]);
+        chipmunk_poly_mul_ntt_q(&l_term_v1_ntt, &a_params->a[i], &a_sk->s1[i], (uint64_t)CHIPMUNK_Q);
         debug_if(s_debug_more, L_DEBUG, "  After a[%d] * s1[%d]: term_v1_ntt[0-3] = %d %d %d %d", i, i,
                l_term_v1_ntt.coeffs[0], l_term_v1_ntt.coeffs[1], l_term_v1_ntt.coeffs[2], l_term_v1_ntt.coeffs[3]);
         
@@ -240,8 +240,8 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
             l_v0_time_sum = l_term_v0_time;
             l_v1_time_sum = l_term_v1_time;
         } else {
-            chipmunk_poly_add(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time);
-            chipmunk_poly_add(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time);
+            chipmunk_poly_add_q(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time, (uint64_t)CHIPMUNK_Q);
+            chipmunk_poly_add_q(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time, (uint64_t)CHIPMUNK_Q);
         }
         
         debug_if(s_debug_more, L_DEBUG, "  After addition: v0_time_sum[0-3] = %d %d %d %d",
@@ -334,17 +334,17 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         chipmunk_ntt(l_r.coeffs);
 
         /* s0_blinded = s0 + r */
-        chipmunk_poly_add_ntt(&l_s0_blinded, &a_sk->s0[i], &l_r);
+        chipmunk_poly_add_ntt_q(&l_s0_blinded, &a_sk->s0[i], &l_r, (uint64_t)CHIPMUNK_Q);
 
         /* term1 = s0_blinded * H(m) (randomized input) */
-        chipmunk_poly_mul_ntt(&l_term1, &l_s0_blinded, &l_hm);
+        chipmunk_poly_mul_ntt_q(&l_term1, &l_s0_blinded, &l_hm, (uint64_t)CHIPMUNK_Q);
 
         /* term2 = r * H(m) (randomized input) */
-        chipmunk_poly_mul_ntt(&l_term2, &l_r, &l_hm);
+        chipmunk_poly_mul_ntt_q(&l_term2, &l_r, &l_hm, (uint64_t)CHIPMUNK_Q);
 
         /* s0*H(m) = term1 - term2 */
         chipmunk_poly_t l_s0_hm;
-        chipmunk_poly_sub_ntt(&l_s0_hm, &l_term1, &l_term2);
+        chipmunk_poly_sub_ntt_q(&l_s0_hm, &l_term1, &l_term2, (uint64_t)CHIPMUNK_Q);
 
         /* Generate random mask r2 for s1 blinding */
         uint8_t l_r2_seed[32];
@@ -353,12 +353,12 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         chipmunk_ntt(l_r2.coeffs);
 
         /* s1_blinded = s1 + r2 */
-        chipmunk_poly_add_ntt(&l_s1_blinded, &a_sk->s1[i], &l_r2);
+        chipmunk_poly_add_ntt_q(&l_s1_blinded, &a_sk->s1[i], &l_r2, (uint64_t)CHIPMUNK_Q);
 
         /* σ[i] = s0*H(m) + s1 = (s0*H(m) + s1_blinded) - r2 */
         chipmunk_poly_t l_temp;
-        chipmunk_poly_add_ntt(&l_temp, &l_s0_hm, &l_s1_blinded);
-        chipmunk_poly_sub_ntt(&l_temp, &l_temp, &l_r2);
+        chipmunk_poly_add_ntt_q(&l_temp, &l_s0_hm, &l_s1_blinded, (uint64_t)CHIPMUNK_Q);
+        chipmunk_poly_sub_ntt_q(&l_temp, &l_temp, &l_r2, (uint64_t)CHIPMUNK_Q);
 
         debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT, blinded) first coeffs: %d %d %d %d", i,
                l_temp.coeffs[0], l_temp.coeffs[1], l_temp.coeffs[2], l_temp.coeffs[3]);
@@ -465,7 +465,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
         
         // Multiply a_i * σ_i in NTT domain - a[i] is already in NTT domain!
         chipmunk_poly_t l_term;
-        chipmunk_poly_mul_ntt(&l_term, &a_params->a[i], &l_sigma_i_ntt);
+        chipmunk_poly_mul_ntt_q(&l_term, &a_params->a[i], &l_sigma_i_ntt, (uint64_t)CHIPMUNK_Q);
         
         debug_if(s_debug_more, L_DEBUG, "    a[%d] * σ[%d] first coeffs: %d %d %d %d", i, i,
                l_term.coeffs[0], l_term.coeffs[1], l_term.coeffs[2], l_term.coeffs[3]);
@@ -474,7 +474,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
         if (i == 0) {
             l_left_ntt = l_term;
         } else {
-            chipmunk_poly_add_ntt(&l_left_ntt, &l_left_ntt, &l_term);
+            chipmunk_poly_add_ntt_q(&l_left_ntt, &l_left_ntt, &l_term, (uint64_t)CHIPMUNK_Q);
         }
         
         debug_if(s_debug_more, L_DEBUG, "    Running sum first coeffs: %d %d %d %d",
@@ -489,13 +489,13 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     
     // Compute right side
     chipmunk_poly_t l_hm_v0;
-    chipmunk_poly_mul_ntt(&l_hm_v0, &l_hm_ntt, &l_v0_ntt);
+    chipmunk_poly_mul_ntt_q(&l_hm_v0, &l_hm_ntt, &l_v0_ntt, (uint64_t)CHIPMUNK_Q);
     
     debug_if(s_debug_more, L_DEBUG, "  H(m) * v0 first coeffs: %d %d %d %d",
            l_hm_v0.coeffs[0], l_hm_v0.coeffs[1], l_hm_v0.coeffs[2], l_hm_v0.coeffs[3]);
     
     chipmunk_poly_t l_right_ntt;
-    chipmunk_poly_add_ntt(&l_right_ntt, &l_hm_v0, &l_v1_ntt);
+    chipmunk_poly_add_ntt_q(&l_right_ntt, &l_hm_v0, &l_v1_ntt, (uint64_t)CHIPMUNK_Q);
     
     debug_if(s_debug_more, L_DEBUG, "✓ Right side computed: H(m) * v0 + v1 in NTT domain");
     debug_if(s_debug_more, L_DEBUG, "  Final right sum first coeffs: %d %d %d %d",
@@ -508,7 +508,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     debug_if(s_debug_more, L_DEBUG, "  Right NTT first coeffs: %d %d %d %d",
            l_right_ntt.coeffs[0], l_right_ntt.coeffs[1], l_right_ntt.coeffs[2], l_right_ntt.coeffs[3]);
     
-    bool l_ntt_equal = chipmunk_poly_equal(&l_left_ntt, &l_right_ntt);
+    bool l_ntt_equal = chipmunk_poly_equal_q(&l_left_ntt, &l_right_ntt, (uint64_t)CHIPMUNK_Q);
     if (l_ntt_equal) {
         debug_if(s_debug_more, L_DEBUG, "✅ NTT DOMAIN VERIFICATION SUCCESSFUL!");
         return 0;  // Standard C convention: 0 for success
@@ -528,7 +528,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
            l_right_time.coeffs[0], l_right_time.coeffs[1], l_right_time.coeffs[2], l_right_time.coeffs[3]);
     
     // Use exact comparison function as in original Rust code
-    bool l_equal = chipmunk_poly_equal(&l_left_time, &l_right_time);
+    bool l_equal = chipmunk_poly_equal_q(&l_left_time, &l_right_time, (uint64_t)CHIPMUNK_Q);
     
     if (l_equal) {
         debug_if(s_debug_more, L_DEBUG, "✅ TIME DOMAIN VERIFICATION SUCCESSFUL: Equations match!");

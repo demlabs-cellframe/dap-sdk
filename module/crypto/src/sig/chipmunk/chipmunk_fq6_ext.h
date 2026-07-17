@@ -71,11 +71,11 @@ void chipmunk_fq6_ext_project(chipmunk_poly_t *a_out,
 
 /*  Normalise every R_q coefficient into canonical [0, q).  Wire qpack and
  *  FS transcript absorption both require this representation. */
-void chipmunk_fq6_ext_canonicalize(chipmunk_fq6_ext_t *a);
+void chipmunk_fq6_ext_canonicalize_q(chipmunk_fq6_ext_t *a, uint64_t q);
 
 /*  True iff a lies in the base ring R_q (Y-components 1..e-1 all zero).
  *  Used by the verifier-side consistency lane (G3.1 §7). */
-bool chipmunk_fq6_ext_is_in_base(const chipmunk_fq6_ext_t *a);
+bool chipmunk_fq6_ext_is_in_base_q(const chipmunk_fq6_ext_t *a, uint64_t q);
 
 /* ---- ring operations ----------------------------------------------- */
 
@@ -119,8 +119,6 @@ int chipmunk_fq6_ext_trace(chipmunk_poly_t *a_out,
 /*  A scalar is given by its six F_q coordinates (a_0,…,a_5) representing
  *  Σ a_j Yʲ ∈ F_{q⁶}.  Materialise it as an ext element whose six
  *  Y-coefficients are the corresponding CONSTANT R_q polynomials. */
-void chipmunk_fq6_ext_scalar_set(chipmunk_fq6_ext_t *a_out,
-                                   const int32_t a_coords[CHIPMUNK_FQ6_EXT_DEG]);
 
 /** @brief Per-q variant: normalize coords into [0, q) before storing. */
 void chipmunk_fq6_ext_scalar_set_q(chipmunk_fq6_ext_t *a_out,
@@ -130,8 +128,6 @@ void chipmunk_fq6_ext_scalar_set_q(chipmunk_fq6_ext_t *a_out,
 /*  Extract the six F_q coordinates from a scalar ext element (reads the
  *  degree-0 X-coefficient of each Y-component).  Returns -EINVAL if the
  *  element is not scalar (some Y-component is a non-constant R_q poly). */
-int chipmunk_fq6_ext_scalar_get(int32_t a_coords_out[CHIPMUNK_FQ6_EXT_DEG],
-                                  const chipmunk_fq6_ext_t *a);
 
 /** @brief Per-q variant: normalize coords into [0, q). */
 int chipmunk_fq6_ext_scalar_get_q(int32_t a_coords_out[CHIPMUNK_FQ6_EXT_DEG],
@@ -140,8 +136,6 @@ int chipmunk_fq6_ext_scalar_get_q(int32_t a_coords_out[CHIPMUNK_FQ6_EXT_DEG],
 /*  Invert a scalar (F_{q⁶}) element via extended Euclid in F_q[Y]/(Φ₉).
  *  Returns 0 on success (out is the scalar inverse), -EDOM if the scalar
  *  is zero / non-invertible, -EINVAL if a is not scalar. */
-int chipmunk_fq6_ext_scalar_invert(chipmunk_fq6_ext_t *a_out,
-                                     const chipmunk_fq6_ext_t *a);
 
 /** @brief Per-q variant of scalar inversion. */
 int chipmunk_fq6_ext_scalar_invert_q(chipmunk_fq6_ext_t *a_out,
@@ -162,9 +156,6 @@ int chipmunk_fq6_ext_scalar_invert_q(chipmunk_fq6_ext_t *a_out,
  *  verifier re-derives it identically.  The all-zero element is
  *  rejection-resampled, so the output is always nonzero (invertible).
  *  Returns 0 on success, -EINVAL on null args. */
-int chipmunk_fq6_ext_sample_challenge(chipmunk_fq6_ext_t *a_out,
-                                        const uint8_t a_fs_hash[32],
-                                        uint32_t a_counter);
 
 /** @brief Per-q variant: rejection-sample F_q coordinates in [0, q).
  *  Required for q != CHIPMUNK_Q so challenges live in the correct field. */
@@ -179,22 +170,15 @@ int chipmunk_fq6_ext_sample_challenge_q(chipmunk_fq6_ext_t *a_out,
  *  slot is non-invertible.  Not used on the fold hot path (challenges
  *  are scalar); provided to validate the algebra and for the
  *  R_q↔R_q^{(e)} consistency tooling. */
-int chipmunk_fq6_ext_invert(chipmunk_fq6_ext_t *a_out,
-                              const chipmunk_fq6_ext_t *a);
 
 /** @brief Per-q variant of chipmunk_fq6_ext_invert (Phase 9.14).
- *  Uses per-q NTT context when provided, otherwise falls back to global NTT. */
+ *  Requires a per-q NTT context (no fallback to global NTT). */
 int chipmunk_fq6_ext_invert_q(chipmunk_fq6_ext_t *a_out,
                                 const chipmunk_fq6_ext_t *a,
                                 uint64_t q,
                                 const chipmunk_ntt_ctx_t *ntt_ctx);
 
 /* ---- irreducibility self-check (Rabin) for CI --------------------- */
-
-/*  Verify that g(Y) = Φ₉ is irreducible over F_q (Rabin's test).
- *  Returns true iff irreducible.  Lets the unit test re-confirm the
- *  G3.1 §3.1 parameter choice in CI rather than trusting a constant. */
-bool chipmunk_fq6_ext_modulus_is_irreducible(void);
 
 /** @brief Per-q variant of the Rabin irreducibility test for Φ₉ over F_q.
  *  Required for q != CHIPMUNK_Q — verifies Φ₉ is irreducible so R_q^{(e)}

@@ -210,18 +210,18 @@ int chipmunk_batch_verify_hots(
         memset(&l_left_ntt, 0, sizeof(l_left_ntt));
         for (int j = 0; j < CHIPMUNK_GAMMA; j++) {
             chipmunk_poly_t l_term;
-            chipmunk_poly_mul_ntt(&l_term, &l_ctx[i].hots_params.a[j], &l_sigma_ntt[j]);
+            chipmunk_poly_mul_ntt_q(&l_term, &l_ctx[i].hots_params.a[j], &l_sigma_ntt[j], (uint64_t)CHIPMUNK_Q);
             if (j == 0)
                 l_left_ntt = l_term;
             else
-                chipmunk_poly_add_ntt(&l_left_ntt, &l_left_ntt, &l_term);
+                chipmunk_poly_add_ntt_q(&l_left_ntt, &l_left_ntt, &l_term, (uint64_t)CHIPMUNK_Q);
         }
 
         chipmunk_poly_t l_hm_v0, l_right_ntt;
-        chipmunk_poly_mul_ntt(&l_hm_v0, &l_hm_ntt, &l_v0_ntt);
-        chipmunk_poly_add_ntt(&l_right_ntt, &l_hm_v0, &l_v1_ntt);
+        chipmunk_poly_mul_ntt_q(&l_hm_v0, &l_hm_ntt, &l_v0_ntt, (uint64_t)CHIPMUNK_Q);
+        chipmunk_poly_add_ntt_q(&l_right_ntt, &l_hm_v0, &l_v1_ntt, (uint64_t)CHIPMUNK_Q);
 
-        a_results[i] = chipmunk_poly_equal(&l_left_ntt, &l_right_ntt) ? 0 : -1;
+        a_results[i] = chipmunk_poly_equal_q(&l_left_ntt, &l_right_ntt, (uint64_t)CHIPMUNK_Q) ? 0 : -1;
     }
 
     DAP_DELETE(l_fwd_buf);

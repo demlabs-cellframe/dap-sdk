@@ -102,7 +102,7 @@ static int s_pedersen_commit_with_message_poly(chipmunk_pedersen_commit_t *a_com
             chipmunk_ntt(l_r_ntt.coeffs);
 
             chipmunk_poly_t l_prod;
-            chipmunk_poly_mul_ntt(&l_prod, &l_a_ntt, &l_r_ntt);
+            chipmunk_poly_mul_ntt_q(&l_prod, &l_a_ntt, &l_r_ntt, (uint64_t)CHIPMUNK_Q);
             chipmunk_invntt(l_prod.coeffs);
 
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
@@ -242,7 +242,7 @@ void chipmunk_pedersen_blinding_sub(chipmunk_poly_t a_result[CHIPMUNK_LRS_K],
 {
     if (!a_result || !a || !b) return;
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j)
-        chipmunk_poly_sub(&a_result[j], &a[j], &b[j]);
+        chipmunk_poly_sub_q(&a_result[j], &a[j], &b[j], (uint64_t)CHIPMUNK_Q);
 }
 
 int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,

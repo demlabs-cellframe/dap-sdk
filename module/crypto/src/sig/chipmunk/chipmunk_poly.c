@@ -73,93 +73,6 @@ int chipmunk_poly_invntt(chipmunk_poly_t *a_poly) {
 }
 
 /**
- * @brief Add two polynomials
- */
-int chipmunk_poly_add(chipmunk_poly_t *r, const chipmunk_poly_t *a, const chipmunk_poly_t *b) {
-    if (!r || !a || !b) {
-        log_it(L_ERROR, "NULL input parameters in chipmunk_poly_add");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // **ИСПРАВЛЕНО**: используем центрированное представление как в Rust
-        int64_t l_temp = (int64_t)a->coeffs[i] + (int64_t)b->coeffs[i];
-        r->coeffs[i] = (int32_t)(l_temp % CHIPMUNK_Q);
-        
-        // Приводим к положительному представлению сначала
-        if (r->coeffs[i] < 0) {
-            r->coeffs[i] += CHIPMUNK_Q;
-        }
-        
-        // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: применяем центрированную нормализацию [-Q/2, Q/2]
-        // как в оригинальном Rust коде normalize() функция
-        if (r->coeffs[i] > CHIPMUNK_Q / 2) {
-            r->coeffs[i] -= CHIPMUNK_Q;
-        }
-    }
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief Subtract polynomials (r = a - b)
- * 
- * @param a_result Output polynomial
- * @param a_a First polynomial
- * @param a_b Second polynomial
- * @return 0 on success, negative on error
- */
-int chipmunk_poly_sub(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b) {
-    if (!a_result || !a_a || !a_b) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_sub");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // **ИСПРАВЛЕНО**: используем центрированное представление как в Rust
-        int64_t l_temp = (int64_t)a_a->coeffs[i] - (int64_t)a_b->coeffs[i];
-        a_result->coeffs[i] = (int32_t)(l_temp % CHIPMUNK_Q);
-        
-        // Приводим к положительному представлению сначала
-        if (a_result->coeffs[i] < 0) {
-            a_result->coeffs[i] += CHIPMUNK_Q;
-        }
-        
-        // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: применяем центрированную нормализацию [-Q/2, Q/2]
-        // как в оригинальном Rust коде normalize() функция
-        if (a_result->coeffs[i] > CHIPMUNK_Q / 2) {
-            a_result->coeffs[i] -= CHIPMUNK_Q;
-        }
-    }
-    
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief Multiply two polynomials in NTT form
- */
-int chipmunk_poly_pointwise(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b) {
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: Function entry");
-    
-    if (!a_result || !a_a || !a_b) {
-        log_it(L_ERROR, "NULL input parameters in chipmunk_poly_pointwise");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: Pointers validated, calling chipmunk_ntt_pointwise_montgomery");
-    log_it(L_DEBUG, "Starting pointwise multiplication in NTT domain");
-    int result = chipmunk_ntt_pointwise_montgomery(a_result->coeffs, a_a->coeffs, a_b->coeffs);
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: chipmunk_ntt_pointwise_montgomery returned %d", result);
-    
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed pointwise multiplication in NTT domain");
-        return result;
-    }
-    
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: Function exit with success");
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
  * @brief Fill polynomial with uniformly distributed coefficients
  */
 int chipmunk_poly_uniform(chipmunk_poly_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce) {
@@ -447,81 +360,6 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
 }
 
 /**
- * @brief Multiply two polynomials in NTT domain
- * 
- * @param a_result Output polynomial (can be same as input)
- * @param a_poly1 First polynomial (in NTT domain)
- * @param a_poly2 Second polynomial (in NTT domain)
- */
-void chipmunk_poly_mul_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
-    if (!a_result || !a_poly1 || !a_poly2) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_mul_ntt");
-        return;
-    }
-    
-    // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: Используем обычное умножение по модулю как в оригинальном Rust!
-    // В оригинальном Rust коде НЕ используется Montgomery умножение в NTT операциях
-    // Rust: ((a as i64) * (b as i64) % modulus as i64) as i32
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_temp = ((int64_t)a_poly1->coeffs[i] * (int64_t)a_poly2->coeffs[i]) % (int64_t)CHIPMUNK_Q;
-        a_result->coeffs[i] = (int32_t)l_temp;
-        
-        // Ensure positive representation
-        if (a_result->coeffs[i] < 0) {
-            a_result->coeffs[i] += CHIPMUNK_Q;
-        }
-    }
-}
-
-/**
- * @brief Add two polynomials in NTT domain
- * 
- * @param a_result Output polynomial (can be same as input)
- * @param a_poly1 First polynomial (in NTT domain)
- * @param a_poly2 Second polynomial (in NTT domain)
- */
-void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
-    if (!a_result || !a_poly1 || !a_poly2) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_add_ntt");
-        return;
-    }
-
-    // CR-D16 fix (Round-3): in NTT domain the canonical representation is
-    // [0, q), not the centred [-q/2, q/2) form the legacy code produced.
-    // The previous double-normalisation (first non-negative, then centred)
-    // produced sporadic sign flips that only survived final equality checks
-    // by accident, because chipmunk_poly_equal re-lifts both operands via
-    // (x % q + q) % q.  Keep add_ntt strictly in [0, q) so intermediate
-    // NTT-domain results stay semantically consistent with
-    // chipmunk_ntt_pointwise_montgomery / chipmunk_poly_mul_ntt output and
-    // with chipmunk_poly_equal's lift convention.
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_sum = (int64_t)a_poly1->coeffs[i] + (int64_t)a_poly2->coeffs[i];
-        int32_t l_result = (int32_t)(l_sum % CHIPMUNK_Q);
-        if (l_result < 0) {
-            l_result += CHIPMUNK_Q;
-        }
-        a_result->coeffs[i] = l_result;
-    }
-}
-
-void chipmunk_poly_sub_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
-    if (!a_result || !a_poly1 || !a_poly2) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_sub_ntt");
-        return;
-    }
-
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_diff = (int64_t)a_poly1->coeffs[i] - (int64_t)a_poly2->coeffs[i];
-        int32_t l_result = (int32_t)(l_diff % CHIPMUNK_Q);
-        if (l_result < 0) {
-            l_result += CHIPMUNK_Q;
-        }
-        a_result->coeffs[i] = l_result;
-    }
-}
-
-/**
  * @brief Lift coefficient to positive representation [0, q)
  * Based on original Rust implementation: (a % modulus + modulus) % modulus
  */
@@ -529,36 +367,10 @@ static int32_t chipmunk_poly_lift(int32_t a, int32_t modulus) {
     return (a % modulus + modulus) % modulus;
 }
 
-/**
- * @brief Compare two polynomials for equality
- * Uses lift() normalization as in original Rust code
- */
-bool chipmunk_poly_equal(const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
-    if (!a_poly1 || !a_poly2) {
-        return false;
-    }
-    
-    // **ИСПРАВЛЕНО**: используем точную функцию из оригинального Rust коду
-    // Original Rust: HOTSPoly::from(&left) == HOTSPoly::from(&right)
-    // где '==' оператор использует lift() функцию: crate::poly::lift(x, modulus) == crate::poly::lift(y, modulus)
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Применяем точную копию Rust lift() функции к обеим сторонам
-        int32_t left_lifted = chipmunk_poly_lift(a_poly1->coeffs[i], CHIPMUNK_Q);
-        int32_t right_lifted = chipmunk_poly_lift(a_poly2->coeffs[i], CHIPMUNK_Q);
-        
-        if (left_lifted != right_lifted) {
-            return false;
-        }
-    }
-    
-    return true;
-}
-
 /* =========================================================================
  * Phase 9.14a: Per-q polynomial operations
  *
- * These _q variants accept an explicit modulus. The non-_q wrappers
- * default to CHIPMUNK_Q for backward compatibility.
+ * These _q variants accept an explicit modulus.
  * ======================================================================= */
 
 int chipmunk_poly_ntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_ctx) {
