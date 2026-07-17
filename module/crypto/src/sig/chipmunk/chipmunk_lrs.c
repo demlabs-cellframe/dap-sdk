@@ -172,6 +172,15 @@ static uint32_t s_xof_u32(lrs_xof_reader_t *a_reader)
     return s_le32_load(b);
 }
 
+static uint64_t s_xof_u64(lrs_xof_reader_t *a_reader)
+{
+    uint64_t l_v = 0;
+    for (int l_i = 0; l_i < 8; ++l_i) {
+        l_v |= ((uint64_t)s_xof_u8(a_reader)) << (8 * l_i);
+    }
+    return l_v;
+}
+
 static uint16_t s_xof_u16(lrs_xof_reader_t *a_reader)
 {
     uint16_t l_lo = s_xof_u8(a_reader);
@@ -183,6 +192,12 @@ int chipmunk_lrs_poly_qpack(uint8_t a_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
                             const chipmunk_poly_t *a_poly, uint64_t q)
 {
     if (!a_out || !a_poly) {
+        return -EINVAL;
+    }
+    /* Guard: coefficients are packed CHIPMUNK_LRS_Q_BITS wide. If q exceeds
+     * 2^CHIPMUNK_LRS_Q_BITS, coefficients in [2^Q_BITS, q) would silently
+     * overflow into the next coefficient's bit field. */
+    if (q > ((uint64_t)1u << CHIPMUNK_LRS_Q_BITS)) {
         return -EINVAL;
     }
 
@@ -222,6 +237,9 @@ int chipmunk_lrs_poly_qunpack(chipmunk_poly_t *a_poly,
                               const uint8_t a_in[CHIPMUNK_LRS_POLY_QPACK_BYTES], uint64_t q)
 {
     if (!a_poly || !a_in) {
+        return -EINVAL;
+    }
+    if (q > ((uint64_t)1u << CHIPMUNK_LRS_Q_BITS)) {
         return -EINVAL;
     }
 
@@ -369,11 +387,11 @@ int chipmunk_lrs_h_to_poly_q(chipmunk_poly_t *a_poly,
     lrs_xof_reader_t l_reader;
     s_xof_reader_init(&l_reader, l_input, l_input_size);
 
-    const uint32_t l_threshold = UINT32_MAX - (UINT32_MAX % q);
+    const uint64_t l_threshold = UINT64_MAX - (UINT64_MAX % q);
     for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-        uint32_t l_v;
+        uint64_t l_v;
         do {
-            l_v = s_xof_u32(&l_reader);
+            l_v = s_xof_u64(&l_reader);
         } while (l_v >= l_threshold);
         a_poly->coeffs[i] = (int32_t)(l_v % q);
     }
