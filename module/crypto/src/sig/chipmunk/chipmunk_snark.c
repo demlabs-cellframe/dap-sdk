@@ -158,10 +158,11 @@ typedef struct s_fq6_elem {
 } s_fq6_elem_t;
 
 /* Extract F_q^6 coordinates from a scalar extension element */
-static void s_ext_to_fq6(s_fq6_elem_t *a_out, const chipmunk_fq6_ext_t *a_ext)
+static void s_ext_to_fq6(s_fq6_elem_t *a_out, const chipmunk_fq6_ext_t *a_ext,
+                          uint64_t q)
 {
     int32_t l_coords[CHIPMUNK_FQ6_EXT_DEG];
-    chipmunk_fq6_ext_scalar_get_q(l_coords, a_ext, (uint64_t)CHIPMUNK_Q);
+    chipmunk_fq6_ext_scalar_get_q(l_coords, a_ext, q);
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         a_out->c[j] = l_coords[j];
     }
@@ -731,7 +732,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         s_qrom_derive_challenge(&l_randomizer_ext, l_hash, 0, a_ctx->sp.q);
     }
     s_fq6_elem_t l_randomizer;
-    s_ext_to_fq6(&l_randomizer, &l_randomizer_ext);
+    s_ext_to_fq6(&l_randomizer, &l_randomizer_ext, a_ctx->sp.q);
 
     /* Commit to randomizer for verifier re-derivation */
     s_commit_poly(&a_proof->r_commit, &l_randomizer_ext.c[0], a_ctx->sp.d, a_ctx->sp.q);
@@ -780,7 +781,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
      * Uses FULL extension element alpha (F_q^6), not just scalar.
      * Verifies z(alpha) = 0 in F_q^6 (extension check, ~129 bits soundness). */
     s_fq6_elem_t l_alpha_fq6;
-    s_ext_to_fq6(&l_alpha_fq6, &l_alpha_ext);
+    s_ext_to_fq6(&l_alpha_fq6, &l_alpha_ext, a_ctx->sp.q);
 
     chipmunk_poly_t l_q;
     int l_rc = s_synth_div_fq6(&l_q, &l_z, &l_alpha_fq6, a_ctx->sp.d, a_ctx->sp.q);
@@ -1265,7 +1266,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
      * If z(alpha) != 0, the prover's constraint polynomial is invalid. */
     {
         s_fq6_elem_t l_alpha_fq6;
-        s_ext_to_fq6(&l_alpha_fq6, &l_alpha);
+        s_ext_to_fq6(&l_alpha_fq6, &l_alpha, l_mod_q);
         s_fq6_elem_t l_z_at_alpha;
         s_poly_eval_fq6(&l_z_at_alpha, &l_z, &l_alpha_fq6, l_d, l_mod_q);
         if (!s_fq6_is_zero(&l_z_at_alpha)) {

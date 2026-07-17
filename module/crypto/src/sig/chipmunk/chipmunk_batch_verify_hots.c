@@ -95,13 +95,14 @@ static void s_batch_forward_ntt(int32_t *a_buf, uint32_t a_total,
         dap_ntt_forward(a_buf + (size_t)i * CHIPMUNK_N, a_ntt);
 }
 
-int chipmunk_batch_verify_hots(
+int chipmunk_batch_verify_hots_q(
     const uint8_t **a_public_keys,
     const uint8_t **a_messages,
     const size_t *a_msg_lens,
     const uint8_t **a_signatures,
     unsigned int a_count,
-    int *a_results)
+    int *a_results,
+    uint64_t q)
 {
     if (!a_count || !a_public_keys || !a_messages || !a_signatures || !a_results)
         return -1;
@@ -125,7 +126,7 @@ int chipmunk_batch_verify_hots(
         bool l_a_ok = true;
         for (int j = 0; j < CHIPMUNK_GAMMA && l_a_ok; j++) {
             if (dap_chipmunk_hash_sample_matrix_q(l_ctx[i].hots_params.a[j].coeffs,
-                                                  l_ctx[i].pk.rho_seed, j, (uint64_t)CHIPMUNK_Q) != 0)
+                                                  l_ctx[i].pk.rho_seed, j, q) != 0)
                 l_a_ok = false;
         }
         if (!l_a_ok) continue;
@@ -210,18 +211,18 @@ int chipmunk_batch_verify_hots(
         memset(&l_left_ntt, 0, sizeof(l_left_ntt));
         for (int j = 0; j < CHIPMUNK_GAMMA; j++) {
             chipmunk_poly_t l_term;
-            chipmunk_poly_mul_ntt_q(&l_term, &l_ctx[i].hots_params.a[j], &l_sigma_ntt[j], (uint64_t)CHIPMUNK_Q);
+            chipmunk_poly_mul_ntt_q(&l_term, &l_ctx[i].hots_params.a[j], &l_sigma_ntt[j], q);
             if (j == 0)
                 l_left_ntt = l_term;
             else
-                chipmunk_poly_add_ntt_q(&l_left_ntt, &l_left_ntt, &l_term, (uint64_t)CHIPMUNK_Q);
+                chipmunk_poly_add_ntt_q(&l_left_ntt, &l_left_ntt, &l_term, q);
         }
 
         chipmunk_poly_t l_hm_v0, l_right_ntt;
-        chipmunk_poly_mul_ntt_q(&l_hm_v0, &l_hm_ntt, &l_v0_ntt, (uint64_t)CHIPMUNK_Q);
-        chipmunk_poly_add_ntt_q(&l_right_ntt, &l_hm_v0, &l_v1_ntt, (uint64_t)CHIPMUNK_Q);
+        chipmunk_poly_mul_ntt_q(&l_hm_v0, &l_hm_ntt, &l_v0_ntt, q);
+        chipmunk_poly_add_ntt_q(&l_right_ntt, &l_hm_v0, &l_v1_ntt, q);
 
-        a_results[i] = chipmunk_poly_equal_q(&l_left_ntt, &l_right_ntt, (uint64_t)CHIPMUNK_Q) ? 0 : -1;
+        a_results[i] = chipmunk_poly_equal_q(&l_left_ntt, &l_right_ntt, q) ? 0 : -1;
     }
 
     DAP_DELETE(l_fwd_buf);
@@ -236,4 +237,17 @@ int chipmunk_batch_verify_hots(
     DAP_DELETE(l_vidx);
     DAP_DELETE(l_ctx);
     return l_passed;
+}
+
+int chipmunk_batch_verify_hots(
+    const uint8_t **a_public_keys,
+    const uint8_t **a_messages,
+    const size_t *a_msg_lens,
+    const uint8_t **a_signatures,
+    unsigned int a_count,
+    int *a_results)
+{
+    return chipmunk_batch_verify_hots_q(a_public_keys, a_messages, a_msg_lens,
+                                         a_signatures, a_count, a_results,
+                                         (uint64_t)CHIPMUNK_Q);
 }

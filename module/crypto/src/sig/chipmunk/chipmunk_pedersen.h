@@ -135,6 +135,10 @@ int chipmunk_pedersen_commit_explicit(chipmunk_pedersen_commit_t *commit,
 /**
  * Subtract blinding vectors: result[j] = a[j] - b[j]  (mod q), for each j in [0, LRS_K).
  */
+void chipmunk_pedersen_blinding_sub_q(chipmunk_poly_t result[CHIPMUNK_LRS_K],
+                                       const chipmunk_poly_t a[CHIPMUNK_LRS_K],
+                                       const chipmunk_poly_t b[CHIPMUNK_LRS_K],
+                                       uint64_t q);
 void chipmunk_pedersen_blinding_sub(chipmunk_poly_t result[CHIPMUNK_LRS_K],
                                       const chipmunk_poly_t a[CHIPMUNK_LRS_K],
                                       const chipmunk_poly_t b[CHIPMUNK_LRS_K]);
