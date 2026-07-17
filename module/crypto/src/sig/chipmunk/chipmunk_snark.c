@@ -49,16 +49,32 @@
 
 #define LOG_TAG "chipmunk_snark"
 
-/* Module-level q for static helpers that lack ctx access.
- * Set by chipmunk_snark_params_init(). Safe for sequential use. */
-static uint64_t s_ctx_q = (uint64_t)CHIPMUNK_Q;
+/* Parameterized modular reduction: s_mod_q(val, q) replaces chipmunk_mod_q(val)
+ * which uses the global CHIPMUNK_Q.  Used throughout Phase 9.13f to make every
+ * static helper work with an arbitrary prime modulus. */
+static inline int32_t s_mod_q(int64_t val, uint64_t q)
+{
+    int64_t r = val % (int64_t)q;
+    if (r < 0) r += (int64_t)q;
+    return (int32_t)r;
+}
 
-/* Field multiplication in [0, q). Used for twiddle table computation. */
-static inline int32_t s_fqmul(int32_t a_a, int32_t a_b)
+/* Parameterized F_q multiplication: replaces s_fq6_mul which uses global CHIPMUNK_Q. */
+static inline int64_t s_fq6_mul_q(int32_t a, int32_t b, uint64_t q)
+{
+    int64_t la = (int64_t)a % (int64_t)q;
+    if (la < 0) la += (int64_t)q;
+    int64_t lb = (int64_t)b % (int64_t)q;
+    if (lb < 0) lb += (int64_t)q;
+    return la * lb % (int64_t)q;
+}
+
+/* Parameterized s_fqmul: field multiplication in [0, q). */
+static inline int32_t s_fqmul_q(int32_t a_a, int32_t a_b, uint64_t q)
 {
     int64_t l_t = (int64_t)a_a * (int64_t)a_b;
-    int32_t l_r = (int32_t)(l_t % (int64_t)s_ctx_q);
-    if (l_r < 0) l_r += (int32_t)s_ctx_q;
+    int32_t l_r = (int32_t)(l_t % (int64_t)q);
+    if (l_r < 0) l_r += (int32_t)q;
     return l_r;
 }
 
@@ -75,55 +91,30 @@ static const char *s_domain_init = "snark-init-v1";
  * We represent F_q^6 elements as int32_t[6] and provide Horner evaluation.
  * ---------------------------------------------------------------------- */
 
-/* Multiply two F_q values, return in [0, Q).
- * Handles negative inputs correctly via signed modulo.
- * NOTE: Uses global CHIPMUNK_Q. Full q parameterization deferred to Phase 9.13b
- * when chipmunk_field module is generalized. */
-static inline int64_t s_fq6_mul(int32_t a, int32_t b)
-{
-    int64_t l_a = (int64_t)a % (int64_t)CHIPMUNK_Q;
-    if (l_a < 0) l_a += (int64_t)CHIPMUNK_Q;
-    int64_t l_b = (int64_t)b % (int64_t)CHIPMUNK_Q;
-    if (l_b < 0) l_b += (int64_t)CHIPMUNK_Q;
-    return l_a * l_b % (int64_t)CHIPMUNK_Q;
-}
-
-/* Add two F_q values, return in [0, Q) */
-static inline int32_t s_fq6_add(int32_t a, int32_t b)
-{
-    int64_t r = (int64_t)a + (int64_t)b;
-    return chipmunk_mod_q(r);
-}
-
-/* Sub two F_q values, return in [0, Q) */
-static inline int32_t s_fq6_sub(int32_t a, int32_t b)
-{
-    int64_t r = (int64_t)a - (int64_t)b;
-    return chipmunk_mod_q(r);
-}
-
 /* -------------------------------------------------------------------------
  * Internal: Polynomial serialization for commitment
  * ---------------------------------------------------------------------- */
 
 static void s_poly_to_bytes(uint8_t *a_out, size_t a_out_size,
-                            const chipmunk_poly_t *a_poly, uint32_t a_d)
+                            const chipmunk_poly_t *a_poly,
+                            uint32_t a_d, uint64_t a_q)
 {
     size_t l_bytes = (size_t)a_d * sizeof(int32_t);
     if (l_bytes > a_out_size) l_bytes = a_out_size;
-    /* Normalize coefficients to [0, Q) for cross-platform portability */
+    /* Normalize coefficients to [0, q) for cross-platform portability */
     for (size_t i = 0; i < l_bytes / sizeof(int32_t); ++i) {
-        int32_t l_coeff = chipmunk_mod_q((int64_t)a_poly->coeffs[i]);
+        int32_t l_coeff = s_mod_q((int64_t)a_poly->coeffs[i], a_q);
         memcpy(a_out + i * sizeof(int32_t), &l_coeff, sizeof(int32_t));
     }
 }
 
 static int s_commit_poly(chipmunk_snark_commit_t *a_commit,
-                         const chipmunk_poly_t *a_poly, uint32_t a_d)
+                         const chipmunk_poly_t *a_poly,
+                         uint32_t a_d, uint64_t a_q)
 {
     uint8_t l_buf[CHIPMUNK_SNARK_MAX_D * sizeof(int32_t)];
     size_t l_bytes = (size_t)a_d * sizeof(int32_t);
-    s_poly_to_bytes(l_buf, l_bytes, a_poly, a_d);
+    s_poly_to_bytes(l_buf, l_bytes, a_poly, a_d, a_q);
     dap_hash_sha3_256_raw(a_commit->hash, l_buf, l_bytes);
     dap_memwipe(l_buf, l_bytes);
     return 0;
@@ -135,12 +126,15 @@ static int s_commit_poly(chipmunk_snark_commit_t *a_commit,
 
 static int s_qrom_derive_challenge(chipmunk_fq6_ext_t *a_challenge,
                                    const uint8_t *a_transcript_hash,
-                                   uint32_t a_counter)
+                                   uint32_t a_counter, uint64_t a_q)
 {
     /* Sample challenge from subtractive set S = F_{q^6} \ {0}
      * This gives |S| = q^6 - 1 ~ 2^{129.6}, so every nonzero element
-     * is invertible and pairwise differences are invertible. */
-    return chipmunk_fq6_ext_sample_challenge(a_challenge, a_transcript_hash, a_counter);
+     * is invertible and pairwise differences are invertible.
+     * Phase 9.13: challenge is sampled in the ACTIVE field F_q, not the
+     * global CHIPMUNK_Q — critical for soundness when q != CHIPMUNK_Q. */
+    return chipmunk_fq6_ext_sample_challenge_q(a_challenge, a_transcript_hash,
+                                                 a_counter, a_q);
 }
 
 /* -------------------------------------------------------------------------
@@ -173,17 +167,23 @@ static void s_ext_to_fq6(s_fq6_elem_t *a_out, const chipmunk_fq6_ext_t *a_ext)
     }
 }
 
-/* Evaluate polynomial f (with scalar F_q coefficients) at F_q^6 point alpha */
+/* Evaluate polynomial f (with scalar F_q coefficients) at F_q^6 point alpha.
+ * @param a_result  Output F_q^6 evaluation.
+ * @param a_f       Polynomial to evaluate (coeffs in F_q).
+ * @param a_alpha   Extension point (6 F_q coordinates).
+ * @param a_d       Polynomial dimension (number of coefficients to use).
+ * @param a_q       Field modulus. */
 static void s_poly_eval_fq6(s_fq6_elem_t *a_result,
                              const chipmunk_poly_t *a_f,
-                             const s_fq6_elem_t *a_alpha)
+                             const s_fq6_elem_t *a_alpha,
+                             uint32_t a_d, uint64_t a_q)
 {
-    /* Horner: result = f_{N-1}, then for i=N-2..0: result = alpha * result + f_i */
+    /* Horner: result = f_{d-1}, then for i=d-2..0: result = alpha * result + f_i */
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
-        int32_t l_acc = chipmunk_mod_q((int64_t)a_f->coeffs[CHIPMUNK_N - 1]);
-        for (int i = CHIPMUNK_N - 2; i >= 0; --i) {
+        int32_t l_acc = s_mod_q((int64_t)a_f->coeffs[(int)a_d - 1], a_q);
+        for (int i = (int)a_d - 2; i >= 0; --i) {
             /* l_acc = alpha[j] * l_acc + f[i] */
-            l_acc = chipmunk_mod_q(s_fq6_mul(a_alpha->c[j], l_acc) + (int64_t)a_f->coeffs[i]);
+            l_acc = s_mod_q(s_fq6_mul_q(a_alpha->c[j], l_acc, a_q) + (int64_t)a_f->coeffs[i], a_q);
         }
         a_result->c[j] = l_acc;
     }
@@ -222,11 +222,12 @@ static bool s_fq6_equal(const s_fq6_elem_t *a, const s_fq6_elem_t *b)
 
 static int s_synth_div_fq6(chipmunk_poly_t *a_q,
                              const chipmunk_poly_t *a_z,
-                             const s_fq6_elem_t *a_alpha)
+                             const s_fq6_elem_t *a_alpha,
+                             uint32_t a_d, uint64_t a_q_mod)
 {
     /* Verify z(alpha) = 0 for exact division */
     s_fq6_elem_t l_z_at_alpha;
-    s_poly_eval_fq6(&l_z_at_alpha, a_z, a_alpha);
+    s_poly_eval_fq6(&l_z_at_alpha, a_z, a_alpha, a_d, a_q_mod);
     if (!s_fq6_is_zero(&l_z_at_alpha)) {
         log_it(L_ERROR, "SNARK: z(alpha) != 0 — synthetic division not exact");
         return -EINVAL;
@@ -243,9 +244,9 @@ static int s_synth_div_fq6(chipmunk_poly_t *a_q,
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         int32_t l_alpha_j = a_alpha->c[j];
         int64_t l_acc = 0;
-        for (int i = CHIPMUNK_N - 2; i >= 0; --i) {
-            l_acc = chipmunk_mod_q((int64_t)a_z->coeffs[i + 1] +
-                                   (int64_t)l_alpha_j * l_acc);
+        for (int i = (int)a_d - 2; i >= 0; --i) {
+            l_acc = s_mod_q((int64_t)a_z->coeffs[i + 1] +
+                            (int64_t)l_alpha_j * l_acc, a_q_mod);
         }
         /* q polynomial: coeffs[0] holds the combined result.
          * Since alpha is scalar and f has scalar coeffs, the quotient
@@ -260,10 +261,10 @@ static int s_synth_div_fq6(chipmunk_poly_t *a_q,
          * components must give the same quotient by the algebra). */
         if (j == 0) {
             /* This is the only component we need — compute full poly */
-            for (int i = CHIPMUNK_N - 2; i >= 0; --i) {
+            for (int i = (int)a_d - 2; i >= 0; --i) {
                 int64_t l_val = (int64_t)a_z->coeffs[i + 1] +
                                 (int64_t)l_alpha_j * (int64_t)a_q->coeffs[i + 1];
-                a_q->coeffs[i] = chipmunk_mod_q(l_val);
+                a_q->coeffs[i] = s_mod_q(l_val, a_q_mod);
             }
         }
         /* Other components: just verify consistency (debug builds) */
@@ -272,12 +273,12 @@ static int s_synth_div_fq6(chipmunk_poly_t *a_q,
             /* Cross-check: each component should give same quotient */
             chipmunk_poly_t l_q_check;
             memset(&l_q_check, 0, sizeof(l_q_check));
-            for (int i = CHIPMUNK_N - 2; i >= 0; --i) {
+            for (int i = (int)a_d - 2; i >= 0; --i) {
                 int64_t l_val = (int64_t)a_z->coeffs[i + 1] +
                                 (int64_t)l_alpha_j * (int64_t)l_q_check.coeffs[i + 1];
-                l_q_check.coeffs[i] = chipmunk_mod_q(l_val);
+                l_q_check.coeffs[i] = s_mod_q(l_val, a_q_mod);
             }
-            for (int i = 0; i < CHIPMUNK_N; ++i) {
+            for (int i = 0; i < (int)a_d; ++i) {
                 if (a_q->coeffs[i] != l_q_check.coeffs[i]) {
                     log_it(L_ERROR, "SNARK: quotient component %d disagrees at index %d", j, i);
                     return -EINVAL;
@@ -355,7 +356,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                                          uint32_t a_ring_size,
                                          const s_fq6_elem_t *a_randomizer,
                                          const dap_hash_sha3_256_t *a_ring_hash,
-                                         uint32_t a_d)
+                                         uint32_t a_d, uint64_t a_q)
 {
     (void)a_ring;      /* ring is bound via transcript, not constraints */
     (void)a_ring_hash; /* ring hash is in transcript, not constraint poly */
@@ -369,7 +370,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
     memset(&l_c1, 0, sizeof(l_c1));
     for (uint32_t i = 0; i < a_d; ++i) {
         int32_t l_bi = a_b->coeffs[i];
-        l_c1.coeffs[i] = chipmunk_mod_q((int64_t)l_bi * (l_bi - 1));
+        l_c1.coeffs[i] = s_mod_q((int64_t)l_bi * (l_bi - 1), a_q);
     }
 
     /* C2: sum(b_i) - 1 = 0 — exactly one signer
@@ -381,7 +382,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
     }
     chipmunk_poly_t l_c2;
     memset(&l_c2, 0, sizeof(l_c2));
-    l_c2.coeffs[0] = chipmunk_mod_q(l_sum - 1);
+    l_c2.coeffs[0] = s_mod_q(l_sum - 1, a_q);
 
     /* z = C1 + r * C2
      * r is from F_q^6 subtractive set; we use Y^0 component.
@@ -395,7 +396,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
     memcpy(a_z, &l_c1, sizeof(chipmunk_poly_t));
 
     /* z += r * C2 */
-    a_z->coeffs[0] = chipmunk_mod_q((int64_t)a_z->coeffs[0] + (int64_t)l_r * l_c2.coeffs[0]);
+    a_z->coeffs[0] = s_mod_q((int64_t)a_z->coeffs[0] + (int64_t)l_r * l_c2.coeffs[0], a_q);
 
     return 0;
 }
@@ -472,7 +473,6 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
     /* Fill fundamental parameters. */
     a_params->d = a_d;
     a_params->q = a_q;
-    s_ctx_q = a_q;  /* Update module-level q for static helpers. */
 
     /* Derived FRI constants. */
     a_params->fri_init_size = 4 * a_d;
@@ -494,25 +494,34 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
     /* param_id. */
     a_params->param_id = s_param_id(a_d, a_q);
 
-    /* Field constants.
-     * NOTE: chipmunk_field_* functions use the global CHIPMUNK_Q.
-     * For q != CHIPMUNK_Q, field constants must be recomputed (Phase 9.13b).
-     * For now, only q == CHIPMUNK_Q is fully supported. */
-    if (a_q != (uint64_t)CHIPMUNK_Q) {
-        log_it(L_WARNING, "SNARK params: q=%lu != CHIPMUNK_Q=%u — "
-               "field constants use global q, may be incorrect",
-               (unsigned long)a_q, CHIPMUNK_Q);
+    /* Field constants — per-q (Phase 9.13).
+     * Computes omega (primitive 2^l_ad-th root), omega_inv, and inv(2^l_ad)
+     * for the ACTIVE q via chipmunk_field_compute_for_q. No global singleton.
+     * Also verifies Φ₉ irreducibility for the active q via Rabin's test. */
+    if (!chipmunk_fq6_ext_modulus_is_irreducible_q(a_q)) {
+        log_it(L_ERROR, "SNARK params: Φ₉ is NOT irreducible over F_q (q=%lu) — "
+               "R_q^{(e)} is not a field, extension soundness broken",
+               (unsigned long)a_q);
+        return -EINVAL;
     }
-    a_params->omega = chipmunk_field_omega_2048();
-    a_params->omega_inv = chipmunk_field_omega_2048_inv();
-    a_params->inv_2 = chipmunk_field_inv(2);
-    a_params->inv_d = chipmunk_field_inv((int32_t)a_d);
+    {
+        chipmunk_field_consts_t l_fc;
+        int l_fc_rc = chipmunk_field_compute_for_q(&l_fc, a_q, l_ad);
+        if (l_fc_rc != 0) {
+            log_it(L_ERROR, "SNARK params: per-q field constants computation failed for q=%lu",
+                   (unsigned long)a_q);
+            return l_fc_rc;
+        }
+        a_params->omega = l_fc.omega;
+        a_params->omega_inv = l_fc.omega_inv;
+        a_params->inv_2 = chipmunk_field_inv_q(2, a_q);
+        a_params->inv_d = chipmunk_field_inv_q((int32_t)a_d, a_q);
+    }
 
-    /* Coset generator: find g with g^(4d) != 1 mod q.
-     * chipmunk_field_pow uses global q — correct only for q == CHIPMUNK_Q. */
+    /* Coset generator: find g with g^(4d) != 1 mod q. */
     a_params->rs_coset_g = 0;
     for (int32_t g = 3; g < 100; ++g) {
-        int32_t g_pow = chipmunk_field_pow(g, 4 * a_d);
+        int32_t g_pow = chipmunk_field_pow_q(g, 4 * a_d, a_q);
         if (g_pow != 1) {
             a_params->rs_coset_g = g;
             break;
@@ -538,8 +547,8 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
     a_params->zetas[0] = 1;
     a_params->zetas_inv[0] = 1;
     for (uint32_t k = 1; k < a_params->zetas_size; ++k) {
-        a_params->zetas[k] = s_fqmul(a_params->zetas[k - 1], a_params->omega);
-        a_params->zetas_inv[k] = s_fqmul(a_params->zetas_inv[k - 1], a_params->omega_inv);
+        a_params->zetas[k] = s_fqmul_q(a_params->zetas[k - 1], a_params->omega, a_q);
+        a_params->zetas_inv[k] = s_fqmul_q(a_params->zetas_inv[k - 1], a_params->omega_inv, a_q);
     }
 
     log_it(L_INFO, "SNARK params init: d=%u q=%lu 2-ad=%u q%%9=%u coset_g=%d "
@@ -584,6 +593,7 @@ const chipmunk_snark_params_t *chipmunk_snark_params_lrs(void)
     return s_params_lrs_init ? &s_params_lrs : NULL;
 }
 
+/* Available once Phase 9.13h lands per-q field constants. */
 const chipmunk_snark_params_t *chipmunk_snark_params_ring(void)
 {
     if (!s_params_ring_init) {
@@ -618,9 +628,10 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
         return l_rc;
     }
 
-    /* Fill LoTRS lattice params (used by some internal functions). */
-    ctx->params.d = ctx->sp.d;
-    ctx->params.q = ctx->sp.q;
+    /* Fill LoTRS lattice params (used by some internal functions).
+     * Keep d/q in sync with ctx->sp — single source of truth. */
+    ctx->params.d = (int32_t)ctx->sp.d;
+    ctx->params.q = (int32_t)ctx->sp.q;
     ctx->params.k = 6;
     ctx->params.l = 3;
     ctx->params.w = 37;
@@ -630,9 +641,12 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
     /* Domain separator */
     dap_hash_sha3_256_raw(ctx->domain_separator, (const uint8_t *)s_domain_init, strlen(s_domain_init));
 
-    /* Verify Phi_9 irreducibility (Rabin test) */
-    if (!chipmunk_fq6_ext_modulus_is_irreducible()) {
-        log_it(L_ERROR, "SNARK init: Phi_9 is NOT irreducible over F_q — soundness broken");
+    /* Verify Phi_9 irreducibility (Rabin test) for the active q.
+     * Defense-in-depth: params_init already checks this, but init is the
+     * last gate before proofs are generated. */
+    if (!chipmunk_fq6_ext_modulus_is_irreducible_q(ctx->sp.q)) {
+        log_it(L_ERROR, "SNARK init: Phi_9 is NOT irreducible over F_q (q=%lu) — soundness broken",
+               (unsigned long)ctx->sp.q);
         chipmunk_snark_params_free(&ctx->sp);
         return -EINVAL;
     }
@@ -645,8 +659,18 @@ int chipmunk_snark_commit(chipmunk_snark_commit_t *a_commit,
                           const chipmunk_poly_t *a_poly)
 {
     if (!a_commit || !a_poly) return -EINVAL;
-    /* Default to MAX_D for standalone API (no context available). */
-    return s_commit_poly(a_commit, a_poly, CHIPMUNK_SNARK_MAX_D);
+    /* Standalone API: LRS default params (d=MAX_D, q=CHIPMUNK_Q).
+     * For non-LRS param sets use chipmunk_snark_commit_ctx(). */
+    return s_commit_poly(a_commit, a_poly, CHIPMUNK_SNARK_MAX_D, (uint64_t)CHIPMUNK_Q);
+}
+
+int chipmunk_snark_commit_ctx(chipmunk_snark_commit_t *a_commit,
+                                const chipmunk_snark_ctx_t *a_ctx,
+                                const chipmunk_poly_t *a_poly)
+{
+    if (!a_commit || !a_ctx || !a_poly) return -EINVAL;
+    if (!a_ctx->initialized) return -EINVAL;
+    return s_commit_poly(a_commit, a_poly, a_ctx->sp.d, a_ctx->sp.q);
 }
 
 int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
@@ -704,13 +728,13 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         memcpy(l_transcript + l_off, l_ring_hash.raw, 32); l_off += 32;
         uint8_t l_hash[32];
         dap_hash_sha3_256_raw(l_hash, l_transcript, l_off);
-        s_qrom_derive_challenge(&l_randomizer_ext, l_hash, 0);
+        s_qrom_derive_challenge(&l_randomizer_ext, l_hash, 0, a_ctx->sp.q);
     }
     s_fq6_elem_t l_randomizer;
     s_ext_to_fq6(&l_randomizer, &l_randomizer_ext);
 
     /* Commit to randomizer for verifier re-derivation */
-    s_commit_poly(&a_proof->r_commit, &l_randomizer_ext.c[0], a_ctx->sp.d);
+    s_commit_poly(&a_proof->r_commit, &l_randomizer_ext.c[0], a_ctx->sp.d, a_ctx->sp.q);
 
     /* 5. Build constraint polynomial z(X) = C1 + r*C2
      * For honest prover: z = 0, so synthetic division by (X - alpha) succeeds. */
@@ -718,10 +742,10 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     s_build_constraint_polynomial(&l_z, &l_b, a_statement->ring,
                                    (uint32_t)a_statement->ring_size,
                                    &l_randomizer, &l_ring_hash,
-                                   a_ctx->sp.d);
+                                   a_ctx->sp.d, a_ctx->sp.q);
 
     /* 6. Commit to constraint polynomial → z_commit */
-    s_commit_poly(&a_proof->z_commit, &l_z, a_ctx->sp.d);
+    s_commit_poly(&a_proof->z_commit, &l_z, a_ctx->sp.d, a_ctx->sp.q);
 
     /* 7. Compute message hash for binding.
      * Use empty string for zero-length messages to avoid NULL dereference. */
@@ -748,7 +772,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         memcpy(l_transcript + l_off, l_msg_hash, 32); l_off += 32;
         uint8_t l_hash[32];
         dap_hash_sha3_256_raw(l_hash, l_transcript, l_off);
-        s_qrom_derive_challenge(&l_alpha_ext, l_hash, 1);
+        s_qrom_derive_challenge(&l_alpha_ext, l_hash, 1, a_ctx->sp.q);
         /* Phase 5: alpha no longer stored in proof — verifier re-derives it */
     }
 
@@ -759,25 +783,26 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     s_ext_to_fq6(&l_alpha_fq6, &l_alpha_ext);
 
     chipmunk_poly_t l_q;
-    int l_rc = s_synth_div_fq6(&l_q, &l_z, &l_alpha_fq6);
+    int l_rc = s_synth_div_fq6(&l_q, &l_z, &l_alpha_fq6, a_ctx->sp.d, a_ctx->sp.q);
     if (l_rc != 0) {
         log_it(L_ERROR, "SNARK prove: quotient division failed (z(alpha) != 0 in F_q^6)");
         return l_rc;
     }
 
     /* 10. Commit to quotient polynomial → q_commit */
-    s_commit_poly(&a_proof->q_commit, &l_q, a_ctx->sp.d);
+    s_commit_poly(&a_proof->q_commit, &l_q, a_ctx->sp.d, a_ctx->sp.q);
 
     /* 11. Opening proof: serialized z and q polynomials.
      * Retained for algebraic verification checks (z(alpha)=0, quotient).
      * Phase 9.12+ will eliminate raw polys via DEEP composition. */
     {
         uint32_t l_d = a_ctx->sp.d;
+        uint64_t l_qval = a_ctx->sp.q;
         size_t l_poly_bytes = (size_t)l_d * sizeof(int32_t);
         size_t l_off = 0;
-        s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_z, l_d);
+        s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_z, l_d, l_qval);
         l_off += l_poly_bytes;
-        s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_q, l_d);
+        s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_q, l_d, l_qval);
         l_off += l_poly_bytes;
         a_proof->opening_proof_size = l_off;
     }
@@ -822,6 +847,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         int l_rc = chipmunk_fri_transcript_init(
             &l_fri_tr,
             (const uint8_t *)CHIPMUNK_SNARK_FRI_DOMAIN);
+        l_fri_tr.q = a_ctx->sp.q;  /* Phase 9.14f: per-q transcript */
         if (l_rc != 0) {
             log_it(L_ERROR, "SNARK prove: FRI transcript init failed");
             dap_memwipe(&l_b, sizeof(l_b));
@@ -873,6 +899,9 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
             dap_memwipe(&l_q, sizeof(l_q));
             return l_rc;
         }
+        /* Phase 9.13h: set per-q modulus before commit so fold math uses
+         * the active field. Default in prover_init is CHIPMUNK_Q. */
+        l_fri_prover.q = a_ctx->sp.q;
 
         l_rc = chipmunk_fri_commit(&l_fri_prover, l_q.coeffs, l_fri_alphas);
         if (l_rc != 0) {
@@ -1020,13 +1049,13 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         memcpy(l_transcript + l_off, l_ring_hash.raw, 32); l_off += 32;
         uint8_t l_hash[32];
         dap_hash_sha3_256_raw(l_hash, l_transcript, l_off);
-        s_qrom_derive_challenge(&l_randomizer_ext, l_hash, 0);
+        s_qrom_derive_challenge(&l_randomizer_ext, l_hash, 0, a_ctx->sp.q);
     }
 
     /* Verify r_commit matches re-derived randomizer (constant-time). */
     {
         chipmunk_snark_commit_t l_r_commit;
-        s_commit_poly(&l_r_commit, &l_randomizer_ext.c[0], a_ctx->sp.d);
+        s_commit_poly(&l_r_commit, &l_randomizer_ext.c[0], a_ctx->sp.d, a_ctx->sp.q);
         uint8_t l_diff = 0;
         for (int i = 0; i < 32; ++i)
             l_diff |= l_r_commit.hash[i] ^ a_proof->r_commit.hash[i];
@@ -1049,7 +1078,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         memcpy(l_transcript + l_off, l_msg_hash, 32); l_off += 32;
         uint8_t l_hash[32];
         dap_hash_sha3_256_raw(l_hash, l_transcript, l_off);
-        s_qrom_derive_challenge(&l_alpha, l_hash, 1);
+        s_qrom_derive_challenge(&l_alpha, l_hash, 1, a_ctx->sp.q);
     }
 
     /* Phase 5: alpha no longer stored in proof — verifier re-derives it.
@@ -1084,6 +1113,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         int l_rc = chipmunk_fri_transcript_init(
             &l_fri_tr,
             (const uint8_t *)CHIPMUNK_SNARK_FRI_DOMAIN);
+        l_fri_tr.q = a_ctx->sp.q;  /* Phase 9.14f: per-q transcript */
         if (l_rc != 0) {
             log_it(L_ERROR, "SNARK verify: FRI transcript init failed");
             return 0;
@@ -1175,8 +1205,8 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
                        qi, a_proof->fri_proof.queries[qi].idx, l_fri_indices[qi]);
                 return 0;
             }
-            if (!chipmunk_fri_verify_query(
-                    &a_proof->fri_proof, qi, l_fri_alphas)) {
+            if (!chipmunk_fri_verify_query_q(
+                    &a_proof->fri_proof, qi, l_fri_alphas, a_ctx->sp.q)) {
                 log_it(L_ERROR, "SNARK verify: FRI query %u verification failed",
                        qi);
                 return 0;
@@ -1187,6 +1217,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     /* 7. Verify opening proof: reconstruct z, q from bytes and check commitments.
      * Raw polys retained for algebraic checks (z(alpha)=0, quotient). */
     uint32_t l_d = a_ctx->sp.d;
+    uint64_t l_mod_q = a_ctx->sp.q;
     size_t l_poly_bytes = (size_t)l_d * sizeof(int32_t);
     if (a_proof->opening_proof_size < l_poly_bytes * 2) {
         log_it(L_ERROR, "SNARK verify: opening proof too small (%zu < %zu)",
@@ -1202,7 +1233,6 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     memcpy(l_q.coeffs, a_proof->opening_proof + l_poly_bytes, l_poly_bytes);
 
     /* Verify coefficients are in range [0, q) */
-    uint64_t l_mod_q = a_ctx->sp.q;
     for (uint32_t i = 0; i < l_d; ++i) {
         if (l_z.coeffs[i] < 0 || (uint64_t)l_z.coeffs[i] >= l_mod_q) return 0;
         if (l_q.coeffs[i] < 0 || (uint64_t)l_q.coeffs[i] >= l_mod_q) return 0;
@@ -1211,8 +1241,8 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     /* Verify commitments match (constant-time). */
     {
         chipmunk_snark_commit_t l_z_commit, l_q_commit;
-        s_commit_poly(&l_z_commit, &l_z, a_ctx->sp.d);
-        s_commit_poly(&l_q_commit, &l_q, a_ctx->sp.d);
+        s_commit_poly(&l_z_commit, &l_z, a_ctx->sp.d, a_ctx->sp.q);
+        s_commit_poly(&l_q_commit, &l_q, a_ctx->sp.d, a_ctx->sp.q);
 
         uint8_t l_diff_z = 0, l_diff_q = 0;
         for (int i = 0; i < 32; ++i) {
@@ -1237,7 +1267,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         s_fq6_elem_t l_alpha_fq6;
         s_ext_to_fq6(&l_alpha_fq6, &l_alpha);
         s_fq6_elem_t l_z_at_alpha;
-        s_poly_eval_fq6(&l_z_at_alpha, &l_z, &l_alpha_fq6);
+        s_poly_eval_fq6(&l_z_at_alpha, &l_z, &l_alpha_fq6, l_d, l_mod_q);
         if (!s_fq6_is_zero(&l_z_at_alpha)) {
             log_it(L_ERROR, "SNARK verify: z(alpha) != 0 in F_q^6 extension");
             return 0;
@@ -1273,7 +1303,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
         for (int l_check = 0; l_check < CHIPMUNK_SNARK_QUOTIENT_CHECKS; ++l_check) {
             /* Phase 7.3: Loop until rejection sampling succeeds.
-             * With Q = 3168257, acceptance probability per sample is ~73.8%.
+             * With q = 3168257, acceptance probability per sample is ~73.8%.
              * Expected iterations: 1/0.738 ≈ 1.35. Max iterations capped at 100. */
             int32_t l_test_point = -1;
             for (int l_attempt = 0; l_attempt < 100; ++l_attempt) {
@@ -1294,20 +1324,20 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
             /* Evaluate z(test_point) via Horner's method in F_q */
             int64_t l_z_eval = 0;
             for (int i = (int)l_d - 1; i >= 0; --i) {
-                l_z_eval = (int64_t)chipmunk_mod_q((int64_t)l_test_point * l_z_eval + l_z.coeffs[i]);
+                l_z_eval = (int64_t)s_mod_q((int64_t)l_test_point * l_z_eval + l_z.coeffs[i], l_mod_q);
             }
 
             /* Evaluate q(test_point) via Horner's method in F_q */
             int64_t l_q_eval = 0;
             for (int i = (int)l_d - 1; i >= 0; --i) {
-                l_q_eval = (int64_t)chipmunk_mod_q((int64_t)l_test_point * l_q_eval + l_q.coeffs[i]);
+                l_q_eval = (int64_t)s_mod_q((int64_t)l_test_point * l_q_eval + l_q.coeffs[i], l_mod_q);
             }
 
             /* Compute q(test_point) * (test_point - alpha_scalar) */
-            int64_t l_rhs = (int64_t)chipmunk_mod_q(l_q_eval * chipmunk_mod_q((int64_t)l_test_point - l_alpha_scalar));
+            int64_t l_rhs = (int64_t)s_mod_q(l_q_eval * s_mod_q((int64_t)l_test_point - l_alpha_scalar, l_mod_q), l_mod_q);
 
             /* Check z(test_point) == q(test_point) * (test_point - alpha_scalar) */
-            if (chipmunk_mod_q(l_z_eval) != chipmunk_mod_q(l_rhs)) {
+            if (s_mod_q(l_z_eval, l_mod_q) != s_mod_q(l_rhs, l_mod_q)) {
                 log_it(L_ERROR, "SNARK verify: quotient relation FAILED at check %d", l_check);
                 return 0;
             }

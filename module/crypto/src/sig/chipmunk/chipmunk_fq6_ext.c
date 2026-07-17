@@ -13,6 +13,34 @@
 /* g(Y) = Φ₉(Y) = Y⁶ + Y³ + 1 over F_q.  Reduction rule used below:
  *     Y⁶ ≡ −Y³ − 1   (mod g). */
 
+#define FQX_MAX 16  /* enough to hold intermediate products (deg ≤ ~11) */
+
+/* Forward-declared here so the F_q sampler reader type is available to the
+ * _q forward declarations below. */
+typedef struct ext_xof_reader {
+    uint64_t st[25];
+    uint8_t block[DAP_SHAKE256_RATE];
+    size_t pos;
+    size_t avail;
+} ext_xof_reader_t;
+
+/* Forward declarations: parameterized (_q) variants are defined after their
+ * non-_q wrappers, which delegate to them. Declared up front so the wrappers
+ * can call them regardless of definition order. */
+static int     s_fqx_inv_mod_phi9_q(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
+                                    const int32_t a_in[CHIPMUNK_FQ6_EXT_DEG],
+                                    uint64_t q);
+static int32_t s_xof_fq_q(ext_xof_reader_t *a_r, uint64_t q);
+static void    s_phi9_mul_q(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
+                            const int32_t a_a[CHIPMUNK_FQ6_EXT_DEG],
+                            const int32_t a_b[CHIPMUNK_FQ6_EXT_DEG],
+                            uint64_t q);
+static void    s_phi9_powmod_q(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
+                               const int32_t a_base[CHIPMUNK_FQ6_EXT_DEG],
+                               uint64_t a_exp, uint64_t q);
+static int     s_fqx_gcd_deg_q(const int32_t a_a[FQX_MAX],
+                               const int32_t a_b[FQX_MAX], uint64_t q);
+
 /* ------------------------------------------------------------------ */
 /*  F_q scalar arithmetic                                              */
 /* ------------------------------------------------------------------ */
@@ -27,6 +55,19 @@ static inline int32_t s_fq_norm(int64_t a_v)
 static inline int32_t s_fq_mul(int32_t a_a, int32_t a_b)
 {
     return s_fq_norm((int64_t)a_a * (int64_t)a_b);
+}
+
+/* Parameterized variants (Phase 9.13): operate on an arbitrary prime q. */
+static inline int32_t s_fq_norm_q(int64_t a_v, uint64_t q)
+{
+    int32_t l_r = (int32_t)(a_v % (int64_t)q);
+    if (l_r < 0) { l_r += (int32_t)q; }
+    return l_r;
+}
+
+static inline int32_t s_fq_mul_q(int32_t a_a, int32_t a_b, uint64_t q)
+{
+    return s_fq_norm_q((int64_t)a_a * (int64_t)a_b, q);
 }
 
 /* Modular inverse mod q via extended Euclid; q is prime so every
@@ -48,11 +89,29 @@ static int32_t s_fq_inv(int32_t a_a)
     return (int32_t)l_t;
 }
 
+/* Parameterized extended Euclid inverse mod arbitrary prime q. */
+static int32_t s_fq_inv_q(int32_t a_a, uint64_t q)
+{
+    int32_t l_a = s_fq_norm_q(a_a, q);
+    if (l_a == 0) { return -1; }
+    int64_t l_t = 0, l_newt = 1;
+    int64_t l_r = (int64_t)q, l_newr = l_a;
+    while (l_newr != 0) {
+        int64_t l_quot = l_r / l_newr;
+        int64_t l_tmp;
+        l_tmp = l_t - l_quot * l_newt; l_t = l_newt; l_newt = l_tmp;
+        l_tmp = l_r - l_quot * l_newr; l_r = l_newr; l_newr = l_tmp;
+    }
+    if (l_r != 1) { return -1; }
+    if (l_t < 0) { l_t += (int64_t)q; }
+    return (int32_t)l_t;
+}
+
 /* ------------------------------------------------------------------ */
 /*  F_q[Y] polynomial arithmetic for inversion mod Φ₉                  */
 /* ------------------------------------------------------------------ */
 
-#define FQX_MAX 16  /* enough to hold intermediate products (deg ≤ ~11) */
+/* FQX_MAX defined at top of file (needed by forward declarations). */
 
 static int s_fqx_deg(const int32_t a_p[FQX_MAX])
 {
@@ -67,6 +126,14 @@ static int s_fqx_deg(const int32_t a_p[FQX_MAX])
 static int s_fqx_inv_mod_phi9(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
                               const int32_t a_in[CHIPMUNK_FQ6_EXT_DEG])
 {
+    return s_fqx_inv_mod_phi9_q(a_out, a_in, (uint64_t)CHIPMUNK_Q);
+}
+
+/* Parameterized version. */
+static int s_fqx_inv_mod_phi9_q(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
+                                const int32_t a_in[CHIPMUNK_FQ6_EXT_DEG],
+                                uint64_t q)
+{
     int32_t l_r0[FQX_MAX], l_r1[FQX_MAX], l_s0[FQX_MAX], l_s1[FQX_MAX];
     memset(l_r0, 0, sizeof(l_r0));
     memset(l_r1, 0, sizeof(l_r1));
@@ -76,7 +143,7 @@ static int s_fqx_inv_mod_phi9(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
     /* r0 = Φ₉, r1 = in */
     l_r0[0] = 1; l_r0[3] = 1; l_r0[6] = 1;
     for (int i = 0; i < CHIPMUNK_FQ6_EXT_DEG; ++i) {
-        l_r1[i] = s_fq_norm(a_in[i]);
+        l_r1[i] = s_fq_norm_q(a_in[i], q);
     }
     /* s0 = 0, s1 = 1 (Bézout coeff for the second operand) */
     l_s1[0] = 1;
@@ -87,33 +154,33 @@ static int s_fqx_inv_mod_phi9(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
         const int l_dr0 = s_fqx_deg(l_r0);
         const int l_dr1 = s_fqx_deg(l_r1);
         /* Single Euclid step: r0 = r0 − q·r1, accumulate q into s. */
-        int32_t l_q[FQX_MAX];
-        memset(l_q, 0, sizeof(l_q));
+        int32_t l_qcoef[FQX_MAX];
+        memset(l_qcoef, 0, sizeof(l_qcoef));
         int32_t l_rem[FQX_MAX];
         memcpy(l_rem, l_r0, sizeof(l_rem));
-        const int32_t l_lead_inv = s_fq_inv(l_r1[l_dr1]);
+        const int32_t l_lead_inv = s_fq_inv_q(l_r1[l_dr1], q);
         if (l_lead_inv < 0) { return -EDOM; }
         for (int d = l_dr0; d >= l_dr1; --d) {
             if (l_rem[d] == 0) { continue; }
-            const int32_t l_coef = s_fq_mul(l_rem[d], l_lead_inv);
+            const int32_t l_coef = s_fq_mul_q(l_rem[d], l_lead_inv, q);
             const int l_shift = d - l_dr1;
-            l_q[l_shift] = l_coef;
+            l_qcoef[l_shift] = l_coef;
             for (int i = 0; i <= l_dr1; ++i) {
-                l_rem[i + l_shift] = s_fq_norm((int64_t)l_rem[i + l_shift]
-                                               - (int64_t)l_coef * l_r1[i]);
+                l_rem[i + l_shift] = s_fq_norm_q((int64_t)l_rem[i + l_shift]
+                                                  - (int64_t)l_coef * l_r1[i], q);
             }
         }
         /* s_new = s0 − q·s1 */
         int32_t l_snew[FQX_MAX];
         memcpy(l_snew, l_s0, sizeof(l_snew));
-        const int l_dq = s_fqx_deg(l_q);
+        const int l_dq = s_fqx_deg(l_qcoef);
         const int l_ds1 = s_fqx_deg(l_s1);
         if (l_dq >= 0 && l_ds1 >= 0) {
             for (int i = 0; i <= l_dq; ++i) {
-                if (l_q[i] == 0) { continue; }
+                if (l_qcoef[i] == 0) { continue; }
                 for (int j = 0; j <= l_ds1; ++j) {
-                    l_snew[i + j] = s_fq_norm((int64_t)l_snew[i + j]
-                                              - (int64_t)l_q[i] * l_s1[j]);
+                    l_snew[i + j] = s_fq_norm_q((int64_t)l_snew[i + j]
+                                                 - (int64_t)l_qcoef[i] * l_s1[j], q);
                 }
             }
         }
@@ -126,10 +193,10 @@ static int s_fqx_inv_mod_phi9(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
 
     /* gcd = r0; invertible iff it is a nonzero constant. */
     if (s_fqx_deg(l_r0) != 0) { return -EDOM; }
-    const int32_t l_gcd_inv = s_fq_inv(l_r0[0]);
+    const int32_t l_gcd_inv = s_fq_inv_q(l_r0[0], q);
     if (l_gcd_inv < 0) { return -EDOM; }
     for (int i = 0; i < CHIPMUNK_FQ6_EXT_DEG; ++i) {
-        a_out[i] = s_fq_mul(l_s0[i], l_gcd_inv);
+        a_out[i] = s_fq_mul_q(l_s0[i], l_gcd_inv, q);
     }
     return 0;
 }
@@ -323,22 +390,35 @@ int chipmunk_fq6_ext_trace(chipmunk_poly_t *a_out,
 void chipmunk_fq6_ext_scalar_set(chipmunk_fq6_ext_t *a_out,
                                    const int32_t a_coords[CHIPMUNK_FQ6_EXT_DEG])
 {
+    return chipmunk_fq6_ext_scalar_set_q(a_out, a_coords, (uint64_t)CHIPMUNK_Q);
+}
+
+void chipmunk_fq6_ext_scalar_set_q(chipmunk_fq6_ext_t *a_out,
+                                     const int32_t a_coords[CHIPMUNK_FQ6_EXT_DEG],
+                                     uint64_t q)
+{
     if (!a_out || !a_coords) { return; }
     memset(a_out, 0, sizeof(*a_out));
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
-        a_out->c[j].coeffs[0] = s_fq_norm(a_coords[j]);
+        a_out->c[j].coeffs[0] = s_fq_norm_q(a_coords[j], q);
     }
 }
 
 int chipmunk_fq6_ext_scalar_get(int32_t a_coords_out[CHIPMUNK_FQ6_EXT_DEG],
                                   const chipmunk_fq6_ext_t *a)
 {
+    return chipmunk_fq6_ext_scalar_get_q(a_coords_out, a, (uint64_t)CHIPMUNK_Q);
+}
+
+int chipmunk_fq6_ext_scalar_get_q(int32_t a_coords_out[CHIPMUNK_FQ6_EXT_DEG],
+                                    const chipmunk_fq6_ext_t *a, uint64_t q)
+{
     if (!a_coords_out || !a) { return -EINVAL; }
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         for (int i = 1; i < CHIPMUNK_N; ++i) {
-            if (s_fq_norm(a->c[j].coeffs[i]) != 0) { return -EINVAL; }
+            if (s_fq_norm_q(a->c[j].coeffs[i], q) != 0) { return -EINVAL; }
         }
-        a_coords_out[j] = s_fq_norm(a->c[j].coeffs[0]);
+        a_coords_out[j] = s_fq_norm_q(a->c[j].coeffs[0], q);
     }
     return 0;
 }
@@ -346,14 +426,20 @@ int chipmunk_fq6_ext_scalar_get(int32_t a_coords_out[CHIPMUNK_FQ6_EXT_DEG],
 int chipmunk_fq6_ext_scalar_invert(chipmunk_fq6_ext_t *a_out,
                                      const chipmunk_fq6_ext_t *a)
 {
+    return chipmunk_fq6_ext_scalar_invert_q(a_out, a, (uint64_t)CHIPMUNK_Q);
+}
+
+int chipmunk_fq6_ext_scalar_invert_q(chipmunk_fq6_ext_t *a_out,
+                                       const chipmunk_fq6_ext_t *a, uint64_t q)
+{
     if (!a_out || !a) { return -EINVAL; }
     int32_t l_coords[CHIPMUNK_FQ6_EXT_DEG];
-    int rc = chipmunk_fq6_ext_scalar_get(l_coords, a);
+    int rc = chipmunk_fq6_ext_scalar_get_q(l_coords, a, q);
     if (rc != 0) { return rc; }
     int32_t l_inv[CHIPMUNK_FQ6_EXT_DEG];
-    rc = s_fqx_inv_mod_phi9(l_inv, l_coords);
+    rc = s_fqx_inv_mod_phi9_q(l_inv, l_coords, q);
     if (rc != 0) { return rc; }
-    chipmunk_fq6_ext_scalar_set(a_out, l_inv);
+    chipmunk_fq6_ext_scalar_set_q(a_out, l_inv, q);
     return 0;
 }
 
@@ -363,12 +449,7 @@ int chipmunk_fq6_ext_scalar_invert(chipmunk_fq6_ext_t *a_out,
 
 #define FQ6_EXT_FS_DOMAIN "MRNG-G3.1-fold-challenge-v1"
 
-typedef struct ext_xof_reader {
-    uint64_t st[25];
-    uint8_t block[DAP_SHAKE256_RATE];
-    size_t pos;
-    size_t avail;
-} ext_xof_reader_t;
+/* ext_xof_reader_t defined at top of file (forward-declared for _q variants). */
 
 static uint8_t s_xof_u8(ext_xof_reader_t *a_r)
 {
@@ -383,12 +464,18 @@ static uint8_t s_xof_u8(ext_xof_reader_t *a_r)
 /* One uniform F_q draw via 22-bit rejection sampling (q < 2²²). */
 static int32_t s_xof_fq(ext_xof_reader_t *a_r)
 {
+    return s_xof_fq_q(a_r, (uint64_t)CHIPMUNK_Q);
+}
+
+/* Parameterized version: rejection sample a uniform F_q element. */
+static int32_t s_xof_fq_q(ext_xof_reader_t *a_r, uint64_t q)
+{
     for (;;) {
         uint32_t v = (uint32_t)s_xof_u8(a_r);
         v |= (uint32_t)s_xof_u8(a_r) << 8;
         v |= (uint32_t)s_xof_u8(a_r) << 16;
-        v &= 0x3FFFFFu; /* low 22 bits */
-        if (v < (uint32_t)CHIPMUNK_Q) {
+        v &= 0x3FFFFFu; /* low 22 bits — valid for q < 2^22 */
+        if (v < (uint32_t)q) {
             return (int32_t)v;
         }
     }
@@ -397,6 +484,15 @@ static int32_t s_xof_fq(ext_xof_reader_t *a_r)
 int chipmunk_fq6_ext_sample_challenge(chipmunk_fq6_ext_t *a_out,
                                         const uint8_t a_fs_hash[32],
                                         uint32_t a_counter)
+{
+    return chipmunk_fq6_ext_sample_challenge_q(a_out, a_fs_hash, a_counter,
+                                                 (uint64_t)CHIPMUNK_Q);
+}
+
+/* Parameterized challenge sampler over S = F_{q^6}\{0} for arbitrary q. */
+int chipmunk_fq6_ext_sample_challenge_q(chipmunk_fq6_ext_t *a_out,
+                                          const uint8_t a_fs_hash[32],
+                                          uint32_t a_counter, uint64_t q)
 {
     if (!a_out || !a_fs_hash) { return -EINVAL; }
 
@@ -421,12 +517,12 @@ int chipmunk_fq6_ext_sample_challenge(chipmunk_fq6_ext_t *a_out,
     for (;;) {
         bool l_all_zero = true;
         for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
-            l_coords[j] = s_xof_fq(&l_r);
+            l_coords[j] = s_xof_fq_q(&l_r, q);
             if (l_coords[j] != 0) { l_all_zero = false; }
         }
         if (!l_all_zero) { break; }
     }
-    chipmunk_fq6_ext_scalar_set(a_out, l_coords);
+    chipmunk_fq6_ext_scalar_set_q(a_out, l_coords, q);
     return 0;
 }
 
@@ -479,20 +575,29 @@ static void s_phi9_mul(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
                        const int32_t a_a[CHIPMUNK_FQ6_EXT_DEG],
                        const int32_t a_b[CHIPMUNK_FQ6_EXT_DEG])
 {
+    s_phi9_mul_q(a_out, a_a, a_b, (uint64_t)CHIPMUNK_Q);
+}
+
+/* Parameterized version. */
+static void s_phi9_mul_q(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
+                         const int32_t a_a[CHIPMUNK_FQ6_EXT_DEG],
+                         const int32_t a_b[CHIPMUNK_FQ6_EXT_DEG],
+                         uint64_t q)
+{
     int64_t l_p[2 * CHIPMUNK_FQ6_EXT_DEG - 1] = {0};
     for (int i = 0; i < CHIPMUNK_FQ6_EXT_DEG; ++i) {
         for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
-            l_p[i + j] = (l_p[i + j] + (int64_t)a_a[i] * a_b[j]) % (int64_t)CHIPMUNK_Q;
+            l_p[i + j] = (l_p[i + j] + (int64_t)a_a[i] * a_b[j]) % (int64_t)q;
         }
     }
     for (int k = 2 * CHIPMUNK_FQ6_EXT_DEG - 2; k >= CHIPMUNK_FQ6_EXT_DEG; --k) {
         int64_t l_v = l_p[k];
-        l_p[k - 3] = (l_p[k - 3] - l_v) % (int64_t)CHIPMUNK_Q;
-        l_p[k - 6] = (l_p[k - 6] - l_v) % (int64_t)CHIPMUNK_Q;
+        l_p[k - 3] = (l_p[k - 3] - l_v) % (int64_t)q;
+        l_p[k - 6] = (l_p[k - 6] - l_v) % (int64_t)q;
         l_p[k] = 0;
     }
     for (int i = 0; i < CHIPMUNK_FQ6_EXT_DEG; ++i) {
-        a_out[i] = s_fq_norm(l_p[i]);
+        a_out[i] = s_fq_norm_q(l_p[i], q);
     }
 }
 
@@ -501,6 +606,14 @@ static void s_phi9_powmod(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
                           const int32_t a_base[CHIPMUNK_FQ6_EXT_DEG],
                           uint64_t a_exp)
 {
+    s_phi9_powmod_q(a_out, a_base, a_exp, (uint64_t)CHIPMUNK_Q);
+}
+
+/* Parameterized version. */
+static void s_phi9_powmod_q(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
+                            const int32_t a_base[CHIPMUNK_FQ6_EXT_DEG],
+                            uint64_t a_exp, uint64_t q)
+{
     int32_t l_res[CHIPMUNK_FQ6_EXT_DEG] = {0};
     l_res[0] = 1;
     int32_t l_b[CHIPMUNK_FQ6_EXT_DEG];
@@ -508,11 +621,11 @@ static void s_phi9_powmod(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
     while (a_exp > 0) {
         if (a_exp & 1ULL) {
             int32_t l_t[CHIPMUNK_FQ6_EXT_DEG];
-            s_phi9_mul(l_t, l_res, l_b);
+            s_phi9_mul_q(l_t, l_res, l_b, q);
             memcpy(l_res, l_t, sizeof(l_res));
         }
         int32_t l_sq[CHIPMUNK_FQ6_EXT_DEG];
-        s_phi9_mul(l_sq, l_b, l_b);
+        s_phi9_mul_q(l_sq, l_b, l_b, q);
         memcpy(l_b, l_sq, sizeof(l_b));
         a_exp >>= 1;
     }
@@ -523,22 +636,29 @@ static void s_phi9_powmod(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
  * returns degree of gcd. */
 static int s_fqx_gcd_deg(const int32_t a_a[FQX_MAX], const int32_t a_b[FQX_MAX])
 {
+    return s_fqx_gcd_deg_q(a_a, a_b, (uint64_t)CHIPMUNK_Q);
+}
+
+/* Parameterized version. */
+static int s_fqx_gcd_deg_q(const int32_t a_a[FQX_MAX], const int32_t a_b[FQX_MAX],
+                           uint64_t q)
+{
     int32_t l_r0[FQX_MAX], l_r1[FQX_MAX];
     memcpy(l_r0, a_a, sizeof(l_r0));
     memcpy(l_r1, a_b, sizeof(l_r1));
     while (s_fqx_deg(l_r1) >= 0) {
         const int l_d0 = s_fqx_deg(l_r0);
         const int l_d1 = s_fqx_deg(l_r1);
-        const int32_t l_lead_inv = s_fq_inv(l_r1[l_d1]);
+        const int32_t l_lead_inv = s_fq_inv_q(l_r1[l_d1], q);
         int32_t l_rem[FQX_MAX];
         memcpy(l_rem, l_r0, sizeof(l_rem));
         for (int d = l_d0; d >= l_d1; --d) {
             if (l_rem[d] == 0) { continue; }
-            const int32_t l_coef = s_fq_mul(l_rem[d], l_lead_inv);
+            const int32_t l_coef = s_fq_mul_q(l_rem[d], l_lead_inv, q);
             const int l_shift = d - l_d1;
             for (int i = 0; i <= l_d1; ++i) {
-                l_rem[i + l_shift] = s_fq_norm((int64_t)l_rem[i + l_shift]
-                                               - (int64_t)l_coef * l_r1[i]);
+                l_rem[i + l_shift] = s_fq_norm_q((int64_t)l_rem[i + l_shift]
+                                                  - (int64_t)l_coef * l_r1[i], q);
             }
         }
         memcpy(l_r0, l_r1,  sizeof(l_r0));
@@ -548,6 +668,12 @@ static int s_fqx_gcd_deg(const int32_t a_a[FQX_MAX], const int32_t a_b[FQX_MAX])
 }
 
 bool chipmunk_fq6_ext_modulus_is_irreducible(void)
+{
+    return chipmunk_fq6_ext_modulus_is_irreducible_q((uint64_t)CHIPMUNK_Q);
+}
+
+/* Parameterized Rabin irreducibility test for Φ₉ over F_q. */
+bool chipmunk_fq6_ext_modulus_is_irreducible_q(uint64_t q)
 {
     /* Rabin's test for g = Φ₉ (deg n = 6) over F_q:
      *   1. Y^{qⁿ} ≡ Y           (mod g)
@@ -563,23 +689,23 @@ bool chipmunk_fq6_ext_modulus_is_irreducible(void)
     memcpy(l_cur, l_y, sizeof(l_cur));
     for (int m = 1; m <= l_n; ++m) {
         int32_t l_nx[CHIPMUNK_FQ6_EXT_DEG];
-        s_phi9_powmod(l_nx, l_cur, (uint64_t)CHIPMUNK_Q);
+        s_phi9_powmod_q(l_nx, l_cur, (uint64_t)q, q);
         memcpy(l_cur, l_nx, sizeof(l_cur));
         if (m == l_n / 2 || m == l_n / 3) {
             /* gcd(Y^{q^m} − Y, g) must be 1. */
             int32_t l_diff[FQX_MAX];
             memset(l_diff, 0, sizeof(l_diff));
             for (int i = 0; i < CHIPMUNK_FQ6_EXT_DEG; ++i) { l_diff[i] = l_cur[i]; }
-            l_diff[1] = s_fq_norm((int64_t)l_diff[1] - 1);
+            l_diff[1] = s_fq_norm_q((int64_t)l_diff[1] - 1, q);
             int32_t l_g[FQX_MAX];
             memset(l_g, 0, sizeof(l_g));
             l_g[0] = 1; l_g[3] = 1; l_g[6] = 1;
-            if (s_fqx_gcd_deg(l_g, l_diff) != 0) { return false; }
+            if (s_fqx_gcd_deg_q(l_g, l_diff, q) != 0) { return false; }
         }
     }
     /* Condition 1: Y^{qⁿ} ≡ Y. */
     for (int i = 0; i < CHIPMUNK_FQ6_EXT_DEG; ++i) {
-        if (s_fq_norm(l_cur[i]) != s_fq_norm(l_y[i])) { return false; }
+        if (s_fq_norm_q(l_cur[i], q) != s_fq_norm_q(l_y[i], q)) { return false; }
     }
     return true;
 }

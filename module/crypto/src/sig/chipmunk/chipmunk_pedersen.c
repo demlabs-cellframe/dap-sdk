@@ -49,27 +49,24 @@
  *     are confidential and the network enforces max amount per TX.
  */
 static void s_encode_message_bytes(chipmunk_poly_t *a_out,
-                                   const uint8_t a_message[CHIPMUNK_PEDERSEN_VALUE_BYTES])
+                                   const uint8_t a_message[CHIPMUNK_PEDERSEN_VALUE_BYTES],
+                                   uint64_t q)
 {
-    /* Read the 32-byte LE value as a uint64_t (take the first 8 bytes).
-     * We only use the lower 64 bits of the 256-bit value.
-     * TX construction must ensure the amount fits in [0, Q-1]. */
     uint64_t l_val = 0;
     memcpy(&l_val, a_message, sizeof(l_val));
-    int32_t l_coeff = (int32_t)(l_val % CHIPMUNK_Q);
+    int32_t l_coeff = chipmunk_mod_q_q((int64_t)l_val, q);
 
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
         a_out->coeffs[i] = l_coeff;
     }
 }
 
-/* Encode a single scalar value at ALL coefficients (scalar encoding).
- * Used by range proof: commit(b_i * 2^i mod Q) → all coeffs = (b_i * 2^i mod Q).
- * a_pos is ignored (kept for API compatibility — scalar encoding is position-independent). */
-static void s_encode_digit_at(chipmunk_poly_t *a_out, int32_t a_digit, uint32_t a_pos)
+/* Encode a single scalar value at ALL coefficients (scalar encoding). */
+static void s_encode_digit_at(chipmunk_poly_t *a_out, int32_t a_digit, uint32_t a_pos,
+                                uint64_t q)
 {
-    (void)a_pos;  /* scalar encoding: all coefficients identical */
-    int32_t l_coeff = chipmunk_mod_q((int64_t)a_digit);
+    (void)a_pos;
+    int32_t l_coeff = chipmunk_mod_q_q((int64_t)a_digit, q);
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
         a_out->coeffs[i] = l_coeff;
     }
@@ -92,6 +89,8 @@ static int s_pedersen_commit_with_message_poly(chipmunk_pedersen_commit_t *a_com
     if (!a_params->initialized)
         return -EINVAL;
 
+    uint64_t l_q = a_params->q;
+
     for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
         chipmunk_poly_t l_sum;
         memset(&l_sum, 0, sizeof(l_sum));
@@ -107,17 +106,15 @@ static int s_pedersen_commit_with_message_poly(chipmunk_pedersen_commit_t *a_com
             chipmunk_invntt(l_prod.coeffs);
 
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_prod.coeffs[k])
-                                             % CHIPMUNK_Q);
-                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
+                l_sum.coeffs[k] = chipmunk_mod_q_q(
+                    (int64_t)l_sum.coeffs[k] + l_prod.coeffs[k], l_q);
             }
         }
 
         if (i == 0) {
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + a_message_poly->coeffs[k])
-                                             % CHIPMUNK_Q);
-                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
+                l_sum.coeffs[k] = chipmunk_mod_q_q(
+                    (int64_t)l_sum.coeffs[k] + a_message_poly->coeffs[k], l_q);
             }
         }
 
@@ -130,6 +127,8 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *a_params,
                            const uint8_t a_seed[32])
 {
     if (!a_params || !a_seed) return -EINVAL;
+
+    a_params->q = (uint64_t)CHIPMUNK_Q;  /* Phase 9.14c: default modulus */
 
     /* Derive matrix A from seed using SHAKE256 */
     uint64_t l_state[25];
@@ -164,7 +163,7 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *a_params,
                 for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
                     for (;;) {
                         if (l_sq_pos + 4 > l_buf_size) break; /* should not happen */
-                        int32_t l_sample = chipmunk_sample_reject4(l_buf + l_sq_pos, (uint32_t)CHIPMUNK_Q);
+                        int32_t l_sample = chipmunk_sample_reject4(l_buf + l_sq_pos, (uint32_t)a_params->q);
                         l_sq_pos += 4;
                         if (l_sample >= 0) {
                             a_params->A[i][j].coeffs[k] = l_sample;
@@ -233,7 +232,7 @@ int chipmunk_pedersen_commit_explicit(chipmunk_pedersen_commit_t *a_commit,
     if (!a_params->initialized) return -EINVAL;
 
     chipmunk_poly_t l_m;
-    s_encode_message_bytes(&l_m, a_message);
+    s_encode_message_bytes(&l_m, a_message, a_params->q);
     return s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, a_randomness);
 }
 
@@ -260,7 +259,7 @@ int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,
     if (l_rc != 0) { DAP_DELETE(l_r); return l_rc; }
 
     chipmunk_poly_t l_m;
-    s_encode_message_bytes(&l_m, a_message);
+    s_encode_message_bytes(&l_m, a_message, a_params->q);
     l_rc = s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, l_r);
 
     dap_memwipe(l_r, CHIPMUNK_LRS_K * sizeof(chipmunk_poly_t));
@@ -296,7 +295,7 @@ int chipmunk_pedersen_commit_explicit_digit(chipmunk_pedersen_commit_t *a_commit
     /* a_digit can be any value mod Q; no range check needed */
 
     chipmunk_poly_t l_m;
-    s_encode_digit_at(&l_m, a_digit, a_digit_pos);
+    s_encode_digit_at(&l_m, a_digit, a_digit_pos, a_params->q);
     return s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, a_randomness);
 }
 
@@ -310,7 +309,7 @@ int chipmunk_pedersen_verify_opening(const chipmunk_pedersen_commit_t *a_commit,
     /* Recompute C' = A * r + encode(m) */
     chipmunk_pedersen_commit_t l_recomputed;
     chipmunk_poly_t l_m;
-    s_encode_message_bytes(&l_m, a_opening->message);
+    s_encode_message_bytes(&l_m, a_opening->message, a_params->q);
 
     int l_rc = s_pedersen_commit_with_message_poly(&l_recomputed, a_params, &l_m, a_opening->randomness);
     if (l_rc != 0)
@@ -332,14 +331,20 @@ void chipmunk_pedersen_add(chipmunk_pedersen_commit_t *a_sum,
                            const chipmunk_pedersen_commit_t *a_c1,
                            const chipmunk_pedersen_commit_t *a_c2)
 {
+    chipmunk_pedersen_add_q(a_sum, a_c1, a_c2, (uint64_t)CHIPMUNK_Q);
+}
+
+void chipmunk_pedersen_add_q(chipmunk_pedersen_commit_t *a_sum,
+                               const chipmunk_pedersen_commit_t *a_c1,
+                               const chipmunk_pedersen_commit_t *a_c2,
+                               uint64_t q)
+{
     if (!a_sum || !a_c1 || !a_c2) return;
 
     for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
         for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-            a_sum->C[i].coeffs[k] = (int32_t)(((int64_t)a_c1->C[i].coeffs[k]
-                                                + a_c2->C[i].coeffs[k])
-                                               % CHIPMUNK_Q);
-            if (a_sum->C[i].coeffs[k] < 0) a_sum->C[i].coeffs[k] += CHIPMUNK_Q;
+            a_sum->C[i].coeffs[k] = chipmunk_mod_q_q(
+                (int64_t)a_c1->C[i].coeffs[k] + a_c2->C[i].coeffs[k], q);
         }
     }
 }
@@ -363,7 +368,16 @@ int chipmunk_pedersen_commit_serialize(uint8_t *a_out, size_t a_out_size,
 int chipmunk_pedersen_commit_deserialize(chipmunk_pedersen_commit_t *a_commit,
                                          const uint8_t *a_in, size_t a_in_size)
 {
+    return chipmunk_pedersen_commit_deserialize_q(a_commit, a_in, a_in_size,
+                                                    (uint64_t)CHIPMUNK_Q);
+}
+
+int chipmunk_pedersen_commit_deserialize_q(chipmunk_pedersen_commit_t *a_commit,
+                                             const uint8_t *a_in, size_t a_in_size,
+                                             uint64_t q)
+{
     if (!a_commit || !a_in) return -EINVAL;
+    int32_t l_q = (int32_t)q;
     size_t l_needed = (size_t)CHIPMUNK_PEDERSEN_K * CHIPMUNK_N * sizeof(int32_t);
     if (a_in_size < l_needed) return -ENOMEM;
 
@@ -374,7 +388,7 @@ int chipmunk_pedersen_commit_deserialize(chipmunk_pedersen_commit_t *a_commit,
     }
     for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
         for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
-            if (a_commit->C[i].coeffs[j] < 0 || a_commit->C[i].coeffs[j] >= CHIPMUNK_Q) {
+            if (a_commit->C[i].coeffs[j] < 0 || a_commit->C[i].coeffs[j] >= l_q) {
                 return -EINVAL;
             }
         }

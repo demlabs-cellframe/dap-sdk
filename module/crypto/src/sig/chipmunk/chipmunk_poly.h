@@ -27,6 +27,7 @@
 #define _CHIPMUNK_POLY_H_
 
 #include "chipmunk.h"
+#include "chipmunk_ntt.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -172,6 +173,23 @@ static inline int32_t chipmunk_mod_q(int64_t a_val)
 }
 
 /**
+ * @brief Parameterized modular reduction into [0, q) (Phase 9.14a).
+ *
+ * Same as chipmunk_mod_q but for an arbitrary prime modulus.
+ *
+ * @param a_val  Signed 64-bit value to reduce.
+ * @param a_q    Prime modulus.
+ * @return       Value in [0, a_q).
+ */
+static inline int32_t chipmunk_mod_q_q(int64_t a_val, uint64_t a_q)
+{
+    int64_t l_r = a_val % (int64_t)a_q;
+    if (l_r < 0)
+        l_r += (int64_t)a_q;
+    return (int32_t)l_r;
+}
+
+/**
  * @brief Rejection-sample a single uint32_t into [0, a_range).
  *
  * Consumes 4 bytes of XOF output and returns an unbiased sample in
@@ -214,6 +232,23 @@ static inline int32_t chipmunk_sample_reject1(uint8_t a_raw, uint32_t a_range)
         return -1;
     return (int32_t)(a_raw % a_range);
 }
+
+/* ===== Phase 9.14a: Per-q polynomial operations ===== */
+
+int chipmunk_poly_ntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_ctx);
+int chipmunk_poly_invntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_ctx);
+int chipmunk_poly_add_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                          const chipmunk_poly_t *b, uint64_t q);
+int chipmunk_poly_sub_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                          const chipmunk_poly_t *b, uint64_t q);
+void chipmunk_poly_mul_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                               const chipmunk_poly_t *b, uint64_t q);
+void chipmunk_poly_add_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                               const chipmunk_poly_t *b, uint64_t q);
+void chipmunk_poly_sub_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                               const chipmunk_poly_t *b, uint64_t q);
+bool chipmunk_poly_equal_q(const chipmunk_poly_t *a, const chipmunk_poly_t *b,
+                            uint64_t q);
 
 #ifdef __cplusplus
 }

@@ -40,14 +40,6 @@ static void s_decompose_bits_bytes(uint8_t *a_bits,
     }
 }
 
-static void s_bits_to_poly(chipmunk_poly_t *a_poly, const uint8_t *a_bits, uint32_t a_num_bits)
-{
-    memset(a_poly, 0, sizeof(chipmunk_poly_t));
-    for (uint32_t i = 0; i < a_num_bits && i < CHIPMUNK_N; ++i) {
-        a_poly->coeffs[i] = (int32_t)a_bits[i];
-    }
-}
-
 /* -------------------------------------------------------------------------
  * Internal: Hash-based PRF for blinding
  * ---------------------------------------------------------------------- */
@@ -260,11 +252,11 @@ static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
         memset(&l_partial, 0, sizeof(l_partial));
         for (uint32_t i = 0; i < l_num_bits - 1; ++i) {
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_partial.coeffs[k] = chipmunk_mod_q((int64_t)l_partial.coeffs[k] + l_bit_r[i][j].coeffs[k]);
+                l_partial.coeffs[k] = chipmunk_mod_q_q((int64_t)l_partial.coeffs[k] + l_bit_r[i][j].coeffs[k], a_params->q);
             }
         }
         for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-            l_bit_r[l_num_bits - 1][j].coeffs[k] = chipmunk_mod_q((int64_t)l_orig_r[j].coeffs[k] - l_partial.coeffs[k]);
+            l_bit_r[l_num_bits - 1][j].coeffs[k] = chipmunk_mod_q_q((int64_t)l_orig_r[j].coeffs[k] - l_partial.coeffs[k], a_params->q);
         }
     }
 
@@ -277,7 +269,7 @@ static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
     if (!l_pow2) { DAP_DELETE(l_bit_arr); return -ENOMEM; }
     l_pow2[0] = 1;
     for (uint32_t i = 1; i < l_num_bits; ++i) {
-        l_pow2[i] = chipmunk_mod_q((int64_t)l_pow2[i - 1] * 2);
+        l_pow2[i] = chipmunk_mod_q_q((int64_t)l_pow2[i - 1] * 2, a_params->q);
     }
 
     for (uint32_t i = 0; i < l_num_bits; ++i) {
@@ -327,8 +319,8 @@ static int s_range_proof_prove_internal(chipmunk_range_proof_t *a_proof,
     memset(&a_proof->A, 0, sizeof(a_proof->A));
     memset(&a_proof->B, 0, sizeof(a_proof->B));
     for (uint32_t i = 0; i < l_num_bits; ++i) {
-        chipmunk_pedersen_add(&a_proof->A, &a_proof->A, &l_bit_commits[i]);
-        chipmunk_pedersen_add(&a_proof->B, &a_proof->B, &l_bit_commits[i]);
+        chipmunk_pedersen_add_q(&a_proof->A, &a_proof->A, &l_bit_commits[i], a_params->q);
+        chipmunk_pedersen_add_q(&a_proof->B, &a_proof->B, &l_bit_commits[i], a_params->q);
     }
 
     {

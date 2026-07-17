@@ -55,6 +55,9 @@ int chipmunk_fri_transcript_init(chipmunk_fri_transcript_t *tr,
 
     memset(tr, 0, sizeof(*tr));
 
+    /* Default modulus is CHIPMUNK_Q; caller may override after init. */
+    tr->q = (uint64_t)CHIPMUNK_Q;
+
     /* Absorb domain separator into buffer. */
     memcpy(tr->buffer, domain, 16);
     tr->buf_len = 16;
@@ -82,7 +85,7 @@ int chipmunk_fri_transcript_absorb(chipmunk_fri_transcript_t *tr,
 int chipmunk_fri_transcript_absorb_fq(chipmunk_fri_transcript_t *tr,
                                        int32_t val)
 {
-    if (val < 0 || val >= (int32_t)CHIPMUNK_Q)
+    if (!tr || val < 0 || val >= (int32_t)tr->q)
         return -1;
 
     uint8_t bytes[4];
@@ -143,7 +146,7 @@ int chipmunk_fri_transcript_squeeze_fq(chipmunk_fri_transcript_t *tr,
         uint32_t val = (uint32_t)digest[0]
                      | ((uint32_t)digest[1] << 8)
                      | ((uint32_t)digest[2] << 16);
-        if (val < (uint32_t)CHIPMUNK_Q) {
+        if (val < (uint32_t)tr->q) {
             *out = (int32_t)val;
             return 0;
         }

@@ -138,6 +138,16 @@ typedef struct chipmunk_fri_prover {
     /* 2^{-1} mod q (precomputed). */
     int32_t inv_2;
 
+    /* Active field modulus q (Phase 9.13h: per-q FRI).
+     * Defaults to CHIPMUNK_Q. Used by all fold math instead of the global. */
+    uint64_t q;
+
+    /* Per-q NTT context (Phase 9.13h). Built lazily in chipmunk_fri_commit
+     * when q != CHIPMUNK_Q. When q == CHIPMUNK_Q the global NTT tables are
+     * used and ntt_ctx_ready stays false. */
+    chipmunk_fri_ntt_ctx_t ntt_ctx;
+    bool ntt_ctx_ready;
+
     /* Flag: commit phase completed. */
     bool committed;
 } chipmunk_fri_prover_t;
@@ -216,6 +226,11 @@ bool chipmunk_fri_verify_fold(const int32_t *h_r, const int32_t *h_r1,
                                uint32_t n_r, int32_t alpha, uint32_t round,
                                uint32_t l);
 
+/** @brief Per-q variant of chipmunk_fri_verify_fold (Phase 9.13h). */
+bool chipmunk_fri_verify_fold_q(const int32_t *h_r, const int32_t *h_r1,
+                                  uint32_t n_r, int32_t alpha, uint32_t round,
+                                  uint32_t l, uint64_t q);
+
 /**
  * @brief FRI query phase: open multiple query positions across all rounds.
  *
@@ -251,6 +266,12 @@ int chipmunk_fri_query(chipmunk_fri_prover_t *prover,
 bool chipmunk_fri_verify_query(const chipmunk_fri_proof_t *proof,
                                 uint32_t q,
                                 const int32_t alphas[CHIPMUNK_FRI_ROUNDS]);
+
+/** @brief Per-q variant of chipmunk_fri_verify_query (Phase 9.13h). */
+bool chipmunk_fri_verify_query_q(const chipmunk_fri_proof_t *proof,
+                                   uint32_t q,
+                                   const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                                   uint64_t fq);
 
 /**
  * @brief FRI proof verification result.

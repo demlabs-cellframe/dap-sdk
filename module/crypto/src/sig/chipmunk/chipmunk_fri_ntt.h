@@ -90,6 +90,48 @@ void chipmunk_fri_ntt_inverse(int32_t a[CHIPMUNK_FRI_NTT_SIZE]);
 void chipmunk_fri_ntt_coset_forward(int32_t a[CHIPMUNK_FRI_NTT_SIZE],
                                     int32_t coset_g);
 
+/* -------------------------------------------------------------------------
+ * Per-q NTT context (Phase 9.13h)
+ *
+ * Holds twiddle tables for an arbitrary prime q. Built by
+ * chipmunk_fri_ntt_ctx_init, freed by chipmunk_fri_ntt_ctx_free.
+ * ---------------------------------------------------------------------- */
+
+typedef struct chipmunk_fri_ntt_ctx {
+    uint64_t  q;           /* field modulus */
+    int32_t   omega;       /* primitive CHIPMUNK_FRI_NTT_SIZE-th root */
+    int32_t   omega_inv;   /* its inverse */
+    int32_t   inv_n;       /* N^{-1} mod q (for inverse NTT scaling) */
+    int32_t  *zetas;       /* omega^k for k = 0..N-1 (heap) */
+    int32_t  *zetas_inv;   /* omega^{-k} for k = 0..N-1 (heap) */
+} chipmunk_fri_ntt_ctx_t;
+
+/**
+ * @brief Build per-q NTT twiddle tables.
+ * @param ctx         Output context (caller allocates struct, tables heap-alloc'd).
+ * @param q           Prime modulus.
+ * @param two_adicity Must equal CHIPMUNK_FRI_NTT_LOG (11).
+ * @return 0 on success, negative on error.
+ */
+int chipmunk_fri_ntt_ctx_init(chipmunk_fri_ntt_ctx_t *ctx, uint64_t q,
+                                uint32_t two_adicity);
+
+/** @brief Free heap resources in a per-q NTT context. */
+void chipmunk_fri_ntt_ctx_free(chipmunk_fri_ntt_ctx_t *ctx);
+
+/** @brief Per-q forward NTT using ctx->zetas. */
+void chipmunk_fri_ntt_forward_q(int32_t a[CHIPMUNK_FRI_NTT_SIZE],
+                                  const chipmunk_fri_ntt_ctx_t *ctx);
+
+/** @brief Per-q inverse NTT using ctx->zetas_inv and ctx->inv_n. */
+void chipmunk_fri_ntt_inverse_q(int32_t a[CHIPMUNK_FRI_NTT_SIZE],
+                                  const chipmunk_fri_ntt_ctx_t *ctx);
+
+/** @brief Per-q coset forward NTT. */
+void chipmunk_fri_ntt_coset_forward_q(int32_t a[CHIPMUNK_FRI_NTT_SIZE],
+                                        int32_t coset_g,
+                                        const chipmunk_fri_ntt_ctx_t *ctx);
+
 /**
  * @brief Get omega_2048 used by this NTT.
  *

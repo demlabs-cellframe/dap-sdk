@@ -44,6 +44,7 @@ typedef enum {
 typedef struct chipmunk_fri_transcript {
     uint8_t  buffer[CHIPMUNK_FRI_TRANSCRIPT_BUF]; /**< Absorption buffer */
     size_t   buf_len;                   /**< Current buffer fill level */
+    uint64_t q;                          /**< Field modulus (Phase 9.14f) */
     uint32_t grinding_nonce;            /**< PoW nonce found by prover */
     uint32_t squeeze_counter;           /**< Counter for squeeze calls */
     bool     grinding_done;             /**< True after grinding search */

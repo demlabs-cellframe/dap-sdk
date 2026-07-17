@@ -56,6 +56,7 @@ typedef struct chipmunk_pedersen_commit {
 
 typedef struct chipmunk_pedersen_params {
     chipmunk_poly_t A[CHIPMUNK_PEDERSEN_K][CHIPMUNK_LRS_K];
+    uint64_t q;       /* Field modulus (Phase 9.14c). Defaults to CHIPMUNK_Q. */
     bool initialized;
 } chipmunk_pedersen_params_t;
 
@@ -107,6 +108,12 @@ void chipmunk_pedersen_add(chipmunk_pedersen_commit_t *sum,
                            const chipmunk_pedersen_commit_t *c1,
                            const chipmunk_pedersen_commit_t *c2);
 
+/** @brief Per-q variant of chipmunk_pedersen_add (Phase 9.14c). */
+void chipmunk_pedersen_add_q(chipmunk_pedersen_commit_t *sum,
+                               const chipmunk_pedersen_commit_t *c1,
+                               const chipmunk_pedersen_commit_t *c2,
+                               uint64_t q);
+
 /**
  * Derive blinding polynomial vector from a 32-byte seed.
  * Extracts the deterministic SHAKE256-based derivation used internally
@@ -137,6 +144,11 @@ int chipmunk_pedersen_commit_serialize(uint8_t *a_out, size_t a_out_size,
 
 int chipmunk_pedersen_commit_deserialize(chipmunk_pedersen_commit_t *commit,
                                          const uint8_t *a_in, size_t a_in_size);
+
+/** @brief Per-q variant of chipmunk_pedersen_commit_deserialize (Phase 9.14c). */
+int chipmunk_pedersen_commit_deserialize_q(chipmunk_pedersen_commit_t *commit,
+                                             const uint8_t *a_in, size_t a_in_size,
+                                             uint64_t q);
 
 #ifdef __cplusplus
 }

@@ -66,6 +66,16 @@ int chipmunk_rs_encode(int32_t codeword[CHIPMUNK_RS_CODE_LEN],
                         const int32_t poly[CHIPMUNK_RS_MSG_LEN]);
 
 /**
+ * @brief Per-q RS encode using a per-q NTT context (Phase 9.13h).
+ *
+ * Identical to chipmunk_rs_encode() but uses ntt_ctx's per-q twiddle tables.
+ * Required for q != CHIPMUNK_Q.
+ */
+int chipmunk_rs_encode_q(int32_t codeword[CHIPMUNK_RS_CODE_LEN],
+                          const int32_t poly[CHIPMUNK_RS_MSG_LEN],
+                          const chipmunk_fri_ntt_ctx_t *ntt_ctx);
+
+/**
  * @brief Reed-Solomon interpolate: 2048 coset-domain evaluations → degree-511 poly.
  *
  * Inverse of chipmunk_rs_encode.  Takes 2048 evaluations f(g·ω^k),
@@ -80,6 +90,12 @@ int chipmunk_rs_encode(int32_t codeword[CHIPMUNK_RS_CODE_LEN],
 int chipmunk_rs_interpolate(int32_t poly[CHIPMUNK_RS_MSG_LEN],
                               const int32_t codeword[CHIPMUNK_RS_CODE_LEN]);
 
+/** @brief Per-q RS interpolate (Phase 9.13h). ntt_ctx may be NULL for q==CHIPMUNK_Q. */
+int chipmunk_rs_interpolate_q(int32_t poly[CHIPMUNK_RS_MSG_LEN],
+                                const int32_t codeword[CHIPMUNK_RS_CODE_LEN],
+                                uint64_t q,
+                                const chipmunk_fri_ntt_ctx_t *ntt_ctx);
+
 /**
  * @brief Evaluate a single polynomial at a point (naive Horner's method).
  *
@@ -92,6 +108,9 @@ int chipmunk_rs_interpolate(int32_t poly[CHIPMUNK_RS_MSG_LEN],
  * @return      f(x) mod q.
  */
 int32_t chipmunk_rs_eval(const int32_t *poly, uint32_t n, int32_t x);
+
+/** @brief Per-q polynomial evaluation via Horner (Phase 9.13h). */
+int32_t chipmunk_rs_eval_q(const int32_t *poly, uint32_t n, int32_t x, uint64_t q);
 
 /**
  * @brief Get the coset generator constant.

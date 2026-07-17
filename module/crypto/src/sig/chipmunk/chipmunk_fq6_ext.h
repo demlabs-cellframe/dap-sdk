@@ -118,17 +118,30 @@ int chipmunk_fq6_ext_trace(chipmunk_poly_t *a_out,
 void chipmunk_fq6_ext_scalar_set(chipmunk_fq6_ext_t *a_out,
                                    const int32_t a_coords[CHIPMUNK_FQ6_EXT_DEG]);
 
+/** @brief Per-q variant: normalize coords into [0, q) before storing. */
+void chipmunk_fq6_ext_scalar_set_q(chipmunk_fq6_ext_t *a_out,
+                                     const int32_t a_coords[CHIPMUNK_FQ6_EXT_DEG],
+                                     uint64_t q);
+
 /*  Extract the six F_q coordinates from a scalar ext element (reads the
  *  degree-0 X-coefficient of each Y-component).  Returns -EINVAL if the
  *  element is not scalar (some Y-component is a non-constant R_q poly). */
 int chipmunk_fq6_ext_scalar_get(int32_t a_coords_out[CHIPMUNK_FQ6_EXT_DEG],
                                   const chipmunk_fq6_ext_t *a);
 
+/** @brief Per-q variant: normalize coords into [0, q). */
+int chipmunk_fq6_ext_scalar_get_q(int32_t a_coords_out[CHIPMUNK_FQ6_EXT_DEG],
+                                    const chipmunk_fq6_ext_t *a, uint64_t q);
+
 /*  Invert a scalar (F_{q⁶}) element via extended Euclid in F_q[Y]/(Φ₉).
  *  Returns 0 on success (out is the scalar inverse), -EDOM if the scalar
  *  is zero / non-invertible, -EINVAL if a is not scalar. */
 int chipmunk_fq6_ext_scalar_invert(chipmunk_fq6_ext_t *a_out,
                                      const chipmunk_fq6_ext_t *a);
+
+/** @brief Per-q variant of scalar inversion. */
+int chipmunk_fq6_ext_scalar_invert_q(chipmunk_fq6_ext_t *a_out,
+                                       const chipmunk_fq6_ext_t *a, uint64_t q);
 
 /* ---- Fiat-Shamir challenge sampler over the subtractive set ------- */
 
@@ -149,6 +162,12 @@ int chipmunk_fq6_ext_sample_challenge(chipmunk_fq6_ext_t *a_out,
                                         const uint8_t a_fs_hash[32],
                                         uint32_t a_counter);
 
+/** @brief Per-q variant: rejection-sample F_q coordinates in [0, q).
+ *  Required for q != CHIPMUNK_Q so challenges live in the correct field. */
+int chipmunk_fq6_ext_sample_challenge_q(chipmunk_fq6_ext_t *a_out,
+                                          const uint8_t a_fs_hash[32],
+                                          uint32_t a_counter, uint64_t q);
+
 /* ---- general inversion (per-slot F_{q⁶}) — completeness/tests ------ */
 
 /*  Invert a GENERAL element of R_q^{(e)} ≅ (F_{q⁶})⁵¹² by inverting each
@@ -165,6 +184,11 @@ int chipmunk_fq6_ext_invert(chipmunk_fq6_ext_t *a_out,
  *  Returns true iff irreducible.  Lets the unit test re-confirm the
  *  G3.1 §3.1 parameter choice in CI rather than trusting a constant. */
 bool chipmunk_fq6_ext_modulus_is_irreducible(void);
+
+/** @brief Per-q variant of the Rabin irreducibility test for Φ₉ over F_q.
+ *  Required for q != CHIPMUNK_Q — verifies Φ₉ is irreducible so R_q^{(e)}
+ *  is actually a field and the subtractive-set soundness holds. */
+bool chipmunk_fq6_ext_modulus_is_irreducible_q(uint64_t q);
 
 #ifdef __cplusplus
 }

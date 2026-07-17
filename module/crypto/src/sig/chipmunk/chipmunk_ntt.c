@@ -24,10 +24,13 @@
 
 #include "chipmunk.h"
 #include "chipmunk_ntt.h"
+#include "chipmunk_field.h"
 #include "dap_ntt.h"
 #include <string.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include "dap_common.h"
+#include "dap_memwipe.h"
 
 #define LOG_TAG "chipmunk_ntt"
 
@@ -374,5 +377,210 @@ int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
     for (int l_i = 0; l_i < CHIPMUNK_N; l_i++)
         a_c[l_i] = chipmunk_ntt_montgomery_multiply(a_a[l_i], a_b[l_i]);
     return CHIPMUNK_ERROR_SUCCESS;
-} 
+}
+
+/* =========================================================================
+ * Phase 9.14a: Per-q NTT parameter computation
+ *
+ * dap_ntt_params_t is already a fully parameterized context. The global
+ * g_chipmunk_ntt_params is built once for q=CHIPMUNK_Q. These functions
+ * allow building an equivalent context for an arbitrary prime q at runtime.
+ * ======================================================================= */
+
+/* Extended Euclid: compute q^{-1} mod 2^k (returns the value in [0, 2^k)). */
+static uint32_t s_modinv_pow2(uint64_t q, uint32_t k)
+{
+    /* q is odd (it's prime > 2). We want x such that q*x ≡ 1 (mod 2^k).
+     * Newton's method: x_{i+1} = x_i * (2 - q * x_i) mod 2^k. */
+    uint64_t l_mod = 1ULL << k;
+    uint64_t x = 1;  /* q*1 ≡ q ≡ 1 (mod 2) since q is odd */
+    for (uint32_t i = 1; i < k; i <<= 1) {
+        x = (x * (2 - q * x)) & (l_mod - 1);
+    }
+    return (uint32_t)x;
+}
+
+int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
+{
+    if (!a_ctx) return -1;
+    if (q == 0 || (q & 1u) == 0) return -1;
+    if (q > 0x3FFFFFu) {
+        log_it(L_ERROR, "chipmunk_ntt: q=%lu exceeds 22-bit limit for Montgomery R=2^22",
+               (unsigned long)q);
+        return -1;
+    }
+
+    memset(a_ctx, 0, sizeof(*a_ctx));
+
+    /* Montgomery parameters: R = 2^22, mont_r_bits = 22. */
+    uint32_t l_r_bits = 22;
+    uint32_t l_r_mask = (1U << l_r_bits) - 1;
+    uint64_t l_R = 1ULL << l_r_bits;  /* R = 2^22 */
+
+    /* qinv = -q^{-1} mod 2^22 (stored unsigned; dap_ntt uses it as uint32). */
+    uint32_t l_qinv_pos = s_modinv_pow2(q, l_r_bits);
+    /* We need -q^{-1} mod 2^22: that's (2^22 - qinv_pos) if qinv_pos != 0. */
+    uint32_t l_qinv_neg = (uint32_t)(l_R - l_qinv_pos) & l_r_mask;
+
+    /* R mod q. */
+    int32_t l_R_mod_q = (int32_t)(l_R % q);
+
+    /* one_over_n = N^{-1} mod q = 512^{-1} mod q (via Fermat). */
+    int32_t l_one_over_n = chipmunk_field_inv_q((int32_t)CHIPMUNK_N, q);
+
+    /* Primitive N/2-th root of unity for the NTT.
+     * CHIPMUNK_N = 512, so we need a primitive 512-th root.
+     * The 2-adicity of q-1 must be >= 9 (= log2(512)). */
+    int32_t l_omega;
+    int l_rc = chipmunk_field_primitive_root_2k_q(9, &l_omega, q);  /* 2^9 = 512 */
+    if (l_rc != 0) {
+        log_it(L_ERROR, "chipmunk_ntt: no primitive 512-th root for q=%lu",
+               (unsigned long)q);
+        return l_rc;
+    }
+
+    /* Build twiddle tables. The dap_ntt forward/inverse kernels use
+     * bit-reversed zeta ordering (Cooley-Tukey / Gentleman-Sande).
+     * zetas[i] = omega^{brv9(i)} for i = 0..511 (512 entries),
+     * but the table is 1024 entries (padded). We generate them in
+     * the same order as the global g_ntt_forward_table.
+     *
+     * For the standard dap_ntt Cooley-Tukey forward:
+     *   zetas[k] = omega^{brv(k)} where brv is 9-bit reversal, k=1..N/2-1
+     *   zetas[0] = 1 (placeholder, unused or used for k=0)
+     *
+     * Actually, dap_ntt_params_t.zetas has zetas_len entries.
+     * The global uses zetas_len=1024. Let's match that.
+     *
+     * The simplest correct approach: generate zetas in natural order
+     * (omega^0, omega^1, ..., omega^{N-1}) and let dap_ntt handle indexing.
+     * BUT the global table uses a specific bit-reversed layout. We need
+     * to match dap_ntt_forward's expectations.
+     *
+     * From dap_ntt32_mont.h: the kernel does `z = zetas[l_k++]` where
+     * l_k starts at 1 and increments. This matches the Kyber/Dilithium
+     * convention where zetas are in bit-reversed order.
+     *
+     * For now: generate the table the same way as the reference NTT
+     * expects — power-order with bit-reversed indexing. */
+    int32_t *l_zetas = (int32_t *)calloc(1024, sizeof(int32_t));
+    int32_t *l_zetas_inv = (int32_t *)calloc(1024, sizeof(int32_t));
+    if (!l_zetas || !l_zetas_inv) {
+        free(l_zetas); free(l_zetas_inv);
+        return -1;
+    }
+
+    /* Generate zetas: omega^brv(i) for i = 0..511, then pad to 1024.
+     * brv9 = 9-bit reversal. */
+    l_zetas[0] = chipmunk_ntt_montgomery_multiply_q(1, l_R_mod_q, q, l_qinv_neg, l_r_bits, l_r_mask);
+    for (int i = 1; i < 512; ++i) {
+        /* Bit-reverse the 9-bit index i */
+        uint32_t l_brv = 0;
+        uint32_t l_tmp = (uint32_t)i;
+        for (int b = 0; b < 9; ++b) {
+            l_brv = (l_brv << 1) | (l_tmp & 1u);
+            l_tmp >>= 1;
+        }
+        /* omega^brv in standard (non-Montgomery) form */
+        int32_t l_pow = chipmunk_field_pow_q(l_omega, l_brv, q);
+        /* Convert to Montgomery domain: multiply by R mod q */
+        l_zetas[i] = chipmunk_ntt_montgomery_multiply_q(l_pow, l_R_mod_q, q, l_qinv_neg, l_r_bits, l_r_mask);
+    }
+    /* Pad remaining entries with 0 (unused). */
+    for (int i = 512; i < 1024; ++i) {
+        l_zetas[i] = 0;
+    }
+
+    /* Inverse zetas: omega^{-brv(i)}. Build from omega_inv. */
+    int32_t l_omega_inv = chipmunk_field_pow_q(l_omega, (uint32_t)(CHIPMUNK_N - 1), q);
+    int32_t l_omega_inv_mont = chipmunk_ntt_montgomery_multiply_q(l_omega_inv, l_R_mod_q, q, l_qinv_neg, l_r_bits, l_r_mask);
+    l_zetas_inv[0] = l_omega_inv_mont;  /* First entry is omega^{-1} in Montgomery */
+    for (int i = 1; i < 512; ++i) {
+        uint32_t l_brv = 0;
+        uint32_t l_tmp = (uint32_t)i;
+        for (int b = 0; b < 9; ++b) {
+            l_brv = (l_brv << 1) | (l_tmp & 1u);
+            l_tmp >>= 1;
+        }
+        int32_t l_pow = chipmunk_field_pow_q(l_omega_inv, l_brv, q);
+        l_zetas_inv[i] = chipmunk_ntt_montgomery_multiply_q(l_pow, l_R_mod_q, q, l_qinv_neg, l_r_bits, l_r_mask);
+    }
+    for (int i = 512; i < 1024; ++i) {
+        l_zetas_inv[i] = 0;
+    }
+
+    /* Fill the dap_ntt_params_t. */
+    a_ctx->params.n            = CHIPMUNK_N;
+    a_ctx->params.q            = (int32_t)q;
+    a_ctx->params.qinv         = l_qinv_neg;
+    a_ctx->params.mont_r_bits  = l_r_bits;
+    a_ctx->params.mont_r_mask  = l_r_mask;
+    a_ctx->params.one_over_n   = l_one_over_n;
+    a_ctx->params.zetas        = l_zetas;
+    a_ctx->params.zetas_inv    = l_zetas_inv;
+    a_ctx->params.zetas_len    = 1024;
+    a_ctx->q                   = q;
+    a_ctx->owns_tables         = true;
+
+    log_it(L_DEBUG, "chipmunk_ntt: per-q params computed: q=%lu qinv=%u R%%q=%d 1/N=%d omega=%d",
+           (unsigned long)q, l_qinv_neg, l_R_mod_q, l_one_over_n, l_omega);
+    return 0;
+}
+
+void chipmunk_ntt_ctx_free(chipmunk_ntt_ctx_t *a_ctx)
+{
+    if (!a_ctx || !a_ctx->owns_tables) return;
+    if (a_ctx->params.zetas) {
+        dap_memwipe((void*)a_ctx->params.zetas, 1024 * sizeof(int32_t));
+        free((void*)a_ctx->params.zetas);
+    }
+    if (a_ctx->params.zetas_inv) {
+        dap_memwipe((void*)a_ctx->params.zetas_inv, 1024 * sizeof(int32_t));
+        free((void*)a_ctx->params.zetas_inv);
+    }
+    memset(a_ctx, 0, sizeof(*a_ctx));
+}
+
+/* Per-q NTT wrappers using a runtime context. */
+void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    dap_ntt_forward(a_r, &a_ctx->params);
+}
+
+void chipmunk_invntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    dap_ntt_inverse(a_r, &a_ctx->params);
+}
+
+int32_t chipmunk_ntt_montgomery_multiply_q(int32_t a_a, int32_t a_b, uint64_t q,
+                                             uint32_t qinv_neg, uint32_t mont_r_bits,
+                                             uint32_t mont_r_mask)
+{
+    int32_t l_q = (int32_t)q;
+    int64_t l_t = (int64_t)a_a * a_b;
+    uint32_t l_u = (uint32_t)(l_t & mont_r_mask) * qinv_neg;
+    l_u &= mont_r_mask;
+    l_t += (int64_t)l_u * l_q;
+    int32_t l_result = (int32_t)(l_t >> mont_r_bits);
+
+    /* Branchless final reduction. */
+    int32_t l_mask_ge = (int32_t)(((uint32_t)l_result - (uint32_t)l_q) >> 31) - 1;
+    l_result -= l_mask_ge & l_q;
+    int32_t l_mask_lt = l_result >> 31;
+    l_result += l_mask_lt & l_q;
+    return l_result;
+}
+
+int chipmunk_ntt_pointwise_montgomery_q(int32_t a_c[CHIPMUNK_N],
+                                          const int32_t a_a[CHIPMUNK_N],
+                                          const int32_t a_b[CHIPMUNK_N],
+                                          const chipmunk_ntt_ctx_t *a_ctx)
+{
+    if (!a_c || !a_a || !a_b || !a_ctx) return CHIPMUNK_ERROR_NULL_PARAM;
+    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
+        /* Use dap_ntt's montgomery reduce which reads from params. */
+        a_c[l_i] = dap_ntt_montgomery_reduce((int64_t)a_a[l_i] * a_b[l_i], &a_ctx->params);
+    }
+    return CHIPMUNK_ERROR_SUCCESS;
+}
 

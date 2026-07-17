@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdatomic.h>
 #include <pthread.h>
+#include <errno.h>
 
 #include "dap_common.h"
 
@@ -24,6 +25,16 @@ static inline int32_t s_freduce(int64_t a_val)
     int64_t l_r = a_val % (int64_t)CHIPMUNK_Q;
     if (l_r < 0) {
         l_r += (int64_t)CHIPMUNK_Q;
+    }
+    return (int32_t)l_r;
+}
+
+/* Parameterized modular reduction into [0, q). */
+static inline int32_t s_freduce_q(int64_t a_val, uint64_t q)
+{
+    int64_t l_r = a_val % (int64_t)q;
+    if (l_r < 0) {
+        l_r += (int64_t)q;
     }
     return (int32_t)l_r;
 }
@@ -49,6 +60,18 @@ int32_t chipmunk_field_inv(int32_t a)
     return chipmunk_field_pow(a, (uint32_t)CHIPMUNK_Q - 2u);
 }
 
+/* Parameterized modular inverse via Fermat's little theorem. */
+int32_t chipmunk_field_inv_q(int32_t a, uint64_t q)
+{
+    if (a <= 0 || a >= (int32_t)q) {
+        a = s_freduce_q((int64_t)a, q);
+    }
+    if (a == 0) {
+        return 0;
+    }
+    return chipmunk_field_pow_q(a, (uint32_t)q - 2u, q);
+}
+
 /* -------------------------------------------------------------------------
  * Modular exponentiation: binary square-and-multiply
  * ---------------------------------------------------------------------- */
@@ -65,6 +88,24 @@ int32_t chipmunk_field_pow(int32_t base, uint32_t exp)
             l_result = s_freduce(l_result * l_b);
         }
         l_b = s_freduce(l_b * l_b);
+        l_e >>= 1;
+    }
+
+    return (int32_t)l_result;
+}
+
+/* Parameterized modular exponentiation: base^exp mod q. */
+int32_t chipmunk_field_pow_q(int32_t base, uint32_t exp, uint64_t q)
+{
+    int64_t l_result = 1;
+    int64_t l_b = s_freduce_q((int64_t)base, q);
+    uint32_t l_e = exp;
+
+    while (l_e) {
+        if (l_e & 1u) {
+            l_result = s_freduce_q(l_result * l_b, q);
+        }
+        l_b = s_freduce_q(l_b * l_b, q);
         l_e >>= 1;
     }
 
@@ -109,6 +150,39 @@ int chipmunk_field_primitive_root_2k(uint32_t k, int32_t *out_omega)
 
     log_it(L_ERROR, "chipmunk_field: no primitive 2^%u-th root of unity found (q=%u)",
            k, (unsigned)CHIPMUNK_Q);
+    return -1;
+}
+
+/* Parameterized primitive root of order 2^k in F_q.
+ * Caller must ensure 2^k | (q-1) (checked via two-adicity elsewhere). */
+int chipmunk_field_primitive_root_2k_q(uint32_t k, int32_t *out_omega, uint64_t q)
+{
+    if (!out_omega || k == 0) {
+        return -1;
+    }
+    /* k_max = floor(log2(q-1)); no hard cap for arbitrary q. */
+    if (k >= 32) {
+        return -1;
+    }
+
+    /* exp = (q - 1) / 2^k */
+    uint64_t l_exp = (q - 1u) >> k;
+
+    for (uint32_t l_g = 2; l_g < 100; ++l_g) {
+        /* pow_q takes uint32_t exp; (q-1)/2^k < q < 2^32 for our primes, OK */
+        int32_t l_o = chipmunk_field_pow_q((int32_t)l_g, (uint32_t)l_exp, q);
+        if (l_o <= 1) {
+            continue;
+        }
+        int32_t l_half = chipmunk_field_pow_q(l_o, 1u << (k - 1), q);
+        if (l_half == (int32_t)q - 1) {
+            *out_omega = l_o;
+            return 0;
+        }
+    }
+
+    log_it(L_ERROR, "chipmunk_field: no primitive 2^%u-th root of unity found (q=%lu)",
+           k, (unsigned long)q);
     return -1;
 }
 
@@ -243,4 +317,63 @@ int32_t chipmunk_field_inv_2048(void)
 int32_t chipmunk_field_inv_512(void)
 {
     return g_field_consts.inv_512;
+}
+
+/* -------------------------------------------------------------------------
+ * Per-q field constants calculator (Phase 9.13)
+ *
+ * Computes the FRI-domain roots of unity and inverses for an arbitrary
+ * prime modulus q (not just the global CHIPMUNK_Q). The caller owns the
+ * output struct; no global state is touched.
+ * ---------------------------------------------------------------------- */
+
+int chipmunk_field_compute_for_q(chipmunk_field_consts_t *a_out,
+                                   uint64_t q, uint32_t two_adicity)
+{
+    if (!a_out) return -EINVAL;
+    if (q == 0 || (q & 1u) == 0) return -EINVAL;
+    if (two_adicity == 0 || two_adicity >= 32) return -EINVAL;
+
+    /* omega = primitive 2^two_adicity-th root of unity. */
+    int32_t l_omega;
+    int l_rc = chipmunk_field_primitive_root_2k_q(two_adicity, &l_omega, q);
+    if (l_rc != 0) {
+        log_it(L_ERROR, "chipmunk_field: no primitive 2^%u root for q=%lu",
+               two_adicity, (unsigned long)q);
+        return l_rc;
+    }
+    uint32_t l_domain = 1u << two_adicity;
+
+    a_out->q = q;
+    a_out->two_adicity = two_adicity;
+    a_out->omega = l_omega;
+    a_out->omega_inv = chipmunk_field_pow_q(l_omega, l_domain - 1u, q);
+    a_out->inv_domain = chipmunk_field_pow_q((int32_t)l_domain,
+                                              (uint32_t)q - 2u, q);
+
+    /* Verify omega^domain == 1. */
+    int32_t l_check = chipmunk_field_pow_q(l_omega, l_domain, q);
+    if (l_check != 1) {
+        log_it(L_CRITICAL, "chipmunk_field: omega^%u = %d (expected 1) for q=%lu",
+               l_domain, l_check, (unsigned long)q);
+        return -1;
+    }
+    /* Verify omega^(domain/2) == q-1 (-1). */
+    l_check = chipmunk_field_pow_q(l_omega, l_domain / 2u, q);
+    if (l_check != (int32_t)q - 1) {
+        log_it(L_CRITICAL, "chipmunk_field: omega^%u = %d (expected q-1) for q=%lu",
+               l_domain / 2u, l_check, (unsigned long)q);
+        return -1;
+    }
+    /* Verify omega * omega_inv == 1. */
+    l_check = s_freduce_q((int64_t)a_out->omega * (int64_t)a_out->omega_inv, q);
+    if (l_check != 1) {
+        log_it(L_CRITICAL, "chipmunk_field: omega*omega_inv = %d (expected 1) for q=%lu",
+               l_check, (unsigned long)q);
+        return -1;
+    }
+
+    log_it(L_DEBUG, "chipmunk_field: per-q consts q=%lu 2ad=%u omega=%d omega_inv=%d inv_dom=%d",
+           (unsigned long)q, two_adicity, a_out->omega, a_out->omega_inv, a_out->inv_domain);
+    return 0;
 }

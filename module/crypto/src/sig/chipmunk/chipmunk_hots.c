@@ -107,8 +107,8 @@ int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
         for (int j = 0; j < CHIPMUNK_N; j++) {
             int32_t l_coeff;
             memcpy(&l_coeff, l_buf + j * sizeof(int32_t), sizeof(int32_t));
-            a_params->a[i].coeffs[j] = l_coeff % (int32_t)CHIPMUNK_Q;
-            if (a_params->a[i].coeffs[j] < 0) a_params->a[i].coeffs[j] += CHIPMUNK_Q;
+            /* Phase 9.14b: use parameterized mod_q. */
+            a_params->a[i].coeffs[j] = chipmunk_mod_q_q((int64_t)l_coeff, (uint64_t)CHIPMUNK_Q);
         }
         DAP_DELETE(l_buf);
 

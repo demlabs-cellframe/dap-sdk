@@ -226,12 +226,27 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx);
 
 /**
  * Commit to a polynomial: C = H(f_0 || f_1 || ... || f_{N-1}).
+ * Uses LRS default parameters (d=CHIPMUNK_SNARK_MAX_D, q=CHIPMUNK_Q).
+ * For non-LRS parameter sets, use chipmunk_snark_commit_ctx().
  * @param commit Output commitment.
  * @param poly Polynomial to commit.
  * @return 0 on success.
  */
 int chipmunk_snark_commit(chipmunk_snark_commit_t *commit,
                           const chipmunk_poly_t *poly);
+
+/**
+ * Commit to a polynomial using the (d, q) from a SNARK context.
+ * This is the context-aware variant — required for param sets where
+ * d != CHIPMUNK_SNARK_MAX_D or q != CHIPMUNK_Q.
+ * @param commit Output commitment.
+ * @param ctx SNARK context (provides d and q).
+ * @param poly Polynomial to commit.
+ * @return 0 on success, -EINVAL on null args.
+ */
+int chipmunk_snark_commit_ctx(chipmunk_snark_commit_t *commit,
+                                const chipmunk_snark_ctx_t *ctx,
+                                const chipmunk_poly_t *poly);
 
 /**
  * Generate a ring membership SNARK proof.

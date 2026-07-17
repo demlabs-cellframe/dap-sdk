@@ -155,6 +155,42 @@ int32_t chipmunk_field_inv_2048(void);
  */
 int32_t chipmunk_field_inv_512(void);
 
+/* -------------------------------------------------------------------------
+ * Per-q field constants (Phase 9.13)
+ *
+ * Functions that operate on an arbitrary prime modulus q, not the global
+ * CHIPMUNK_Q. The output struct is caller-owned; no global state is used.
+ * ---------------------------------------------------------------------- */
+
+/** Field constants for an arbitrary prime q. */
+typedef struct chipmunk_field_consts {
+    uint64_t q;             /* the prime modulus */
+    uint32_t two_adicity;   /* v_2(q-1) */
+    int32_t  omega;         /* primitive 2^two_adicity-th root of unity */
+    int32_t  omega_inv;     /* omega^{-1} mod q */
+    int32_t  inv_domain;    /* 2^two_adicity^{-1} mod q (for inverse NTT) */
+} chipmunk_field_consts_t;
+
+/**
+ * @brief Compute FRI-domain roots of unity and inverses for an arbitrary q.
+ *
+ * @param a_out       Output struct (caller-owned).
+ * @param q           Prime modulus.
+ * @param two_adicity v_2(q-1): 2^two_adicity divides q-1 (max root order).
+ * @return 0 on success, negative on error.
+ */
+int chipmunk_field_compute_for_q(chipmunk_field_consts_t *a_out,
+                                   uint64_t q, uint32_t two_adicity);
+
+/** @brief Per-q modular inverse via Fermat: a^{-1} mod q. */
+int32_t chipmunk_field_inv_q(int32_t a, uint64_t q);
+
+/** @brief Per-q modular exponentiation: base^exp mod q. */
+int32_t chipmunk_field_pow_q(int32_t base, uint32_t exp, uint64_t q);
+
+/** @brief Per-q primitive root of order 2^k in F_q. */
+int chipmunk_field_primitive_root_2k_q(uint32_t k, int32_t *out_omega, uint64_t q);
+
 #ifdef __cplusplus
 }
 #endif

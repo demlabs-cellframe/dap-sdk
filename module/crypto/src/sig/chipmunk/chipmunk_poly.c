@@ -554,13 +554,98 @@ bool chipmunk_poly_equal(const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *
     return true;
 }
 
-/* CR-D11 (Round-3): the previous helper `dap_random_poly_time_domain`
- * lived here as dead code that built coefficients via repeated SHA2-256
- * (with `*(uint32_t*)hash` UB and `% modulus` bias to boot).  No active
- * code path called it, but it kept SHA2 inside the module surface.
- * Removed wholesale; uniform polynomial sampling for the HOTS y-poly
- * goes through chipmunk_poly_uniform_mod_p (SHAKE256 + unbiased
- * rejection sampling — see CR-D5 remediation block below). */
+/* =========================================================================
+ * Phase 9.14a: Per-q polynomial operations
+ *
+ * These _q variants accept an explicit modulus. The non-_q wrappers
+ * default to CHIPMUNK_Q for backward compatibility.
+ * ======================================================================= */
+
+int chipmunk_poly_ntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_ctx) {
+    if (!a_poly || !a_ctx) return CHIPMUNK_ERROR_NULL_PARAM;
+    chipmunk_ntt_q(a_poly->coeffs, a_ctx);
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+int chipmunk_poly_invntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_ctx) {
+    if (!a_poly || !a_ctx) return CHIPMUNK_ERROR_NULL_PARAM;
+    chipmunk_invntt_q(a_poly->coeffs, a_ctx);
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+int chipmunk_poly_add_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                          const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return CHIPMUNK_ERROR_NULL_PARAM;
+    int32_t l_q = (int32_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_temp = (int64_t)a->coeffs[i] + (int64_t)b->coeffs[i];
+        r->coeffs[i] = (int32_t)(l_temp % (int64_t)q);
+        if (r->coeffs[i] < 0) r->coeffs[i] += l_q;
+        /* Centered normalization [-q/2, q/2] (matches non-_q semantics). */
+        if (r->coeffs[i] > l_q / 2) r->coeffs[i] -= l_q;
+    }
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+int chipmunk_poly_sub_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                          const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return CHIPMUNK_ERROR_NULL_PARAM;
+    int32_t l_q = (int32_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_temp = (int64_t)a->coeffs[i] - (int64_t)b->coeffs[i];
+        r->coeffs[i] = (int32_t)(l_temp % (int64_t)q);
+        if (r->coeffs[i] < 0) r->coeffs[i] += l_q;
+        if (r->coeffs[i] > l_q / 2) r->coeffs[i] -= l_q;
+    }
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+void chipmunk_poly_mul_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                               const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return;
+    int32_t l_q = (int32_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_temp = ((int64_t)a->coeffs[i] * (int64_t)b->coeffs[i]) % (int64_t)q;
+        r->coeffs[i] = (int32_t)l_temp;
+        if (r->coeffs[i] < 0) r->coeffs[i] += l_q;
+    }
+}
+
+void chipmunk_poly_add_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                               const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return;
+    int32_t l_q = (int32_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_sum = (int64_t)a->coeffs[i] + (int64_t)b->coeffs[i];
+        int32_t l_result = (int32_t)(l_sum % (int64_t)q);
+        if (l_result < 0) l_result += l_q;
+        r->coeffs[i] = l_result;
+    }
+}
+
+void chipmunk_poly_sub_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                               const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return;
+    int32_t l_q = (int32_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_diff = (int64_t)a->coeffs[i] - (int64_t)b->coeffs[i];
+        int32_t l_result = (int32_t)(l_diff % (int64_t)q);
+        if (l_result < 0) l_result += l_q;
+        r->coeffs[i] = l_result;
+    }
+}
+
+bool chipmunk_poly_equal_q(const chipmunk_poly_t *a, const chipmunk_poly_t *b,
+                            uint64_t q) {
+    if (!a || !b) return false;
+    int32_t l_q = (int32_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int32_t l_l = chipmunk_poly_lift(a->coeffs[i], l_q);
+        int32_t l_r = chipmunk_poly_lift(b->coeffs[i], l_q);
+        if (l_l != l_r) return false;
+    }
+    return true;
+}
 
 /**
  * @brief Generate uniform polynomial with coefficients in range [-bound, bound]

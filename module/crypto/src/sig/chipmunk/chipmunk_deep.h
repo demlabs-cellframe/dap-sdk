@@ -51,6 +51,7 @@ typedef struct chipmunk_deep_prover {
     int32_t z;                                    /**< DEEP point */
     int32_t evals[CHIPMUNK_DEEP_MAX_POLYS];      /**< f_i(z) evaluations */
     uint32_t num_polys;                           /**< Number of polynomials */
+    uint64_t q;                                   /**< Field modulus (Phase 9.13h) */
     bool composed;                                /**< True after deep_compose() */
 } chipmunk_deep_prover_t;
 
@@ -111,6 +112,14 @@ bool chipmunk_deep_verify(const chipmunk_deep_opening_t *opening,
                           const int32_t gammas[],
                           const int32_t composition[CHIPMUNK_N],
                           int32_t x);
+
+/** @brief Per-q variant of chipmunk_deep_verify (Phase 9.13h). */
+bool chipmunk_deep_verify_q(const chipmunk_deep_opening_t *opening,
+                              const chipmunk_poly_t polys[],
+                              uint32_t num_polys,
+                              const int32_t gammas[],
+                              const int32_t composition[CHIPMUNK_N],
+                              int32_t x, uint64_t q);
 
 /**
  * Get the composition polynomial from the prover.
