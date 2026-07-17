@@ -438,6 +438,7 @@ static void test_deep_three_polys(void)
 {
     chipmunk_deep_prover_t prov;
     chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
 
     chipmunk_poly_t p1, p2, p3;
     s_fill_poly(&p1, 111);
@@ -481,7 +482,9 @@ static void test_deep_determinism(void)
 
     chipmunk_deep_prover_t prov1, prov2;
     chipmunk_deep_prover_init(&prov1);
+    prov1.q = (uint64_t)CHIPMUNK_Q;
     chipmunk_deep_prover_init(&prov2);
+    prov2.q = (uint64_t)CHIPMUNK_Q;
 
     chipmunk_deep_compose(&prov1, &poly, 1, z, &gamma);
     chipmunk_deep_compose(&prov2, &poly, 1, z, &gamma);
@@ -505,6 +508,7 @@ static void test_deep_max_polys(void)
 {
     chipmunk_deep_prover_t prov;
     chipmunk_deep_prover_init(&prov);
+    prov.q = (uint64_t)CHIPMUNK_Q;
 
     chipmunk_poly_t polys[CHIPMUNK_DEEP_MAX_POLYS];
     int32_t gammas[CHIPMUNK_DEEP_MAX_POLYS];

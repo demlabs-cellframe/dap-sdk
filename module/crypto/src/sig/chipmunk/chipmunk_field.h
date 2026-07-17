@@ -30,19 +30,6 @@ extern "C" {
 #endif
 
 /* -------------------------------------------------------------------------
- * Non-_q wrappers: delegate to _q variants with CHIPMUNK_Q.
- * ---------------------------------------------------------------------- */
-
-/** @brief Modular inverse via Fermat: a^{-1} mod CHIPMUNK_Q. */
-int32_t chipmunk_field_inv(int32_t a);
-
-/** @brief Modular exponentiation: base^exp mod CHIPMUNK_Q. */
-int32_t chipmunk_field_pow(int32_t base, uint32_t exp);
-
-/** @brief Primitive root of order 2^k in F_{CHIPMUNK_Q}. */
-int chipmunk_field_primitive_root_2k(uint32_t k, int32_t *out_omega);
-
-/* -------------------------------------------------------------------------
  * Precomputed constants for the FRI domain
  *
  * The FRI evaluation domain has size 2048 = 2^11, requiring:

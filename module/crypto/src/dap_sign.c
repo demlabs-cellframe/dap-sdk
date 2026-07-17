@@ -1342,7 +1342,7 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
         return -4;
     }
 
-    int l_verify_rc = chipmunk_verify_multi_signature(&l_multi_sig, l_msg0, l_len0);
+    int l_verify_rc = chipmunk_verify_multi_signature(&l_multi_sig, l_msg0, l_len0, (uint64_t)CHIPMUNK_Q);
     if (l_verify_rc == 1) {
         chipmunk_multi_signature_deep_free(&l_multi_sig);
         return 0;

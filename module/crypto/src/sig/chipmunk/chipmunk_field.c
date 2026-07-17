@@ -39,22 +39,6 @@ static inline int32_t s_freduce_q(int64_t a_val, uint64_t q)
  * For a = 0, returns 0 (not invertible).
  * ---------------------------------------------------------------------- */
 
-/* Non-_q wrappers: delegate to _q variants with CHIPMUNK_Q. */
-int32_t chipmunk_field_inv(int32_t a)
-{
-    return chipmunk_field_inv_q(a, (uint64_t)CHIPMUNK_Q);
-}
-
-int32_t chipmunk_field_pow(int32_t base, uint32_t exp)
-{
-    return chipmunk_field_pow_q(base, exp, (uint64_t)CHIPMUNK_Q);
-}
-
-int chipmunk_field_primitive_root_2k(uint32_t k, int32_t *out_omega)
-{
-    return chipmunk_field_primitive_root_2k_q(k, out_omega, (uint64_t)CHIPMUNK_Q);
-}
-
 /* Parameterized modular inverse via Fermat's little theorem. */
 int32_t chipmunk_field_inv_q(int32_t a, uint64_t q)
 {

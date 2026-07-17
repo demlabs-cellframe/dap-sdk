@@ -146,17 +146,25 @@ static int s_fqx_inv_mod_phi9_q(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
 /*  R_q multiplication (time-domain in, time-domain out)               */
 /* ------------------------------------------------------------------ */
 
-static int s_rq_mul(chipmunk_poly_t *a_out,
-                    const chipmunk_poly_t *a_a,
-                    const chipmunk_poly_t *a_b)
+static int s_rq_mul_q(chipmunk_poly_t *a_out,
+                      const chipmunk_poly_t *a_a,
+                      const chipmunk_poly_t *a_b,
+                      uint64_t q)
 {
     chipmunk_poly_t l_a = *a_a, l_b = *a_b;
     int rc = chipmunk_poly_ntt(&l_a);
     if (rc != 0) { return rc; }
     rc = chipmunk_poly_ntt(&l_b);
     if (rc != 0) { return rc; }
-    chipmunk_poly_mul_ntt_q(a_out, &l_a, &l_b, (uint64_t)CHIPMUNK_Q);
+    chipmunk_poly_mul_ntt_q(a_out, &l_a, &l_b, q);
     return chipmunk_poly_invntt(a_out);
+}
+
+static int s_rq_mul(chipmunk_poly_t *a_out,
+                    const chipmunk_poly_t *a_a,
+                    const chipmunk_poly_t *a_b)
+{
+    return s_rq_mul_q(a_out, a_a, a_b, (uint64_t)CHIPMUNK_Q);
 }
 
 /* ------------------------------------------------------------------ */
@@ -218,13 +226,34 @@ bool chipmunk_fq6_ext_is_in_base_q(const chipmunk_fq6_ext_t *a, uint64_t q)
 /*  ring operations                                                    */
 /* ------------------------------------------------------------------ */
 
+int chipmunk_fq6_ext_add_q(chipmunk_fq6_ext_t *a_out,
+                             const chipmunk_fq6_ext_t *a,
+                             const chipmunk_fq6_ext_t *b,
+                             uint64_t q)
+{
+    if (!a_out || !a || !b) { return -EINVAL; }
+    for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
+        int rc = chipmunk_poly_add_q(&a_out->c[j], &a->c[j], &b->c[j], q);
+        if (rc != 0) { return rc; }
+    }
+    return 0;
+}
+
 int chipmunk_fq6_ext_add(chipmunk_fq6_ext_t *a_out,
                            const chipmunk_fq6_ext_t *a,
                            const chipmunk_fq6_ext_t *b)
 {
+    return chipmunk_fq6_ext_add_q(a_out, a, b, (uint64_t)CHIPMUNK_Q);
+}
+
+int chipmunk_fq6_ext_sub_q(chipmunk_fq6_ext_t *a_out,
+                             const chipmunk_fq6_ext_t *a,
+                             const chipmunk_fq6_ext_t *b,
+                             uint64_t q)
+{
     if (!a_out || !a || !b) { return -EINVAL; }
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
-        int rc = chipmunk_poly_add_q(&a_out->c[j], &a->c[j], &b->c[j], (uint64_t)CHIPMUNK_Q);
+        int rc = chipmunk_poly_sub_q(&a_out->c[j], &a->c[j], &b->c[j], q);
         if (rc != 0) { return rc; }
     }
     return 0;
@@ -234,33 +263,35 @@ int chipmunk_fq6_ext_sub(chipmunk_fq6_ext_t *a_out,
                            const chipmunk_fq6_ext_t *a,
                            const chipmunk_fq6_ext_t *b)
 {
-    if (!a_out || !a || !b) { return -EINVAL; }
-    for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
-        int rc = chipmunk_poly_sub_q(&a_out->c[j], &a->c[j], &b->c[j], (uint64_t)CHIPMUNK_Q);
-        if (rc != 0) { return rc; }
-    }
-    return 0;
+    return chipmunk_fq6_ext_sub_q(a_out, a, b, (uint64_t)CHIPMUNK_Q);
 }
 
 /* Reduce a raw degree-≤(2e-2) array of R_q coefficients modulo Φ₉,
  * using Yᵏ (k≥6) = −Y^{k−3} − Y^{k−6}.  Process high→low so that
  * contributions pushed into degrees 6..9 are themselves reduced.
  * On return l_p[e..2e-2] are zeroed and l_p[0..e-1] hold the result. */
-static int s_reduce_phi9(chipmunk_poly_t a_p[2 * CHIPMUNK_FQ6_EXT_DEG - 1])
+static int s_reduce_phi9_q(chipmunk_poly_t a_p[2 * CHIPMUNK_FQ6_EXT_DEG - 1],
+                            uint64_t q)
 {
     for (int k = 2 * CHIPMUNK_FQ6_EXT_DEG - 2; k >= CHIPMUNK_FQ6_EXT_DEG; --k) {
-        int rc = chipmunk_poly_sub_q(&a_p[k - 3], &a_p[k - 3], &a_p[k], (uint64_t)CHIPMUNK_Q);
+        int rc = chipmunk_poly_sub_q(&a_p[k - 3], &a_p[k - 3], &a_p[k], q);
         if (rc != 0) { return rc; }
-        rc = chipmunk_poly_sub_q(&a_p[k - 6], &a_p[k - 6], &a_p[k], (uint64_t)CHIPMUNK_Q);
+        rc = chipmunk_poly_sub_q(&a_p[k - 6], &a_p[k - 6], &a_p[k], q);
         if (rc != 0) { return rc; }
         memset(&a_p[k], 0, sizeof(a_p[k]));
     }
     return 0;
 }
 
-int chipmunk_fq6_ext_mul(chipmunk_fq6_ext_t *a_out,
-                           const chipmunk_fq6_ext_t *a,
-                           const chipmunk_fq6_ext_t *b)
+static int s_reduce_phi9(chipmunk_poly_t a_p[2 * CHIPMUNK_FQ6_EXT_DEG - 1])
+{
+    return s_reduce_phi9_q(a_p, (uint64_t)CHIPMUNK_Q);
+}
+
+int chipmunk_fq6_ext_mul_q(chipmunk_fq6_ext_t *a_out,
+                             const chipmunk_fq6_ext_t *a,
+                             const chipmunk_fq6_ext_t *b,
+                             uint64_t q)
 {
     if (!a_out || !a || !b) { return -EINVAL; }
     if (a_out == a || a_out == b) { return -EINVAL; } /* no aliasing */
@@ -271,20 +302,27 @@ int chipmunk_fq6_ext_mul(chipmunk_fq6_ext_t *a_out,
     for (int i = 0; i < CHIPMUNK_FQ6_EXT_DEG; ++i) {
         for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
             chipmunk_poly_t l_term;
-            int rc = s_rq_mul(&l_term, &a->c[i], &b->c[j]);
+            int rc = s_rq_mul_q(&l_term, &a->c[i], &b->c[j], q);
             if (rc != 0) { return rc; }
-            rc = chipmunk_poly_add_q(&l_p[i + j], &l_p[i + j], &l_term, (uint64_t)CHIPMUNK_Q);
+            rc = chipmunk_poly_add_q(&l_p[i + j], &l_p[i + j], &l_term, q);
             if (rc != 0) { return rc; }
         }
     }
 
-    int rc = s_reduce_phi9(l_p);
+    int rc = s_reduce_phi9_q(l_p, q);
     if (rc != 0) { return rc; }
 
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         a_out->c[j] = l_p[j];
     }
     return 0;
+}
+
+int chipmunk_fq6_ext_mul(chipmunk_fq6_ext_t *a_out,
+                           const chipmunk_fq6_ext_t *a,
+                           const chipmunk_fq6_ext_t *b)
+{
+    return chipmunk_fq6_ext_mul_q(a_out, a, b, (uint64_t)CHIPMUNK_Q);
 }
 
 int chipmunk_fq6_ext_frobenius(chipmunk_fq6_ext_t *a_out,

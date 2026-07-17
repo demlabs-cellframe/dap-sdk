@@ -83,17 +83,29 @@ bool chipmunk_fq6_ext_is_in_base_q(const chipmunk_fq6_ext_t *a, uint64_t q);
 int chipmunk_fq6_ext_add(chipmunk_fq6_ext_t *a_out,
                            const chipmunk_fq6_ext_t *a,
                            const chipmunk_fq6_ext_t *b);
+int chipmunk_fq6_ext_add_q(chipmunk_fq6_ext_t *a_out,
+                             const chipmunk_fq6_ext_t *a,
+                             const chipmunk_fq6_ext_t *b,
+                             uint64_t q);
 
 /*  out := a − b. */
 int chipmunk_fq6_ext_sub(chipmunk_fq6_ext_t *a_out,
                            const chipmunk_fq6_ext_t *a,
                            const chipmunk_fq6_ext_t *b);
+int chipmunk_fq6_ext_sub_q(chipmunk_fq6_ext_t *a_out,
+                             const chipmunk_fq6_ext_t *a,
+                             const chipmunk_fq6_ext_t *b,
+                             uint64_t q);
 
 /*  out := a · b  mod Φ₉  (schoolbook in Y over R_q, reduced by
  *  Y⁶ ≡ −Y³ − 1).  out may NOT alias a or b. */
 int chipmunk_fq6_ext_mul(chipmunk_fq6_ext_t *a_out,
                            const chipmunk_fq6_ext_t *a,
                            const chipmunk_fq6_ext_t *b);
+int chipmunk_fq6_ext_mul_q(chipmunk_fq6_ext_t *a_out,
+                             const chipmunk_fq6_ext_t *a,
+                             const chipmunk_fq6_ext_t *b,
+                             uint64_t q);
 
 /* ---- Galois / Frobenius (R_q ↔ R_q^{(e)} consistency, NOGAP §4) ---- */
 

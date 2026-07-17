@@ -171,8 +171,8 @@ void dap_poly1305_blocks_avx2(s_poly1305_state_t *st,
         rh[1] += (uint64_t)(v >> 44) & 0xFFFFFFFFFFF;
         rh[2] += (uint64_t)(v >> 88) & 0x3FFFFFFFFFF;
     }
-    s_donna_mul_r(rh, st->r0, st->r1, st->r2, st->s1, st->s2);
 
+    s_donna_mul_r(rh, st->r0, st->r1, st->r2, st->s1, st->s2);
     st->h0 = rh[0]; st->h1 = rh[1]; st->h2 = rh[2];
 
     nblocks &= 3;
