@@ -91,35 +91,67 @@ static int s_pedersen_commit_with_message_poly(chipmunk_pedersen_commit_t *a_com
 
     uint64_t l_q = a_params->q;
 
+    /* NTT-native commit: A matrices are pre-NTT'd at init time (stored in
+     * NTT domain). We NTT each randomness polynomial once, then accumulate
+     * pointwise in NTT domain, and do a single invNTT at the end.
+     * This eliminates K*K = 36 NTT round-trips per commit → 6 invNTTs total. */
+
+    /* NTT all randomness polynomials once */
+    chipmunk_poly_t l_r_ntt[CHIPMUNK_LRS_K];
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        l_r_ntt[j] = a_randomness[j];
+        chipmunk_ntt(l_r_ntt[j].coeffs);
+    }
+
     for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
-        chipmunk_poly_t l_sum;
-        memset(&l_sum, 0, sizeof(l_sum));
+        /* Accumulate pointwise in NTT domain.
+         * A[i][j] and r_ntt[j] are both in Montgomery-NTT domain.
+         * dap_ntt_pointwise_montgomery computes a*b*R^{-1} mod q, keeping
+         * result in Montgomery domain. Addition of Montgomery-domain values
+         * is plain modular addition (R factors cancel linearly). */
+        chipmunk_poly_t l_acc_ntt;
+        memset(&l_acc_ntt, 0, sizeof(l_acc_ntt));
 
         for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
-            chipmunk_poly_t l_a_ntt = a_params->A[i][j];
-            chipmunk_poly_t l_r_ntt = a_randomness[j];
-            chipmunk_ntt(l_a_ntt.coeffs);
-            chipmunk_ntt(l_r_ntt.coeffs);
-
             chipmunk_poly_t l_prod;
-            chipmunk_poly_mul_ntt_q(&l_prod, &l_a_ntt, &l_r_ntt, l_q);
-            chipmunk_invntt(l_prod.coeffs);
-
+            /* Both inputs are Montgomery-NTT. Pointwise Montgomery multiply
+             * yields a*b*R^{-1} which is still Montgomery domain. */
+            chipmunk_poly_mul_ntt_q(&l_prod, &a_params->A[i][j], &l_r_ntt[j], l_q);
+            /* Add in Montgomery domain: plain add + reduce */
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = chipmunk_mod_q_q(
-                    (int64_t)l_sum.coeffs[k] + l_prod.coeffs[k], l_q);
+                int64_t l_s = (int64_t)l_acc_ntt.coeffs[k] + l_prod.coeffs[k];
+                int32_t l_r = (int32_t)(l_s % (int64_t)l_q);
+                if (l_r < 0) l_r += (int32_t)l_q;
+                l_acc_ntt.coeffs[k] = l_r;
             }
         }
 
+        /* Add message polynomial for i==0.
+         * Message is in time domain → NTT it to Montgomery-NTT domain. */
         if (i == 0) {
+            chipmunk_poly_t l_msg_ntt = *a_message_poly;
+            chipmunk_ntt(l_msg_ntt.coeffs);
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = chipmunk_mod_q_q(
-                    (int64_t)l_sum.coeffs[k] + a_message_poly->coeffs[k], l_q);
+                int64_t l_s = (int64_t)l_acc_ntt.coeffs[k] + l_msg_ntt.coeffs[k];
+                int32_t l_r = (int32_t)(l_s % (int64_t)l_q);
+                if (l_r < 0) l_r += (int32_t)l_q;
+                l_acc_ntt.coeffs[k] = l_r;
             }
         }
 
-        a_commit->C[i] = l_sum;
+        /* Single invNTT to get time-domain commitment.
+         * invNTT cancels Montgomery R + applies 1/N + centers to [-q/2,q/2). */
+        chipmunk_invntt(l_acc_ntt.coeffs);
+        /* Canonicalize to [0,q) for consistent storage and comparison. */
+        for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+            if (l_acc_ntt.coeffs[k] < 0)
+                l_acc_ntt.coeffs[k] += (int32_t)l_q;
+        }
+        a_commit->C[i] = l_acc_ntt;
     }
+
+    /* Wipe NTT-domain randomness copies */
+    dap_memwipe(l_r_ntt, sizeof(l_r_ntt));
     return 0;
 }
 
@@ -176,6 +208,15 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *a_params,
     }
 
     DAP_DELETE(l_buf);
+
+    /* Convert all A matrices to NTT domain once at init time.
+     * They are stored NTT-native and reused across all commit calls. */
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+            chipmunk_ntt(a_params->A[i][j].coeffs);
+        }
+    }
+
     a_params->initialized = true;
     return 0;
 }

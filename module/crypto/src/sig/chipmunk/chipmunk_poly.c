@@ -389,21 +389,21 @@ int chipmunk_poly_sub_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
 void chipmunk_poly_mul_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
                                const chipmunk_poly_t *b, uint64_t q) {
     if (!r || !a || !b) return;
-    /* Use the dispatched Montgomery pointwise multiply (SIMD when available).
-     * This requires the global NTT context (built lazily for CHIPMUNK_Q).
-     * The q parameter is validated against the context's q. */
-    const dap_ntt_params_t *l_params = chipmunk_ntt_global_params();
-    if (l_params && (uint64_t)l_params->q == q) {
-        dap_ntt_pointwise_montgomery(r->coeffs, a->coeffs, b->coeffs, l_params);
-    } else {
-        /* Fallback: plain modular multiply for non-CHIPMUNK_Q (should not
-         * happen in production — per-q callers should use NTT ctx directly). */
-        int32_t l_q = (int32_t)q;
-        for (int i = 0; i < CHIPMUNK_N; i++) {
-            int64_t l_temp = ((int64_t)a->coeffs[i] * (int64_t)b->coeffs[i]) % (int64_t)q;
-            r->coeffs[i] = (int32_t)l_temp;
-            if (r->coeffs[i] < 0) r->coeffs[i] += l_q;
-        }
+    /* Plain modular pointwise multiply.
+     *
+     * dap_ntt_forward_mont with standard [0,q) inputs produces approximately
+     * standard-form NTT-domain values (the raw Montgomery reduce in the butterfly
+     * cancels R at each stage: s_montgomery_reduce_raw(coeff * zeta*R) = coeff*zeta).
+     * Therefore the pointwise product of two standard-form NTT values is a plain
+     * modular multiply a*b % q — NOT a Montgomery multiply.
+     *
+     * Using dap_ntt_pointwise_montgomery here would give a*b*R^{-1}, which is
+     * wrong by a factor of R. */
+    int32_t l_q = (int32_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_temp = ((int64_t)a->coeffs[i] * (int64_t)b->coeffs[i]) % (int64_t)q;
+        r->coeffs[i] = (int32_t)l_temp;
+        if (r->coeffs[i] < 0) r->coeffs[i] += l_q;
     }
 }
 
