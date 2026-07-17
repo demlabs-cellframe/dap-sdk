@@ -6,7 +6,7 @@
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
 #include "dap_hash_shake_x4.h"
-#include "dilithium_shake_compat.h"
+/* dilithium_shake_compat.h removed — call dap_hash_shake* directly */
 #include "dap_cpu_arch.h"
 #include "dap_arch_dispatch.h"
 
@@ -617,11 +617,11 @@ void poly_uniform_eta(poly *a, const unsigned char seed[SEEDBYTES], unsigned cha
     inbuf[SEEDBYTES] = nonce;
 
     dap_hash_shake256_absorb(state, inbuf, SEEDBYTES + 1);
-    dil_shake256_squeezeblocks(p, outbuf, 2, state);
+    dap_hash_shake256_squeezeblocks( outbuf, 2, state);
 
     ctr = rej_eta(a->coeffs, NN, outbuf, 2*DAP_SHAKE256_RATE, p);
     if(ctr < NN) {
-        dil_shake256_squeezeblocks(p, outbuf, 1, state);
+        dap_hash_shake256_squeezeblocks( outbuf, 1, state);
         rej_eta(a->coeffs + ctr, NN - ctr, outbuf, DAP_SHAKE256_RATE, p);
     }
 }
@@ -646,7 +646,7 @@ void poly_uniform_eta_x4(poly *a0, poly *a1, poly *a2, poly *a3,
     dap_keccak_x4_state_t l_state;
     dap_hash_shake256_x4_absorb(&l_state, inbuf[0], inbuf[1], inbuf[2], inbuf[3],
                                  SEEDBYTES + 1);
-    dil_shake256_x4_squeezeblocks(p, outbuf[0], outbuf[1], outbuf[2], outbuf[3],
+    dap_hash_shake256_x4_squeezeblocks( outbuf[0], outbuf[1], outbuf[2], outbuf[3],
                                    2, &l_state);
 
     poly *l_polys[4] = {a0, a1, a2, a3};
@@ -659,7 +659,7 @@ void poly_uniform_eta_x4(poly *a0, poly *a1, poly *a2, poly *a3,
     }
     if (l_need_more) {
         unsigned char l_extra[4][DAP_SHAKE256_RATE];
-        dil_shake256_x4_squeezeblocks(p, l_extra[0], l_extra[1], l_extra[2], l_extra[3],
+        dap_hash_shake256_x4_squeezeblocks( l_extra[0], l_extra[1], l_extra[2], l_extra[3],
                                        1, &l_state);
         for (int k = 0; k < 4; k++)
             if (l_ctr[k] < NN)

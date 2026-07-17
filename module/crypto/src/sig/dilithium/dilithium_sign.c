@@ -12,7 +12,7 @@
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
 #include "dap_hash_shake_x4.h"
-#include "dilithium_shake_compat.h"
+/* dilithium_shake_compat.h removed — call dap_hash_shake* directly */
 
 #define LOG_TAG "dap_crypto_sign_dilithium"
 
@@ -38,7 +38,7 @@ void expand_mat(polyvecl mat[], const unsigned char rho[SEEDBYTES], dilithium_pa
       dap_keccak_x4_state_t l_state;
       dap_hash_shake128_x4_absorb(&l_state, inbuf[0], inbuf[1], inbuf[2], inbuf[3],
                                    SEEDBYTES + 1);
-      dil_shake128_x4_squeezeblocks(p, outbuf[0], outbuf[1], outbuf[2], outbuf[3],
+      dap_hash_shake128_x4_squeezeblocks( outbuf[0], outbuf[1], outbuf[2], outbuf[3],
                                      5, &l_state);
 
       for (int k = 0; k < 4; k++) {
@@ -54,7 +54,7 @@ void expand_mat(polyvecl mat[], const unsigned char rho[SEEDBYTES], dilithium_pa
       unsigned int ii = idx / p->PARAM_L;
       unsigned int jj = idx % p->PARAM_L;
       inbuf[0][SEEDBYTES] = ii + (jj << 4);
-      dil_shake128(p, outbuf[0], sizeof(outbuf[0]), inbuf[0], SEEDBYTES + 1);
+      dap_hash_shake128( outbuf[0], sizeof(outbuf[0]), inbuf[0], SEEDBYTES + 1);
       dilithium_poly_uniform(mat[ii].vec + jj, outbuf[0]);
       dilithium_poly_nttunpack((int32_t *)mat[ii].vec[jj].coeffs);
       idx++;
@@ -246,7 +246,7 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
         dap_random_bytes(seedbuf, SEEDBYTES);
     }
 
-    dil_shake256(p, seedbuf, 3*SEEDBYTES, seedbuf, SEEDBYTES);
+    dap_hash_shake256( seedbuf, 3*SEEDBYTES, seedbuf, SEEDBYTES);
     rho = seedbuf;
     rhoprime = rho + SEEDBYTES;
     key = rho + 2*SEEDBYTES;
@@ -288,7 +288,7 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
 
     dilithium_pack_pk(public_key->data, rho, &t1, p);
 
-    dil_shake256(p, tr, crh, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
+    dap_hash_shake256( tr, crh, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
 
     if (p->is_fips204) {
         mldsa_pack_sk(private_key->data, rho, key, tr, &s1, &s2, &t0, p);
@@ -342,7 +342,7 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
     memcpy(sig->sig_data + p->CRYPTO_BYTES, m, mlen);
     memcpy(sig->sig_data + p->CRYPTO_BYTES - crh, tr, crh);
 
-    dil_shake256(p, mu, crh, sig->sig_data + p->CRYPTO_BYTES - crh, crh + mlen);
+    dap_hash_shake256( mu, crh, sig->sig_data + p->CRYPTO_BYTES - crh, crh + mlen);
 
     expand_mat(mat, rho, p);
     polyvecl_ntt(&s1, p);
@@ -524,8 +524,8 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
         for(i = 0; i < mlen; ++i)
             tmp_m[crh + i] = m[i];
 
-    dil_shake256(p, tmp_m, crh, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
-    dil_shake256(p, mu, crh, tmp_m, crh + mlen);
+    dap_hash_shake256( tmp_m, crh, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
+    dap_hash_shake256( mu, crh, tmp_m, crh + mlen);
 
 #ifdef DAP_DILITHIUM_PROFILE
     _pt1 = __rdtsc(); s_prof_mu += _pt1 - _pt0; _pt0 = _pt1;
