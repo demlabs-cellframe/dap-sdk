@@ -232,7 +232,9 @@ int chipmunk_fri_commit(chipmunk_fri_prover_t *prover,
          * Start at l=0: inv_zeta = inv(g), then multiply by inv(ω)^2^r each step. */
         int32_t l_inv_zeta = l_inv_g;
 
-        int32_t l_inv2 = prover->inv_2;
+        /* Phase 9.14: recompute inv_2 from active q (not prover->inv_2 which
+         * may be stale if caller overrode prover->q after init). */
+        int32_t l_inv2 = chipmunk_field_inv_q(2, l_q);
         for (uint32_t l = 0; l < l_half; ++l) {
             int32_t l_vp = l_prev[l];
             int32_t l_vm = l_prev[l + l_half];
