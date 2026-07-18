@@ -46,7 +46,7 @@ static void test_inv_basic(void)
 
     /* a * inv(a) == 1 mod q */
     int64_t l_prod = (int64_t)l_a * (int64_t)l_ia;
-    int32_t l_check = chipmunk_mod_q(l_prod);
+    int32_t l_check = chipmunk_mod_q_q(l_prod, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "42 * inv(42) == 1");
 }
 
@@ -60,7 +60,7 @@ static void test_inv_exhaustive_small(void)
         int32_t l_ia = chipmunk_field_inv_q(a, (uint64_t)CHIPMUNK_Q);
         dap_assert(l_ia != 0, "inv nonzero for a <= 100");
         int64_t l_prod = (int64_t)a * (int64_t)l_ia;
-        int32_t l_check = chipmunk_mod_q(l_prod);
+        int32_t l_check = chipmunk_mod_q_q(l_prod, (uint64_t)CHIPMUNK_Q);
         if (l_check != 1) {
             char l_msg[64];
             snprintf(l_msg, sizeof(l_msg), "a*inv(a)==1 for a=%d (got %d)", a, l_check);
@@ -228,7 +228,7 @@ static void test_init_cached_constants(void)
     /* omega_2048 * omega_2048_inv == 1 */
     int32_t l_w_inv = chipmunk_field_omega_2048_inv();
     int64_t l_prod = (int64_t)l_w * (int64_t)l_w_inv;
-    l_check = chipmunk_mod_q(l_prod);
+    l_check = chipmunk_mod_q_q(l_prod, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "omega_2048 * omega_2048_inv == 1");
 
     /* omega_512 = omega_2048^4 */
@@ -240,19 +240,19 @@ static void test_init_cached_constants(void)
     /* omega_512 * omega_512_inv == 1 */
     int32_t l_w512_inv = chipmunk_field_omega_512_inv();
     l_prod = (int64_t)l_w512 * (int64_t)l_w512_inv;
-    l_check = chipmunk_mod_q(l_prod);
+    l_check = chipmunk_mod_q_q(l_prod, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "omega_512 * omega_512_inv == 1");
 
     /* inv_2048: 2048 * inv_2048 == 1 mod q */
     int32_t l_ninv = chipmunk_field_inv_2048();
     l_prod = (int64_t)2048 * (int64_t)l_ninv;
-    l_check = chipmunk_mod_q(l_prod);
+    l_check = chipmunk_mod_q_q(l_prod, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "2048 * inv_2048 == 1");
 
     /* inv_512: 512 * inv_512 == 1 mod q */
     l_ninv = chipmunk_field_inv_512();
     l_prod = (int64_t)512 * (int64_t)l_ninv;
-    l_check = chipmunk_mod_q(l_prod);
+    l_check = chipmunk_mod_q_q(l_prod, (uint64_t)CHIPMUNK_Q);
     dap_assert(l_check == 1, "512 * inv_512 == 1");
 }
 
@@ -295,7 +295,7 @@ static void test_domain_2048_distinct(void)
         if (l_sum >= (int64_t)CHIPMUNK_Q) {
             l_sum -= (int64_t)CHIPMUNK_Q;
         }
-        l_val = chipmunk_mod_q((int64_t)l_val * (int64_t)l_omega);
+        l_val = chipmunk_mod_q_q((int64_t)l_val * (int64_t)l_omega, (uint64_t)CHIPMUNK_Q);
     }
     /* Sum of all distinct 2048-th roots = 0 (by geometric series) */
     dap_assert(l_sum == 0, "sum of 2048-th roots == 0 (geometric series)");
