@@ -585,6 +585,42 @@ int chipmunk_lrs_relation_eval(chipmunk_poly_t *a_out,
     return 0;
 }
 
+/* NTT-native relation_eval: accepts A already in NTT domain.
+ * Saves K forward NTTs of A per call (A is reused across ring steps/attempts). */
+static int s_relation_eval_ntt(chipmunk_poly_t *a_out,
+                                const chipmunk_poly_t a_A_ntt[CHIPMUNK_LRS_K],
+                                const chipmunk_poly_t a_x[CHIPMUNK_LRS_K], uint64_t q)
+{
+    if (!a_out || !a_A_ntt || !a_x) return -EINVAL;
+
+    chipmunk_poly_t l_acc_ntt;
+    memset(&l_acc_ntt, 0, sizeof(l_acc_ntt));
+
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        chipmunk_poly_t l_x = a_x[j];
+        int l_rc = chipmunk_poly_ntt(&l_x);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
+
+        chipmunk_poly_t l_prod;
+        chipmunk_poly_mul_ntt_q(&l_prod, &a_A_ntt[j], &l_x, q);
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            int64_t l_s = (int64_t)l_acc_ntt.coeffs[i] + l_prod.coeffs[i];
+            int32_t l_r = (int32_t)(l_s % (int64_t)q);
+            if (l_r < 0) l_r += (int32_t)q;
+            l_acc_ntt.coeffs[i] = l_r;
+        }
+    }
+
+    int l_rc = chipmunk_poly_invntt(&l_acc_ntt);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
+
+    for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+        if (l_acc_ntt.coeffs[i] < 0) l_acc_ntt.coeffs[i] += (int32_t)q;
+        a_out->coeffs[i] = l_acc_ntt.coeffs[i];
+    }
+    return 0;
+}
+
 int chipmunk_lrs_keypair_from_seeds(chipmunk_lrs_public_key_t *a_pk,
                                     chipmunk_lrs_secret_key_t *a_sk,
                                     const uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES])
@@ -1286,6 +1322,8 @@ size_t chipmunk_lrs_signature_size(uint32_t a_ring_size)
 typedef struct lrs_ring_member_ctx {
     chipmunk_poly_t A_pk[CHIPMUNK_LRS_K];
     chipmunk_poly_t A_I[CHIPMUNK_LRS_K];
+    chipmunk_poly_t A_pk_ntt[CHIPMUNK_LRS_K];  /* A_pk in NTT domain (cached) */
+    chipmunk_poly_t A_I_ntt[CHIPMUNK_LRS_K];  /* A_I in NTT domain (cached) */
     chipmunk_poly_t P_poly;
 } lrs_ring_member_ctx_t;
 
@@ -1303,6 +1341,15 @@ static int s_derive_ring_member_ctx(lrs_ring_member_ctx_t *a_ctx,
     l_rc = chipmunk_lrs_derive_A_I(a_ctx->A_I, a_pk->params_id, a_pk->P);
     if (l_rc != 0) {
         return l_rc;
+    }
+    /* Pre-compute NTT-domain copies of A_pk and A_I for hot-path reuse. */
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        a_ctx->A_pk_ntt[j] = a_ctx->A_pk[j];
+        l_rc = chipmunk_poly_ntt(&a_ctx->A_pk_ntt[j]);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
+        a_ctx->A_I_ntt[j] = a_ctx->A_I[j];
+        l_rc = chipmunk_poly_ntt(&a_ctx->A_I_ntt[j]);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
     }
     return chipmunk_lrs_poly_qunpack(&a_ctx->P_poly, a_pk->P, (uint64_t)CHIPMUNK_Q);
 }
@@ -1437,9 +1484,9 @@ static int s_simulate_branch(uint8_t a_T_pk_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES
                              const chipmunk_poly_t a_z[CHIPMUNK_LRS_K], uint64_t q)
 {
     chipmunk_poly_t l_sum_A_pk_z, l_sum_A_I_z;
-    int l_rc = chipmunk_lrs_relation_eval(&l_sum_A_pk_z, a_ctx->A_pk, a_z, q);
+    int l_rc = s_relation_eval_ntt(&l_sum_A_pk_z, a_ctx->A_pk_ntt, a_z, q);
     if (l_rc == 0) {
-        l_rc = chipmunk_lrs_relation_eval(&l_sum_A_I_z, a_ctx->A_I, a_z, q);
+        l_rc = s_relation_eval_ntt(&l_sum_A_I_z, a_ctx->A_I_ntt, a_z, q);
     }
     if (l_rc != 0) {
         return l_rc;
@@ -1496,20 +1543,20 @@ static int s_simulate_branch(uint8_t a_T_pk_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES
  */
 static int s_real_commitments(uint8_t a_T_pk_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES],
                               uint8_t a_T_I_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES],
-                              const chipmunk_poly_t a_A_pk[CHIPMUNK_LRS_K],
-                              const chipmunk_poly_t a_A_I[CHIPMUNK_LRS_K],
-                              const chipmunk_poly_t a_y[CHIPMUNK_LRS_K])
+                              const chipmunk_poly_t a_A_pk_ntt[CHIPMUNK_LRS_K],
+                              const chipmunk_poly_t a_A_I_ntt[CHIPMUNK_LRS_K],
+                              const chipmunk_poly_t a_y[CHIPMUNK_LRS_K], uint64_t q)
 {
     chipmunk_poly_t l_T_pk, l_T_I;
-    int l_rc = s_relation_eval_centered(&l_T_pk, a_A_pk, a_y, (uint64_t)CHIPMUNK_Q);
+    int l_rc = s_relation_eval_ntt(&l_T_pk, a_A_pk_ntt, a_y, q);
     if (l_rc == 0) {
-        l_rc = s_relation_eval_centered(&l_T_I, a_A_I, a_y, (uint64_t)CHIPMUNK_Q);
+        l_rc = s_relation_eval_ntt(&l_T_I, a_A_I_ntt, a_y, q);
     }
     if (l_rc == 0) {
-        l_rc = chipmunk_lrs_poly_qpack(a_T_pk_packed, &l_T_pk, (uint64_t)CHIPMUNK_Q);
+        l_rc = chipmunk_lrs_poly_qpack(a_T_pk_packed, &l_T_pk, q);
     }
     if (l_rc == 0) {
-        l_rc = chipmunk_lrs_poly_qpack(a_T_I_packed, &l_T_I, (uint64_t)CHIPMUNK_Q);
+        l_rc = chipmunk_lrs_poly_qpack(a_T_I_packed, &l_T_I, q);
     }
     dap_memwipe(&l_T_pk, sizeof(l_T_pk));
     dap_memwipe(&l_T_I, sizeof(l_T_I));
@@ -1681,8 +1728,8 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
 
         /* Compute signer's real commitments, then seed for the (s+1)%n step. */
         l_rc = s_real_commitments(l_T_pk_packed, l_T_I_packed,
-                                  l_ring_ctx[l_signer_idx].A_pk,
-                                  l_ring_ctx[l_signer_idx].A_I, l_y);
+                                  l_ring_ctx[l_signer_idx].A_pk_ntt,
+                                  l_ring_ctx[l_signer_idx].A_I_ntt, l_y, q);
         if (l_rc != 0) {
             goto loop_out;
         }
