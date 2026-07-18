@@ -30,6 +30,9 @@
 
 #include "chipmunk/chipmunk_fq6_ext.h"
 #include "chipmunk/chipmunk_poly.h"
+#include "chipmunk/chipmunk_ntt.h"
+#include "chipmunk/chipmunk.h"
+#include "chipmunk/chipmunk_field.h"
 
 #define LOG_TAG "test_chipmunk_fq6_ext"
 
@@ -382,6 +385,19 @@ int main(void)
     dap_common_init("test_chipmunk_fq6_ext", NULL);
     /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
     dap_enc_init();
+
+    /* NTT round-trip diagnostic */
+    {
+        int32_t a[CHIPMUNK_N] = {0};
+        a[0] = 1;
+        chipmunk_ntt(a);
+        chipmunk_invntt(a);
+        int mism = (a[0] != 1) ? 1 : 0;
+        for (int i = 1; i < CHIPMUNK_N; i++) {
+            if (a[i] != 0) mism++;
+        }
+        dap_assert(mism == 0, "NTT round-trip delta[0]");
+    }
 
     int rc = 0;
     if (!s_test_irreducible())     rc = 1;

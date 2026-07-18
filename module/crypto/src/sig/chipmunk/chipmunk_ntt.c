@@ -122,10 +122,16 @@ int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
         return l_rc;
     }
 
-    /* Build twiddle tables in MONTGOMERY form.
+    /* Build twiddle tables in tree-traversal order (Dilithium/FIPS-204 format).
      *
-     * dap_ntt_forward_mont butterfly: s_montgomery_reduce_raw(zeta_mont * coeff)
-     * yields zeta_true * coeff. Therefore zeta_mont = zeta_true * R mod q.
+     * dap_ntt_forward_mont uses Cooley-Tukey with sequential zeta walk:
+     *   k = 1; for len = N/2 down to 1: zeta = zetas[k++]
+     * The butterfly: t = mont_reduce(zeta_mont * coeff) = zeta_true * coeff.
+     * So zeta_mont = zeta_true * R mod q.
+     *
+     * Tree order at level m (len = N >> (m+1)):
+     *   twiddles = omega^{(2i+1)*len} for i = 0..2^m - 1
+     * Each stored as omega^{(2i+1)*len} * R mod q (Montgomery form).
      */
     int32_t *l_zetas = (int32_t *)calloc(1024, sizeof(int32_t));
     int32_t *l_zetas_inv = (int32_t *)calloc(1024, sizeof(int32_t));
@@ -135,32 +141,38 @@ int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
     }
 
     int32_t l_omega_inv = chipmunk_field_pow_q(l_omega, (uint32_t)(CHIPMUNK_N - 1), q);
+    const int l_log_n = 9;  /* log2(CHIPMUNK_N) */
 
-    /* Forward zetas: omega^{brv9(i)} * R mod q. */
-    l_zetas[0] = l_R_mod_q;  /* 1 * R mod q */
-    for (int i = 1; i < 512; ++i) {
-        uint32_t l_brv = 0;
-        uint32_t l_tmp = (uint32_t)i;
-        for (int b = 0; b < 9; ++b) {
-            l_brv = (l_brv << 1) | (l_tmp & 1u);
-            l_tmp >>= 1;
+    /* Forward zetas in tree order (Montgomery form). */
+    l_zetas[0] = 0;  /* placeholder, unused by forward kernel (k starts at 1) */
+    {
+        int l_k = 1;
+        for (int l_m = 0; l_m < l_log_n; ++l_m) {
+            int l_len = CHIPMUNK_N >> (l_m + 1);
+            for (int l_i = 0; l_i < (1 << l_m); ++l_i) {
+                uint32_t l_power = (uint32_t)(2 * l_i + 1) * (uint32_t)l_len;
+                int32_t l_tw = chipmunk_field_pow_q(l_omega, l_power, q);
+                l_zetas[l_k++] = (int32_t)(((int64_t)l_tw * l_R_mod_q) % (int64_t)q);
+            }
         }
-        int32_t l_pow = chipmunk_field_pow_q(l_omega, l_brv, q);
-        l_zetas[i] = (int32_t)(((int64_t)l_pow * l_R_mod_q) % (int64_t)q);
     }
     for (int i = 512; i < 1024; ++i) l_zetas[i] = 0;
 
-    /* Inverse zetas: omega^{-brv9(i)} * R mod q. */
-    l_zetas_inv[0] = l_R_mod_q;
-    for (int i = 1; i < 512; ++i) {
-        uint32_t l_brv = 0;
-        uint32_t l_tmp = (uint32_t)i;
-        for (int b = 0; b < 9; ++b) {
-            l_brv = (l_brv << 1) | (l_tmp & 1u);
-            l_tmp >>= 1;
+    /* Inverse zetas in tree order (Gentleman-Sande, Montgomery form).
+     * The inverse kernel: k = 0; for len = 1 up to N/2: zeta = zetas_inv[k++]
+     * At level m (len = 1 << m):
+     *   twiddles = omega^{-(2i+1)*len} for i = 0..N/(2*len)-1
+     */
+    {
+        int l_k = 0;
+        for (int l_m = 0; l_m < l_log_n; ++l_m) {
+            int l_len = 1 << l_m;
+            for (int l_i = 0; l_i < CHIPMUNK_N / (2 * l_len); ++l_i) {
+                uint32_t l_power = (uint32_t)(2 * l_i + 1) * (uint32_t)l_len;
+                int32_t l_tw = chipmunk_field_pow_q(l_omega_inv, l_power, q);
+                l_zetas_inv[l_k++] = (int32_t)(((int64_t)l_tw * l_R_mod_q) % (int64_t)q);
+            }
         }
-        int32_t l_pow = chipmunk_field_pow_q(l_omega_inv, l_brv, q);
-        l_zetas_inv[i] = (int32_t)(((int64_t)l_pow * l_R_mod_q) % (int64_t)q);
     }
     for (int i = 512; i < 1024; ++i) l_zetas_inv[i] = 0;
 
@@ -208,14 +220,20 @@ void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 void chipmunk_invntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 {
     dap_ntt_inverse_mont(a_r, &a_ctx->params);
-    /* Post-pass: cancel Montgomery R and apply 1/N in one step.
-     * Mont(c, one_over_n) = c * one_over_n * R^{-1} mod q → standard [0,q). */
+    /* Post-pass: apply 1/N scaling.
+     * dap_ntt_inverse_mont outputs standard-form [0,q) values (the R factor
+     * is cancelled internally by the GS butterfly). The only remaining step
+     * is to multiply by N^{-1} mod q.
+     * We use a plain modular multiply (NOT Montgomery) because the input
+     * is already in standard form. */
+    int32_t l_q = a_ctx->params.q;
     int32_t l_inv_n = a_ctx->params.one_over_n;
     for (int i = 0; i < CHIPMUNK_N; ++i) {
-        a_r[i] = dap_ntt_montgomery_reduce((int64_t)a_r[i] * l_inv_n, &a_ctx->params);
+        int64_t l_v = ((int64_t)a_r[i] * l_inv_n) % (int64_t)l_q;
+        if (l_v < 0) l_v += l_q;
+        a_r[i] = (int32_t)l_v;
     }
     /* Center to [-q/2, q/2) to match the old plain kernel output convention. */
-    int32_t l_q = a_ctx->params.q;
     int32_t l_half = l_q / 2;
     for (int i = 0; i < CHIPMUNK_N; ++i) {
         if (a_r[i] > l_half) a_r[i] -= l_q;
