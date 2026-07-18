@@ -103,7 +103,7 @@ static int32_t s_center_q(int32_t a_v, uint64_t q)
     l_r += l_q & l_neg;                       /* add q if negative → [0, q) */
     /* Now center: subtract q if > q/2 */
     int64_t l_hi = -(int64_t)(l_r > l_half);
-    l_r += l_q & l_hi;                        /* l_r - q when > half → wraps to negative */
+    l_r -= l_q & l_hi;                        /* l_r - q when > half → wraps to negative */
     l_r -= l_q & (~l_hi & -(int64_t)(l_r >= l_q));  /* edge: exactly q → 0 */
     return (int32_t)l_r;
 }

@@ -100,7 +100,7 @@ static void s_build_fixture(chipmunk_poly_t *a_pks,
         for (uint32_t j = 0u; j < CHIPMUNK_LRS_K; ++j) {
             a_x_flat[i * CHIPMUNK_LRS_K + j] = x_i[j];
         }
-        dap_assert(chipmunk_lrs_relation_eval(&a_pks[i], A_pk, x_i) == 0,
+        dap_assert(chipmunk_lrs_relation_eval(&a_pks[i], A_pk, x_i, (uint64_t)CHIPMUNK_Q) == 0,
                    "pk_i");
     }
 }
@@ -147,7 +147,7 @@ static void test_honest_fold_roundtrip(uint8_t a_fs_salt)
                "aggregate X");
 
     chipmunk_poly_t Y_pk;
-    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
+    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X, (uint64_t)CHIPMUNK_Q) == 0, "Y_pk");
 
     uint8_t fs_seed[32];
     uint8_t ring_hash[32];
@@ -164,12 +164,12 @@ static void test_honest_fold_roundtrip(uint8_t a_fs_salt)
     const int rc_prove = chipmunk_mring_fold_prove(l_proof, b_ind, N_RING,
                                                    pks, &c, T_THRESH, &Y_pk,
                                                    ring_hash, fs_seed,
-                                                   opening_seed);
+                                                   opening_seed, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc_prove == 0, "fold_prove must succeed");
 
     const int rc_verify = chipmunk_mring_fold_verify(l_proof, N_RING,
                                                     pks, &c, T_THRESH, &Y_pk,
-                                                    ring_hash, fs_seed);
+                                                    ring_hash, fs_seed, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc_verify == 0, "fold_verify must accept honest proof");
 
     s_proof_delete(l_proof);
@@ -192,7 +192,7 @@ static void test_tampered_L_rejected(void)
     dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "X");
     chipmunk_poly_t Y_pk;
-    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
+    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X, (uint64_t)CHIPMUNK_Q) == 0, "Y_pk");
 
     uint8_t fs_seed[32];
     uint8_t ring_hash[32];
@@ -206,7 +206,7 @@ static void test_tampered_L_rejected(void)
     dap_assert(chipmunk_mring_fold_prove(l_proof, b_ind, N_RING,
                                          pks, &c, T_THRESH, &Y_pk,
                                          ring_hash, fs_seed,
-                                         opening_seed) == 0,
+                                         opening_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "prove");
 
     l_proof->rounds[0].C_L.c[0].coeffs[0] =
@@ -214,7 +214,7 @@ static void test_tampered_L_rejected(void)
 
     const int rc = chipmunk_mring_fold_verify(l_proof, N_RING,
                                               pks, &c, T_THRESH, &Y_pk,
-                                              ring_hash, fs_seed);
+                                              ring_hash, fs_seed, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc == -EBADMSG, "tampered L must fail verify");
 
     s_proof_delete(l_proof);
@@ -240,7 +240,7 @@ static void s_prove_fixture(chipmunk_mring_fold_proof_t *a_proof,
     chipmunk_poly_t X[CHIPMUNK_LRS_K];
     dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "X");
-    dap_assert(chipmunk_lrs_relation_eval(a_Y_pk, A_pk, X) == 0, "Y_pk");
+    dap_assert(chipmunk_lrs_relation_eval(a_Y_pk, A_pk, X, (uint64_t)CHIPMUNK_Q) == 0, "Y_pk");
 
     for (size_t i = 0u; i < sizeof(*a_fs_seed); ++i) {
         a_fs_seed[i] = (uint8_t)(0xA7u ^ (uint8_t)i ^ a_salt);
@@ -252,7 +252,7 @@ static void s_prove_fixture(chipmunk_mring_fold_proof_t *a_proof,
     dap_assert(chipmunk_mring_fold_prove(a_proof, b_ind, N_RING,
                                          a_pks, a_c, T_THRESH, a_Y_pk,
                                          a_ring_hash, a_fs_seed,
-                                         a_opening_seed) == 0,
+                                         a_opening_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "prove");
 }
 
@@ -277,11 +277,11 @@ static void test_wire_roundtrip_verify(void)
                "fold_write");
 
     chipmunk_mring_fold_proof_t *l_parsed = s_proof_new(l_depth);
-    dap_assert(chipmunk_mring_fold_read(l_parsed, l_depth, l_buf, l_wire) == 0,
+    dap_assert(chipmunk_mring_fold_read(l_parsed, l_depth, l_buf, l_wire, (uint64_t)CHIPMUNK_Q) == 0,
                "fold_read");
 
     dap_assert(chipmunk_mring_fold_verify(l_parsed, N_RING, pks, &c, T_THRESH,
-                                          &Y_pk, ring_hash, fs_seed) == 0,
+                                          &Y_pk, ring_hash, fs_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "verify after wire roundtrip");
 
     s_proof_delete(l_parsed);
@@ -317,7 +317,7 @@ static void test_ext_qpack_roundtrip(void)
                                         &l_proof->rounds[0].C_L) == 0,
                "ext_qpack");
     dap_assert(chipmunk_fq6_ext_qunpack(&l_restored, l_packed,
-                                          sizeof(l_packed)) == 0,
+                                          sizeof(l_packed), (uint64_t)CHIPMUNK_Q) == 0,
                "ext_qunpack");
 
     for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_FQ6_EXT_DEG; ++j) {
@@ -435,7 +435,7 @@ static void test_tampered_leaf_mask_rejected(void)
 
     const int rc = chipmunk_mring_fold_verify(l_proof, N_RING,
                                               pks, &c, T_THRESH, &Y_pk,
-                                              ring_hash, fs_seed);
+                                              ring_hash, fs_seed, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc == -EBADMSG, "tampered leaf_mask must fail verify");
 
     s_proof_delete(l_proof);
@@ -458,7 +458,7 @@ static void test_tampered_bstar_rejected(void)
     dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "X");
     chipmunk_poly_t Y_pk;
-    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
+    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X, (uint64_t)CHIPMUNK_Q) == 0, "Y_pk");
 
     uint8_t fs_seed[32];
     uint8_t ring_hash[32];
@@ -472,7 +472,7 @@ static void test_tampered_bstar_rejected(void)
     dap_assert(chipmunk_mring_fold_prove(l_proof, b_ind, N_RING,
                                          pks, &c, T_THRESH, &Y_pk,
                                          ring_hash, fs_seed,
-                                         opening_seed) == 0,
+                                         opening_seed, (uint64_t)CHIPMUNK_Q) == 0,
                "prove");
 
     l_proof->b_star.c[0].coeffs[1] =
@@ -480,7 +480,7 @@ static void test_tampered_bstar_rejected(void)
 
     const int rc = chipmunk_mring_fold_verify(l_proof, N_RING,
                                               pks, &c, T_THRESH, &Y_pk,
-                                              ring_hash, fs_seed);
+                                              ring_hash, fs_seed, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc == -EBADMSG, "tampered b* must fail verify");
 
     s_proof_delete(l_proof);

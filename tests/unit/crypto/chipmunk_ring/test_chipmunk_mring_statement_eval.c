@@ -253,7 +253,7 @@ static bool s_test_aggregate_X_linearity(void)
     }
     /* X(1,1) must equal X(1,0) + X(0,1). */
     for (uint32_t j = 0u; j < CHIPMUNK_LRS_K; ++j) {
-        dap_assert(chipmunk_poly_add_q(&X_sum[j], &X_b10[j], &X_b01[j]) == 0, "add", (uint64_t)CHIPMUNK_Q);
+        dap_assert(chipmunk_poly_add_q(&X_sum[j], &X_b10[j], &X_b01[j], (uint64_t)CHIPMUNK_Q) == 0, "add");
         dap_assert(s_polys_equal(&X_sum[j], &X_b11[j]),
                    "aggregate_X linearity: X(1,1) = X(1,0) + X(0,1)");
     }
@@ -271,8 +271,8 @@ static bool s_test_claim1_multiple_challenges(void)
     for (uint32_t i = 0u; i < N_RING; ++i) {
         s_derive_x_for_member(&x_flat[i * CHIPMUNK_LRS_K], i);
         dap_assert(chipmunk_lrs_relation_eval(&pks[i], A_pk,
-                                              &x_flat[i * CHIPMUNK_LRS_K]) == 0,
-                   "pk_i = relation_eval(A_pk, x_i)", (uint64_t)CHIPMUNK_Q);
+                                              &x_flat[i * CHIPMUNK_LRS_K], (uint64_t)CHIPMUNK_Q) == 0,
+                   "pk_i = relation_eval(A_pk, x_i)");
     }
     const uint8_t b_indicator[N_RING] = { 1, 0, 1, 0 };  /* subset {0,2}, t=2 */
 
@@ -301,8 +301,8 @@ static bool s_test_soundness_tampered_y_pk(void)
     for (uint32_t i = 0u; i < N_RING; ++i) {
         s_derive_x_for_member(&x_flat[i * CHIPMUNK_LRS_K], i);
         dap_assert(chipmunk_lrs_relation_eval(&pks[i], A_pk,
-                                              &x_flat[i * CHIPMUNK_LRS_K]) == 0,
-                   "pk_i", (uint64_t)CHIPMUNK_Q);
+                                              &x_flat[i * CHIPMUNK_LRS_K], (uint64_t)CHIPMUNK_Q) == 0,
+                   "pk_i");
     }
     const uint8_t b_indicator[N_RING] = { 1, 0, 1, 0 };
 
@@ -333,8 +333,8 @@ static bool s_test_soundness_tampered_b_square(void)
     for (uint32_t i = 0u; i < N_RING; ++i) {
         s_derive_x_for_member(&x_flat[i * CHIPMUNK_LRS_K], i);
         dap_assert(chipmunk_lrs_relation_eval(&pks[i], A_pk,
-                                              &x_flat[i * CHIPMUNK_LRS_K]) == 0,
-                   "pk_i", (uint64_t)CHIPMUNK_Q);
+                                              &x_flat[i * CHIPMUNK_LRS_K], (uint64_t)CHIPMUNK_Q) == 0,
+                   "pk_i");
     }
     const uint8_t b_indicator[N_RING] = { 1, 0, 1, 0 };
 

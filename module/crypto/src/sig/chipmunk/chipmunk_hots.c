@@ -372,10 +372,6 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         // Convert result to time domain for storage
         a_signature->sigma[i] = l_temp;
         chipmunk_invntt(a_signature->sigma[i].coeffs);
-        
-        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (time) first coeffs: %d %d %d %d", i,
-               a_signature->sigma[i].coeffs[0], a_signature->sigma[i].coeffs[1], 
-               a_signature->sigma[i].coeffs[2], a_signature->sigma[i].coeffs[3]);
 
         /* Wipe local copies that held blinded secret key material */
         dap_memwipe(&l_s0_blinded, sizeof(l_s0_blinded));
@@ -384,12 +380,14 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         dap_memwipe(l_r2_seed, sizeof(l_r2_seed));
         dap_memwipe(&l_r, sizeof(l_r));
         dap_memwipe(&l_r2, sizeof(l_r2));
-        dap_memwipe(&l_hm, sizeof(l_hm));
         dap_memwipe(&l_term1, sizeof(l_term1));
         dap_memwipe(&l_term2, sizeof(l_term2));
         dap_memwipe(&l_s0_hm, sizeof(l_s0_hm));
     }
     
+    /* Wipe message hash polynomial (shared across all GAMMA iterations) */
+    dap_memwipe(&l_hm, sizeof(l_hm));
+
     debug_if(s_debug_more, L_DEBUG, "✓ HOTS signature generation completed");
     return 0;
 }
@@ -533,25 +531,6 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     debug_if(s_debug_more, L_DEBUG, "  Right side first coeffs: %d %d %d %d", 
            l_right_time.coeffs[0], l_right_time.coeffs[1], l_right_time.coeffs[2], l_right_time.coeffs[3]);
     
-    // Debug: print first few coefficients
-    fprintf(stderr, "HOTS VERIFY DEBUG: q=%lu\n", (unsigned long)a_params->q);
-    fprintf(stderr, "  left[0..3]:  %d %d %d %d\n",
-            l_left_time.coeffs[0], l_left_time.coeffs[1],
-            l_left_time.coeffs[2], l_left_time.coeffs[3]);
-    fprintf(stderr, "  right[0..3]: %d %d %d %d\n",
-            l_right_time.coeffs[0], l_right_time.coeffs[1],
-            l_right_time.coeffs[2], l_right_time.coeffs[3]);
-    fprintf(stderr, "  left_lift[0..3]:  %d %d %d %d\n",
-            chipmunk_mod_q_q((int64_t)l_left_time.coeffs[0], a_params->q),
-            chipmunk_mod_q_q((int64_t)l_left_time.coeffs[1], a_params->q),
-            chipmunk_mod_q_q((int64_t)l_left_time.coeffs[2], a_params->q),
-            chipmunk_mod_q_q((int64_t)l_left_time.coeffs[3], a_params->q));
-    fprintf(stderr, "  right_lift[0..3]: %d %d %d %d\n",
-            chipmunk_mod_q_q((int64_t)l_right_time.coeffs[0], a_params->q),
-            chipmunk_mod_q_q((int64_t)l_right_time.coeffs[1], a_params->q),
-            chipmunk_mod_q_q((int64_t)l_right_time.coeffs[2], a_params->q),
-            chipmunk_mod_q_q((int64_t)l_right_time.coeffs[3], a_params->q));
-
     // Use exact comparison function as in original Rust code
     bool l_equal = chipmunk_poly_equal_q(&l_left_time, &l_right_time, a_params->q);
     

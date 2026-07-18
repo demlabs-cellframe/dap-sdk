@@ -18,6 +18,9 @@
 #include <string.h>
 
 #include "chipmunk/chipmunk_mring_transcript.h"
+#include "chipmunk/chipmunk_ntt.h"
+#include "chipmunk/chipmunk_poly.h"
+#include "dap_ntt.h"
 #include "chipmunk/chipmunk_mring_fold.h"
 #include "sig/chipmunk/chipmunk_mring.h"
 #include "chipmunk/chipmunk_mring_statement.h"
@@ -159,14 +162,14 @@ static void test_bind_joint_roundtrip(void)
                                                x_seed) == 0,
                    "x_i");
         dap_assert(chipmunk_lrs_relation_eval(
-                       &pks[i], A_pk, &x_flat[i * CHIPMUNK_LRS_K]) == 0,
+                       &pks[i], A_pk, &x_flat[i * CHIPMUNK_LRS_K], (uint64_t)CHIPMUNK_Q) == 0,
                    "pk_i");
     }
     dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING, (uint64_t)CHIPMUNK_Q) == 0,
                "aggregate X");
 
     chipmunk_poly_t Y_pk;
-    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
+    dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X, (uint64_t)CHIPMUNK_Q) == 0, "Y_pk");
 
     uint8_t fs_seed[32], ring_hash[32], opening_seed[32];
     s_fill_seed(ring_hash, sizeof(ring_hash), 0x55u);
@@ -182,7 +185,7 @@ static void test_bind_joint_roundtrip(void)
     dap_assert(chipmunk_mring_derive_A_T(A_T, ring_hash, ctx_h) == 0, "A_T");
 
     chipmunk_poly_t T_tag;
-    dap_assert(chipmunk_lrs_relation_eval(&T_tag, A_T, X) == 0, "T");
+    dap_assert(chipmunk_lrs_relation_eval(&T_tag, A_T, X, (uint64_t)CHIPMUNK_Q) == 0, "T");
 
     const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
     chipmunk_mring_fold_proof_t *l_proof = s_proof_new(l_depth);
@@ -206,9 +209,9 @@ static void test_bind_joint_roundtrip(void)
                    "mask sample");
 
         chipmunk_poly_t M_pk, M_T;
-        dap_assert(chipmunk_lrs_relation_eval(&M_pk, A_pk, rho_x) == 0,
+        dap_assert(chipmunk_lrs_relation_eval(&M_pk, A_pk, rho_x, (uint64_t)CHIPMUNK_Q) == 0,
                    "M_pk");
-        dap_assert(chipmunk_lrs_relation_eval(&M_T, A_T, rho_x) == 0,
+        dap_assert(chipmunk_lrs_relation_eval(&M_T, A_T, rho_x, (uint64_t)CHIPMUNK_Q) == 0,
                    "M_T");
 
         uint8_t bind_fs[32];
@@ -221,6 +224,7 @@ static void test_bind_joint_roundtrip(void)
                    "c*");
         rc_prove = chipmunk_mring_bind_prove_z_x(z_x, rho_x, &c_star, X, (uint64_t)CHIPMUNK_Q);
     }
+    dap_assert(rc_prove == 0, "z_x prove converged");
     dap_assert(rc_prove == 0, "z_x prove converged");
 
     chipmunk_poly_t M_pk_v, M_T_v;
