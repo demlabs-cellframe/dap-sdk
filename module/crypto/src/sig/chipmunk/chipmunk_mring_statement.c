@@ -345,6 +345,21 @@ static int s_poly_mul_time(chipmunk_poly_t *a_out,
     return chipmunk_poly_invntt(a_out);
 }
 
+/* NTT-native variant: left operand already in NTT domain, right operand is
+ * forward-NTT'd internally. Output is in time domain (invNTT applied).
+ * Saves one forward NTT of the reused left operand per call. */
+static int s_poly_mul_ntt_lhs(chipmunk_poly_t *a_out,
+                              const chipmunk_poly_t *a_left_ntt,
+                              const chipmunk_poly_t *a_right,
+                              uint64_t q)
+{
+    chipmunk_poly_t r = *a_right;
+    int rc = chipmunk_poly_ntt(&r);
+    if (rc != 0) return rc;
+    chipmunk_poly_mul_ntt_q(a_out, a_left_ntt, &r, q);
+    return chipmunk_poly_invntt(a_out);
+}
+
 int chipmunk_mring_eval_public_P(chipmunk_mring_polyvec_t *a_P_tilde,
                                  const chipmunk_poly_t *a_c,
                                  const chipmunk_poly_t *a_pks,
@@ -372,10 +387,15 @@ int chipmunk_mring_eval_public_P(chipmunk_mring_polyvec_t *a_P_tilde,
         return rc;
     }
 
+    /* Pre-NTT c³ for reuse across all ring members. */
+    chipmunk_poly_t c3_ntt = c3;
+    rc = chipmunk_poly_ntt(&c3_ntt);
+    if (rc != 0) return rc;
+
     /* Lower half: P̃[i] = c + c³ · pk_i. */
     for (uint32_t i = 0u; i < a_n_ring; ++i) {
         chipmunk_poly_t tmp;
-        rc = s_poly_mul_time(&tmp, &c3, &a_pks[i], q);
+        rc = s_poly_mul_ntt_lhs(&tmp, &c3_ntt, &a_pks[i], q);
         if (rc != 0) {
             log_it(L_ERROR,
                    "MRNG eval_P: c³·pk[%u] compute failed (rc=%d)",
