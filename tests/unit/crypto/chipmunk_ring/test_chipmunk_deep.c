@@ -21,7 +21,7 @@ static int32_t s_horner(const int32_t c[CHIPMUNK_N], int32_t x)
 {
     int32_t r = 0;
     for (int i = CHIPMUNK_N - 1; i >= 0; --i)
-        r = chipmunk_mod_q((int64_t)x * r + c[i]);
+        r = chipmunk_mod_q_q((int64_t)x * r + c[i], (uint64_t)CHIPMUNK_Q);
     return r;
 }
 
@@ -295,9 +295,9 @@ static void test_deep_degree_bound(void)
      * for any x != z. Test at a few points. */
     int32_t x_test = 123;
     int32_t fx = s_horner(poly.coeffs, x_test);
-    int32_t inv_xz = chipmunk_field_inv_q(chipmunk_mod_q((int64_t)x_test - (int64_t)z), (uint64_t)CHIPMUNK_Q);
-    int32_t expected = chipmunk_mod_q((int64_t)gamma *
-        chipmunk_mod_q((int64_t)chipmunk_mod_q((int64_t)fx - prov.evals[0]) * inv_xz));
+    int32_t inv_xz = chipmunk_field_inv_q(chipmunk_mod_q_q((int64_t)x_test - (int64_t)z, (uint64_t)CHIPMUNK_Q), (uint64_t)CHIPMUNK_Q);
+    int32_t expected = chipmunk_mod_q_q((int64_t)gamma *
+        chipmunk_mod_q_q((int64_t)chipmunk_mod_q_q((int64_t)fx - prov.evals[0], (uint64_t)CHIPMUNK_Q) * inv_xz, (uint64_t)CHIPMUNK_Q), (uint64_t)CHIPMUNK_Q);
     int32_t actual = s_horner(h, x_test);
     dap_assert(actual == expected, "degree cross-check");
 

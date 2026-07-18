@@ -18,6 +18,8 @@
 #include "sig/chipmunk/chipmunk_field.h"
 #include "sig/chipmunk/chipmunk_poly.h"
 
+static chipmunk_fri_ntt_ctx_t s_ctx;
+
 #define LOG_TAG "test_chipmunk_fri_ntt"
 
 /* ========================================================================= */
@@ -26,7 +28,7 @@
 
 static void test_ntt_roundtrip_constant(void)
 {
-    int l_rc = chipmunk_fri_ntt_init();
+    int l_rc = chipmunk_fri_ntt_ctx_init(&s_ctx, (uint64_t)CHIPMUNK_Q, CHIPMUNK_FRI_NTT_LOG);
     dap_assert(l_rc == 0, "FRI NTT init OK");
 
     /* f(X) = 5  →  f(omega^k) = 5 for all k */
@@ -34,7 +36,7 @@ static void test_ntt_roundtrip_constant(void)
     memset(a, 0, sizeof(a));
     a[0] = 5;
 
-    chipmunk_fri_ntt_forward(a);
+    chipmunk_fri_ntt_forward_q(a, &s_ctx);
 
     /* All evaluations should be 5 */
     unsigned int l_ok = 1;
@@ -50,7 +52,7 @@ static void test_ntt_roundtrip_constant(void)
     dap_assert(l_ok, "forward NTT of constant 5 is all-5");
 
     /* Inverse should recover [5, 0, 0, ...] */
-    chipmunk_fri_ntt_inverse(a);
+    chipmunk_fri_ntt_inverse_q(a, &s_ctx);
     dap_assert(a[0] == 5, "invNTT recovers a[0] = 5");
 
     l_ok = 1;
@@ -80,8 +82,8 @@ static void test_ntt_roundtrip_linear(void)
     int32_t orig[CHIPMUNK_FRI_NTT_SIZE];
     memcpy(orig, a, sizeof(a));
 
-    chipmunk_fri_ntt_forward(a);
-    chipmunk_fri_ntt_inverse(a);
+    chipmunk_fri_ntt_forward_q(a, &s_ctx);
+    chipmunk_fri_ntt_inverse_q(a, &s_ctx);
 
     unsigned int l_ok = 1;
     for (unsigned int i = 0; i < CHIPMUNK_FRI_NTT_SIZE; ++i) {
@@ -112,8 +114,8 @@ static void test_ntt_roundtrip_degree511(void)
     int32_t orig[CHIPMUNK_FRI_NTT_SIZE];
     memcpy(orig, a, sizeof(a));
 
-    chipmunk_fri_ntt_forward(a);
-    chipmunk_fri_ntt_inverse(a);
+    chipmunk_fri_ntt_forward_q(a, &s_ctx);
+    chipmunk_fri_ntt_inverse_q(a, &s_ctx);
 
     unsigned int l_ok = 1;
     for (unsigned int i = 0; i < CHIPMUNK_FRI_NTT_SIZE; ++i) {
@@ -139,10 +141,10 @@ static void test_ntt_eval_x(void)
     memset(a, 0, sizeof(a));
     a[1] = 1;  /* f(X) = X */
 
-    chipmunk_fri_ntt_forward(a);
+    chipmunk_fri_ntt_forward_q(a, &s_ctx);
 
     /* a[k] = omega^k in natural order */
-    int32_t l_omega = chipmunk_fri_ntt_omega();
+    int32_t l_omega = chipmunk_field_omega_2048();
     int32_t l_val = 1;
 
     unsigned int l_ok = 1;
@@ -156,7 +158,7 @@ static void test_ntt_eval_x(void)
             l_ok = 0;
             return;
         }
-        l_val = chipmunk_mod_q((int64_t)l_val * (int64_t)l_omega);
+        l_val = chipmunk_mod_q_q((int64_t)l_val * (int64_t)l_omega, (uint64_t)CHIPMUNK_Q);
     }
     dap_assert(l_ok, "NTT(X) = [omega^0, omega^1, ..., omega^{2047}] natural order");
 }
@@ -175,16 +177,16 @@ static void test_ntt_linearity(void)
     b[1] = 5;  b[3] = 20;
 
     for (unsigned int i = 0; i < CHIPMUNK_FRI_NTT_SIZE; ++i) {
-        c[i] = chipmunk_mod_q((int64_t)a[i] + (int64_t)b[i]);
+        c[i] = chipmunk_mod_q_q((int64_t)a[i] + (int64_t)b[i], (uint64_t)CHIPMUNK_Q);
     }
 
-    chipmunk_fri_ntt_forward(a);
-    chipmunk_fri_ntt_forward(b);
-    chipmunk_fri_ntt_forward(c);
+    chipmunk_fri_ntt_forward_q(a, &s_ctx);
+    chipmunk_fri_ntt_forward_q(b, &s_ctx);
+    chipmunk_fri_ntt_forward_q(c, &s_ctx);
 
     unsigned int l_ok = 1;
     for (unsigned int i = 0; i < CHIPMUNK_FRI_NTT_SIZE; ++i) {
-        int32_t l_sum = chipmunk_mod_q((int64_t)a[i] + (int64_t)b[i]);
+        int32_t l_sum = chipmunk_mod_q_q((int64_t)a[i] + (int64_t)b[i], (uint64_t)CHIPMUNK_Q);
         if (c[i] != l_sum) {
             char l_msg[64];
             snprintf(l_msg, sizeof(l_msg), "linearity[%u] = %d, expected %d", i, c[i], l_sum);
@@ -210,21 +212,21 @@ static void test_ntt_coset_roundtrip(void)
     b[1] = 1337;
     b[2] = 999;
 
-    chipmunk_fri_ntt_coset_forward(b, g);
+    chipmunk_fri_ntt_coset_forward_q(b, g, &s_ctx);
 
     /* Verify: b[k] = f(g * omega^k) in natural order.
      * b[0] = f(g*omega^0) = f(g) = 42 + 1337*g + 999*g^2 */
-    int32_t g2 = chipmunk_mod_q((int64_t)g * (int64_t)g);
+    int32_t g2 = chipmunk_mod_q_q((int64_t)g * (int64_t)g, (uint64_t)CHIPMUNK_Q);
     int64_t l_f_at_g = 42LL + 1337LL * g + 999LL * g2;
-    int32_t l_expected = chipmunk_mod_q(l_f_at_g);
+    int32_t l_expected = chipmunk_mod_q_q(l_f_at_g, (uint64_t)CHIPMUNK_Q);
     dap_assert(b[0] == l_expected, "coset NTT: f(g*omega^0) correct");
 
     /* b[1] = f(g*omega) = 42 + 1337*g*omega + 999*(g*omega)^2 */
-    int32_t l_omega = chipmunk_fri_ntt_omega();
-    int32_t g_omega = chipmunk_mod_q((int64_t)g * (int64_t)l_omega);
-    int32_t g_omega2 = chipmunk_mod_q((int64_t)g_omega * (int64_t)g_omega);
+    int32_t l_omega = chipmunk_field_omega_2048();
+    int32_t g_omega = chipmunk_mod_q_q((int64_t)g * (int64_t)l_omega, (uint64_t)CHIPMUNK_Q);
+    int32_t g_omega2 = chipmunk_mod_q_q((int64_t)g_omega * (int64_t)g_omega, (uint64_t)CHIPMUNK_Q);
     l_f_at_g = 42LL + 1337LL * g_omega + 999LL * g_omega2;
-    l_expected = chipmunk_mod_q(l_f_at_g);
+    l_expected = chipmunk_mod_q_q(l_f_at_g, (uint64_t)CHIPMUNK_Q);
     dap_assert(b[1] == l_expected, "coset NTT: f(g*omega^1) correct");
 
     /* g=1 should give same as plain NTT */
@@ -232,12 +234,12 @@ static void test_ntt_coset_roundtrip(void)
     memset(d, 0, sizeof(d));
     d[0] = 42; d[1] = 1337; d[2] = 999;
 
-    chipmunk_fri_ntt_coset_forward(d, 1);
+    chipmunk_fri_ntt_coset_forward_q(d, 1, &s_ctx);
 
     memset(e, 0, sizeof(e));
     e[0] = 42; e[1] = 1337; e[2] = 999;
 
-    chipmunk_fri_ntt_forward(e);
+    chipmunk_fri_ntt_forward_q(e, &s_ctx);
 
     unsigned int l_ok = 1;
     for (unsigned int i = 0; i < CHIPMUNK_FRI_NTT_SIZE; ++i) {
@@ -259,9 +261,9 @@ static void test_ntt_coset_roundtrip(void)
 static void test_ntt_domain(void)
 {
     int32_t domain[CHIPMUNK_FRI_NTT_SIZE];
-    chipmunk_fri_ntt_domain(domain);
+    chipmunk_fri_ntt_domain_q(domain, &s_ctx);
 
-    int32_t l_omega = chipmunk_fri_ntt_omega();
+    int32_t l_omega = chipmunk_field_omega_2048();
     int32_t l_val = 1;
     unsigned int l_ok = 1;
 
@@ -273,7 +275,7 @@ static void test_ntt_domain(void)
             l_ok = 0;
             return;
         }
-        l_val = chipmunk_mod_q((int64_t)l_val * (int64_t)l_omega);
+        l_val = chipmunk_mod_q_q((int64_t)l_val * (int64_t)l_omega, (uint64_t)CHIPMUNK_Q);
     }
     dap_assert(l_ok, "domain generation correct");
 

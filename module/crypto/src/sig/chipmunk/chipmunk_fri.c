@@ -529,6 +529,14 @@ int chipmunk_fri_derive_query_indices(chipmunk_fri_transcript_t *tr,
     return 0;
 }
 
+bool chipmunk_fri_verify(const chipmunk_fri_proof_t *proof,
+                           const uint8_t domain[16],
+                           const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
+                           chipmunk_fri_verify_result_t *result)
+{
+    return chipmunk_fri_verify_q(proof, domain, alphas, (uint64_t)CHIPMUNK_Q, result);
+}
+
 bool chipmunk_fri_verify_q(const chipmunk_fri_proof_t *proof,
                              const uint8_t domain[16],
                              const int32_t alphas[CHIPMUNK_FRI_ROUNDS],

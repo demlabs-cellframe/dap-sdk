@@ -245,7 +245,7 @@ static void test_conservation_property(void)
     chipmunk_pedersen_derive_blinding(l_rr1, l_r1);
     chipmunk_pedersen_derive_blinding(l_rr2, l_r2);
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
-        chipmunk_poly_add(&l_rr_combined[j], &l_rr1[j], &l_rr2[j]);
+        chipmunk_poly_add_q(&l_rr_combined[j], &l_rr1[j], &l_rr2[j], (uint64_t)CHIPMUNK_Q);
     }
 
     /* Commit to same total value with combined randomness */
