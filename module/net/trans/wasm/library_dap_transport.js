@@ -205,7 +205,7 @@ addToLibrary({
             return result;
         }
 
-        // Browser path: synchronous XHR (runs on the calling pthread's Web Worker)
+        // Browser path: synchronous XHR.
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, false);
         // Request a binary response. Sync XHR with responseType is supported on
