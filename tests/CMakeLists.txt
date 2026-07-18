@@ -469,6 +469,14 @@ endif()
 				                      "unit;crypto;fri;commit")
 				endif()
 
+				# Phase 9.12: E2E test with non-default q (Montgomery NTT)
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ntt_q.c)
+				    add_dap_test(test_unit_chipmunk_ntt_q
+				                 unit/crypto/chipmunk_ring/test_chipmunk_ntt_q.c)
+				    register_dap_test(test_unit_chipmunk_ntt_q
+				                      "unit;crypto;ntt;q;montgomery;e2e")
+				endif()
+
 				# 9.8: DEEP composition polynomial
 				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_deep.c)
 				    add_dap_test(test_unit_chipmunk_deep
