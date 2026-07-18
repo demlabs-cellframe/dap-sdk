@@ -146,6 +146,12 @@ static int s_fqx_inv_mod_phi9_q(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
 /*  R_q multiplication (time-domain in, time-domain out)               */
 /* ------------------------------------------------------------------ */
 
+/* Forward declarations for per-slot F_{q⁶} arithmetic */
+static void s_phi9_mul_q(int32_t a_out[CHIPMUNK_FQ6_EXT_DEG],
+                         const int32_t a_a[CHIPMUNK_FQ6_EXT_DEG],
+                         const int32_t a_b[CHIPMUNK_FQ6_EXT_DEG],
+                         uint64_t q);
+
 static int s_rq_mul_q(chipmunk_poly_t *a_out,
                       const chipmunk_poly_t *a_a,
                       const chipmunk_poly_t *a_b,
@@ -296,24 +302,55 @@ int chipmunk_fq6_ext_mul_q(chipmunk_fq6_ext_t *a_out,
     if (!a_out || !a || !b) { return -EINVAL; }
     if (a_out == a || a_out == b) { return -EINVAL; } /* no aliasing */
 
-    /* Raw schoolbook product p[0..10] = Σ a.c[i]·b.c[j] over R_q. */
-    chipmunk_poly_t l_p[2 * CHIPMUNK_FQ6_EXT_DEG - 1];
-    memset(l_p, 0, sizeof(l_p));
-    for (int i = 0; i < CHIPMUNK_FQ6_EXT_DEG; ++i) {
+    /* NTT-native F_{q⁶} multiplication via per-slot evaluation.
+     *
+     * Since R_q = Z_q[X]/(X^512+1) fully splits into 512 slots under
+     * CHIPMUNK_Q (2-adicity ≥ 9), each NTT slot is an independent F_q.
+     * We NTT all 6 Y-coefficients of both operands, then for each of
+     * the 512 slots perform a scalar F_{q⁶} = F_q[Y]/(Φ₉) multiply.
+     *
+     * Cost: 12 forward NTTs + 512 scalar F_{q⁶} muls + 6 invNTTs
+     * vs old: 36 full R_q round-trips (72 forward + 36 inverse NTTs).
+     * Net savings: ~60% fewer NTT operations.
+     */
+    chipmunk_poly_t l_a_ntt[CHIPMUNK_FQ6_EXT_DEG];
+    chipmunk_poly_t l_b_ntt[CHIPMUNK_FQ6_EXT_DEG];
+
+    for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
+        l_a_ntt[j] = a->c[j];
+        int rc = chipmunk_poly_ntt(&l_a_ntt[j]);
+        if (rc != 0) { return rc; }
+        l_b_ntt[j] = b->c[j];
+        rc = chipmunk_poly_ntt(&l_b_ntt[j]);
+        if (rc != 0) { return rc; }
+    }
+
+    chipmunk_poly_t l_res[CHIPMUNK_FQ6_EXT_DEG];
+    memset(l_res, 0, sizeof(l_res));
+
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        int32_t l_slot_a[CHIPMUNK_FQ6_EXT_DEG];
+        int32_t l_slot_b[CHIPMUNK_FQ6_EXT_DEG];
+        int32_t l_slot_r[CHIPMUNK_FQ6_EXT_DEG];
+
         for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
-            chipmunk_poly_t l_term;
-            int rc = s_rq_mul_q(&l_term, &a->c[i], &b->c[j], q);
-            if (rc != 0) { return rc; }
-            rc = chipmunk_poly_add_q(&l_p[i + j], &l_p[i + j], &l_term, q);
-            if (rc != 0) { return rc; }
+            l_slot_a[j] = l_a_ntt[j].coeffs[i];
+            l_slot_b[j] = l_b_ntt[j].coeffs[i];
+        }
+
+        /* Scalar F_{q⁶} multiply mod Φ₉ = Y⁶ + Y³ + 1 */
+        s_phi9_mul_q(l_slot_r, l_slot_a, l_slot_b, q);
+
+        for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
+            l_res[j].coeffs[i] = l_slot_r[j];
         }
     }
 
-    int rc = s_reduce_phi9_q(l_p, q);
-    if (rc != 0) { return rc; }
-
+    /* invNTT each result component back to time domain */
     for (int j = 0; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
-        a_out->c[j] = l_p[j];
+        int rc = chipmunk_poly_invntt(&l_res[j]);
+        if (rc != 0) { return rc; }
+        a_out->c[j] = l_res[j];
     }
     return 0;
 }
