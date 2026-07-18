@@ -92,7 +92,7 @@ static void s_batch_forward_ntt(int32_t *a_buf, uint32_t a_total,
     }
 #endif
     for (uint32_t i = 0; i < a_total; i++)
-        dap_ntt_forward(a_buf + (size_t)i * CHIPMUNK_N, a_ntt);
+        dap_ntt_forward_mont(a_buf + (size_t)i * CHIPMUNK_N, a_ntt);
 }
 
 int chipmunk_batch_verify_hots_q(
