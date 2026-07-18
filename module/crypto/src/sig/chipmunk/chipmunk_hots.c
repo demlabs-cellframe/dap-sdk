@@ -533,6 +533,25 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     debug_if(s_debug_more, L_DEBUG, "  Right side first coeffs: %d %d %d %d", 
            l_right_time.coeffs[0], l_right_time.coeffs[1], l_right_time.coeffs[2], l_right_time.coeffs[3]);
     
+    // Debug: print first few coefficients
+    fprintf(stderr, "HOTS VERIFY DEBUG: q=%lu\n", (unsigned long)a_params->q);
+    fprintf(stderr, "  left[0..3]:  %d %d %d %d\n",
+            l_left_time.coeffs[0], l_left_time.coeffs[1],
+            l_left_time.coeffs[2], l_left_time.coeffs[3]);
+    fprintf(stderr, "  right[0..3]: %d %d %d %d\n",
+            l_right_time.coeffs[0], l_right_time.coeffs[1],
+            l_right_time.coeffs[2], l_right_time.coeffs[3]);
+    fprintf(stderr, "  left_lift[0..3]:  %d %d %d %d\n",
+            chipmunk_mod_q_q((int64_t)l_left_time.coeffs[0], a_params->q),
+            chipmunk_mod_q_q((int64_t)l_left_time.coeffs[1], a_params->q),
+            chipmunk_mod_q_q((int64_t)l_left_time.coeffs[2], a_params->q),
+            chipmunk_mod_q_q((int64_t)l_left_time.coeffs[3], a_params->q));
+    fprintf(stderr, "  right_lift[0..3]: %d %d %d %d\n",
+            chipmunk_mod_q_q((int64_t)l_right_time.coeffs[0], a_params->q),
+            chipmunk_mod_q_q((int64_t)l_right_time.coeffs[1], a_params->q),
+            chipmunk_mod_q_q((int64_t)l_right_time.coeffs[2], a_params->q),
+            chipmunk_mod_q_q((int64_t)l_right_time.coeffs[3], a_params->q));
+
     // Use exact comparison function as in original Rust code
     bool l_equal = chipmunk_poly_equal_q(&l_left_time, &l_right_time, a_params->q);
     
