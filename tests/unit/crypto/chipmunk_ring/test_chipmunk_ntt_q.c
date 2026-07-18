@@ -94,6 +94,51 @@ static bool s_test_ntt_mul_roundtrip(void)
     return true;
 }
 
+/* T2b: NTT-based X*X = X^2 (regression for multiply correctness) */
+static bool s_test_ntt_mul_xx(void)
+{
+    chipmunk_poly_t x = {0}, result;
+    x.coeffs[1] = 1;  /* X */
+
+    chipmunk_poly_t x_ntt = x;
+    chipmunk_ntt(x_ntt.coeffs);
+    chipmunk_poly_mul_ntt_q(&result, &x_ntt, &x_ntt, (uint64_t)CHIPMUNK_Q);
+    chipmunk_invntt(result.coeffs);
+
+    /* X * X should give X^2: coeff[2]=1, rest=0 */
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        int32_t exp = (i == 2) ? 1 : 0;
+        if (result.coeffs[i] != exp) {
+            log_it(L_ERROR, "X*X mismatch at [%d]: got %d, expected %d", i, result.coeffs[i], exp);
+            return false;
+        }
+    }
+    return true;
+}
+
+/* T2c: negacyclic X^256 * X^256 = X^512 = -1 */
+static bool s_test_ntt_mul_negacyclic(void)
+{
+    chipmunk_poly_t x256 = {0}, result;
+    x256.coeffs[256] = 1;
+
+    chipmunk_poly_t x256_ntt = x256;
+    chipmunk_ntt(x256_ntt.coeffs);
+    chipmunk_poly_mul_ntt_q(&result, &x256_ntt, &x256_ntt, (uint64_t)CHIPMUNK_Q);
+    chipmunk_invntt(result.coeffs);
+
+    /* X^256 * X^256 = X^512 = -1 mod (X^512+1).
+     * invNTT centers to [-q/2, q/2), so -1 is represented as -1. */
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        int32_t exp = (i == 0) ? -1 : 0;
+        if (result.coeffs[i] != exp) {
+            log_it(L_ERROR, "X^256*X^256 mismatch at [%d]: got %d, expected %d", i, result.coeffs[i], exp);
+            return false;
+        }
+    }
+    return true;
+}
+
 /* T3: Global NTT == per-q NTT for q=CHIPMUNK_Q (consistency check) */
 static bool s_test_global_vs_perq(void)
 {
@@ -129,6 +174,14 @@ int main(void)
     int rc = 0;
     if (!s_test_ntt_roundtrip())     rc = 1;
     if (!s_test_ntt_mul_roundtrip()) rc = 1;
+    if (!s_test_ntt_mul_xx()) {
+        log_it(L_ERROR, "FAILED: X*X != X^2 — NTT pointwise multiply is broken");
+        rc = 1;
+    }
+    if (!s_test_ntt_mul_negacyclic()) {
+        log_it(L_ERROR, "FAILED: X^256*X^256 != -1 — negacyclic multiply is broken");
+        rc = 1;
+    }
     if (!s_test_global_vs_perq())    rc = 1;
 
     if (rc == 0) {

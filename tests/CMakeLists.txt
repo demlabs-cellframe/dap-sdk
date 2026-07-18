@@ -285,6 +285,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mr
                       "unit;crypto;ring;mring;transcript")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_ntt_multiply_debug.c)
+    add_dap_test(test_unit_ntt_multiply_debug
+                 unit/crypto/chipmunk_ring/test_ntt_multiply_debug.c)
+    register_dap_test(test_unit_ntt_multiply_debug
+                      "unit;crypto;ntt;debug")
+endif()
+
 # CR-11.G Phase 7.7 / M6 (task_ac273cea): MRNG end-to-end sign/verify.
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_sign.c)
     add_dap_test(test_unit_crypto_chipmunk_mring_sign

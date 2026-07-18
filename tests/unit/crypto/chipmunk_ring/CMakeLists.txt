@@ -71,3 +71,4 @@ add_chipmunk_test(test_chipmunk_fri_transcript)
 # Phase 9.10: FRI verify phase tests
 add_chipmunk_test(test_chipmunk_fri_verify)
 
+add_chipmunk_test(test_ntt_multiply_debug)

@@ -1,22 +1,18 @@
 /*
- * chipmunk_ntt.c — 512-point NTT for chipmunk lattice cryptography.
+ * chipmunk_ntt.c — 512-point negacyclic NTT for chipmunk lattice cryptography.
  *
- * Uses dap_ntt Montgomery kernels (dap_ntt_forward_mont / dap_ntt_inverse_mont)
- * which are SIMD-dispatched (AVX2/AVX-512/NEON) when mont_r_bits == 32.
+ * Uses a reference direct-DFT negacyclic NTT (O(N^2)) that IS a ring
+ * isomorphism: ntt(a*b) = ntt(a) ⊙ ntt(b) pointwise. This is required for
+ * correct polynomial multiplication via pointwise product.
  *
- * Montgomery convention:
- *   R = 2^32.  Zeta tables store omega^{brv(i)} * R mod q.
- *   Forward:  standard [0,q) input → Montgomery-domain output (coeff * R mod q).
- *   Inverse:  Montgomery-domain input → standard centered [-q/2, q/2) output.
- *             dap_ntt_inverse_mont does NOT cancel R or apply 1/N; we do both
- *             in one Montgomery-multiply by one_over_n per coefficient.
+ * The previous Montgomery-kernel approach (dap_ntt_forward_mont) produced
+ * correct round-trips but was NOT a ring homomorphism — pointwise multiply
+ * in that domain did not correspond to negacyclic convolution.
  *
- * Pointwise mul in NTT domain uses dap_ntt_pointwise_montgomery (SIMD-dispatched),
- * which computes a*b*R^{-1} mod q, keeping the result in Montgomery domain.
- *
- * Global context: built lazily via pthread_once from chipmunk_ntt_params_compute,
- * eliminating all hardcoded twiddle tables. The same code path serves both the
- * default CHIPMUNK_Q and arbitrary per-q contexts.
+ * Performance: O(N^2) = 262144 field multiplications per transform.
+ * Acceptable for chipmunk's security-first design. Can be replaced with
+ * a fast negacyclic NTT (Cooley-Tukey with correct twiddle assignment)
+ * in the future without changing the API.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
@@ -143,7 +139,13 @@ int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
     int32_t l_omega_inv = chipmunk_field_pow_q(l_omega, (uint32_t)(CHIPMUNK_N - 1), q);
     const int l_log_n = 9;  /* log2(CHIPMUNK_N) */
 
-    /* Forward zetas in tree order (Montgomery form). */
+    /* Forward zetas in tree order (Montgomery form).
+     * NOTE: This is the order that produces correct round-trip with the
+     * dap_ntt kernels, but the resulting transform is NOT a ring
+     * homomorphism — pointwise multiply in NTT domain does NOT correspond
+     * to negacyclic convolution. chipmunk_poly_mul_ntt_q (plain a*b%q)
+     * is therefore INCORRECT for this NTT. The correct fix requires
+     * rewriting the butterfly or switching to a reference negacyclic NTT. */
     l_zetas[0] = 0;  /* placeholder, unused by forward kernel (k starts at 1) */
     {
         int l_k = 1;
@@ -158,11 +160,7 @@ int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
     }
     for (int i = 512; i < 1024; ++i) l_zetas[i] = 0;
 
-    /* Inverse zetas in tree order (Gentleman-Sande, Montgomery form).
-     * The inverse kernel: k = 0; for len = 1 up to N/2: zeta = zetas_inv[k++]
-     * At level m (len = 1 << m):
-     *   twiddles = omega^{-(2i+1)*len} for i = 0..N/(2*len)-1
-     */
+    /* Inverse zetas in tree order (Gentleman-Sande, Montgomery form). */
     {
         int l_k = 0;
         for (int l_m = 0; l_m < l_log_n; ++l_m) {
@@ -209,31 +207,141 @@ void chipmunk_ntt_ctx_free(chipmunk_ntt_ctx_t *a_ctx)
 }
 
 /* -------------------------------------------------------------------------
- * Per-q NTT wrappers — Montgomery kernel + post-pass
+ * Per-q NTT wrappers — Fast negacyclic NTT (ring isomorphism)
+ *
+ * Implementation: "twisted" negacyclic NTT via pre/post-multiplication.
+ *   ntt_neg(a)[i] = cyclic_ntt(a[j] * psi^j)[i]
+ * where psi is a primitive 2N-th root of unity (psi^N = -1).
+ * This IS a ring isomorphism: ntt(a*b) = ntt(a) ⊙ ntt(b).
+ *
+ * The cyclic NTT uses Cooley-Tukey with standard twiddle assignment.
  * ------------------------------------------------------------------------- */
+
+/* Fast cyclic NTT using iterative Cooley-Tukey (in-place, natural order).
+ * Uses omega (primitive N-th root) with bit-reversed twiddle walk. */
+static void s_cyclic_ct_ntt(int32_t a_r[CHIPMUNK_N], int32_t omega, uint64_t q)
+{
+    int32_t l_q = (int32_t)q;
+    /* Bit-reverse the input */
+    for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
+        int bit = CHIPMUNK_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
+        }
+    }
+    /* CT butterflies */
+    for (int len = 2; len <= CHIPMUNK_N; len <<= 1) {
+        int32_t w = chipmunk_field_pow_q(omega, CHIPMUNK_N / len, q);
+        for (int i = 0; i < CHIPMUNK_N; i += len) {
+            int32_t wn = 1;
+            for (int j = 0; j < len / 2; j++) {
+                int32_t u = a_r[i + j];
+                int64_t v = ((int64_t)a_r[i + j + len / 2] * wn) % l_q;
+                int32_t iv = (int32_t)v;
+                if (iv < 0) iv += l_q;
+                int64_t a_val = ((int64_t)u + iv) % l_q;
+                int64_t b_val = ((int64_t)u - iv) % l_q;
+                a_r[i + j] = (int32_t)(a_val < 0 ? a_val + l_q : a_val);
+                a_r[i + j + len / 2] = (int32_t)(b_val < 0 ? b_val + l_q : b_val);
+                wn = (int32_t)(((int64_t)wn * w) % l_q);
+            }
+        }
+    }
+}
+
+/* Fast cyclic inverse NTT (GS butterflies, natural order output). */
+static void s_cyclic_gs_invntt(int32_t a_r[CHIPMUNK_N], int32_t omega_inv, uint64_t q)
+{
+    int32_t l_q = (int32_t)q;
+    for (int len = CHIPMUNK_N; len >= 2; len >>= 1) {
+        int32_t w = chipmunk_field_pow_q(omega_inv, CHIPMUNK_N / len, q);
+        for (int i = 0; i < CHIPMUNK_N; i += len) {
+            int32_t wn = 1;
+            for (int j = 0; j < len / 2; j++) {
+                int32_t u = a_r[i + j];
+                int32_t v = a_r[i + j + len / 2];
+                int64_t a_val = ((int64_t)u + v) % l_q;
+                int64_t diff = ((int64_t)u - v) % l_q;
+                a_r[i + j] = (int32_t)(a_val < 0 ? a_val + l_q : a_val);
+                int64_t b_val = ((int64_t)diff * wn) % l_q;
+                a_r[i + j + len / 2] = (int32_t)(b_val < 0 ? b_val + l_q : b_val);
+                wn = (int32_t)(((int64_t)wn * w) % l_q);
+            }
+        }
+    }
+    /* Bit-reverse output to natural order */
+    for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
+        int bit = CHIPMUNK_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
+        }
+    }
+    /* Scale by 1/N */
+    int32_t n_inv = chipmunk_field_inv_q(CHIPMUNK_N, q);
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t v = ((int64_t)a_r[i] * n_inv) % l_q;
+        a_r[i] = (int32_t)(v < 0 ? v + l_q : v);
+    }
+}
+
+/* Find primitive 2N-th root of unity psi (psi^N = -1 mod q). */
+static int32_t s_find_psi(uint64_t q)
+{
+    int32_t l_neg1 = (int32_t)q - 1;
+    for (uint64_t g = 2; g < 1000; g++) {
+        int32_t candidate = chipmunk_field_pow_q((int32_t)g,
+            (uint32_t)((q - 1) / (2 * CHIPMUNK_N)), q);
+        if (chipmunk_field_pow_q(candidate, CHIPMUNK_N, q) == l_neg1)
+            return candidate;
+    }
+    return 0;  /* should not happen for valid q */
+}
 
 void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 {
-    dap_ntt_forward_mont(a_r, &a_ctx->params);
+    int32_t l_q = (int32_t)a_ctx->q;
+    int32_t l_psi = s_find_psi(a_ctx->q);
+    if (l_psi == 0) return;
+
+    /* Pre-multiply by psi^j to convert negacyclic → cyclic */
+    int32_t l_psi_j = 1;
+    for (int j = 0; j < CHIPMUNK_N; j++) {
+        int64_t v = ((int64_t)a_r[j] * l_psi_j) % l_q;
+        a_r[j] = (int32_t)(v < 0 ? v + l_q : v);
+        l_psi_j = (int32_t)(((int64_t)l_psi_j * l_psi) % l_q);
+    }
+
+    /* omega = psi^2 (primitive N-th root) */
+    int32_t l_omega = (int32_t)(((int64_t)l_psi * l_psi) % l_q);
+    s_cyclic_ct_ntt(a_r, l_omega, a_ctx->q);
 }
 
 void chipmunk_invntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 {
-    dap_ntt_inverse_mont(a_r, &a_ctx->params);
-    /* Post-pass: apply 1/N scaling.
-     * dap_ntt_inverse_mont outputs standard-form [0,q) values (the R factor
-     * is cancelled internally by the GS butterfly). The only remaining step
-     * is to multiply by N^{-1} mod q.
-     * We use a plain modular multiply (NOT Montgomery) because the input
-     * is already in standard form. */
-    int32_t l_q = a_ctx->params.q;
-    int32_t l_inv_n = a_ctx->params.one_over_n;
-    for (int i = 0; i < CHIPMUNK_N; ++i) {
-        int64_t l_v = ((int64_t)a_r[i] * l_inv_n) % (int64_t)l_q;
-        if (l_v < 0) l_v += l_q;
-        a_r[i] = (int32_t)l_v;
+    int32_t l_q = (int32_t)a_ctx->q;
+    int32_t l_psi = s_find_psi(a_ctx->q);
+    if (l_psi == 0) return;
+
+    int32_t l_omega = (int32_t)(((int64_t)l_psi * l_psi) % l_q);
+    int32_t l_omega_inv = chipmunk_field_inv_q(l_omega, a_ctx->q);
+    int32_t l_psi_inv = chipmunk_field_inv_q(l_psi, a_ctx->q);
+
+    /* Inverse cyclic NTT */
+    s_cyclic_gs_invntt(a_r, l_omega_inv, a_ctx->q);
+
+    /* Post-multiply by psi^{-j} to convert cyclic → negacyclic */
+    int32_t l_psi_inv_j = 1;
+    for (int j = 0; j < CHIPMUNK_N; j++) {
+        int64_t v = ((int64_t)a_r[j] * l_psi_inv_j) % l_q;
+        a_r[j] = (int32_t)(v < 0 ? v + l_q : v);
+        l_psi_inv_j = (int32_t)(((int64_t)l_psi_inv_j * l_psi_inv) % l_q);
     }
-    /* Center to [-q/2, q/2) to match the old plain kernel output convention. */
+
+    /* Center to [-q/2, q/2) */
     int32_t l_half = l_q / 2;
     for (int i = 0; i < CHIPMUNK_N; ++i) {
         if (a_r[i] > l_half) a_r[i] -= l_q;
