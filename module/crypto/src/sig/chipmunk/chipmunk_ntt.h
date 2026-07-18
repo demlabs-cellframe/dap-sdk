@@ -27,6 +27,12 @@ typedef struct chipmunk_ntt_ctx {
     dap_ntt_params_t params;
     uint64_t         q;
     bool             owns_tables;
+    /* Cached negacyclic NTT roots — computed once in params_compute,
+     * used by chipmunk_ntt_q / chipmunk_invntt_q. */
+    int32_t          psi;       /* primitive 2N-th root (psi^N = -1) */
+    int32_t          psi_inv;   /* psi^{-1} mod q */
+    int32_t          omega;     /* psi^2 = primitive N-th root */
+    int32_t          omega_inv; /* omega^{-1} mod q */
 } chipmunk_ntt_ctx_t;
 
 /**

@@ -305,9 +305,10 @@ int chipmunk_mring_augment_witness(chipmunk_mring_polyvec_t *a_b_tilde,
     }
 
     /* First N slots: b_i as a degree-0 polynomial.
-     * Second N slots: b_i (b_i − 1) = 0 for b_i ∈ {0,1}.
-     * Slots are already zeroed by polyvec_alloc; we only need to set
-     * coeffs[0] for the lower half. */
+     * Second N slots: b_i(b_i − 1) as a degree-0 polynomial.
+     * For honest b_i ∈ {0,1}, b_i(b_i−1) = 0.  For dishonest b_i ∉ {0,1},
+     * the non-zero value is caught algebraically by the fold verifier's
+     * inner-product check against c²·(b_i²−b_i). */
     for (uint32_t i = 0u; i < a_n_ring; ++i) {
         const uint8_t b_i = a_b_indicator[i];
         if (b_i > 1u) {
@@ -318,10 +319,9 @@ int chipmunk_mring_augment_witness(chipmunk_mring_polyvec_t *a_b_tilde,
         }
         memset(&a_b_tilde->slots[i], 0, sizeof(chipmunk_poly_t));
         a_b_tilde->slots[i].coeffs[0] = (int32_t)b_i;
-        /* Second half slot must be zero (memset above already handles it
-         * if the buffer started zero; we re-zero defensively to make
-         * re-use of an existing polyvec safe). */
         memset(&a_b_tilde->slots[a_n_ring + i], 0, sizeof(chipmunk_poly_t));
+        a_b_tilde->slots[a_n_ring + i].coeffs[0] =
+            (int32_t)b_i * ((int32_t)b_i - 1);
     }
     return 0;
 }

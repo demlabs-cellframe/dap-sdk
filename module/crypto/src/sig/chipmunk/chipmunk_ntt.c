@@ -189,6 +189,29 @@ int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
 
     log_it(L_DEBUG, "chipmunk_ntt: per-q params computed: q=%lu R/q=%d 1/N=%d omega=%d",
            (unsigned long)q, l_R_mod_q, l_one_over_n, l_omega);
+
+    /* Cache negacyclic NTT roots for chipmunk_ntt_q / chipmunk_invntt_q. */
+    int32_t l_neg1 = (int32_t)q - 1;
+    int32_t l_psi_cached = 0;
+    for (uint64_t g = 2; g < 1000; g++) {
+        int32_t candidate = chipmunk_field_pow_q((int32_t)g,
+            (uint32_t)((q - 1) / (2 * CHIPMUNK_N)), q);
+        if (chipmunk_field_pow_q(candidate, CHIPMUNK_N, q) == l_neg1) {
+            l_psi_cached = candidate;
+            break;
+        }
+    }
+    if (l_psi_cached == 0) {
+        log_it(L_ERROR, "chipmunk_ntt: no primitive 2N-th root for q=%lu",
+               (unsigned long)q);
+        free(l_zetas); free(l_zetas_inv);
+        return -1;
+    }
+    a_ctx->psi       = l_psi_cached;
+    a_ctx->psi_inv   = chipmunk_field_inv_q(l_psi_cached, q);
+    a_ctx->omega     = l_omega;
+    a_ctx->omega_inv = l_omega_inv;
+
     return 0;
 }
 
@@ -289,23 +312,11 @@ static void s_cyclic_gs_invntt(int32_t a_r[CHIPMUNK_N], int32_t omega_inv, uint6
 }
 
 /* Find primitive 2N-th root of unity psi (psi^N = -1 mod q). */
-static int32_t s_find_psi(uint64_t q)
-{
-    int32_t l_neg1 = (int32_t)q - 1;
-    for (uint64_t g = 2; g < 1000; g++) {
-        int32_t candidate = chipmunk_field_pow_q((int32_t)g,
-            (uint32_t)((q - 1) / (2 * CHIPMUNK_N)), q);
-        if (chipmunk_field_pow_q(candidate, CHIPMUNK_N, q) == l_neg1)
-            return candidate;
-    }
-    return 0;  /* should not happen for valid q */
-}
-
 void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 {
+    if (!a_ctx || a_ctx->psi == 0) return;  /* invalid ctx — no-op */
     int32_t l_q = (int32_t)a_ctx->q;
-    int32_t l_psi = s_find_psi(a_ctx->q);
-    if (l_psi == 0) return;
+    int32_t l_psi = a_ctx->psi;
 
     /* Pre-multiply by psi^j to convert negacyclic → cyclic */
     int32_t l_psi_j = 1;
@@ -316,22 +327,17 @@ void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
     }
 
     /* omega = psi^2 (primitive N-th root) */
-    int32_t l_omega = (int32_t)(((int64_t)l_psi * l_psi) % l_q);
-    s_cyclic_ct_ntt(a_r, l_omega, a_ctx->q);
+    s_cyclic_ct_ntt(a_r, a_ctx->omega, a_ctx->q);
 }
 
 void chipmunk_invntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 {
+    if (!a_ctx || a_ctx->psi == 0) return;  /* invalid ctx — no-op */
     int32_t l_q = (int32_t)a_ctx->q;
-    int32_t l_psi = s_find_psi(a_ctx->q);
-    if (l_psi == 0) return;
-
-    int32_t l_omega = (int32_t)(((int64_t)l_psi * l_psi) % l_q);
-    int32_t l_omega_inv = chipmunk_field_inv_q(l_omega, a_ctx->q);
-    int32_t l_psi_inv = chipmunk_field_inv_q(l_psi, a_ctx->q);
+    int32_t l_psi_inv = a_ctx->psi_inv;
 
     /* Inverse cyclic NTT */
-    s_cyclic_gs_invntt(a_r, l_omega_inv, a_ctx->q);
+    s_cyclic_gs_invntt(a_r, a_ctx->omega_inv, a_ctx->q);
 
     /* Post-multiply by psi^{-j} to convert cyclic → negacyclic */
     int32_t l_psi_inv_j = 1;

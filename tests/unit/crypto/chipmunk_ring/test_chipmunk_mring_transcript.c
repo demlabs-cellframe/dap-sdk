@@ -216,8 +216,9 @@ static void test_bind_joint_roundtrip(void)
 
         uint8_t bind_fs[32];
         dap_assert(chipmunk_mring_transcript_bind_fs(
-                       bind_fs, fs_seed, &c, &M_pk, &M_T, l_proof,
-                       l_depth) == 0,
+                       bind_fs, fs_seed, &c, &M_pk, &M_T,
+                       &Y_pk, &T_tag, N_RING, T_THRESH,
+                       l_proof, l_depth) == 0,
                    "bind fs");
         dap_assert(chipmunk_mring_transcript_sample_c_star(&c_star, bind_fs)
                    == 0,

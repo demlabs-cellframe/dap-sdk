@@ -464,7 +464,9 @@ static int s_verify_bind_block(const chipmunk_poly_t a_A_pk[CHIPMUNK_MRING_K_PK]
                                const chipmunk_poly_t *a_c,
                                const uint8_t a_fs_seed[32],
                                const chipmunk_mring_fold_proof_t *a_proof,
-                               uint32_t a_fold_depth)
+                               uint32_t a_fold_depth,
+                               uint32_t a_n_ring,
+                               uint32_t a_threshold)
 {
     chipmunk_poly_t l_M_pk;
     chipmunk_poly_t l_M_T;
@@ -480,7 +482,8 @@ static int s_verify_bind_block(const chipmunk_poly_t a_A_pk[CHIPMUNK_MRING_K_PK]
     }
 
     rc = chipmunk_mring_transcript_bind_fs(
-        l_bind_fs, a_fs_seed, a_c, &l_M_pk, &l_M_T, a_proof, a_fold_depth);
+        l_bind_fs, a_fs_seed, a_c, &l_M_pk, &l_M_T, a_Y_pk, a_T,
+        a_n_ring, a_threshold, a_proof, a_fold_depth);
     if (rc != 0) {
         return rc;
     }
@@ -726,6 +729,7 @@ static int s_mring_sign_core(uint8_t **a_out_buf, size_t *a_out_size,
         uint8_t l_bind_fs[32];
         rc = chipmunk_mring_transcript_bind_fs(
             l_bind_fs, l_fs_seed, &l_c, &l_M_pk, &l_M_T,
+            &l_Y_pk, &l_T_tag, a_n_ring, a_threshold,
             l_proof, l_depth);
         if (rc != 0) {
             break;
@@ -1109,6 +1113,7 @@ static int s_mring_verify_core(const uint8_t *a_buf, size_t a_buf_size,
     chipmunk_poly_t l_c_chk;
     rc = chipmunk_mring_transcript_bind_fs(
         l_bind_fs, l_fs_seed, &l_c, &l_M_pk, &l_M_T,
+        &l_Y_pk, &l_T_tag, a_n_ring, l_hdr.threshold,
         l_proof, l_hdr.fold_depth);
     if (rc != 0) {
         chipmunk_mring_fold_proof_free(l_proof);
