@@ -88,12 +88,24 @@ static int s_hash_len_prefixed(uint8_t a_out[32],
     return ok ? 0 : -EIO;
 }
 
+/* Branchless full centered reduction: maps any int32 to [-q/2, q/2).
+ * Handles both > q/2 and < -q/2 without data-dependent branches.
+ * Required for constant-time processing of secret witness data. */
 static int32_t s_center_q(int32_t a_v, uint64_t q)
 {
-    if (a_v > (int32_t)(q / 2)) {
-        return a_v - (int32_t)q;
-    }
-    return a_v;
+    int64_t l_v = (int64_t)a_v;
+    int64_t l_q = (int64_t)q;
+    int64_t l_half = l_q / 2;
+    /* Reduce to [0, q) first */
+    int64_t l_r = l_v % l_q;
+    /* Branchless: mask is -1 when condition holds, 0 otherwise */
+    int64_t l_neg = -(int64_t)(l_r < 0);     /* -1 if negative */
+    l_r += l_q & l_neg;                       /* add q if negative → [0, q) */
+    /* Now center: subtract q if > q/2 */
+    int64_t l_hi = -(int64_t)(l_r > l_half);
+    l_r += l_q & l_hi;                        /* l_r - q when > half → wraps to negative */
+    l_r -= l_q & (~l_hi & -(int64_t)(l_r >= l_q));  /* edge: exactly q → 0 */
+    return (int32_t)l_r;
 }
 
 /* chipmunk_mod_q is now in chipmunk_poly.h — unified across all modules */

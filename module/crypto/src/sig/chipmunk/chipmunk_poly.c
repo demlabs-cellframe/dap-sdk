@@ -410,24 +410,26 @@ void chipmunk_poly_mul_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
 void chipmunk_poly_add_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
                                const chipmunk_poly_t *b, uint64_t q) {
     if (!r || !a || !b) return;
-    int32_t l_q = (int32_t)q;
+    int64_t l_q = (int64_t)q;
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int64_t l_sum = (int64_t)a->coeffs[i] + (int64_t)b->coeffs[i];
-        int32_t l_result = (int32_t)(l_sum % (int64_t)q);
-        if (l_result < 0) l_result += l_q;
-        r->coeffs[i] = l_result;
+        int64_t l_r = l_sum % l_q;
+        int64_t l_neg = -(int64_t)(l_r < 0);
+        l_r += l_q & l_neg;
+        r->coeffs[i] = (int32_t)l_r;
     }
 }
 
 void chipmunk_poly_sub_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
                                const chipmunk_poly_t *b, uint64_t q) {
     if (!r || !a || !b) return;
-    int32_t l_q = (int32_t)q;
+    int64_t l_q = (int64_t)q;
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int64_t l_diff = (int64_t)a->coeffs[i] - (int64_t)b->coeffs[i];
-        int32_t l_result = (int32_t)(l_diff % (int64_t)q);
-        if (l_result < 0) l_result += l_q;
-        r->coeffs[i] = l_result;
+        int64_t l_r = l_diff % l_q;
+        int64_t l_neg = -(int64_t)(l_r < 0);
+        l_r += l_q & l_neg;
+        r->coeffs[i] = (int32_t)l_r;
     }
 }
 

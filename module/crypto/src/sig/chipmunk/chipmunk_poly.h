@@ -106,9 +106,11 @@ int chipmunk_poly_uniform_mod_p(chipmunk_poly_t *a_poly, const uint8_t a_seed[36
  */
 static inline int32_t chipmunk_mod_q_q(int64_t a_val, uint64_t a_q)
 {
-    int64_t l_r = a_val % (int64_t)a_q;
-    if (l_r < 0)
-        l_r += (int64_t)a_q;
+    int64_t l_q = (int64_t)a_q;
+    int64_t l_r = a_val % l_q;
+    /* Branchless: mask is -1 when negative, 0 otherwise */
+    int64_t l_neg = -(int64_t)(l_r < 0);
+    l_r += l_q & l_neg;
     return (int32_t)l_r;
 }
 
