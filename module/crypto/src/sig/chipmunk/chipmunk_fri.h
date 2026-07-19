@@ -312,27 +312,10 @@ bool chipmunk_fri_verify_q(const chipmunk_fri_proof_t *proof,
                              uint64_t q,
                              chipmunk_fri_verify_result_t *result);
 
-/**
- * @brief Fast FRI proof verification (verifier-side, no grinding search).
+/** @brief Per-q variant of FRI fast verify (Phase 9.14).
  *
- * Identical to chipmunk_fri_verify() but uses the prover's grinding nonce
- * directly (single hash verification) instead of performing the expensive
- * brute-force nonce search (~2^16 hashes).
- *
- * @param proof        Complete FRI proof (commit + queries).
- * @param domain       16-byte domain separator (must match prover's).
- * @param alphas       7 FRI folding challenges in F_q.
- * @param grinding_nonce  Prover's grinding nonce (from proof).
- * @param result       Output: verification result details (may be NULL).
- * @return true if all checks pass, false otherwise.
- */
-bool chipmunk_fri_verify_fast(const chipmunk_fri_proof_t *proof,
-                              const uint8_t domain[16],
-                              const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
-                              uint32_t grinding_nonce,
-                              chipmunk_fri_verify_result_t *result);
-
-/** @brief Per-q variant of chipmunk_fri_verify_fast (Phase 9.14). */
+ * Uses the prover's grinding nonce directly (single hash verification)
+ * instead of performing the expensive brute-force nonce search (~2^16 hashes). */
 bool chipmunk_fri_verify_fast_q(const chipmunk_fri_proof_t *proof,
                                   const uint8_t domain[16],
                                   const int32_t alphas[CHIPMUNK_FRI_ROUNDS],
