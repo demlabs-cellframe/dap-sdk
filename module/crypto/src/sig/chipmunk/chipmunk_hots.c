@@ -309,79 +309,29 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
     // Result of signature is stored in time domain!
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         debug_if(s_debug_more, L_DEBUG, "🔢 Computing σ[%d] = s0[%d] * H(m) + s1[%d]...", i, i, i);
-        
-        // Debug secret key components (they are already in NTT domain)
-        debug_if(s_debug_more, L_DEBUG, "  s0[%d] first coeffs: %d %d %d %d", i,
-               a_sk->s0[i].coeffs[0], a_sk->s0[i].coeffs[1], a_sk->s0[i].coeffs[2], a_sk->s0[i].coeffs[3]);
-        debug_if(s_debug_more, L_DEBUG, "  s1[%d] first coeffs: %d %d %d %d", i,
-               a_sk->s1[i].coeffs[0], a_sk->s1[i].coeffs[1], a_sk->s1[i].coeffs[2], a_sk->s1[i].coeffs[3]);
-        
-        /* CR-7.2 Blinding: protect s0*H(m) and s1 addition from timing side-channel.
+
+        /* σ[i] = s0[i] * H(m) + s1[i]  (all in NTT domain)
          *
-         * Instead of computing σ = s0*H(m) + s1 directly (which exposes s0 and s1
-         * to power/timing analysis through NTT coefficient reduction), we:
-         *
-         *   1. Generate random mask r
-         *   2. Compute s0_blinded = s0 + r  (randomized input to multiplication)
-         *   3. Compute term1 = s0_blinded * H(m)  (randomized input)
-         *   4. Compute term2 = r * H(m)  (randomized input)
-         *   5. s0*H(m) = term1 - term2  (blinded result)
-         *   6. Similarly blind s1 addition: s1_blinded = s1 + r2, subtract r2
-         *
-         * Both multiplications now have randomized inputs, protecting the secret
-         * key from side-channel analysis. */
-        chipmunk_poly_t l_r, l_s0_blinded, l_term1, l_term2;
-        chipmunk_poly_t l_r2, l_s1_blinded;
-
-        /* Generate random mask r for s0*H(m) blinding */
-        uint8_t l_r_seed[32];
-        dap_random_bytes(l_r_seed, 32);
-        if (chipmunk_poly_from_hash(&l_r, l_r_seed, 32) != 0) return -EINVAL;
-        chipmunk_ntt(l_r.coeffs);
-
-        /* s0_blinded = s0 + r */
-        chipmunk_poly_add_ntt_q(&l_s0_blinded, &a_sk->s0[i], &l_r, a_params->q);
-
-        /* term1 = s0_blinded * H(m) (randomized input) */
-        chipmunk_poly_mul_ntt_q(&l_term1, &l_s0_blinded, &l_hm, a_params->q);
-
-        /* term2 = r * H(m) (randomized input) */
-        chipmunk_poly_mul_ntt_q(&l_term2, &l_r, &l_hm, a_params->q);
-
-        /* s0*H(m) = term1 - term2 */
+         * The previous CR-7.2 "blinding" was algebraically a no-op that
+         * tripled the leakage surface without providing any real masking
+         * (the mask was immediately subtracted off). Removed per security
+         * audit. For real SCA protection, use first-order masking where
+         * s0 = s0_a + s0_b and the two multiplications never touch the
+         * same share. */
         chipmunk_poly_t l_s0_hm;
-        chipmunk_poly_sub_ntt_q(&l_s0_hm, &l_term1, &l_term2, a_params->q);
+        chipmunk_poly_mul_ntt_q(&l_s0_hm, &a_sk->s0[i], &l_hm, a_params->q);
 
-        /* Generate random mask r2 for s1 blinding */
-        uint8_t l_r2_seed[32];
-        dap_random_bytes(l_r2_seed, 32);
-        if (chipmunk_poly_from_hash(&l_r2, l_r2_seed, 32) != 0) return -EINVAL;
-        chipmunk_ntt(l_r2.coeffs);
-
-        /* s1_blinded = s1 + r2 */
-        chipmunk_poly_add_ntt_q(&l_s1_blinded, &a_sk->s1[i], &l_r2, a_params->q);
-
-        /* σ[i] = s0*H(m) + s1 = (s0*H(m) + s1_blinded) - r2 */
         chipmunk_poly_t l_temp;
-        chipmunk_poly_add_ntt_q(&l_temp, &l_s0_hm, &l_s1_blinded, a_params->q);
-        chipmunk_poly_sub_ntt_q(&l_temp, &l_temp, &l_r2, a_params->q);
+        chipmunk_poly_add_ntt_q(&l_temp, &l_s0_hm, &a_sk->s1[i], a_params->q);
 
-        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT, blinded) first coeffs: %d %d %d %d", i,
+        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT) first coeffs: %d %d %d %d", i,
                l_temp.coeffs[0], l_temp.coeffs[1], l_temp.coeffs[2], l_temp.coeffs[3]);
         
         // Convert result to time domain for storage
         a_signature->sigma[i] = l_temp;
         chipmunk_invntt(a_signature->sigma[i].coeffs);
 
-        /* Wipe local copies that held blinded secret key material */
-        dap_memwipe(&l_s0_blinded, sizeof(l_s0_blinded));
-        dap_memwipe(&l_s1_blinded, sizeof(l_s1_blinded));
-        dap_memwipe(l_r_seed, sizeof(l_r_seed));
-        dap_memwipe(l_r2_seed, sizeof(l_r2_seed));
-        dap_memwipe(&l_r, sizeof(l_r));
-        dap_memwipe(&l_r2, sizeof(l_r2));
-        dap_memwipe(&l_term1, sizeof(l_term1));
-        dap_memwipe(&l_term2, sizeof(l_term2));
+        /* Wipe local copy that held secret-derived result */
         dap_memwipe(&l_s0_hm, sizeof(l_s0_hm));
     }
     

@@ -38,6 +38,11 @@ static chipmunk_ntt_ctx_t s_global_ctx;
 static pthread_once_t s_global_once = PTHREAD_ONCE_INIT;
 static int s_global_init_result = 0;
 
+static void s_global_cleanup(void)
+{
+    chipmunk_ntt_ctx_free(&s_global_ctx);
+}
+
 static void s_global_init(void)
 {
     s_global_init_result =
@@ -45,7 +50,10 @@ static void s_global_init(void)
     if (s_global_init_result != 0) {
         log_it(L_CRITICAL, "chipmunk_ntt: global ctx init FAILED for q=%d (rc=%d)",
                CHIPMUNK_Q, s_global_init_result);
+        return;
     }
+    /* Register cleanup at process exit to avoid leaking twiddle tables. */
+    atexit(s_global_cleanup);
 }
 
 /** Ensure the global context is built. Returns 0 on success. */

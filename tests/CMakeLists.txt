@@ -484,6 +484,14 @@ endif()
 				                      "unit;crypto;ntt;q;montgomery;e2e")
 				endif()
 
+				# NTT ring homomorphism verification
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_ntt_ring_hom.c)
+				    add_dap_test(test_unit_ntt_ring_hom
+				                 unit/crypto/chipmunk_ring/test_ntt_ring_hom.c)
+				    register_dap_test(test_unit_ntt_ring_hom
+				                      "unit;crypto;ntt;ring;homomorphism")
+				endif()
+
 				# 9.8: DEEP composition polynomial
 				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_deep.c)
 				    add_dap_test(test_unit_chipmunk_deep

@@ -163,6 +163,10 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
     uint64_t l_state[25];
     memset(l_state, 0, sizeof(l_state));
 
+    /* Guard against integer overflow in l_in_len (heap overflow). */
+    if (hash_len > SIZE_MAX - sizeof(k_domain) - 1) {
+        return CHIPMUNK_ERROR_INVALID_PARAM;
+    }
     const size_t l_in_len = sizeof(k_domain) + hash_len;
     uint8_t *l_in = DAP_NEW_Z_SIZE(uint8_t, l_in_len);
     if (!l_in) {
@@ -273,6 +277,11 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
     // A single absorb call is sufficient because the rate (136 bytes) is
     // already large enough to swallow the domain tag and the message in
     // one shot.
+    /* Guard against integer overflow in l_in_len (heap overflow). */
+    if (a_message_len > SIZE_MAX - sizeof(k_domain) - 1) {
+        log_it(L_ERROR, "chipmunk_poly_from_hash: message too long (%zu)", a_message_len);
+        return CHIPMUNK_ERROR_INVALID_PARAM;
+    }
     const size_t l_in_len = sizeof(k_domain) + a_message_len;
     uint8_t *l_in = DAP_NEW_Z_SIZE(uint8_t, l_in_len);
     if (!l_in) {
