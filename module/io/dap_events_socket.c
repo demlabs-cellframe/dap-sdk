@@ -1617,12 +1617,17 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 #if defined(DAP_EVENTS_CAPS_QUEUE_WASM_SAB)
     if (!a_es->sab_channel)
         return log_it(L_ERROR, "queue_ptr_send: no SAB channel on es %p", a_es), -EBADF;
-    int l_rc = dap_wasm_sab_channel_push_ptr(a_es->sab_channel, a_arg);
-    if (l_rc == -ENOSPC) {
-        log_it(L_WARNING, "SAB queue full on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
-        return ENOSPC;
+    /* Retry on full queue — the worker thread should drain it quickly.
+     * Back off briefly between attempts to avoid burning CPU. */
+    for (int l_attempt = 0; l_attempt < 32; l_attempt++) {
+        int l_rc = dap_wasm_sab_channel_push_ptr(a_es->sab_channel, a_arg);
+        if (l_rc == 0) return 0;
+        if (l_rc != -ENOSPC) return l_rc;
+        /* Queue full — yield and retry */
+        dap_usleep(1000);
     }
-    return l_rc;
+    log_it(L_DEBUG, "SAB queue full after retries on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
+    return -ENOSPC;
 #elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     s_add_ptr_to_buf(a_es, a_arg);
     return 0;

@@ -1059,7 +1059,7 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
     l_es->callbacks.event_callback = a_callback; // Arm event callback
 #if defined(DAP_EVENTS_CAPS_EVENT_WASM_SAB)
     /* WASM MT path: SAB channel. No fd / pipe. */
-    l_es->sab_channel = dap_wasm_sab_channel_new(16,
+    l_es->sab_channel = dap_wasm_sab_channel_new(256,
         a_context ? &a_context->wasm_wake_counter : NULL);
     if (!l_es->sab_channel) {
         DAP_DELETE(l_es->buf_out);
