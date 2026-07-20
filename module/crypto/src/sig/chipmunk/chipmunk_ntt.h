@@ -87,6 +87,9 @@ int32_t chipmunk_ntt_from_mont(int32_t a_c, const chipmunk_ntt_ctx_t *a_ctx);
 /** @brief Get the global NTT params (lazy-built for CHIPMUNK_Q). */
 const dap_ntt_params_t *chipmunk_ntt_global_params(void);
 
+/** @brief Get the full global NTT ctx (for ψ-twist in batch verify). */
+const chipmunk_ntt_ctx_t *chipmunk_ntt_global_ctx(void);
+
 /** @brief Forward NTT using global CHIPMUNK_Q context. */
 void chipmunk_ntt(int32_t a_r[CHIPMUNK_N]);
 

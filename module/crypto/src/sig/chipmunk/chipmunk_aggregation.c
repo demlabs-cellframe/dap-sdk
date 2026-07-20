@@ -280,12 +280,8 @@ int chipmunk_hots_sig_randomize(const chipmunk_hots_signature_t *sig,
     s_randomizer_to_poly_ntt(randomizer, &l_r_ntt, q);
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        // Bring sigma[i] into NTT domain.
+        // sigma[i] is already NTT-native from HOTS sign.
         chipmunk_poly_t l_sigma_ntt = sig->sigma[i];
-        for (int j = 0; j < CHIPMUNK_N; j++) {
-            l_sigma_ntt.coeffs[j] = s_canonicalize_mod_q_q(l_sigma_ntt.coeffs[j], q);
-        }
-        chipmunk_ntt(l_sigma_ntt.coeffs);
 
         // Pointwise multiply in NTT domain.
         chipmunk_poly_t l_prod_ntt;
@@ -336,11 +332,8 @@ int chipmunk_hots_aggregate_with_randomizers(const chipmunk_hots_signature_t *si
         s_randomizer_to_poly_ntt(&randomizers[j], &l_r_ntt, q);
 
         for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+            // sigma[i] is already NTT-native from HOTS sign.
             chipmunk_poly_t l_sigma_ntt = signatures[j].sigma[i];
-            for (int k = 0; k < CHIPMUNK_N; k++) {
-                l_sigma_ntt.coeffs[k] = s_canonicalize_mod_q_q(l_sigma_ntt.coeffs[k], q);
-            }
-            chipmunk_ntt(l_sigma_ntt.coeffs);
 
             chipmunk_poly_t l_prod_ntt;
             chipmunk_poly_mul_ntt_q(&l_prod_ntt, &l_r_ntt, &l_sigma_ntt, q);
@@ -860,8 +853,7 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
             l_v0.coeffs[k] = s_canonicalize_mod_q_q(l_v0.coeffs[k], q);
             l_v1.coeffs[k] = s_canonicalize_mod_q_q(l_v1.coeffs[k], q);
         }
-        chipmunk_ntt(l_v0.coeffs);
-        chipmunk_ntt(l_v1.coeffs);
+        /* v0/v1 are already NTT-native from HOTS keygen — no forward NTT needed. */
 
         chipmunk_poly_t l_prod0, l_prod1;
         chipmunk_poly_mul_ntt_q(&l_prod0, &l_r_ntt, &l_v0, q);

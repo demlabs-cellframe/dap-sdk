@@ -74,7 +74,7 @@ static int s_mul(chipmunk_poly_t *a_out,
     if (rc != 0) return rc;
     rc = chipmunk_poly_ntt(&r);
     if (rc != 0) return rc;
-    chipmunk_poly_mul_ntt(a_out, &l, &r);
+    chipmunk_poly_mul_ntt_q(a_out, &l, &r, (uint64_t)CHIPMUNK_Q);
     return chipmunk_poly_invntt(a_out);
 }
 

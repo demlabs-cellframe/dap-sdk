@@ -84,6 +84,23 @@ static inline dap_gpu_ntt_plan_t *s_get_gpu_plan(void)
 static void s_batch_forward_ntt(int32_t *a_buf, uint32_t a_total,
                                 const dap_ntt_params_t *a_ntt)
 {
+    /* Phase 9.15: Apply ψ-pre-multiply to each polynomial before batch NTT.
+     * The Montgomery SIMD kernel computes cyclic NTT; ψ-twist converts to negacyclic. */
+    const chipmunk_ntt_ctx_t *l_ctx = chipmunk_ntt_global_ctx();
+    if (l_ctx && l_ctx->psi) {
+        int32_t l_q = a_ntt->q;
+        int32_t l_psi = l_ctx->psi;
+        for (uint32_t i = 0; i < a_total; i++) {
+            int32_t *p = a_buf + (size_t)i * CHIPMUNK_N;
+            int32_t l_psi_j = 1;
+            for (unsigned j = 0; j < CHIPMUNK_N; ++j) {
+                p[j] = (int32_t)(((int64_t)p[j] * l_psi_j) % (int64_t)l_q);
+                if (p[j] < 0) p[j] += l_q;
+                l_psi_j = (int32_t)(((int64_t)l_psi_j * l_psi) % (int64_t)l_q);
+            }
+        }
+    }
+
 #ifdef DAP_HAS_GPU
     dap_gpu_ntt_plan_t *l_plan = s_get_gpu_plan();
     if (l_plan && a_total >= GPU_BATCH_THRESHOLD) {

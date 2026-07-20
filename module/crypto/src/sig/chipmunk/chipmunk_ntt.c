@@ -70,6 +70,13 @@ const dap_ntt_params_t *chipmunk_ntt_global_params(void)
     return &s_global_ctx.params;
 }
 
+/* Phase 9.15: Full ctx accessor for ψ-twist in batch verify. */
+const chipmunk_ntt_ctx_t *chipmunk_ntt_global_ctx(void)
+{
+    if (s_global_ensure() != 0) return NULL;
+    return &s_global_ctx;
+}
+
 /* -------------------------------------------------------------------------
  * Extended Euclid: compute q^{-1} mod 2^k
  * ------------------------------------------------------------------------- */

@@ -317,6 +317,7 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_fri_ntt");
     dap_common_init("test_chipmunk_fri_ntt", NULL);
+    chipmunk_field_init();
 
     test_ntt_roundtrip_constant();
     test_ntt_roundtrip_linear();

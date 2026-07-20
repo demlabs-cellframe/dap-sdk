@@ -343,10 +343,11 @@ void dap_chipmunk_compute_hots_pk_internal(const chipmunk_hots_params_t *a_param
                                            const chipmunk_hots_sk_t *a_hots_sk,
                                            chipmunk_hots_pk_t *a_hots_pk_out)
 {
-    chipmunk_poly_t l_v0_time_sum;
-    chipmunk_poly_t l_v1_time_sum;
-    memset(&l_v0_time_sum, 0, sizeof(l_v0_time_sum));
-    memset(&l_v1_time_sum, 0, sizeof(l_v1_time_sum));
+    /* Phase 9.15: Accumulate pk in NTT domain. */
+    chipmunk_poly_t l_v0_ntt_sum;
+    chipmunk_poly_t l_v1_ntt_sum;
+    memset(&l_v0_ntt_sum, 0, sizeof(l_v0_ntt_sum));
+    memset(&l_v1_ntt_sum, 0, sizeof(l_v1_ntt_sum));
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         chipmunk_poly_t l_term_v0_ntt;
@@ -355,22 +356,17 @@ void dap_chipmunk_compute_hots_pk_internal(const chipmunk_hots_params_t *a_param
         chipmunk_poly_t l_term_v1_ntt;
         chipmunk_poly_mul_ntt_q(&l_term_v1_ntt, &a_params->a[i], &a_hots_sk->s1[i], (uint64_t)CHIPMUNK_Q);
 
-        chipmunk_poly_t l_term_v0_time = l_term_v0_ntt;
-        chipmunk_poly_t l_term_v1_time = l_term_v1_ntt;
-        chipmunk_invntt(l_term_v0_time.coeffs);
-        chipmunk_invntt(l_term_v1_time.coeffs);
-
         if (i == 0) {
-            l_v0_time_sum = l_term_v0_time;
-            l_v1_time_sum = l_term_v1_time;
+            l_v0_ntt_sum = l_term_v0_ntt;
+            l_v1_ntt_sum = l_term_v1_ntt;
         } else {
-            chipmunk_poly_add_q(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time, (uint64_t)CHIPMUNK_Q);
-            chipmunk_poly_add_q(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time, (uint64_t)CHIPMUNK_Q);
+            chipmunk_poly_add_ntt_q(&l_v0_ntt_sum, &l_v0_ntt_sum, &l_term_v0_ntt, (uint64_t)CHIPMUNK_Q);
+            chipmunk_poly_add_ntt_q(&l_v1_ntt_sum, &l_v1_ntt_sum, &l_term_v1_ntt, (uint64_t)CHIPMUNK_Q);
         }
     }
 
-    a_hots_pk_out->v0 = l_v0_time_sum;
-    a_hots_pk_out->v1 = l_v1_time_sum;
+    a_hots_pk_out->v0 = l_v0_ntt_sum;
+    a_hots_pk_out->v1 = l_v1_ntt_sum;
 }
 
 int chipmunk_sign(uint8_t *a_private_key, const uint8_t *a_message,

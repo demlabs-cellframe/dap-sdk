@@ -183,7 +183,7 @@ static bool s_test_mask_sample(void)
         dap_assert(!s_polys_equal(&rho_a[j], &rho_b[j]),
                    "mask_sample: different attempt must yield different mask");
         dap_assert(chipmunk_lrs_poly_chknorm_centered(
-                       &rho_a[j], CHIPMUNK_MRING_MASK_BOUND) == 0,
+                       &rho_a[j], CHIPMUNK_MRING_MASK_BOUND, (uint64_t)CHIPMUNK_Q) == 0,
                    "mask_sample: ‖ρ_x[j]‖∞ ≤ MASK_BOUND");
     }
     return true;

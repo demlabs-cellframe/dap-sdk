@@ -371,13 +371,18 @@ int chipmunk_poly_invntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_
 int chipmunk_poly_add_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
                           const chipmunk_poly_t *b, uint64_t q) {
     if (!r || !a || !b) return CHIPMUNK_ERROR_NULL_PARAM;
-    int32_t l_q = (int32_t)q;
+    int64_t l_q = (int64_t)q;
+    int64_t l_half = l_q / 2;
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int64_t l_temp = (int64_t)a->coeffs[i] + (int64_t)b->coeffs[i];
-        r->coeffs[i] = (int32_t)(l_temp % (int64_t)q);
-        if (r->coeffs[i] < 0) r->coeffs[i] += l_q;
-        /* Centered normalization [-q/2, q/2] (matches non-_q semantics). */
-        if (r->coeffs[i] > l_q / 2) r->coeffs[i] -= l_q;
+        int64_t l_r = l_temp % l_q;
+        /* Branchless: add q if negative → [0, q) */
+        int64_t l_neg = -(int64_t)(l_r < 0);
+        l_r += l_q & l_neg;
+        /* Branchless: subtract q if > q/2 → centered [-q/2, q/2] */
+        int64_t l_hi = -(int64_t)(l_r > l_half);
+        l_r -= l_q & l_hi;
+        r->coeffs[i] = (int32_t)l_r;
     }
     return CHIPMUNK_ERROR_SUCCESS;
 }
@@ -385,12 +390,16 @@ int chipmunk_poly_add_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
 int chipmunk_poly_sub_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
                           const chipmunk_poly_t *b, uint64_t q) {
     if (!r || !a || !b) return CHIPMUNK_ERROR_NULL_PARAM;
-    int32_t l_q = (int32_t)q;
+    int64_t l_q = (int64_t)q;
+    int64_t l_half = l_q / 2;
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int64_t l_temp = (int64_t)a->coeffs[i] - (int64_t)b->coeffs[i];
-        r->coeffs[i] = (int32_t)(l_temp % (int64_t)q);
-        if (r->coeffs[i] < 0) r->coeffs[i] += l_q;
-        if (r->coeffs[i] > l_q / 2) r->coeffs[i] -= l_q;
+        int64_t l_r = l_temp % l_q;
+        int64_t l_neg = -(int64_t)(l_r < 0);
+        l_r += l_q & l_neg;
+        int64_t l_hi = -(int64_t)(l_r > l_half);
+        l_r -= l_q & l_hi;
+        r->coeffs[i] = (int32_t)l_r;
     }
     return CHIPMUNK_ERROR_SUCCESS;
 }

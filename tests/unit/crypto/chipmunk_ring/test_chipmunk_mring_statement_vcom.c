@@ -212,19 +212,19 @@ static bool s_test_vcom_homomorphism(void)
     s_random_short_r_b(rb1, seed1);
     s_random_short_r_b(rb2, seed2);
     for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
-        dap_assert(chipmunk_poly_add_q(&rbSum[j], &rb1[j], &rb2[j]) == 0,
-                   "rbSum poly_add must succeed", (uint64_t)CHIPMUNK_Q);
+        dap_assert(chipmunk_poly_add_q(&rbSum[j], &rb1[j], &rb2[j], (uint64_t)CHIPMUNK_Q) == 0,
+                   "rbSum poly_add must succeed");
     }
 
     chipmunk_poly_t C1, C2, CSum, CExpected;
-    dap_assert(chipmunk_mring_vcom_commit(&C1,        &gens, &bp1, rb1)    == 0,
-               "vcom_commit(b1,rb1)", (uint64_t)CHIPMUNK_Q);
-    dap_assert(chipmunk_mring_vcom_commit(&C2,        &gens, &bp2, rb2)    == 0,
-               "vcom_commit(b2,rb2)", (uint64_t)CHIPMUNK_Q);
-    dap_assert(chipmunk_mring_vcom_commit(&CSum,      &gens, &bpSum, rbSum) == 0,
-               "vcom_commit(b1+b2, rb1+rb2)", (uint64_t)CHIPMUNK_Q);
-    dap_assert(chipmunk_poly_add_q(&CExpected, &C1, &C2) == 0,
-               "C1+C2 add", (uint64_t)CHIPMUNK_Q);
+    dap_assert(chipmunk_mring_vcom_commit(&C1,        &gens, &bp1, rb1, (uint64_t)CHIPMUNK_Q) == 0,
+               "vcom_commit(b1,rb1)");;
+    dap_assert(chipmunk_mring_vcom_commit(&C2,        &gens, &bp2, rb2, (uint64_t)CHIPMUNK_Q) == 0,
+               "vcom_commit(b2,rb2)");;
+    dap_assert(chipmunk_mring_vcom_commit(&CSum,      &gens, &bpSum, rbSum, (uint64_t)CHIPMUNK_Q) == 0,
+               "vcom_commit(b1+b2, rb1+rb2)");;
+    dap_assert(chipmunk_poly_add_q(&CExpected, &C1, &C2, (uint64_t)CHIPMUNK_Q) == 0,
+               "C1+C2 add");;
 
     dap_assert(s_polys_equal(&CSum, &CExpected),
                "vcom must be homomorphic: C(b1+b2, rb1+rb2) == C(b1,rb1)+C(b2,rb2)");
@@ -259,10 +259,10 @@ static bool s_test_vcom_bit_flip(void)
     s_random_short_r_b(rb, seed);
 
     chipmunk_poly_t C, C_flipped;
-    dap_assert(chipmunk_mring_vcom_commit(&C,         &gens, &bp,         rb) == 0,
-               "vcom_commit(b)", (uint64_t)CHIPMUNK_Q);
-    dap_assert(chipmunk_mring_vcom_commit(&C_flipped, &gens, &bp_flipped, rb) == 0,
-               "vcom_commit(b')", (uint64_t)CHIPMUNK_Q);
+    dap_assert(chipmunk_mring_vcom_commit(&C,         &gens, &bp,         rb, (uint64_t)CHIPMUNK_Q) == 0,
+               "vcom_commit(b)");
+    dap_assert(chipmunk_mring_vcom_commit(&C_flipped, &gens, &bp_flipped, rb, (uint64_t)CHIPMUNK_Q) == 0,
+               "vcom_commit(b')");
 
     dap_assert(!s_polys_equal(&C, &C_flipped),
                "A single-bit flip in b MUST yield a different commitment");

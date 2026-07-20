@@ -206,64 +206,43 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
                a_sk->s1[i].coeffs[0], a_sk->s1[i].coeffs[1], a_sk->s1[i].coeffs[2], a_sk->s1[i].coeffs[3]);
     }
     
-    // Initialize public key in time domain
+    // Phase 9.15: Public key accumulated and stored in NTT domain
     memset(&a_pk->v0, 0, sizeof(a_pk->v0));
     memset(&a_pk->v1, 0, sizeof(a_pk->v1));
     
-    chipmunk_poly_t l_v0_time_sum, l_v1_time_sum;
-    memset(&l_v0_time_sum, 0, sizeof(l_v0_time_sum));
-    memset(&l_v1_time_sum, 0, sizeof(l_v1_time_sum));
+    chipmunk_poly_t l_v0_ntt_sum, l_v1_ntt_sum;
+    memset(&l_v0_ntt_sum, 0, sizeof(l_v0_ntt_sum));
+    memset(&l_v1_ntt_sum, 0, sizeof(l_v1_ntt_sum));
     
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         // a[i] * s0[i] - ALL in NTT domain
         chipmunk_poly_t l_term_v0_ntt;
         chipmunk_poly_mul_ntt_q(&l_term_v0_ntt, &a_params->a[i], &a_sk->s0[i], a_params->q);
-        debug_if(s_debug_more, L_DEBUG, "  After a[%d] * s0[%d]: term_v0_ntt[0-3] = %d %d %d %d", i, i,
-               l_term_v0_ntt.coeffs[0], l_term_v0_ntt.coeffs[1], l_term_v0_ntt.coeffs[2], l_term_v0_ntt.coeffs[3]);
         
         // a[i] * s1[i] - ALL in NTT domain
         chipmunk_poly_t l_term_v1_ntt;
         chipmunk_poly_mul_ntt_q(&l_term_v1_ntt, &a_params->a[i], &a_sk->s1[i], a_params->q);
-        debug_if(s_debug_more, L_DEBUG, "  After a[%d] * s1[%d]: term_v1_ntt[0-3] = %d %d %d %d", i, i,
-               l_term_v1_ntt.coeffs[0], l_term_v1_ntt.coeffs[1], l_term_v1_ntt.coeffs[2], l_term_v1_ntt.coeffs[3]);
         
-        // Convert to time domain for accumulation
-        // Original Rust: pk.v0 += (&(a * s0)).into(); - .into() means converting to time domain!
-        chipmunk_poly_t l_term_v0_time = l_term_v0_ntt;
-        chipmunk_poly_t l_term_v1_time = l_term_v1_ntt;
-        
-        chipmunk_invntt(l_term_v0_time.coeffs);
-        chipmunk_invntt(l_term_v1_time.coeffs);
-        
-        debug_if(s_debug_more, L_DEBUG, "  After invNTT term_v0_time[0-3] = %d %d %d %d",
-               l_term_v0_time.coeffs[0], l_term_v0_time.coeffs[1], l_term_v0_time.coeffs[2], l_term_v0_time.coeffs[3]);
-        debug_if(s_debug_more, L_DEBUG, "  After invNTT term_v1_time[0-3] = %d %d %d %d",
-               l_term_v1_time.coeffs[0], l_term_v1_time.coeffs[1], l_term_v1_time.coeffs[2], l_term_v1_time.coeffs[3]);
-        
-        // Accumulate in time domain
+        /* Phase 9.15: Accumulate in NTT domain (no invNTT needed).
+         * pk.v0/v1 are now stored NTT-native. Wire-serializer will do
+         * invNTT on encode (see chipmunk_signature_to_bytes). */
         if (i == 0) {
-            l_v0_time_sum = l_term_v0_time;
-            l_v1_time_sum = l_term_v1_time;
+            l_v0_ntt_sum = l_term_v0_ntt;
+            l_v1_ntt_sum = l_term_v1_ntt;
         } else {
-            chipmunk_poly_add_q(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time, a_params->q);
-            chipmunk_poly_add_q(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time, a_params->q);
+            chipmunk_poly_add_ntt_q(&l_v0_ntt_sum, &l_v0_ntt_sum, &l_term_v0_ntt, a_params->q);
+            chipmunk_poly_add_ntt_q(&l_v1_ntt_sum, &l_v1_ntt_sum, &l_term_v1_ntt, a_params->q);
         }
-        
-        debug_if(s_debug_more, L_DEBUG, "  After addition: v0_time_sum[0-3] = %d %d %d %d",
-               l_v0_time_sum.coeffs[0], l_v0_time_sum.coeffs[1], l_v0_time_sum.coeffs[2], l_v0_time_sum.coeffs[3]);
-        debug_if(s_debug_more, L_DEBUG, "  After addition: v1_time_sum[0-3] = %d %d %d %d",
-               l_v1_time_sum.coeffs[0], l_v1_time_sum.coeffs[1], l_v1_time_sum.coeffs[2], l_v1_time_sum.coeffs[3]);
     }
     
-    // Initialize public key in time domain
-    // Original Rust: HotsPK { v0: HOTSPoly, v1: HOTSPoly } - this is time domain
-    a_pk->v0 = l_v0_time_sum;
-    a_pk->v1 = l_v1_time_sum;
+    // Store public key in NTT domain
+    a_pk->v0 = l_v0_ntt_sum;
+    a_pk->v1 = l_v1_ntt_sum;
     
-    debug_if(s_debug_more, L_DEBUG, "✓ Public key computed and stored in time domain (CORRECTED METHOD)");
-    debug_if(s_debug_more, L_DEBUG, "  v0 (time) first coeffs: %d %d %d %d",
+    debug_if(s_debug_more, L_DEBUG, "✓ Public key computed and stored in NTT domain");
+    debug_if(s_debug_more, L_DEBUG, "  v0 (NTT) first coeffs: %d %d %d %d",
            a_pk->v0.coeffs[0], a_pk->v0.coeffs[1], a_pk->v0.coeffs[2], a_pk->v0.coeffs[3]);
-    debug_if(s_debug_more, L_DEBUG, "  v1 (time) first coeffs: %d %d %d %d",
+    debug_if(s_debug_more, L_DEBUG, "  v1 (NTT) first coeffs: %d %d %d %d",
            a_pk->v1.coeffs[0], a_pk->v1.coeffs[1], a_pk->v1.coeffs[2], a_pk->v1.coeffs[3]);
     
     debug_if(s_debug_more, L_DEBUG, "✓ HOTS keygen completed with unique s0[i] and s1[i]");
@@ -327,9 +306,8 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT) first coeffs: %d %d %d %d", i,
                l_temp.coeffs[0], l_temp.coeffs[1], l_temp.coeffs[2], l_temp.coeffs[3]);
         
-        // Convert result to time domain for storage
+        // Phase 9.15: Store sigma in NTT domain (no invNTT)
         a_signature->sigma[i] = l_temp;
-        chipmunk_invntt(a_signature->sigma[i].coeffs);
 
         /* Wipe local copy that held secret-derived result */
         dap_memwipe(&l_s0_hm, sizeof(l_s0_hm));
@@ -380,14 +358,9 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     debug_if(s_debug_more, L_DEBUG, "  H(m)_ntt first coeffs: %d %d %d %d", 
            l_hm_ntt.coeffs[0], l_hm_ntt.coeffs[1], l_hm_ntt.coeffs[2], l_hm_ntt.coeffs[3]);
     
-    // Transform public key to NTT domain for operations
-    // Original Rust: HOTSNTTPoly::from(&pk.v0) and HOTSNTTPoly::from(&pk.v1)
-    // Public key is stored in time domain, convert to NTT domain for operations
+    // Phase 9.15: Public key is already in NTT domain — use directly
     chipmunk_poly_t l_v0_ntt = a_pk->v0;
     chipmunk_poly_t l_v1_ntt = a_pk->v1;
-    
-    chipmunk_ntt(l_v0_ntt.coeffs);
-    chipmunk_ntt(l_v1_ntt.coeffs);
     
     debug_if(s_debug_more, L_DEBUG, "✓ Public key transformed to NTT domain");
     debug_if(s_debug_more, L_DEBUG, "  v0_ntt first coeffs: %d %d %d %d", 
@@ -404,11 +377,8 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         debug_if(s_debug_more, L_DEBUG, "  Processing pair %d/%d...", i+1, CHIPMUNK_GAMMA);
         
-        // Transform σ_i from time to NTT domain for operations
-        // Original Rust: HOTSNTTPoly::from(s) - this is conversion FROM time TO NTT domain!
-        // σ_i is stored in time domain, convert TO NTT domain for operations
+        // Phase 9.15: σ_i is already in NTT domain — use directly
         chipmunk_poly_t l_sigma_i_ntt = a_signature->sigma[i];
-        chipmunk_ntt(l_sigma_i_ntt.coeffs);
         
         debug_if(s_debug_more, L_DEBUG, "    a[%d] (already NTT) first coeffs: %d %d %d %d", i,
                a_params->a[i].coeffs[0], a_params->a[i].coeffs[1], a_params->a[i].coeffs[2], a_params->a[i].coeffs[3]);

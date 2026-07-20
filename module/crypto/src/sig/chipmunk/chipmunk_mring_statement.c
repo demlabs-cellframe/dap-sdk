@@ -75,6 +75,17 @@ int chipmunk_mring_derive_vcom_generators(chipmunk_mring_vcom_gens_t *a_out,
             return rc;
         }
     }
+
+    /* Phase 9.15: Pre-NTT generators for hot-path reuse. */
+    a_out->a_ntt = a_out->a;
+    rc = chipmunk_poly_ntt(&a_out->a_ntt);
+    if (rc != 0) return rc;
+    for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
+        a_out->H_prime_ntt[j] = a_out->H_prime[j];
+        rc = chipmunk_poly_ntt(&a_out->H_prime_ntt[j]);
+        if (rc != 0) return rc;
+    }
+
     return 0;
 }
 
@@ -118,40 +129,25 @@ int chipmunk_mring_vcom_commit(chipmunk_poly_t *a_Cb,
     /*
      * We compute  C_b = a · b + Σ_j H'_j · r_b[j]   in R_q.
      *
-     * Strategy: take working copies of each operand, NTT them, multiply
-     * pointwise inside the NTT domain, accumulate, then invNTT once.
-     * This costs (1 + K_pk) NTT + (1 + K_pk) pointwise multiplications +
-     * K_pk additions + 1 invNTT — minimal for this many summands.
+     * Phase 9.15: Use pre-NTT'd generators (a_ntt, H_prime_ntt).
+     * Only b and r_b need NTT per call (they change each commit).
      */
 
-    chipmunk_poly_t a_ntt   = a_gens->a;
     chipmunk_poly_t b_ntt   = *a_b_poly;
     chipmunk_poly_t acc_ntt;
     chipmunk_poly_t tmp_ntt;
 
-    int rc = chipmunk_poly_ntt(&a_ntt);
-    if (rc != 0) {
-        log_it(L_ERROR, "MRNG vcom: NTT(a) failed (rc=%d)", rc);
-        return rc;
-    }
-    rc = chipmunk_poly_ntt(&b_ntt);
+    int rc = chipmunk_poly_ntt(&b_ntt);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG vcom: NTT(b) failed (rc=%d)", rc);
         return rc;
     }
 
-    chipmunk_poly_mul_ntt_q(&acc_ntt, &a_ntt, &b_ntt, q);
+    chipmunk_poly_mul_ntt_q(&acc_ntt, &a_gens->a_ntt, &b_ntt, q);
 
     for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
-        chipmunk_poly_t hp_ntt = a_gens->H_prime[j];
         chipmunk_poly_t rb_ntt = a_r_b[j];
 
-        rc = chipmunk_poly_ntt(&hp_ntt);
-        if (rc != 0) {
-            log_it(L_ERROR, "MRNG vcom: NTT(H'_%u) failed (rc=%d)",
-                   (unsigned)j, rc);
-            return rc;
-        }
         rc = chipmunk_poly_ntt(&rb_ntt);
         if (rc != 0) {
             log_it(L_ERROR, "MRNG vcom: NTT(r_b[%u]) failed (rc=%d)",
@@ -159,7 +155,7 @@ int chipmunk_mring_vcom_commit(chipmunk_poly_t *a_Cb,
             return rc;
         }
 
-        chipmunk_poly_mul_ntt_q(&tmp_ntt, &hp_ntt, &rb_ntt, q);
+        chipmunk_poly_mul_ntt_q(&tmp_ntt, &a_gens->H_prime_ntt[j], &rb_ntt, q);
         chipmunk_poly_add_ntt_q(&acc_ntt, &acc_ntt, &tmp_ntt, q);
     }
 
@@ -185,20 +181,16 @@ int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
     chipmunk_poly_t h_part;
     memset(&h_part, 0, sizeof(h_part));
 
+    /* Phase 9.15: Use pre-NTT'd H_prime_ntt. Only r[j] needs NTT per call. */
     for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
-        chipmunk_poly_t hp_ntt = a_gens->H_prime[j];
         chipmunk_poly_t rb_ntt = a_r[j];
         chipmunk_poly_t prod_ntt;
 
-        int rc = chipmunk_poly_ntt(&hp_ntt);
+        int rc = chipmunk_poly_ntt(&rb_ntt);
         if (rc != 0) {
             return rc;
         }
-        rc = chipmunk_poly_ntt(&rb_ntt);
-        if (rc != 0) {
-            return rc;
-        }
-        chipmunk_poly_mul_ntt_q(&prod_ntt, &hp_ntt, &rb_ntt, q);
+        chipmunk_poly_mul_ntt_q(&prod_ntt, &a_gens->H_prime_ntt[j], &rb_ntt, q);
         if (j == 0u) {
             h_part = prod_ntt;
         } else {

@@ -58,6 +58,8 @@ extern "C" {
 typedef struct chipmunk_mring_vcom_gens {
     chipmunk_poly_t a;                              /* projection of b */
     chipmunk_poly_t H_prime[CHIPMUNK_MRING_K_PK];   /* randomness lane */
+    chipmunk_poly_t a_ntt;                           /* Phase 9.15: a in NTT domain (cached) */
+    chipmunk_poly_t H_prime_ntt[CHIPMUNK_MRING_K_PK]; /* Phase 9.15: H_prime in NTT domain (cached) */
 } chipmunk_mring_vcom_gens_t;
 
 int chipmunk_mring_derive_vcom_generators(chipmunk_mring_vcom_gens_t *a_out,
