@@ -579,11 +579,15 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
  * 24: Update hashes protocol
  * 25: Added node sign
  * 26: Change MSRLN to KYBER512
+ * 27: Enhanced chain sync ACK — early ACK + threshold ACK for peers that
+ *     support it. Peers reporting v26 only get classic 5.7 ACK behavior
+ *     (no early ACK, no threshold ACK) to avoid premature SYNCED_CHAIN
+ *     caused by 5.7's num_last==ack_num check.
 */
-#define DAP_PROTOCOL_VERSION          26
+#define DAP_PROTOCOL_VERSION          27
 #define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
 
-#define DAP_CLIENT_PROTOCOL_VERSION   26
+#define DAP_CLIENT_PROTOCOL_VERSION   27
 
 /* Cross-platform secure memory clearing */
 #if defined(HAVE_EXPLICIT_BZERO)

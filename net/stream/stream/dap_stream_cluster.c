@@ -289,9 +289,9 @@ json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
             dap_stream_info_t *l_link_info = l_links_info + i;
             json_object *l_jobj_info = json_object_new_object();
             json_object *l_jobj_node_addr = json_object_new_string( dap_stream_node_addr_to_str_static(l_link_info->node_addr) );
-            json_object *l_jobj_ip = json_object_new_string(l_link_info->remote_addr_str);
+            json_object *l_jobj_ip = json_object_new_string(l_link_info->remote_addr_str ? l_link_info->remote_addr_str : "");
             json_object *l_jobj_port = json_object_new_int(l_link_info->remote_port);
-            json_object *l_jobj_channel = json_object_new_string(l_link_info->channels);
+            json_object *l_jobj_channel = json_object_new_string(l_link_info->channels ? l_link_info->channels : "");
             json_object *l_jobj_total_packets_sent  = json_object_new_uint64(l_link_info->total_packets_sent);
             if (!l_jobj_info || !l_jobj_node_addr || !l_jobj_ip || !l_jobj_port || !l_jobj_channel || !l_jobj_total_packets_sent) {
                 json_object_put(l_jobj_info);
