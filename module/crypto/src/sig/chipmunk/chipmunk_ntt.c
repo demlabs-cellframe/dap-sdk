@@ -231,7 +231,12 @@ int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
      * Avoids chipmunk_field_pow_q per stage — just table lookups. */
     int32_t *l_ct = (int32_t *)calloc(512, sizeof(int32_t));
     int32_t *l_gs = (int32_t *)calloc(512, sizeof(int32_t));
-    if (!l_ct || !l_gs) { free(l_ct); free(l_gs); return -1; }
+    /* Montgomery-form copies for SIMD butterfly (avoids Barrett in inner loop). */
+    int32_t *l_ct_mont = (int32_t *)calloc(512, sizeof(int32_t));
+    int32_t *l_gs_mont = (int32_t *)calloc(512, sizeof(int32_t));
+    if (!l_ct || !l_gs || !l_ct_mont || !l_gs_mont) {
+        free(l_ct); free(l_gs); free(l_ct_mont); free(l_gs_mont); return -1;
+    }
     /* CT twiddles: len = 2, 4, ..., N (small to large, matching CT loop) */
     {
         int l_off = 0;
@@ -260,8 +265,15 @@ int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
             l_off += l_half;
         }
     }
+    /* Generate Montgomery-form copies of twiddle tables for SIMD butterfly. */
+    for (int i = 0; i < 512; ++i) {
+        l_ct_mont[i] = (int32_t)(((int64_t)l_ct[i] * l_R_mod_q) % (int64_t)q);
+        l_gs_mont[i] = (int32_t)(((int64_t)l_gs[i] * l_R_mod_q) % (int64_t)q);
+    }
     a_ctx->ct_twiddles = l_ct;
     a_ctx->gs_twiddles = l_gs;
+    a_ctx->ct_twiddles_mont = l_ct_mont;
+    a_ctx->gs_twiddles_mont = l_gs_mont;
     a_ctx->inv_q = 1.0 / (double)q;
 
     log_it(L_DEBUG, "chipmunk_ntt: per-q params computed: q=%lu R/q=%d 1/N=%d psi=%d omega=%d",
@@ -275,8 +287,12 @@ void chipmunk_ntt_ctx_free(chipmunk_ntt_ctx_t *a_ctx)
     if (!a_ctx || !a_ctx->owns_tables) return;
     free(a_ctx->ct_twiddles);
     free(a_ctx->gs_twiddles);
+    free(a_ctx->ct_twiddles_mont);
+    free(a_ctx->gs_twiddles_mont);
     a_ctx->ct_twiddles = NULL;
     a_ctx->gs_twiddles = NULL;
+    a_ctx->ct_twiddles_mont = NULL;
+    a_ctx->gs_twiddles_mont = NULL;
     if (a_ctx->params.zetas) {
         dap_memwipe((void*)a_ctx->params.zetas, 1024 * sizeof(int32_t));
         free((void*)a_ctx->params.zetas);
@@ -377,6 +393,156 @@ static void s_cyclic_gs_invntt(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t
     }
 }
 
+/* -------------------------------------------------------------------------
+ * AVX2-accelerated cyclic NTT (CT-DIT with Montgomery-form twiddles)
+ *
+ * Uses Montgomery multiply-reduce in the butterfly instead of Barrett.
+ * The twiddle table must be in Montgomery form (ct_twiddles_mont).
+ * Input/output: standard form. The Montgomery R from twiddles cancels
+ * with the Montgomery reduce in the butterfly, preserving standard form.
+ * ------------------------------------------------------------------------- */
+#if defined(__x86_64__) && defined(__AVX2__)
+#include <immintrin.h>
+
+/* Montgomery reduce: (a * b) * R^{-1} mod q for 8 int32 pairs.
+ * Uses even/odd lane separation with _mm256_mul_epi32 (signed widening). */
+static inline __m256i s_mont_reduce_mul_avx2(__m256i a, __m256i b,
+                                              __m256i qinv_vec, __m256i q_vec)
+{
+    /* Even lanes: a[0]*b[0], a[2]*b[2], a[4]*b[4], a[6]*b[6] → 4 int64 */
+    __m256i ae = _mm256_mul_epi32(a, b);
+    /* Odd lanes: shift right 32 to align, then multiply */
+    __m256i a_odd = _mm256_srli_epi64(a, 32);
+    __m256i b_odd = _mm256_srli_epi64(b, 32);
+    __m256i ao = _mm256_mul_epi32(a_odd, b_odd);
+
+    /* Montgomery reduce even lanes */
+    __m256i mask32 = _mm256_set1_epi64x(0xFFFFFFFF);
+    __m256i ae_lo = _mm256_and_si256(ae, mask32);
+    __m256i ue = _mm256_mul_epu32(ae_lo, qinv_vec);
+    ue = _mm256_and_si256(ue, mask32);
+    __m256i uqe = _mm256_mul_epi32(ue, q_vec);
+    __m256i te = _mm256_add_epi64(ae, uqe);
+    __m256i re = _mm256_srli_epi64(te, 32);
+
+    /* Montgomery reduce odd lanes */
+    __m256i ao_lo = _mm256_and_si256(ao, mask32);
+    __m256i uo = _mm256_mul_epu32(ao_lo, qinv_vec);
+    uo = _mm256_and_si256(uo, mask32);
+    __m256i uqo = _mm256_mul_epi32(uo, q_vec);
+    __m256i to = _mm256_add_epi64(ao, uqo);
+    __m256i ro = _mm256_srli_epi64(to, 32);
+
+    /* Interleave even/odd results back to 8 int32 */
+    __m256i re_lo = _mm256_and_si256(re, mask32); /* even results in low32 */
+    __m256i ro_sh = _mm256_slli_epi64(ro, 32);    /* odd results in high32 */
+    return _mm256_or_si256(re_lo, ro_sh);
+}
+
+__attribute__((target("avx2")))
+static void s_cyclic_ct_ntt_avx2(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    int32_t l_q = (int32_t)a_ctx->q;
+    __m256i l_qinv_vec = _mm256_set1_epi32((int32_t)a_ctx->params.qinv);
+    __m256i l_q_vec = _mm256_set1_epi32(l_q);
+
+    /* Bit-reverse the input */
+    for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
+        int bit = CHIPMUNK_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
+        }
+    }
+
+    /* CT butterflies with Montgomery-form twiddles */
+    int l_off = 0;
+    for (int len = 2; len <= CHIPMUNK_N; len <<= 1) {
+        int l_half = len / 2;
+        if (l_half >= 8) {
+            /* SIMD path: process 8 butterflies at a time */
+            for (int i = 0; i < CHIPMUNK_N; i += len) {
+                for (int j = 0; j < l_half; j += 8) {
+                    __m256i u = _mm256_loadu_si256((__m256i*)(a_r + i + j));
+                    __m256i v = _mm256_loadu_si256((__m256i*)(a_r + i + j + l_half));
+                    __m256i wn = _mm256_loadu_si256((__m256i*)(a_ctx->ct_twiddles_mont + l_off + j));
+                    __m256i t = s_mont_reduce_mul_avx2(v, wn, l_qinv_vec, l_q_vec);
+                    _mm256_storeu_si256((__m256i*)(a_r + i + j),
+                        _mm256_add_epi32(u, t));
+                    _mm256_storeu_si256((__m256i*)(a_r + i + j + l_half),
+                        _mm256_sub_epi32(u, t));
+                }
+            }
+        } else {
+            /* Scalar fallback for small half sizes */
+            for (int i = 0; i < CHIPMUNK_N; i += len) {
+                for (int j = 0; j < l_half; j++) {
+                    int32_t u = a_r[i + j];
+                    int32_t v = s_barrett_mod((int64_t)a_r[i + j + l_half] *
+                                              a_ctx->ct_twiddles[l_off + j], l_q, a_ctx->inv_q);
+                    a_r[i + j]          = s_barrett_mod((int64_t)u + v, l_q, a_ctx->inv_q);
+                    a_r[i + j + l_half] = s_barrett_mod((int64_t)u - v, l_q, a_ctx->inv_q);
+                }
+            }
+        }
+        l_off += l_half;
+    }
+}
+
+__attribute__((target("avx2")))
+static void s_cyclic_gs_invntt_avx2(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    int32_t l_q = (int32_t)a_ctx->q;
+    __m256i l_qinv_vec = _mm256_set1_epi32((int32_t)a_ctx->params.qinv);
+    __m256i l_q_vec = _mm256_set1_epi32(l_q);
+
+    int l_off = 0;
+    for (int len = CHIPMUNK_N; len >= 2; len >>= 1) {
+        int l_half = len / 2;
+        if (l_half >= 8) {
+            for (int i = 0; i < CHIPMUNK_N; i += len) {
+                for (int j = 0; j < l_half; j += 8) {
+                    __m256i u = _mm256_loadu_si256((__m256i*)(a_r + i + j));
+                    __m256i v = _mm256_loadu_si256((__m256i*)(a_r + i + j + l_half));
+                    __m256i wn = _mm256_loadu_si256((__m256i*)(a_ctx->gs_twiddles_mont + l_off + j));
+                    __m256i diff = _mm256_sub_epi32(u, v);
+                    _mm256_storeu_si256((__m256i*)(a_r + i + j),
+                        _mm256_add_epi32(u, v));
+                    _mm256_storeu_si256((__m256i*)(a_r + i + j + l_half),
+                        s_mont_reduce_mul_avx2(diff, wn, l_qinv_vec, l_q_vec));
+                }
+            }
+        } else {
+            for (int i = 0; i < CHIPMUNK_N; i += len) {
+                for (int j = 0; j < l_half; j++) {
+                    int32_t u = a_r[i + j];
+                    int32_t v = a_r[i + j + l_half];
+                    a_r[i + j]          = s_barrett_mod((int64_t)u + v, l_q, a_ctx->inv_q);
+                    a_r[i + j + l_half] = s_barrett_mod((int64_t)(u - v) *
+                                                         a_ctx->gs_twiddles[l_off + j], l_q, a_ctx->inv_q);
+                }
+            }
+        }
+        l_off += l_half;
+    }
+    /* Bit-reverse output to natural order */
+    for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
+        int bit = CHIPMUNK_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
+        }
+    }
+    /* Scale by 1/N */
+    int32_t l_n_inv = chipmunk_field_inv_q(CHIPMUNK_N, a_ctx->q);
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        a_r[i] = s_barrett_mod((int64_t)a_r[i] * l_n_inv, l_q, a_ctx->inv_q);
+    }
+}
+#endif /* __AVX2__ */
+
 /* Find primitive 2N-th root of unity psi (psi^N = -1 mod q). */
 void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 {
@@ -392,8 +558,15 @@ void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
         l_psi_j = s_barrett_mod((int64_t)l_psi_j * l_psi, l_q, l_inv_q);
     }
 
-    /* omega = psi^2 (primitive N-th root) — use optimized CT-DIT with Barrett */
-    s_cyclic_ct_ntt(a_r, a_ctx);
+    /* omega = psi^2 (primitive N-th root) — use optimized CT-DIT */
+#if defined(__x86_64__) && defined(__AVX2__)
+    if (a_ctx->ct_twiddles_mont && a_ctx->params.qinv) {
+        s_cyclic_ct_ntt_avx2(a_r, a_ctx);
+    } else
+#endif
+    {
+        s_cyclic_ct_ntt(a_r, a_ctx);
+    }
 }
 
 void chipmunk_invntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
@@ -403,8 +576,15 @@ void chipmunk_invntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
     double l_inv_q = a_ctx->inv_q;
     int32_t l_psi_inv = a_ctx->psi_inv;
 
-    /* Inverse cyclic NTT — use optimized GS-DIF with Barrett */
-    s_cyclic_gs_invntt(a_r, a_ctx);
+    /* Inverse cyclic NTT — use optimized GS-DIF */
+#if defined(__x86_64__) && defined(__AVX2__)
+    if (a_ctx->gs_twiddles_mont && a_ctx->params.qinv) {
+        s_cyclic_gs_invntt_avx2(a_r, a_ctx);
+    } else
+#endif
+    {
+        s_cyclic_gs_invntt(a_r, a_ctx);
+    }
 
     /* Post-multiply by psi^{-j} to convert cyclic → negacyclic */
     int32_t l_psi_inv_j = 1;

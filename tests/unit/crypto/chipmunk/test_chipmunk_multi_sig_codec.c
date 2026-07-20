@@ -91,7 +91,7 @@ static void s_fixture_clear(fixture_t *f)
         f->sigs_ready = false;
     }
     if (f->tree_ready) {
-        chipmunk_tree_clear(&f->tree);
+        chipmunk_tree_free(&f->tree);
         f->tree_ready = false;
     }
     f->num_signers = 0;

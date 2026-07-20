@@ -37,6 +37,9 @@ typedef struct chipmunk_ntt_ctx {
      * Avoids chipmunk_field_pow_q per stage. */
     int32_t         *ct_twiddles;
     int32_t         *gs_twiddles;
+    /* Montgomery-form copies for SIMD butterfly (avoids Barrett in inner loop). */
+    int32_t         *ct_twiddles_mont;
+    int32_t         *gs_twiddles_mont;
     /* Barrett constant: 1.0/q for fast modular reduction in inner loop. */
     double           inv_q;
 } chipmunk_ntt_ctx_t;

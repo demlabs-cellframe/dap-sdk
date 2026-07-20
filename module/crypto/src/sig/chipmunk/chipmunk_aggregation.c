@@ -911,6 +911,8 @@ void chipmunk_multi_signature_free(chipmunk_multi_signature_t *multi_sig) {
             multi_sig->rho_seeds = NULL;
         }
         if (multi_sig->proofs) {
+            for (size_t i = 0; i < multi_sig->signer_count; ++i)
+                chipmunk_path_free(&multi_sig->proofs[i]);
             DAP_DELETE(multi_sig->proofs);
             multi_sig->proofs = NULL;
         }
