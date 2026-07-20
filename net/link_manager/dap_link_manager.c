@@ -55,9 +55,6 @@ static const char *s_init_error = "Link manager not inited";
 static uint32_t s_timer_update_states = 5000;
 static uint32_t s_max_attempts_num = 1;
 static uint32_t s_reconnect_delay = 20; // sec
-/* === TEMP_DEBUG_LINKS_CONNECTING: START (temporary, remove after investigation) === */
-static uint32_t s_links_connecting_diag_interval = 30; // sec, 0 = disable periodic diag
-/* === TEMP_DEBUG_LINKS_CONNECTING: END === */
 static dap_link_manager_t *s_link_manager = NULL;
 static dap_proc_thread_t *s_query_thread = NULL;
 static char s_active_channels[256] = {0};
@@ -74,19 +71,11 @@ static void s_links_request(dap_link_manager_t *a_link_manager);
 static void s_update_states(void *a_arg);
 static void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager);
 
-/* === TEMP_DEBUG_LINKS_CONNECTING: forward (temporary, remove after investigation) === */
-static void s_temp_debug_log_link(const char *a_event, dap_link_t *a_link, const char *a_detail);
-static void s_temp_debug_log_client(const char *a_event, dap_client_t *a_client, const char *a_detail);
-static void s_temp_debug_log_addr(const char *a_event, const dap_stream_node_addr_t *a_addr,
-                                  dap_client_t *a_client, const char *a_detail);
-
 // Drop client and related stream sockets without holding links_lock.
 // Must not be called while links_lock is held: worker sync and link lookups need rdlock.
 static void s_link_drop_io_without_lock(dap_client_t *a_client, dap_events_socket_uuid_t a_client_uuid,
                                         const dap_stream_node_addr_t *a_addr)
 {
-    s_temp_debug_log_addr("link_drop_io", a_addr, a_client,
-                          a_client ? "delete client and extra stream sockets" : "delete orphan stream sockets");
     if (a_client)
         dap_client_delete_mt(a_client);
     dap_list_t *l_connections_for_addr = dap_stream_find_all_by_addr((dap_stream_node_addr_t *)a_addr);
@@ -172,247 +161,6 @@ size_t dap_link_manager_established_uplinks_count(uint64_t a_net_id)
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     return l_links_count;
 }
-
-/* === TEMP_DEBUG_LINKS_CONNECTING: START (temporary, remove after investigation) === */
-
-static const char *s_link_state_name(dap_link_state_t a_state)
-{
-    switch (a_state)
-    {
-    case LINK_STATE_DISCONNECTED: return "DISCONNECTED";
-    case LINK_STATE_CONNECTING: return "CONNECTING";
-    case LINK_STATE_ESTABLISHED: return "ESTABLISHED";
-    default: return "UNKNOWN";
-    }
-}
-
-static void s_temp_debug_log_link(const char *a_event, dap_link_t *a_link, const char *a_detail)
-{
-    if (!a_link)
-        return;
-    const char *l_stage = "N/A";
-    const char *l_stage_status = "N/A";
-    const char *l_host = "?";
-    uint16_t l_port = 0;
-    if (a_link->uplink.client)
-    {
-        l_stage = dap_client_get_stage_str(a_link->uplink.client);
-        l_stage_status = dap_client_get_stage_status_str(a_link->uplink.client);
-        if (a_link->uplink.client->link_info.uplink_addr[0])
-            l_host = a_link->uplink.client->link_info.uplink_addr;
-        l_port = a_link->uplink.client->link_info.uplink_port;
-    }
-    log_it(L_WARNING, "[TEMP_DEBUG] %s " NODE_ADDR_FP_STR
-           " is_uplink=%d lm_state=%s %s:%hu client=%s/%s attempts=%u active_clusters=%zu%s%s",
-           a_event, NODE_ADDR_FP_ARGS_S(a_link->addr),
-           (int)a_link->is_uplink, s_link_state_name(a_link->uplink.state),
-           l_host, l_port,
-           l_stage ? l_stage : "?", l_stage_status ? l_stage_status : "?",
-           a_link->uplink.attempts_count, dap_list_length(a_link->active_clusters),
-           a_detail ? " " : "", a_detail ? a_detail : "");
-}
-
-static void s_temp_debug_log_client(const char *a_event, dap_client_t *a_client, const char *a_detail)
-{
-    if (!a_client)
-        return;
-    dap_link_t *l_link = DAP_LINK(a_client);
-    if (l_link)
-    {
-        s_temp_debug_log_link(a_event, l_link, a_detail);
-        return;
-    }
-    log_it(L_WARNING, "[TEMP_DEBUG] %s client=%p node=" NODE_ADDR_FP_STR " %s:%hu stage=%s/%s%s%s",
-           a_event, (void *)a_client,
-           NODE_ADDR_FP_ARGS_S(a_client->link_info.node_addr),
-           a_client->link_info.uplink_addr[0] ? a_client->link_info.uplink_addr : "?",
-           a_client->link_info.uplink_port,
-           dap_client_get_stage_str(a_client), dap_client_get_stage_status_str(a_client),
-           a_detail ? " " : "", a_detail ? a_detail : "");
-}
-
-static void s_temp_debug_log_addr(const char *a_event, const dap_stream_node_addr_t *a_addr,
-                                  dap_client_t *a_client, const char *a_detail)
-{
-    if (a_client)
-    {
-        s_temp_debug_log_client(a_event, a_client, a_detail);
-        return;
-    }
-    if (!a_addr)
-        return;
-    log_it(L_WARNING, "[TEMP_DEBUG] %s " NODE_ADDR_FP_STR "%s%s",
-           a_event, NODE_ADDR_FP_ARGS_S(*a_addr),
-           a_detail ? " " : "", a_detail ? a_detail : "");
-}
-
-static bool s_link_belongs_to_net(dap_link_t *a_link, dap_managed_net_t *a_net, dap_cluster_t *a_primary_cluster)
-{
-    if (a_link->is_uplink && dap_cluster_member_find_unsafe(a_primary_cluster, &a_link->addr))
-        return true;
-    for (dap_list_t *it = a_link->uplink.associated_nets; it; it = it->next)
-        if (it->data == a_net)
-            return true;
-    return false;
-}
-
-static bool s_net_has_established_cluster_skip(uint64_t a_net_id)
-{
-    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    if (!l_net || !l_net->link_clusters)
-        return false;
-    dap_cluster_t *l_primary_cluster = (dap_cluster_t *)l_net->link_clusters->data;
-    bool l_ret = false;
-    pthread_rwlock_rdlock(&s_link_manager->links_lock);
-    dap_link_t *l_link = NULL, *l_tmp = NULL;
-    HASH_ITER(hh, s_link_manager->links, l_link, l_tmp)
-    {
-        if (!l_link->is_uplink || l_link->uplink.state != LINK_STATE_ESTABLISHED)
-            continue;
-        if (!s_link_belongs_to_net(l_link, l_net, l_primary_cluster))
-            continue;
-        if (dap_cluster_member_find_unsafe(l_primary_cluster, &l_link->addr))
-        {
-            l_ret = true;
-            break;
-        }
-    }
-    pthread_rwlock_unlock(&s_link_manager->links_lock);
-    return l_ret;
-}
-
-/**
- * @brief Log uplink snapshot to diagnose NET_STATE_LINKS_CONNECTING stalls
- */
-void dap_link_manager_log_uplinks_connecting_diag(uint64_t a_net_id)
-{
-    dap_return_if_pass_err(!s_link_manager, s_init_error);
-    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    dap_return_if_pass(!l_net || !l_net->active || !l_net->link_clusters);
-
-    dap_cluster_t *l_primary_cluster = (dap_cluster_t *)l_net->link_clusters->data;
-    dap_time_t l_now = dap_time_now();
-    size_t l_required = l_net->min_links_num;
-    size_t l_established = 0, l_connecting = 0, l_disconnected = 0;
-    size_t l_established_cluster_skip = 0, l_established_delay_skip = 0;
-    size_t l_no_host = 0, l_pending_outbound = 0;
-    size_t l_uplinks_pending = s_net_uplinks_count(l_net, true);
-    size_t l_established_official = dap_link_manager_established_uplinks_count(a_net_id);
-
-    dap_string_t *l_report = dap_string_new(NULL);
-    dap_string_append_printf(l_report,
-                             "Links connecting diag net 0x%016" DAP_UINT64_FORMAT_x
-                             ": required=%zu manager_active=%d max_attempts=%u reconnect_delay=%us\n",
-                             a_net_id, l_required, s_link_manager->active,
-                             s_link_manager->max_attempts_num, s_link_manager->reconnect_delay);
-
-    pthread_rwlock_rdlock(&s_link_manager->links_lock);
-    dap_string_append_printf(l_report,
-                             "  cluster_members=%zu pending_uplinks=%zu needed_new=%zu established_official=%zu\n",
-                             dap_cluster_members_count(l_primary_cluster),
-                             l_uplinks_pending,
-                             l_required > l_uplinks_pending ? l_required - l_uplinks_pending : (size_t)0,
-                             l_established_official);
-
-    dap_link_t *l_link = NULL, *l_tmp = NULL;
-    HASH_ITER(hh, s_link_manager->links, l_link, l_tmp)
-    {
-        if (!s_link_belongs_to_net(l_link, l_net, l_primary_cluster))
-            continue;
-
-        if (!l_link->is_uplink && l_link->uplink.client)
-            ++l_pending_outbound;
-
-        bool l_in_cluster = dap_cluster_member_find_unsafe(l_primary_cluster, &l_link->addr) != NULL;
-        const char *l_host = "?";
-        uint16_t l_port = 0;
-        const char *l_stage = "N/A";
-        const char *l_stage_status = "N/A";
-        if (l_link->uplink.client)
-        {
-            l_host = l_link->uplink.client->link_info.uplink_addr[0]
-                ? l_link->uplink.client->link_info.uplink_addr : "?";
-            l_port = l_link->uplink.client->link_info.uplink_port;
-            l_stage = dap_client_get_stage_str(l_link->uplink.client);
-            l_stage_status = dap_client_get_stage_status_str(l_link->uplink.client);
-            if (!l_link->uplink.client->link_info.uplink_port)
-                ++l_no_host;
-        }
-
-        dap_time_t l_wait = l_link->uplink.start_after > l_now ? l_link->uplink.start_after - l_now : 0;
-        const char *l_note = "";
-        if (l_link->uplink.state == LINK_STATE_ESTABLISHED)
-        {
-            ++l_established;
-            if (l_in_cluster)
-            {
-                ++l_established_cluster_skip;
-                l_note = " in_cluster";
-            }
-            else if (l_wait)
-            {
-                ++l_established_delay_skip;
-                l_note = " connected_cb_skipped: reconnect_delay";
-            }
-        }
-        else if (l_link->uplink.state == LINK_STATE_CONNECTING)
-            ++l_connecting;
-        else
-            ++l_disconnected;
-
-        dap_string_append_printf(l_report,
-                                 "  link " NODE_ADDR_FP_STR " is_uplink=%d %s:%hu state=%s cluster=%s"
-                                 " client=%s/%s attempts=%u wait=%" DAP_UINT64_FORMAT_U "s%s\n",
-                                 NODE_ADDR_FP_ARGS_S(l_link->addr), (int)l_link->is_uplink,
-                                 l_host, l_port,
-                                 s_link_state_name(l_link->uplink.state),
-                                 l_in_cluster ? "yes" : "no",
-                                 l_stage ? l_stage : "?", l_stage_status ? l_stage_status : "?",
-                                 l_link->uplink.attempts_count, (uint64_t)l_wait, l_note);
-    }
-    pthread_rwlock_unlock(&s_link_manager->links_lock);
-
-    dap_string_append_printf(l_report,
-                             "  summary: established=%zu/%zu (official=%zu) connecting=%zu disconnected=%zu"
-                             " pending_outbound=%zu no_host=%zu cluster_cb_skip=%zu delay_cb_skip=%zu\n",
-                             l_established, l_required, l_established_official, l_connecting, l_disconnected,
-                             l_pending_outbound, l_no_host, l_established_cluster_skip, l_established_delay_skip);
-
-    if (l_established >= l_required && l_established_cluster_skip)
-        dap_string_append(l_report,
-                          "  likely cause: enough ESTABLISHED uplinks but state machine not advanced to LINKS_ESTABLISHED"
-                          " (nodes still in link cluster after reconnect)\n");
-    else if (l_established < l_required && !l_connecting && l_disconnected)
-        dap_string_append(l_report,
-                          "  likely cause: uplinks failed or waiting reconnect_delay;"
-                          " check HTTP/stream handshake errors in log\n");
-    else if (l_established < l_required && l_no_host)
-        dap_string_append(l_report,
-                          "  likely cause: missing host/port in GDB or permanent_nodes config\n");
-    else if (l_established < l_required && !l_uplinks_pending)
-        dap_string_append(l_report,
-                          "  likely cause: not enough pending uplinks; balancer may return no new nodes\n");
-
-    log_it(L_WARNING, "[TEMP_DEBUG] %s", l_report->str);
-    dap_string_free(l_report, true);
-}
-
-void dap_link_manager_log_all_connecting_diag(void)
-{
-    dap_return_if_pass_err(!s_link_manager, s_init_error);
-    for (dap_list_t *l_item = s_link_manager->nets; l_item; l_item = l_item->next)
-    {
-        dap_managed_net_t *l_net = l_item->data;
-        if (!l_net || !l_net->active)
-            continue;
-        size_t l_established = dap_link_manager_established_uplinks_count(l_net->id);
-        if (l_established >= l_net->min_links_num && !s_net_has_established_cluster_skip(l_net->id))
-            continue;
-        dap_link_manager_log_uplinks_connecting_diag(l_net->id);
-    }
-}
-
-/* === TEMP_DEBUG_LINKS_CONNECTING: END === */
 
 /**
  * @brief forming group name for each net
@@ -526,10 +274,6 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     s_max_attempts_num = dap_config_get_item_uint32_default(g_config, "link_manager", "max_attempts_num", s_max_attempts_num);
     s_reconnect_delay = dap_config_get_item_uint32_default(g_config, "link_manager", "reconnect_delay", s_reconnect_delay);
-    /* === TEMP_DEBUG_LINKS_CONNECTING: START (temporary, remove after investigation) === */
-    s_links_connecting_diag_interval = dap_config_get_item_uint32_default(g_config, "link_manager", "links_connecting_diag_interval",
-                                                                          s_links_connecting_diag_interval);
-    /* === TEMP_DEBUG_LINKS_CONNECTING: END === */
     s_debug_more = dap_config_get_item_bool_default(g_config,"link_manager","debug_more", s_debug_more);
     if (!(s_query_thread = dap_proc_thread_get_auto())) {
         log_it(L_ERROR, "Can't choose query thread on link manager");
@@ -891,26 +635,21 @@ void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
                     l_link->link_manager->callbacks.connected(l_link, l_net->id);
             }
         }
-        s_temp_debug_log_link("client_connected_cb OK", l_link, NULL);
     } else {
         log_it(L_ERROR, "Link with "NODE_ADDR_FP_STR" already dropped!", NODE_ADDR_FP_ARGS(l_addr));
-        s_temp_debug_log_client("client_connected_cb MISS link gone", a_client, NULL);
     }
     pthread_rwlock_unlock(&s_link_manager->links_lock);
 }
 
 void s_link_drop(dap_link_t *a_link, bool a_disconnected)
 {
-    s_temp_debug_log_link(a_disconnected ? "link_drop disconnected" : "link_drop error", a_link, NULL);
     if (a_disconnected) {
         a_link->uplink.state = LINK_STATE_DISCONNECTED;
         a_link->uplink.start_after = dap_time_now() + a_link->link_manager->reconnect_delay;
         if (++a_link->uplink.attempts_count < a_link->link_manager->max_attempts_num) {
-            s_temp_debug_log_link("link_drop retry scheduled", a_link, "go_stage BEGIN");
             dap_client_go_stage(a_link->uplink.client, STAGE_BEGIN, NULL);
             return;
         }
-        s_temp_debug_log_link("link_drop attempts exhausted", a_link, NULL);
         if (a_link->link_manager->callbacks.disconnected) {
             dap_list_t *it, *tmp;
             DL_FOREACH_SAFE(a_link->uplink.associated_nets, it, tmp) {
@@ -935,10 +674,8 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
             }
         }
         if (!a_link->active_clusters && !a_link->uplink.associated_nets && !a_link->static_clusters) {
-            s_temp_debug_log_link("link_drop delete link", a_link, NULL);
             s_link_delete(&a_link, false, false);
         } else {
-            s_temp_debug_log_link("link_drop reset client", a_link, "go_stage BEGIN keep link");
             dap_client_go_stage(a_link->uplink.client, STAGE_BEGIN, NULL);
         }
         if (a_link)
@@ -985,8 +722,6 @@ bool s_link_drop_callback(void *a_arg)
 void s_client_error_callback(dap_client_t *a_client, void *a_arg)
 {
     dap_return_if_pass(!a_client);
-    s_temp_debug_log_client(a_arg ? "client_error_cb disconnected" : "client_error_cb error",
-                            a_client, DAP_LINK(a_client) ? NULL : "no link inheritor");
     dap_return_if_pass(!DAP_LINK(a_client));
     dap_link_t *l_link = DAP_LINK(a_client);
     assert(l_link->uplink.client == a_client);
@@ -1048,8 +783,6 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
             l_drop_io = true;
     }
     if (l_drop_io) {
-        s_temp_debug_log_link(l_client_del ? "link_delete drop client" : "link_delete drop orphan io",
-                              l_link, NULL);
         pthread_rwlock_unlock(&s_link_manager->links_lock);
         s_link_drop_io_without_lock(l_client_del, l_client_uuid, &l_link_addr);
         pthread_rwlock_wrlock(&s_link_manager->links_lock);
@@ -1093,7 +826,6 @@ static void s_link_connect(dap_link_t *a_link)
     }
     log_it(L_INFO, "Connecting to node " NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(a_link->uplink.client->link_info.node_addr),
                                     a_link->uplink.client->link_info.uplink_addr, a_link->uplink.client->link_info.uplink_port);
-    s_temp_debug_log_link("link_connect start", a_link, "go_stage STREAM_STREAMING");
     dap_client_go_stage(a_link->uplink.client, STAGE_STREAM_STREAMING, s_client_connected_callback);
 }
 
@@ -1115,9 +847,6 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
                  l_net_item;
                  l_net_item = l_net_item->next) {
                 dap_managed_net_t *l_net = l_net_item->data;
-                if (dap_cluster_member_find_unsafe((dap_cluster_t *)l_net->link_clusters->data,
-                                                   &it->addr))
-                    s_temp_debug_log_link("wake_up connected_cb", it, "already in cluster");
                 a_link_manager->callbacks.connected(it, l_net->id);
             }
         }
@@ -1130,11 +859,9 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
             continue;
         if (it->uplink.start_after >= l_now)
         {
-            s_temp_debug_log_link("wake_up connect delayed", it, "reconnect_delay");
             continue;
         }
         if (dap_client_get_stage(it->uplink.client) != STAGE_BEGIN) {
-            s_temp_debug_log_link("wake_up reset client stage", it, "not BEGIN");
             dap_client_go_stage(it->uplink.client, STAGE_BEGIN, NULL);
             debug_if(s_debug_more, L_ERROR, "Client " NODE_ADDR_FP_STR " state is not BEGIN, connection will start on next iteration",
                                                     NODE_ADDR_FP_ARGS_S(it->addr));
@@ -1148,11 +875,10 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
             else {
                 log_it(L_WARNING, "Can't find node " NODE_ADDR_FP_STR " in node list and have no predefined data for it, can't connect",
                                             NODE_ADDR_FP_ARGS_S(it->addr));
-                s_temp_debug_log_link("wake_up drop no host", it, NULL);
                 s_link_drop(it, true);
             }
         } else
-            s_temp_debug_log_link("wake_up fill_net_info ok", it, "host resolved, wait ready flag");
+            debug_if(s_debug_more, L_DEBUG, "fill_net_info ok, host resolved, wait ready flag");
     }
     pthread_rwlock_unlock(&a_link_manager->links_lock);
 }
@@ -1170,7 +896,7 @@ void s_links_request(dap_link_manager_t *a_link_manager)
         if (l_net->active ) {
             l_net->uplinks = s_net_uplinks_count(l_net, true);
             if (a_link_manager->callbacks.link_request && l_net->uplinks < l_net->min_links_num) {
-                log_it(L_INFO, "[TEMP_DEBUG] links_request net 0x%016" DAP_UINT64_FORMAT_x
+                debug_if(s_debug_more, L_DEBUG, "links_request net 0x%016" DAP_UINT64_FORMAT_x
                        " pending=%u required=%u", l_net->id, (unsigned)l_net->uplinks, l_net->min_links_num);
                 a_link_manager->callbacks.link_request(l_net->id);
             }
@@ -1198,20 +924,6 @@ void s_update_states(void *a_arg)
         s_links_wake_up(l_link_manager);
     else
         s_links_request(l_link_manager);
-    /* === TEMP_DEBUG_LINKS_CONNECTING: START (temporary, remove after investigation) === */
-    {
-        static dap_time_t s_last_connecting_diag = 0;
-        if (l_wakeup_mode && s_links_connecting_diag_interval)
-        {
-            dap_time_t l_now = dap_time_now();
-            if (!s_last_connecting_diag || l_now >= s_last_connecting_diag + s_links_connecting_diag_interval)
-            {
-                s_last_connecting_diag = l_now;
-                dap_link_manager_log_all_connecting_diag();
-            }
-        }
-    }
-    /* === TEMP_DEBUG_LINKS_CONNECTING: END === */
     l_wakeup_mode = !l_wakeup_mode;
 }
 
@@ -1337,7 +1049,6 @@ static bool s_link_update_callback(void *a_arg)
                                                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);
     if (l_link->uplink.ready) {
         l_link->uplink.ready = false;
-        s_temp_debug_log_link("link_update auto connect", l_link, NULL);
         s_link_connect(l_link);
     }
 safe_ret:
