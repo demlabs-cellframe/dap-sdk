@@ -33,6 +33,12 @@ typedef struct chipmunk_ntt_ctx {
     int32_t          psi_inv;   /* psi^{-1} mod q */
     int32_t          omega;     /* psi^2 = primitive N-th root */
     int32_t          omega_inv; /* omega^{-1} mod q */
+    /* Pre-computed twiddle tables in standard form for the scalar CT-DIT / GS-DIF.
+     * Avoids chipmunk_field_pow_q per stage. */
+    int32_t         *ct_twiddles;
+    int32_t         *gs_twiddles;
+    /* Barrett constant: 1.0/q for fast modular reduction in inner loop. */
+    double           inv_q;
 } chipmunk_ntt_ctx_t;
 
 /**

@@ -227,12 +227,56 @@ int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
     a_ctx->omega     = l_omega;
     a_ctx->omega_inv = l_omega_inv;
 
+    /* Pre-compute twiddle tables for CT-DIT / GS-DIF (standard form).
+     * Avoids chipmunk_field_pow_q per stage — just table lookups. */
+    int32_t *l_ct = (int32_t *)calloc(512, sizeof(int32_t));
+    int32_t *l_gs = (int32_t *)calloc(512, sizeof(int32_t));
+    if (!l_ct || !l_gs) { free(l_ct); free(l_gs); return -1; }
+    /* CT twiddles: len = 2, 4, ..., N (small to large, matching CT loop) */
+    {
+        int l_off = 0;
+        for (int l_len = 2; l_len <= (int)CHIPMUNK_N; l_len <<= 1) {
+            int l_half = l_len / 2;
+            int32_t l_w = chipmunk_field_pow_q(l_omega, (uint32_t)(CHIPMUNK_N / l_len), q);
+            int32_t l_wn = 1;
+            for (int j = 0; j < l_half; ++j) {
+                l_ct[l_off + j] = l_wn;
+                l_wn = (int32_t)(((int64_t)l_wn * l_w) % (int64_t)q);
+            }
+            l_off += l_half;
+        }
+    }
+    /* GS twiddles: len = N, N/2, ..., 2 (large to small, matching GS loop) */
+    {
+        int l_off = 0;
+        for (int l_len = (int)CHIPMUNK_N; l_len >= 2; l_len >>= 1) {
+            int l_half = l_len / 2;
+            int32_t l_w_inv = chipmunk_field_pow_q(l_omega_inv, (uint32_t)(CHIPMUNK_N / l_len), q);
+            int32_t l_wn_inv = 1;
+            for (int j = 0; j < l_half; ++j) {
+                l_gs[l_off + j] = l_wn_inv;
+                l_wn_inv = (int32_t)(((int64_t)l_wn_inv * l_w_inv) % (int64_t)q);
+            }
+            l_off += l_half;
+        }
+    }
+    a_ctx->ct_twiddles = l_ct;
+    a_ctx->gs_twiddles = l_gs;
+    a_ctx->inv_q = 1.0 / (double)q;
+
+    log_it(L_DEBUG, "chipmunk_ntt: per-q params computed: q=%lu R/q=%d 1/N=%d psi=%d omega=%d",
+           (unsigned long)q, l_R_mod_q, l_one_over_n, l_psi_cached, l_omega);
+
     return 0;
 }
 
 void chipmunk_ntt_ctx_free(chipmunk_ntt_ctx_t *a_ctx)
 {
     if (!a_ctx || !a_ctx->owns_tables) return;
+    free(a_ctx->ct_twiddles);
+    free(a_ctx->gs_twiddles);
+    a_ctx->ct_twiddles = NULL;
+    a_ctx->gs_twiddles = NULL;
     if (a_ctx->params.zetas) {
         dap_memwipe((void*)a_ctx->params.zetas, 1024 * sizeof(int32_t));
         free((void*)a_ctx->params.zetas);
@@ -255,11 +299,23 @@ void chipmunk_ntt_ctx_free(chipmunk_ntt_ctx_t *a_ctx)
  * The cyclic NTT uses Cooley-Tukey with standard twiddle assignment.
  * ------------------------------------------------------------------------- */
 
-/* Fast cyclic NTT using iterative Cooley-Tukey (in-place, natural order).
- * Uses omega (primitive N-th root) with bit-reversed twiddle walk. */
-static void s_cyclic_ct_ntt(int32_t a_r[CHIPMUNK_N], int32_t omega, uint64_t q)
+/* Barrett fast-mod: x mod q using pre-computed 1.0/q.
+ * Replaces expensive 64-bit % q with a floating-point multiply.
+ * Correct for |x| < q^2 ≈ 10^13 (fits in double mantissa). */
+static inline int32_t s_barrett_mod(int64_t x, int32_t q, double inv_q)
 {
-    int32_t l_q = (int32_t)q;
+    int64_t r = x - (int64_t)((double)x * inv_q) * q;
+    if (r >= q)  r -= q;
+    if (r < 0)   r += q;
+    return (int32_t)r;
+}
+
+/* Fast cyclic NTT using iterative Cooley-Tukey (in-place, natural order).
+ * Uses pre-computed twiddle tables and Barrett reduction. */
+static void s_cyclic_ct_ntt(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    int32_t l_q = (int32_t)a_ctx->q;
+    double l_inv_q = a_ctx->inv_q;
     /* Bit-reverse the input */
     for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
         int bit = CHIPMUNK_N >> 1;
@@ -269,45 +325,41 @@ static void s_cyclic_ct_ntt(int32_t a_r[CHIPMUNK_N], int32_t omega, uint64_t q)
             int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
         }
     }
-    /* CT butterflies */
+    /* CT butterflies with pre-computed twiddles and Barrett reduction */
+    int l_off = 0;
     for (int len = 2; len <= CHIPMUNK_N; len <<= 1) {
-        int32_t w = chipmunk_field_pow_q(omega, CHIPMUNK_N / len, q);
+        int l_half = len / 2;
         for (int i = 0; i < CHIPMUNK_N; i += len) {
-            int32_t wn = 1;
-            for (int j = 0; j < len / 2; j++) {
+            for (int j = 0; j < l_half; j++) {
                 int32_t u = a_r[i + j];
-                int64_t v = ((int64_t)a_r[i + j + len / 2] * wn) % l_q;
-                int32_t iv = (int32_t)v;
-                if (iv < 0) iv += l_q;
-                int64_t a_val = ((int64_t)u + iv) % l_q;
-                int64_t b_val = ((int64_t)u - iv) % l_q;
-                a_r[i + j] = (int32_t)(a_val < 0 ? a_val + l_q : a_val);
-                a_r[i + j + len / 2] = (int32_t)(b_val < 0 ? b_val + l_q : b_val);
-                wn = (int32_t)(((int64_t)wn * w) % l_q);
+                int32_t wn = a_ctx->ct_twiddles[l_off + j];
+                int32_t v = s_barrett_mod((int64_t)a_r[i + j + l_half] * wn, l_q, l_inv_q);
+                a_r[i + j]            = s_barrett_mod((int64_t)u + v, l_q, l_inv_q);
+                a_r[i + j + l_half]   = s_barrett_mod((int64_t)u - v, l_q, l_inv_q);
             }
         }
+        l_off += l_half;
     }
 }
 
 /* Fast cyclic inverse NTT (GS butterflies, natural order output). */
-static void s_cyclic_gs_invntt(int32_t a_r[CHIPMUNK_N], int32_t omega_inv, uint64_t q)
+static void s_cyclic_gs_invntt(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 {
-    int32_t l_q = (int32_t)q;
+    int32_t l_q = (int32_t)a_ctx->q;
+    double l_inv_q = a_ctx->inv_q;
+    int l_off = 0;
     for (int len = CHIPMUNK_N; len >= 2; len >>= 1) {
-        int32_t w = chipmunk_field_pow_q(omega_inv, CHIPMUNK_N / len, q);
+        int l_half = len / 2;
         for (int i = 0; i < CHIPMUNK_N; i += len) {
-            int32_t wn = 1;
-            for (int j = 0; j < len / 2; j++) {
+            for (int j = 0; j < l_half; j++) {
                 int32_t u = a_r[i + j];
-                int32_t v = a_r[i + j + len / 2];
-                int64_t a_val = ((int64_t)u + v) % l_q;
-                int64_t diff = ((int64_t)u - v) % l_q;
-                a_r[i + j] = (int32_t)(a_val < 0 ? a_val + l_q : a_val);
-                int64_t b_val = ((int64_t)diff * wn) % l_q;
-                a_r[i + j + len / 2] = (int32_t)(b_val < 0 ? b_val + l_q : b_val);
-                wn = (int32_t)(((int64_t)wn * w) % l_q);
+                int32_t v = a_r[i + j + l_half];
+                a_r[i + j]          = s_barrett_mod((int64_t)u + v, l_q, l_inv_q);
+                int32_t wn = a_ctx->gs_twiddles[l_off + j];
+                a_r[i + j + l_half] = s_barrett_mod((int64_t)(u - v) * wn, l_q, l_inv_q);
             }
         }
+        l_off += l_half;
     }
     /* Bit-reverse output to natural order */
     for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
@@ -318,11 +370,10 @@ static void s_cyclic_gs_invntt(int32_t a_r[CHIPMUNK_N], int32_t omega_inv, uint6
             int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
         }
     }
-    /* Scale by 1/N */
-    int32_t n_inv = chipmunk_field_inv_q(CHIPMUNK_N, q);
+    /* Scale by 1/N with Barrett reduction */
+    int32_t l_n_inv = chipmunk_field_inv_q(CHIPMUNK_N, a_ctx->q);
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t v = ((int64_t)a_r[i] * n_inv) % l_q;
-        a_r[i] = (int32_t)(v < 0 ? v + l_q : v);
+        a_r[i] = s_barrett_mod((int64_t)a_r[i] * l_n_inv, l_q, l_inv_q);
     }
 }
 
@@ -331,35 +382,35 @@ void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 {
     if (!a_ctx || a_ctx->psi == 0) return;  /* invalid ctx — no-op */
     int32_t l_q = (int32_t)a_ctx->q;
+    double l_inv_q = a_ctx->inv_q;
     int32_t l_psi = a_ctx->psi;
 
     /* Pre-multiply by psi^j to convert negacyclic → cyclic */
     int32_t l_psi_j = 1;
     for (int j = 0; j < CHIPMUNK_N; j++) {
-        int64_t v = ((int64_t)a_r[j] * l_psi_j) % l_q;
-        a_r[j] = (int32_t)(v < 0 ? v + l_q : v);
-        l_psi_j = (int32_t)(((int64_t)l_psi_j * l_psi) % l_q);
+        a_r[j] = s_barrett_mod((int64_t)a_r[j] * l_psi_j, l_q, l_inv_q);
+        l_psi_j = s_barrett_mod((int64_t)l_psi_j * l_psi, l_q, l_inv_q);
     }
 
-    /* omega = psi^2 (primitive N-th root) */
-    s_cyclic_ct_ntt(a_r, a_ctx->omega, a_ctx->q);
+    /* omega = psi^2 (primitive N-th root) — use optimized CT-DIT with Barrett */
+    s_cyclic_ct_ntt(a_r, a_ctx);
 }
 
 void chipmunk_invntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
 {
     if (!a_ctx || a_ctx->psi == 0) return;  /* invalid ctx — no-op */
     int32_t l_q = (int32_t)a_ctx->q;
+    double l_inv_q = a_ctx->inv_q;
     int32_t l_psi_inv = a_ctx->psi_inv;
 
-    /* Inverse cyclic NTT */
-    s_cyclic_gs_invntt(a_r, a_ctx->omega_inv, a_ctx->q);
+    /* Inverse cyclic NTT — use optimized GS-DIF with Barrett */
+    s_cyclic_gs_invntt(a_r, a_ctx);
 
     /* Post-multiply by psi^{-j} to convert cyclic → negacyclic */
     int32_t l_psi_inv_j = 1;
     for (int j = 0; j < CHIPMUNK_N; j++) {
-        int64_t v = ((int64_t)a_r[j] * l_psi_inv_j) % l_q;
-        a_r[j] = (int32_t)(v < 0 ? v + l_q : v);
-        l_psi_inv_j = (int32_t)(((int64_t)l_psi_inv_j * l_psi_inv) % l_q);
+        a_r[j] = s_barrett_mod((int64_t)a_r[j] * l_psi_inv_j, l_q, l_inv_q);
+        l_psi_inv_j = s_barrett_mod((int64_t)l_psi_inv_j * l_psi_inv, l_q, l_inv_q);
     }
 
     /* Center to [-q/2, q/2) */
