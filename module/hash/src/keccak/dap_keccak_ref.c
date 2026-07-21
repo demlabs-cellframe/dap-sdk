@@ -29,7 +29,7 @@
 void dap_keccak_dispatch_force_resolve(void)
 {
     // Single-state keccak permutation
-    dap_hash_keccak_state_t l_dummy_state = {{{0}}};
+    dap_hash_keccak_state_t l_dummy_state = {0};
     dap_hash_keccak_permute(&l_dummy_state);
     // Keccak sponge
     (void)dap_keccak_sponge_resolve();
