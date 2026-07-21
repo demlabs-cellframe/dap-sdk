@@ -885,11 +885,6 @@ dap_enc_key_callbacks_t s_callbacks[]={
  */
 int dap_enc_key_init()
 {
-    // Force-resolve all keccak dispatch pointers to prevent NULL dereference
-    // under -O3 --gc-sections --strip-all (lazy dispatch optimised away)
-    extern void dap_keccak_dispatch_force_resolve(void);
-    dap_keccak_dispatch_force_resolve();
-
 #ifdef DAP_PQRL
     if( dap_pqrl_init(s_callbacks) != 0 )
         return -1;

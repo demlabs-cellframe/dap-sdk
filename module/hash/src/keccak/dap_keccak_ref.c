@@ -18,24 +18,6 @@
 
 #include <string.h>
 #include "dap_hash_keccak.h"
-#include "dap_hash_keccak_x4.h"
-#include "dap_hash_shake_x4.h"
-
-// ============================================================================
-// Force resolve all static inline dispatch pointers
-// Prevents NULL pointer dereference when compiler optimises away the
-// lazy-resolve check in DAP_DISPATCH_INLINE_CALL under -O3 --gc-sections
-// ============================================================================
-void dap_keccak_dispatch_force_resolve(void)
-{
-    // Single-state keccak permutation
-    dap_hash_keccak_permute((dap_hash_keccak_state_t[]){ {0} });
-    // Keccak sponge
-    (void)dap_keccak_sponge_resolve();
-    // x4 permutation (used by Dilithium expand_mat → SHAKE128 x4)
-    dap_keccak_x4_state_t l_dummy = {0};
-    dap_keccak_x4_permute(&l_dummy);
-}
 
 // ============================================================================
 // Compile-time constants
