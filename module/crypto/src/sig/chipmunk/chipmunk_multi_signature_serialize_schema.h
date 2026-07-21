@@ -152,6 +152,16 @@ void chipmunk_multi_signature_wire_release(
         chipmunk_multi_signature_wire_t *a_wire);
 
 /**
+ * @brief Release wire struct INCLUDING serializer-owned proof nodes.
+ *
+ * Use on deserialization error paths where the serializer allocated
+ * proof node buffers that were never transferred to the runtime struct.
+ * Do NOT use on serialization paths where nodes are borrowed from runtime.
+ */
+void chipmunk_multi_signature_wire_release_with_nodes(
+        chipmunk_multi_signature_wire_t *a_wire);
+
+/**
  * @brief Take an owned wire mirror (post-deserialise) and lift it into
  *        the runtime struct.
  *
