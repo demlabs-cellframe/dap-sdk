@@ -104,6 +104,14 @@ static bool s_allowed_cmd_check(char *a_buf) {
     const char **l_allowed_cmds = dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL);
     bool l_allowed = false;
 
+    log_it(L_NOTICE, "allowed_cmd_check: method=\"%s\"", l_method);
+    if (l_allowed_cmds) {
+        for (size_t i = 0; l_allowed_cmds[i]; ++i)
+            log_it(L_NOTICE, "allowed_cmd_check: allowed[%zu]=\"%s\"", i, l_allowed_cmds[i]);
+    } else {
+        log_it(L_WARNING, "allowed_cmd_check: allowed_cmd is NULL");
+    }
+
     char l_full_cmd[512];
     char l_param_buf[512] = {0};
 
@@ -125,6 +133,7 @@ static bool s_allowed_cmd_check(char *a_buf) {
         snprintf(l_full_cmd, sizeof(l_full_cmd), "%s", l_method);
     }
 
+    log_it(L_NOTICE, "allowed_cmd_check: method=\"%s\" full_cmd=\"%s\"", l_method, l_full_cmd);
     if (l_allowed_cmds) {
         for (size_t i = 0; l_allowed_cmds[i]; ++i) {
             if (s_allowed_cmd_match(l_allowed_cmds[i], l_full_cmd)) {
