@@ -119,6 +119,31 @@ static void test_ring_keygen_sign_verify(void)
     l_rc = chipmunk_ring_verify(&l_sig, l_par, &l_ring, l_bad_msg, sizeof(l_bad_msg));
     dap_assert(l_rc != 0, "wrong message → verify fails");
 
+    /* Wrong ring (Alice removed from position 0) → verify should fail */
+    chipmunk_ring_table_t l_wrong_ring = {0};
+    l_wrong_ring.N = 8;
+    l_wrong_ring.pks = DAP_NEW_Z_COUNT(chipmunk_ring_pk_t, 8);
+    for (uint32_t i = 0; i < 8; ++i) {
+        l_wrong_ring.pks[i].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
+    }
+    /* Copy dummy keys for all positions (no Alice) */
+    for (uint32_t idx = 0; idx < 8; ++idx) {
+        chipmunk_ring_keypair_t l_dummy_kp = {0};
+        uint8_t l_dummy_seed[32];
+        for (int i = 0; i < 32; ++i) l_dummy_seed[i] = (uint8_t)(0x20 * idx + i);
+        chipmunk_ring_keygen(&l_dummy_kp, l_par, l_dummy_seed);
+        for (uint32_t i = 0; i < l_par->k; ++i) {
+            lotrs_poly_copy(l_wrong_ring.pks[idx].a_hat.polys[i], l_dummy_kp.pk.a_hat.polys[i], l_par);
+        }
+        chipmunk_ring_keypair_free(&l_dummy_kp);
+    }
+    l_rc = chipmunk_ring_verify(&l_sig, l_par, &l_wrong_ring, l_msg, sizeof(l_msg));
+    dap_assert(l_rc != 0, "wrong ring (Alice not in ring) → verify fails");
+    for (uint32_t i = 0; i < 8; ++i) {
+        lotrs_polyvec_free(&l_wrong_ring.pks[i].a_hat);
+    }
+    DAP_DELETE(l_wrong_ring.pks);
+
     /* Cleanup */
     chipmunk_ring_sig_free(&l_sig);
     chipmunk_ring_keypair_free(&l_alice_kp);
@@ -173,6 +198,27 @@ static void test_snark_prove_verify(void)
     l_rc = chipmunk_snark_verify(&l_proof, &l_ctx, &l_bad_stmt);
     dap_assert(l_rc != 1, "wrong message → SNARK verify fails");
 
+    /* Wrong ring size → fail */
+    chipmunk_snark_statement_t l_bad_ring_stmt = l_stmt;
+    l_bad_ring_stmt.ring_size = 2; /* Original was 4 */
+    l_rc = chipmunk_snark_verify(&l_proof, &l_ctx, &l_bad_ring_stmt);
+    dap_assert(l_rc != 1, "wrong ring size → SNARK verify fails");
+
+    /* Wrong signer index in witness → verify should fail
+     * (proof was created for index 2, but statement context changed) */
+    chipmunk_snark_witness_t l_bad_witness = l_witness;
+    l_bad_witness.signer_index = 0; /* Different from original */
+    chipmunk_snark_proof_t l_bad_proof;
+    memset(&l_bad_proof, 0, sizeof(l_bad_proof));
+    l_rc = chipmunk_snark_prove(&l_bad_proof, &l_ctx, &l_stmt, &l_bad_witness);
+    if (l_rc == 0) {
+        /* If prove succeeded with different index, verify with original stmt should fail */
+        l_rc = chipmunk_snark_verify(&l_bad_proof, &l_ctx, &l_stmt);
+        /* This may or may not fail depending on SNARK construction */
+        log_it(L_INFO, "Different signer index verify: %d", l_rc);
+    }
+    chipmunk_snark_proof_free(&l_bad_proof);
+
     chipmunk_snark_proof_free(&l_proof);
     chipmunk_snark_ctx_free(&l_ctx);
     log_it(L_INFO, "SNARK test cleanup done");
@@ -226,6 +272,30 @@ static void test_pedersen_range_proof_pipeline(void)
         }
     }
     dap_assert(l_diff, "homomorphic sum differs from individual");
+
+    /* Same amount, same blinding → same commitment (deterministic) */
+    chipmunk_pedersen_commit_t l_c_dup;
+    chipmunk_pedersen_commit(&l_c_dup, &l_params, l_amount_bytes, l_rand);
+    int l_same = 1;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && l_same; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && l_same; ++j) {
+            if (l_commit.C[i].coeffs[j] != l_c_dup.C[i].coeffs[j]) l_same = 0;
+        }
+    }
+    dap_assert(l_same, "same amount + same blinding → same commitment");
+
+    /* Same amount, DIFFERENT blinding → different commitment */
+    uint8_t l_rand2[32];
+    for (int i = 0; i < 32; ++i) l_rand2[i] = 0xBB + i;
+    chipmunk_pedersen_commit_t l_c_diff;
+    chipmunk_pedersen_commit(&l_c_diff, &l_params, l_amount_bytes, l_rand2);
+    int l_amount_differs = 0;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && !l_amount_differs; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && !l_amount_differs; ++j) {
+            if (l_commit.C[i].coeffs[j] != l_c_diff.C[i].coeffs[j]) l_amount_differs = 1;
+        }
+    }
+    dap_assert(l_amount_differs, "same amount + different blinding → different commitment");
 
     chipmunk_range_proof_free(&l_proof);
 }
