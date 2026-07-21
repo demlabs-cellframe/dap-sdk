@@ -90,7 +90,7 @@ static bool s_allowed_cmd_check(char *a_buf) {
     enum json_tokener_error jterr;
     const char *l_method;
     json_object *jobj = json_tokener_parse_verbose(a_buf, &jterr),
-                *jobj_method = NULL;
+                *jobj_method = NULL, *jobj_params = NULL;
     if ( jterr != json_tokener_success ) 
         return log_it(L_ERROR, "Can't parse json command, error %s", json_tokener_error_desc(jterr)), false;
     if ( json_object_object_get_ex(jobj, "method", &jobj_method) )
@@ -103,15 +103,41 @@ static bool s_allowed_cmd_check(char *a_buf) {
 
     const char **l_allowed_cmds = dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL);
     bool l_allowed = false;
+
+    char l_full_cmd[512];
+    char l_param_buf[512] = {0};
+
+    if ( json_object_object_get_ex(jobj, "params", &jobj_params)
+         && json_object_is_type(jobj_params, json_type_array)
+         && json_object_array_length(jobj_params) > 0 ) {
+        json_object *l_param0 = json_object_array_get_idx(jobj_params, 0);
+        const char *l_param0_str = json_object_get_string(l_param0);
+        if ( l_param0_str ) {
+            strncpy(l_param_buf, l_param0_str, sizeof(l_param_buf) - 1);
+            for (char *p = l_param_buf; *p; ++p) {
+                if (*p == ';') *p = ':';
+            }
+            snprintf(l_full_cmd, sizeof(l_full_cmd), "%s", l_param_buf);
+        } else {
+            snprintf(l_full_cmd, sizeof(l_full_cmd), "%s", l_method);
+        }
+    } else {
+        snprintf(l_full_cmd, sizeof(l_full_cmd), "%s", l_method);
+    }
+
     if (l_allowed_cmds) {
         for (size_t i = 0; l_allowed_cmds[i]; ++i) {
+            if (s_allowed_cmd_match(l_allowed_cmds[i], l_full_cmd)) {
+                l_allowed = true;
+                break;
+            }
             if (s_allowed_cmd_match(l_allowed_cmds[i], l_method)) {
                 l_allowed = true;
                 break;
             }
         }
     }
-    debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method);
+    debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_full_cmd);
     json_object_put(jobj);
     return l_allowed;
 }
