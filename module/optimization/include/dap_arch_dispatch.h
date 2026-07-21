@@ -134,7 +134,7 @@ extern "C" {
  */
 #define DAP_DISPATCH_DECLARE_RESOLVE(name, ret_t, ...)   \
     typedef ret_t (*name##_fn_t)(__VA_ARGS__);           \
-    static volatile name##_fn_t name##_cached_ptr = NULL
+    static name##_fn_t name##_cached_ptr = NULL
 
 /**
  * Resolve helpers with platform prediction:
