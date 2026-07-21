@@ -8,7 +8,11 @@ add_definitions ("-D_GNU_SOURCE")
 
 file(GLOB DAP_IO_SOURCES *.c)
 file(GLOB DAP_IO_HEADERS include/*.h)
-if(WIN32)
+
+# WASM uses portable *.c with #ifdef DAP_OS_WASM — host linux/* (netlink
+# monitor, etc.) must not be compiled with emcc.
+if(DAP_WASM)
+elseif(WIN32)
     # wepoll removed - using native IOCP (DAP_EVENTS_CAPS_IOCP) since 2026
     # See dap_events_socket.h line 86: #define DAP_EVENTS_CAPS_IOCP
 elseif(LINUX OR ANDROID)
@@ -39,7 +43,9 @@ if (WIN32)
     list(APPEND IO_LIBS "ws2_32")
     set(DAP_IO_DEPS "${IO_LIBS}" CACHE INTERNAL "dap_io external dependencies")
 elseif (LINUX OR ANDROID)
-    target_include_directories(${PROJECT_NAME} INTERFACE ./linux)
+    if(NOT DAP_WASM)
+        target_include_directories(${PROJECT_NAME} INTERFACE ./linux)
+    endif()
 endif()
 
 if (${BUILD_DAP_IO_TESTS} MATCHES ON)
