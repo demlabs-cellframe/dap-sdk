@@ -1548,6 +1548,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: stream=%p, session=%p, key=%p, fragm_dec_size=%zu",
                  a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL, l_fragm_dec_size);
 
+        DAP_DEL_Z(a_stream->pkt_cache);
         a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_fragm_dec_size);
         dap_stream_fragment_pkt_t *l_fragm_pkt = (dap_stream_fragment_pkt_t*)a_stream->pkt_cache;
 
@@ -1555,12 +1556,17 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                  a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
 
         size_t l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
+        if (l_dec_pkt_size > l_fragm_dec_size) {
+            log_it(L_ERROR, "FRAG: dec_na returned %zu > buf %zu — possible heap overrun, dropping", l_dec_pkt_size, l_fragm_dec_size);
+            l_is_clean_fragments = true;
+            break;
+        }
 
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: dap_stream_pkt_read_unsafe returned l_dec_pkt_size=%zu (expected_min=%zu)",
                  l_dec_pkt_size, sizeof(dap_stream_fragment_pkt_t));
 
         if(l_dec_pkt_size == 0) {
-            debug_if(s_dump_packet_headers, L_WARNING, "Input: can't decode packet size = %zu (stream=%p)", a_pkt_size, a_stream);
+            log_it(L_WARNING, "Input: decryption returned 0 for pkt_size=%zu (stream=%p) — padding mismatch or corrupt data?", a_pkt_size, (void*)a_stream);
             l_is_clean_fragments = true;
             break;
         }
@@ -1626,9 +1632,15 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_dec_pkt_size = a_stream->buf_fragments_size_total;
         } else {
             size_t l_pkt_dec_size = dap_enc_decode_out_size(a_stream->session->key, a_pkt->hdr.size, DAP_ENC_DATA_TYPE_RAW);
+            DAP_DEL_Z(a_stream->pkt_cache);
             a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_pkt_dec_size);
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
+            if (l_dec_pkt_size > l_pkt_dec_size) {
+                log_it(L_ERROR, "DATA_PKT: dec_na returned %zu > buf %zu — possible heap overrun, dropping", l_dec_pkt_size, l_pkt_dec_size);
+                l_is_clean_fragments = true;
+                break;
+            }
         }
 
         debug_if(s_debug_more, L_DEBUG, "DATA_PKT: dec=%zu hdr=%zu ch_id=0x%02x data_size=%u",

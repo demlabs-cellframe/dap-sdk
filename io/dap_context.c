@@ -1065,8 +1065,21 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 }
 
                 if(l_cur->buf_in_size_max && l_cur->buf_in_size >= l_cur->buf_in_size_max ) {
-                    log_it(L_WARNING, "Buffer is full when there is smth to read. Its dropped! esocket %p (%"DAP_FORMAT_SOCKET")", l_cur, l_cur->socket);
-                    l_cur->buf_in_size = 0;
+                    /* Buffer full — drain existing data via read callback before
+                     * reading more.  This prevents the old path that silently
+                     * dropped the entire buf_in, which caused VPN data loss
+                     * under medium load. */
+                    if (l_cur->buf_in_size > 0 && l_cur->callbacks.read_callback) {
+                        l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
+                        if (l_cur->context == NULL)
+                            continue;
+                    }
+                    if (l_cur->buf_in_size >= l_cur->buf_in_size_max) {
+                        log_it(L_WARNING, "Buffer still full after read callback (%zu/%zu), disabling read. esocket %p (%"DAP_FORMAT_SOCKET")",
+                               l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur, l_cur->socket);
+                        dap_events_socket_set_readable_unsafe(l_cur, false);
+                        continue;
+                    }
                 }
 
                 bool l_must_read_smth = false;

@@ -1613,10 +1613,16 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
             // Pass buffer size, not just expected size
             size_t l_len = dap_enc_decode(l_tc->session_key, a_response, a_response_size,
                                    l_response, l_len_buf, l_enc_type);
-            
-            // Ensure null-termination (dap_enc_decode might not do it)
-            if (l_len < l_len_buf) l_response[l_len] = '\0';
-            else l_response[l_len_buf - 1] = '\0'; // Should not happen if size matches
+
+            if (l_len == 0 || l_len > l_len_buf) {
+                log_it(L_ERROR, "HTTP stream: dap_enc_decode returned %zu (buf=%zu) — dropping response", l_len, l_len_buf);
+                DAP_DELETE(l_response);
+                l_fsm->callback_arg = l_old_callback_arg;
+                DAP_DELETE(l_ctx);
+                return;
+            }
+
+            l_response[l_len] = '\0';
             
             debug_if(s_debug_more, L_DEBUG, "s_http_request_response: calling request_response_callback client=%p, callback=%p, len=%zu (buf=%zu)", 
                    l_client_esocket->client, (void*)l_ctx->callback, l_len, l_len_buf);
