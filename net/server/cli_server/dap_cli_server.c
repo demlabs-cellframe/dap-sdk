@@ -47,6 +47,7 @@
 #include "dap_json_rpc_errors.h"
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_response.h"
+#include "dap_cli_http_docs.h"
 
 #define LOG_TAG "dap_cli_server"
 
@@ -103,6 +104,11 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         ++l_arg->status;
     }
     case 1: {
+        if (dap_cli_http_docs_try_get(a_es, (void **)&l_arg)) {
+            a_es->buf_in_size = 0;
+            a_es->callbacks.arg = NULL;
+            return;
+        }
         static const char l_content_len_str[] = "Content-Length: ";
         l_arg->buf = strstr((char*)a_es->buf_in, l_content_len_str);
         if ( !l_arg->buf || !strpbrk(l_arg->buf, "\r\n") )
@@ -177,7 +183,8 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
         log_it(L_ERROR, "CLI server not initialized");
         return -2;
     }
-    s_cli_version = dap_config_get_item_int32_default(g_config, "cli-server", "version", s_cli_version);
+    s_cli_version = dap_config_get_item_int32_default(g_config, a_cfg_section, "version", s_cli_version);
+    dap_cli_http_docs_init(a_cfg_section);
     log_it(L_INFO, "CLI server initialized with protocol version %d", s_cli_version);
     return 0;
 }
@@ -187,6 +194,7 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
  */
 void dap_cli_server_deinit()
 {
+    dap_cli_http_docs_deinit();
     dap_server_delete(s_cli_server);
 }
 
@@ -493,6 +501,10 @@ static void *s_cli_cmd_exec(void *a_arg) {
     char    *l_ret = s_cli_cmd_exec_ex(l_arg->buf, l_arg->restricted),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                             "Content-Length: %zu\r\n"
+                                            "Content-Type: application/json\r\n"
+                                            "Access-Control-Allow-Origin: *\r\n"
+                                            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                                            "Access-Control-Allow-Headers: Content-Type\r\n"
                                             "Processing-Time: %"DAP_UINT64_FORMAT_U"\r\n"
                                             "Node-Type: %s\r\n"
                                             "Node-Version: %s\r\n\r\n"
