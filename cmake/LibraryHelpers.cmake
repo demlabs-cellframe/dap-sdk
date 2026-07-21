@@ -501,6 +501,15 @@ macro(create_object_library TARGET_NAME MODULE_LIST_VAR)
     
     # Enable position independent code for shared library
     set_property(TARGET ${TARGET_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+    # Use -fno-plt to generate direct calls instead of PLT stubs.
+    # This ensures intra-library calls (e.g. expand_mat → dilithium_poly_uniform)
+    # are resolved directly by the linker at load time, not through PLT/dynsym.
+    # Without this, internal calls may go through PLT and crash if the callee
+    # is not exported to .dynsym.
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${TARGET_NAME} PRIVATE -fno-plt)
+    endif()
     
     # Store original target_link_libraries command for later use
     # We'll override it to auto-propagate include directories
