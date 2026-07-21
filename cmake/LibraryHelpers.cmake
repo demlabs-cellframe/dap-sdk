@@ -733,6 +733,11 @@ function(create_final_shared_library)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR (CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT APPLE AND NOT ANDROID))
         # Linux with GNU or Clang
         target_link_options(${TARGET_NAME} PRIVATE -Wl,--export-dynamic)
+        # Bind internal references directly — prevents PLT stubs for intra-.so
+        # calls from resolving to 0x0 when the callee is not in .dynsym.
+        # Without this, functions like dilithium_poly_uniform (called from
+        # expand_mat within the same .so) go through PLT → GOT → 0x0.
+        target_link_options(${TARGET_NAME} PRIVATE -Wl,-Bsymbolic)
     elseif(APPLE)
         # macOS with Apple ld
         target_link_options(${TARGET_NAME} PRIVATE -Wl,-export_dynamic)
