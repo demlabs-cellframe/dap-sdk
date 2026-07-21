@@ -54,6 +54,8 @@ option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used a
 if(BUILD_SHARED)
     message("[+] DAP SDK: Building final library as SHARED (modules: static internally)")
     set(DAP_FINAL_LIB_TYPE SHARED)
+    # Prevent intra-.so PLT/GOT NULL dereference: bind internal references directly
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-Bsymbolic")
 else()
     message("[+] DAP SDK: Building final library as STATIC (modules: static internally)")
     set(DAP_FINAL_LIB_TYPE STATIC)

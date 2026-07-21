@@ -737,7 +737,7 @@ function(create_final_shared_library)
         # calls from resolving to 0x0 when the callee is not in .dynsym.
         # Without this, functions like dilithium_poly_uniform (called from
         # expand_mat within the same .so) go through PLT → GOT → 0x0.
-        target_link_options(${TARGET_NAME} PRIVATE -Wl,-Bsymbolic)
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-Bsymbolic" PARENT_SCOPE)
     elseif(APPLE)
         # macOS with Apple ld
         target_link_options(${TARGET_NAME} PRIVATE -Wl,-export_dynamic)
