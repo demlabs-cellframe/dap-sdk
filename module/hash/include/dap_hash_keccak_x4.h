@@ -45,6 +45,34 @@
 #include "dap_hash_keccak.h"
 #include "dap_arch_dispatch.h"
 #include "dap_cpu_arch.h"
+#include "dap_cpu_detect.h"
+
+/*
+ * AMD Zen4 (family 0x19): AVX-512 uses double-pumping (256-bit units),
+ * causing frequency throttling on sustained SIMD workloads.
+ * AMD Zen5 (family 0x1A): 512-bit data paths but still throttles.
+ * Cap at AVX2 for these CPUs — same approach as NTT dispatch.
+ */
+static inline void s_keccak_x4_register_tune_rules(void)
+{
+    static bool s_registered = false;
+    if (s_registered) return;
+    s_registered = true;
+
+    dap_algo_class_t l_class = dap_algo_class_register("KECCAK_X4");
+    static const dap_cpu_tune_rule_t s_rules[] = {
+        { DAP_CPU_VENDOR_AMD, 0x19, 0x19, 0x60, 0x7F,
+          0 /* patched below */, DAP_CPU_ARCH_AVX2 },
+        { DAP_CPU_VENDOR_AMD, 0x1A, 0x1A, 0x00, 0xFF,
+          0, DAP_CPU_ARCH_AVX2 },
+    };
+    dap_cpu_tune_rule_t l_rules[sizeof(s_rules) / sizeof(s_rules[0])];
+    for (size_t i = 0; i < sizeof(s_rules) / sizeof(s_rules[0]); i++) {
+        l_rules[i] = s_rules[i];
+        l_rules[i].algo_class = l_class;
+    }
+    dap_cpu_tune_add_rules(l_rules, sizeof(l_rules) / sizeof(l_rules[0]));
+}
 
 #ifdef __cplusplus
 extern "C" {
@@ -247,6 +275,7 @@ DAP_DISPATCH_DECLARE_RESOLVE(dap_keccak_x4_extract_bytes_all, void, const dap_ke
 
 static inline dap_keccak_x4_xor_bytes_all_fn_t dap_keccak_x4_xor_bytes_all_resolve(void)
 {
+    s_keccak_x4_register_tune_rules();
     dap_algo_class_t l_class = dap_algo_class_register("KECCAK_X4");
     dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
     (void)arch;
@@ -262,6 +291,7 @@ static inline dap_keccak_x4_xor_bytes_all_fn_t dap_keccak_x4_xor_bytes_all_resol
 static inline dap_keccak_x4_extract_bytes_all_fn_t
 dap_keccak_x4_extract_bytes_all_resolve(void)
 {
+    s_keccak_x4_register_tune_rules();
     dap_algo_class_t l_class = dap_algo_class_register("KECCAK_X4");
     dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
     (void)arch;
@@ -382,6 +412,7 @@ DAP_DISPATCH_DECLARE_RESOLVE(dap_keccak_x4_permute, void, dap_keccak_x4_state_t 
 
 static inline dap_keccak_x4_permute_fn_t dap_keccak_x4_permute_resolve(void)
 {
+    s_keccak_x4_register_tune_rules();
     dap_algo_class_t l_class = dap_algo_class_register("KECCAK_X4");
     dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
     (void)arch;
