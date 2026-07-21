@@ -394,8 +394,8 @@ static int s_route_request(const tls_parsed_request_t *a_req,
             return -1;
         }
 
-        strncpy(l_session->active_channels, l_channels_str,
-                sizeof(l_session->active_channels) - 1);
+        snprintf(l_session->active_channels, sizeof(l_session->active_channels),
+                 "%s", l_channels_str);
 
         /* Generate random session key */
         char *l_key_str = DAP_NEW_Z_SIZE(char, KEX_KEY_STR_SIZE + 1);
