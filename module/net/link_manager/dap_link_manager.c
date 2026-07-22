@@ -1176,7 +1176,10 @@ static bool s_link_accounting_callback(void *a_arg)
             } else {
                 for (dap_list_t *l_item = l_link->static_clusters; l_item; l_item = l_item->next) {
                     if (l_cluster == l_item->data) {
-                        assert(l_cluster->status == DAP_CLUSTER_STATUS_ENABLED);
+                        if (l_cluster->status != DAP_CLUSTER_STATUS_ENABLED) {
+                            debug_if(s_debug_more, L_DEBUG, "Skipping cluster member add: cluster status=%d (not ENABLED)", l_cluster->status);
+                            break;
+                        }
                         dap_cluster_member_add(l_cluster, l_node_addr, 0, NULL);
                         if (l_link->link_manager->callbacks.link_count_changed){
                             l_link->link_manager->callbacks.link_count_changed();
