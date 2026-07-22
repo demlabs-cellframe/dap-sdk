@@ -1918,7 +1918,7 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
-    if (!dap_context_queue_push(a_worker->queue_es_io, l_msg))
+    if (dap_context_queue_push(a_worker->queue_es_io, l_msg))
         return a_data_size;
     log_it(L_ERROR, "queue push() failed for write_mt");
     DAP_DEL_MULTY(l_msg->data, l_msg);
