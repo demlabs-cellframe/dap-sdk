@@ -1864,3 +1864,100 @@ const char *dap_link_manager_get_active_channels(void)
 {
     return s_active_channels;
 }
+
+/**
+ * @brief Update sync performance metrics for a link
+ * @param a_addr Peer address
+ * @param a_blocks_synced Number of blocks received in this update
+ * @param a_bytes_synced Bytes received in this update
+ */
+void dap_link_manager_update_sync_metrics(dap_stream_node_addr_t *a_addr, uint32_t a_blocks_synced, uint64_t a_bytes_synced)
+{
+    if (!s_link_manager || !a_addr || !a_addr->uint64)
+        return;
+    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+    dap_link_t *l_link = NULL;
+    HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
+    if (l_link) {
+        l_link->uplink.blocks_synced += a_blocks_synced;
+        l_link->uplink.bytes_synced += a_bytes_synced;
+        if (!l_link->uplink.sync_session_start)
+            l_link->uplink.sync_session_start = dap_time_now();
+    }
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
+}
+
+/**
+ * @brief Mark sync session as finished, compute rolling average
+ * @param a_addr Peer address
+ * @param a_success true if session completed normally, false if failed/stalled
+ */
+void dap_link_manager_finish_sync_session(dap_stream_node_addr_t *a_addr, bool a_success)
+{
+    if (!s_link_manager || !a_addr || !a_addr->uint64)
+        return;
+    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+    dap_link_t *l_link = NULL;
+    HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
+    if (l_link) {
+        if (!a_success)
+            l_link->uplink.sync_failures++;
+        if (l_link->uplink.sync_session_start) {
+            dap_time_t l_elapsed = dap_time_now() - l_link->uplink.sync_session_start;
+            if (l_elapsed > 0 && l_link->uplink.blocks_synced > 0) {
+                uint32_t l_bps = (uint32_t)(l_link->uplink.blocks_synced / l_elapsed);
+                /* Exponential moving average: new = 0.7 * old + 0.3 * sample */
+                if (l_link->uplink.avg_blocks_per_sec == 0)
+                    l_link->uplink.avg_blocks_per_sec = l_bps;
+                else
+                    l_link->uplink.avg_blocks_per_sec = (l_link->uplink.avg_blocks_per_sec * 7 + l_bps * 3) / 10;
+            }
+        }
+        l_link->uplink.blocks_synced = 0;
+        l_link->uplink.bytes_synced = 0;
+        l_link->uplink.sync_session_start = 0;
+    }
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
+}
+
+/**
+ * @brief Get the best peer for sync based on quality score
+ * @param a_net_id Network ID to filter links
+ * @return Address of best peer, or zero addr if no peer found
+ */
+dap_stream_node_addr_t dap_link_manager_get_best_peer_for_net(uint64_t a_net_id)
+{
+    dap_stream_node_addr_t l_result = {};
+    if (!s_link_manager)
+        return l_result;
+    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+    dap_link_t *l_link, *l_best = NULL;
+    uint32_t l_best_score = 0;
+    for (l_link = s_link_manager->links; l_link != NULL; l_link = l_link->hh.next) {
+        if (l_link->uplink.state != LINK_STATE_ESTABLISHED)
+            continue;
+        /* Check if this link is associated with the requested net */
+        bool l_found = false;
+        for (dap_list_t *it = l_link->uplink.associated_nets; it; it = it->next) {
+            dap_managed_net_t *l_net = it->data;
+            if (l_net->id == a_net_id) {
+                l_found = true;
+                break;
+            }
+        }
+        if (!l_found)
+            continue;
+        /* Score: avg_blocks_per_sec (higher is better), penalize failures */
+        uint32_t l_score = l_link->uplink.avg_blocks_per_sec;
+        if (l_link->uplink.sync_failures > 0)
+            l_score = l_score * 100 / (100 + l_link->uplink.sync_failures * 20);
+        if (l_score > l_best_score || !l_best) {
+            l_best = l_link;
+            l_best_score = l_score;
+        }
+    }
+    if (l_best)
+        l_result = l_best->addr;
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
+    return l_result;
+}
