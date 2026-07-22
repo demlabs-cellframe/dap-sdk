@@ -1875,7 +1875,7 @@ void dap_link_manager_update_sync_metrics(dap_stream_node_addr_t *a_addr, uint32
 {
     if (!s_link_manager || !a_addr || !a_addr->uint64)
         return;
-    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+    pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link = NULL;
     HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
     if (l_link) {
@@ -1896,7 +1896,7 @@ void dap_link_manager_finish_sync_session(dap_stream_node_addr_t *a_addr, bool a
 {
     if (!s_link_manager || !a_addr || !a_addr->uint64)
         return;
-    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+    pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link = NULL;
     HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
     if (l_link) {
