@@ -536,9 +536,11 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
         return;
     }
     *l_msg = (dap_worker_msg_callback_t) { .callback = a_callback, .arg = a_arg };
-    if (dap_context_queue_push(a_worker->queue_callback, l_msg))
+    if (!dap_context_queue_push(a_worker->queue_callback, l_msg)) {
         log_it(L_ERROR, "Cant push callback to worker queue: \"%s\"(code %d)",
                         dap_strerror(errno), errno);
+        DAP_DELETE(l_msg);
+    }
 }
 
 typedef struct {
