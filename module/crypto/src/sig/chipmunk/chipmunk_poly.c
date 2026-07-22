@@ -73,93 +73,6 @@ int chipmunk_poly_invntt(chipmunk_poly_t *a_poly) {
 }
 
 /**
- * @brief Add two polynomials
- */
-int chipmunk_poly_add(chipmunk_poly_t *r, const chipmunk_poly_t *a, const chipmunk_poly_t *b) {
-    if (!r || !a || !b) {
-        log_it(L_ERROR, "NULL input parameters in chipmunk_poly_add");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // **ИСПРАВЛЕНО**: используем центрированное представление как в Rust
-        int64_t l_temp = (int64_t)a->coeffs[i] + (int64_t)b->coeffs[i];
-        r->coeffs[i] = (int32_t)(l_temp % CHIPMUNK_Q);
-        
-        // Приводим к положительному представлению сначала
-        if (r->coeffs[i] < 0) {
-            r->coeffs[i] += CHIPMUNK_Q;
-        }
-        
-        // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: применяем центрированную нормализацию [-Q/2, Q/2]
-        // как в оригинальном Rust коде normalize() функция
-        if (r->coeffs[i] > CHIPMUNK_Q / 2) {
-            r->coeffs[i] -= CHIPMUNK_Q;
-        }
-    }
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief Subtract polynomials (r = a - b)
- * 
- * @param a_result Output polynomial
- * @param a_a First polynomial
- * @param a_b Second polynomial
- * @return 0 on success, negative on error
- */
-int chipmunk_poly_sub(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b) {
-    if (!a_result || !a_a || !a_b) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_sub");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // **ИСПРАВЛЕНО**: используем центрированное представление как в Rust
-        int64_t l_temp = (int64_t)a_a->coeffs[i] - (int64_t)a_b->coeffs[i];
-        a_result->coeffs[i] = (int32_t)(l_temp % CHIPMUNK_Q);
-        
-        // Приводим к положительному представлению сначала
-        if (a_result->coeffs[i] < 0) {
-            a_result->coeffs[i] += CHIPMUNK_Q;
-        }
-        
-        // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: применяем центрированную нормализацию [-Q/2, Q/2]
-        // как в оригинальном Rust коде normalize() функция
-        if (a_result->coeffs[i] > CHIPMUNK_Q / 2) {
-            a_result->coeffs[i] -= CHIPMUNK_Q;
-        }
-    }
-    
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief Multiply two polynomials in NTT form
- */
-int chipmunk_poly_pointwise(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b) {
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: Function entry");
-    
-    if (!a_result || !a_a || !a_b) {
-        log_it(L_ERROR, "NULL input parameters in chipmunk_poly_pointwise");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: Pointers validated, calling chipmunk_ntt_pointwise_montgomery");
-    log_it(L_DEBUG, "Starting pointwise multiplication in NTT domain");
-    int result = chipmunk_ntt_pointwise_montgomery(a_result->coeffs, a_a->coeffs, a_b->coeffs);
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: chipmunk_ntt_pointwise_montgomery returned %d", result);
-    
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed pointwise multiplication in NTT domain");
-        return result;
-    }
-    
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: Function exit with success");
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
  * @brief Fill polynomial with uniformly distributed coefficients
  */
 int chipmunk_poly_uniform(chipmunk_poly_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce) {
@@ -177,196 +90,32 @@ int chipmunk_poly_uniform(chipmunk_poly_t *a_poly, const uint8_t a_seed[32], uin
 }
 
 /**
- * @brief Simple coefficient decomposition for compatibility
- * @param decomp Output array [low, high]
- * @param coeff Input coefficient
- */
-static void chipmunk_poly_decompose_coeff(int32_t decomp[2], int32_t coeff) {
-    // Simple decomposition: high = coeff / 16, low = coeff % 16
-    decomp[1] = coeff / 16;  // high bits
-    decomp[0] = coeff % 16;  // low bits
-}
-
-/**
- * @brief Decompose a polynomial into high and low parts
- * 
- * @param a_out Output polynomial with high bits (w1)
- * @param a_in Input polynomial
- */
-int chipmunk_poly_highbits(uint8_t *a_output, const chipmunk_poly_t *a_poly) {
-    if (!a_output || !a_poly) {
-        return -1;
-    }
-    
-    // Согласно алгоритму Chipmunk, высокие биты упаковываются по 4 бита на коэффициент
-    // Каждый байт содержит 2 коэффициента (по 4 бита каждый)
-    // Для 256 коэффициентов нужно 128 байт
-    
-    for (int i = 0; i < CHIPMUNK_N; i += 2) {
-        int32_t l_decomp1[2], l_decomp2[2];
-        
-        // Разлагаем первый коэффициент
-        chipmunk_poly_decompose_coeff(l_decomp1, a_poly->coeffs[i]);
-        
-        // Разлагаем второй коэффициент (если есть)
-        if (i + 1 < CHIPMUNK_N) {
-            chipmunk_poly_decompose_coeff(l_decomp2, a_poly->coeffs[i + 1]);
-        } else {
-            l_decomp2[1] = 0; // Если нет второго коэффициента, w1 = 0
-        }
-        
-        // Упаковываем два w1 в один байт (по 4 бита каждый)
-        // Ограничиваем w1 до 4 битов [0, 15] для компактности
-        uint8_t w1_1 = (uint8_t)(l_decomp1[1] & 0xF);
-        uint8_t w1_2 = (uint8_t)(l_decomp2[1] & 0xF);
-        
-        a_output[i / 2] = w1_1 | (w1_2 << 4);
-    }
-    
-    return 0;
-}
-
-/**
- * @brief Apply hint bits to recover w1 from w'
- * 
- * @param a_out Output polynomial w1 (high bits)
- * @param a_w_prime Input polynomial w' 
- * @param a_hint Hint bits array
- */
-void chipmunk_use_hint(chipmunk_poly_t *a_out, const chipmunk_poly_t *a_w_prime, const uint8_t a_hint[CHIPMUNK_N/8]) {
-    if (!a_out || !a_w_prime || !a_hint) {
-        log_it(L_ERROR, "NULL input parameters in chipmunk_use_hint");
-        return;
-    }
-    
-    // Инициализируем выходной полином нулями
-    memset(a_out->coeffs, 0, sizeof(a_out->coeffs));
-    
-    // Применяем hint биты к каждому коэффициенту полинома
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        // Проверяем бит подсказки для этого коэффициента
-        uint8_t l_hint_bit = (a_hint[l_i/8] >> (l_i % 8)) & 1;
-        
-        // Разложить w' на high и low биты
-        int32_t l_decomp[2];
-        chipmunk_poly_decompose_coeff(l_decomp, a_w_prime->coeffs[l_i]);
-        
-        // Получаем высокие биты от w'
-        int32_t l_w1_prime = l_decomp[1];
-        
-        // Применяем hint бит: если hint=1, то корректируем высокие биты
-        if (l_hint_bit) {
-            // Hint бит указывает, что нужно скорректировать w1
-            // Для Chipmunk с 4-битными w1: w1 = (w1' + 1) mod 16
-            l_w1_prime = (l_w1_prime + 1) & 15;
-        }
-        
-        a_out->coeffs[l_i] = l_w1_prime;
-    }
-}
-
-/**
- * @brief Compute hint bits for verification
- * 
- * @param a_hint Output hint bits array
- * @param a_w_prime First polynomial (w')
- * @param a_w Second polynomial (w)
- */
-void chipmunk_make_hint(uint8_t a_hint[CHIPMUNK_N/8], const chipmunk_poly_t *a_w_prime, const chipmunk_poly_t *a_w) {
-    if (!a_hint || !a_w_prime || !a_w) {
-        log_it(L_ERROR, "NULL input parameters in chipmunk_make_hint");
-        return;
-    }
-    
-    int32_t l_decomp_w_prime[2], l_decomp_w[2];
-    
-    // Инициализируем массив hint нулями
-    memset(a_hint, 0, CHIPMUNK_N/8);
-    
-    // Для каждого коэффициента
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        // Разложить w' на high и low биты
-        chipmunk_poly_decompose_coeff(l_decomp_w_prime, a_w_prime->coeffs[l_i]);
-        
-        // Разложить w на high и low биты
-        chipmunk_poly_decompose_coeff(l_decomp_w, a_w->coeffs[l_i]);
-        
-        // Hint бит устанавливается в 1, если high биты w' и w отличаются
-        // Для Chipmunk с 4-битными w1 проверяем различие с учетом модуля 16
-        int32_t w1_prime = l_decomp_w_prime[1] & 15;
-        int32_t w1 = l_decomp_w[1] & 15;
-        
-        // Hint нужен, если w1' != w1 и (w1' + 1) mod 16 == w1
-        if (w1_prime != w1 && ((w1_prime + 1) & 15) == w1) {
-            // Установить бит в массиве hint
-            a_hint[l_i / 8] |= (1 << (l_i % 8));
-        }
-    }
-    
-    // Подсчитаем количество установленных hint битов для отладки
-    int l_hint_count = 0;
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        if ((a_hint[l_i / 8] >> (l_i % 8)) & 1) {
-            l_hint_count++;
-        }
-    }
-    
-    log_it(L_DEBUG, "Created hint with %d nonzero bits out of %d", l_hint_count, CHIPMUNK_N);
-}
-
-/**
  * @brief Check polynomial norm
- * 
+ *
  * @param[in] a_poly Polynomial to check
  * @param[in] a_bound Maximum absolute value that coefficients can have
  * @return Returns 0 if all coefficients are within the bound, 1 otherwise
  */
 int chipmunk_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound) {
+    return chipmunk_poly_chknorm_q(a_poly, a_bound, (uint64_t)CHIPMUNK_Q);
+}
+
+int chipmunk_poly_chknorm_q(const chipmunk_poly_t *a_poly, int32_t a_bound, uint64_t q) {
     if (!a_poly) {
-        log_it(L_ERROR, "NULL input parameter in chipmunk_poly_chknorm");
-        return 1;  // Error condition
+        log_it(L_ERROR, "NULL input parameter in chipmunk_poly_chknorm_q");
+        return 1;
     }
-    
-    int l_count_exceeding = 0;
-    int32_t l_max_val = 0;
-    
+
+    int32_t l_q_half = (int32_t)(q / 2u);
     for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        // Получаем коэффициент в диапазоне [0, CHIPMUNK_Q-1]
         int32_t l_t = a_poly->coeffs[l_i];
-        
-        // Приводим к центрированному представлению [-CHIPMUNK_Q/2, CHIPMUNK_Q/2]
-        if (l_t >= CHIPMUNK_Q / 2)
-            l_t -= CHIPMUNK_Q;
-        
-        // Абсолютное значение для проверки нормы
+        if (l_t >= l_q_half)
+            l_t -= (int32_t)q;
         int32_t l_abs_val = (l_t < 0) ? -l_t : l_t;
-        
-        // Отслеживаем максимальное значение для отладки
-        if (l_abs_val > l_max_val) {
-            l_max_val = l_abs_val;
-        }
-        
-        // Проверка нормы
-        if (l_abs_val > a_bound) {
-            l_count_exceeding++;
-            
-            // Выводим детальную информацию о превышающих норму коэффициентах
-            if (l_count_exceeding <= 5) {  // Ограничиваем количество выводимых сообщений
-                log_it(L_DEBUG, "Coefficient at index %d exceeds bound: %d (bound: %d)", 
-                       l_i, l_t, a_bound);
-            }
-        }
+        if (l_abs_val > a_bound)
+            return 1;
     }
-    
-    if (l_count_exceeding > 0) {
-        log_it(L_INFO, "Polynomial norm check failed: %d coefficients exceed bound %d, max value: %d", 
-               l_count_exceeding, a_bound, l_max_val);
-        return 1;  // Norm exceeded
-    }
-    
-    log_it(L_DEBUG, "Polynomial norm check passed: all coefficients within bound %d, max value: %d", 
-           a_bound, l_max_val);
-    return 0;  // Norm within bounds
+    return 0;
 }
 
 /**
@@ -414,6 +163,10 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
     uint64_t l_state[25];
     memset(l_state, 0, sizeof(l_state));
 
+    /* Guard against integer overflow in l_in_len (heap overflow). */
+    if (hash_len > SIZE_MAX - sizeof(k_domain) - 1) {
+        return CHIPMUNK_ERROR_INVALID_PARAM;
+    }
     const size_t l_in_len = sizeof(k_domain) + hash_len;
     uint8_t *l_in = DAP_NEW_Z_SIZE(uint8_t, l_in_len);
     if (!l_in) {
@@ -524,6 +277,11 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
     // A single absorb call is sufficient because the rate (136 bytes) is
     // already large enough to swallow the domain tag and the message in
     // one shot.
+    /* Guard against integer overflow in l_in_len (heap overflow). */
+    if (a_message_len > SIZE_MAX - sizeof(k_domain) - 1) {
+        log_it(L_ERROR, "chipmunk_poly_from_hash: message too long (%zu)", a_message_len);
+        return CHIPMUNK_ERROR_INVALID_PARAM;
+    }
     const size_t l_in_len = sizeof(k_domain) + a_message_len;
     uint8_t *l_in = DAP_NEW_Z_SIZE(uint8_t, l_in_len);
     if (!l_in) {
@@ -585,81 +343,6 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
 }
 
 /**
- * @brief Multiply two polynomials in NTT domain
- * 
- * @param a_result Output polynomial (can be same as input)
- * @param a_poly1 First polynomial (in NTT domain)
- * @param a_poly2 Second polynomial (in NTT domain)
- */
-void chipmunk_poly_mul_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
-    if (!a_result || !a_poly1 || !a_poly2) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_mul_ntt");
-        return;
-    }
-    
-    // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: Используем обычное умножение по модулю как в оригинальном Rust!
-    // В оригинальном Rust коде НЕ используется Montgomery умножение в NTT операциях
-    // Rust: ((a as i64) * (b as i64) % modulus as i64) as i32
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_temp = ((int64_t)a_poly1->coeffs[i] * (int64_t)a_poly2->coeffs[i]) % (int64_t)CHIPMUNK_Q;
-        a_result->coeffs[i] = (int32_t)l_temp;
-        
-        // Ensure positive representation
-        if (a_result->coeffs[i] < 0) {
-            a_result->coeffs[i] += CHIPMUNK_Q;
-        }
-    }
-}
-
-/**
- * @brief Add two polynomials in NTT domain
- * 
- * @param a_result Output polynomial (can be same as input)
- * @param a_poly1 First polynomial (in NTT domain)
- * @param a_poly2 Second polynomial (in NTT domain)
- */
-void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
-    if (!a_result || !a_poly1 || !a_poly2) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_add_ntt");
-        return;
-    }
-
-    // CR-D16 fix (Round-3): in NTT domain the canonical representation is
-    // [0, q), not the centred [-q/2, q/2) form the legacy code produced.
-    // The previous double-normalisation (first non-negative, then centred)
-    // produced sporadic sign flips that only survived final equality checks
-    // by accident, because chipmunk_poly_equal re-lifts both operands via
-    // (x % q + q) % q.  Keep add_ntt strictly in [0, q) so intermediate
-    // NTT-domain results stay semantically consistent with
-    // chipmunk_ntt_pointwise_montgomery / chipmunk_poly_mul_ntt output and
-    // with chipmunk_poly_equal's lift convention.
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_sum = (int64_t)a_poly1->coeffs[i] + (int64_t)a_poly2->coeffs[i];
-        int32_t l_result = (int32_t)(l_sum % CHIPMUNK_Q);
-        if (l_result < 0) {
-            l_result += CHIPMUNK_Q;
-        }
-        a_result->coeffs[i] = l_result;
-    }
-}
-
-void chipmunk_poly_sub_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
-    if (!a_result || !a_poly1 || !a_poly2) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_sub_ntt");
-        return;
-    }
-
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_diff = (int64_t)a_poly1->coeffs[i] - (int64_t)a_poly2->coeffs[i];
-        int32_t l_result = (int32_t)(l_diff % CHIPMUNK_Q);
-        if (l_result < 0) {
-            l_result += CHIPMUNK_Q;
-        }
-        a_result->coeffs[i] = l_result;
-    }
-}
-
-/**
  * @brief Lift coefficient to positive representation [0, q)
  * Based on original Rust implementation: (a % modulus + modulus) % modulus
  */
@@ -667,38 +350,108 @@ static int32_t chipmunk_poly_lift(int32_t a, int32_t modulus) {
     return (a % modulus + modulus) % modulus;
 }
 
-/**
- * @brief Compare two polynomials for equality
- * Uses lift() normalization as in original Rust code
- */
-bool chipmunk_poly_equal(const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
-    if (!a_poly1 || !a_poly2) {
-        return false;
-    }
-    
-    // **ИСПРАВЛЕНО**: используем точную функцию из оригинального Rust коду
-    // Original Rust: HOTSPoly::from(&left) == HOTSPoly::from(&right)
-    // где '==' оператор использует lift() функцию: crate::poly::lift(x, modulus) == crate::poly::lift(y, modulus)
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Применяем точную копию Rust lift() функции к обеим сторонам
-        int32_t left_lifted = chipmunk_poly_lift(a_poly1->coeffs[i], CHIPMUNK_Q);
-        int32_t right_lifted = chipmunk_poly_lift(a_poly2->coeffs[i], CHIPMUNK_Q);
-        
-        if (left_lifted != right_lifted) {
-            return false;
-        }
-    }
-    
-    return true;
+/* =========================================================================
+ * Phase 9.14a: Per-q polynomial operations
+ *
+ * These _q variants accept an explicit modulus.
+ * ======================================================================= */
+
+int chipmunk_poly_ntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_ctx) {
+    if (!a_poly || !a_ctx) return CHIPMUNK_ERROR_NULL_PARAM;
+    chipmunk_ntt_q(a_poly->coeffs, a_ctx);
+    return CHIPMUNK_ERROR_SUCCESS;
 }
 
-/* CR-D11 (Round-3): the previous helper `dap_random_poly_time_domain`
- * lived here as dead code that built coefficients via repeated SHA2-256
- * (with `*(uint32_t*)hash` UB and `% modulus` bias to boot).  No active
- * code path called it, but it kept SHA2 inside the module surface.
- * Removed wholesale; uniform polynomial sampling for the HOTS y-poly
- * goes through chipmunk_poly_uniform_mod_p (SHAKE256 + unbiased
- * rejection sampling — see CR-D5 remediation block below). */
+int chipmunk_poly_invntt_q(chipmunk_poly_t *a_poly, const chipmunk_ntt_ctx_t *a_ctx) {
+    if (!a_poly || !a_ctx) return CHIPMUNK_ERROR_NULL_PARAM;
+    chipmunk_invntt_q(a_poly->coeffs, a_ctx);
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+int chipmunk_poly_add_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                          const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return CHIPMUNK_ERROR_NULL_PARAM;
+    int64_t l_q = (int64_t)q;
+    int64_t l_half = l_q / 2;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_temp = (int64_t)a->coeffs[i] + (int64_t)b->coeffs[i];
+        int64_t l_r = l_temp % l_q;
+        /* Branchless: add q if negative → [0, q) */
+        int64_t l_neg = -(int64_t)(l_r < 0);
+        l_r += l_q & l_neg;
+        /* Branchless: subtract q if > q/2 → centered [-q/2, q/2] */
+        int64_t l_hi = -(int64_t)(l_r > l_half);
+        l_r -= l_q & l_hi;
+        r->coeffs[i] = (int32_t)l_r;
+    }
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+int chipmunk_poly_sub_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                          const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return CHIPMUNK_ERROR_NULL_PARAM;
+    int64_t l_q = (int64_t)q;
+    int64_t l_half = l_q / 2;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_temp = (int64_t)a->coeffs[i] - (int64_t)b->coeffs[i];
+        int64_t l_r = l_temp % l_q;
+        int64_t l_neg = -(int64_t)(l_r < 0);
+        l_r += l_q & l_neg;
+        int64_t l_hi = -(int64_t)(l_r > l_half);
+        l_r -= l_q & l_hi;
+        r->coeffs[i] = (int32_t)l_r;
+    }
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+void chipmunk_poly_mul_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                               const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return;
+    int32_t l_q = (int32_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_temp = ((int64_t)a->coeffs[i] * (int64_t)b->coeffs[i]) % (int64_t)q;
+        r->coeffs[i] = (int32_t)l_temp;
+        if (r->coeffs[i] < 0) r->coeffs[i] += l_q;
+    }
+}
+
+void chipmunk_poly_add_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                               const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return;
+    int64_t l_q = (int64_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_sum = (int64_t)a->coeffs[i] + (int64_t)b->coeffs[i];
+        int64_t l_r = l_sum % l_q;
+        int64_t l_neg = -(int64_t)(l_r < 0);
+        l_r += l_q & l_neg;
+        r->coeffs[i] = (int32_t)l_r;
+    }
+}
+
+void chipmunk_poly_sub_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
+                               const chipmunk_poly_t *b, uint64_t q) {
+    if (!r || !a || !b) return;
+    int64_t l_q = (int64_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_diff = (int64_t)a->coeffs[i] - (int64_t)b->coeffs[i];
+        int64_t l_r = l_diff % l_q;
+        int64_t l_neg = -(int64_t)(l_r < 0);
+        l_r += l_q & l_neg;
+        r->coeffs[i] = (int32_t)l_r;
+    }
+}
+
+bool chipmunk_poly_equal_q(const chipmunk_poly_t *a, const chipmunk_poly_t *b,
+                            uint64_t q) {
+    if (!a || !b) return false;
+    int32_t l_q = (int32_t)q;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int32_t l_l = chipmunk_poly_lift(a->coeffs[i], l_q);
+        int32_t l_r = chipmunk_poly_lift(b->coeffs[i], l_q);
+        if (l_l != l_r) return false;
+    }
+    return true;
+}
 
 /**
  * @brief Generate uniform polynomial with coefficients in range [-bound, bound]

@@ -23,6 +23,7 @@
 */
 
 #include "chipmunk_hash.h"
+#include "chipmunk_poly.h"
 #include "dap_common.h"
 #include "dap_hash.h"
 #include "dap_crypto_common.h"
@@ -197,7 +198,8 @@ int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uin
  * @param[in] a_nonce Nonce value
  * @return Returns 0 on success, negative values on error
  */
-int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce)
+int dap_chipmunk_hash_sample_matrix_q(int32_t *a_poly, const uint8_t a_seed[32],
+                                       uint16_t a_nonce, uint64_t q)
 {
     if (!a_poly || !a_seed) {
         log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_sample_matrix");
@@ -229,7 +231,8 @@ int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], u
     uint8_t l_sq[DAP_SHAKE128_RATE];
     size_t  l_sq_pos = DAP_SHAKE128_RATE;
 
-    const uint32_t l_mul = (0x800000u / (uint32_t)CHIPMUNK_Q) * (uint32_t)CHIPMUNK_Q;
+    const uint32_t l_q32 = (uint32_t)q;
+    const uint32_t l_mul = (0x800000u / l_q32) * l_q32;
     const size_t   k_max_blocks = 1u << 20;
     size_t         l_blocks = 0;
 
@@ -254,10 +257,15 @@ int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], u
                 break;
             }
         }
-        a_poly[i] = (int32_t)(l_val % (uint32_t)CHIPMUNK_Q);
+        a_poly[i] = (int32_t)(l_val % l_q32);
     }
 
     return CHIPMUNK_ERROR_SUCCESS;
+}
+
+int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce)
+{
+    return dap_chipmunk_hash_sample_matrix_q(a_poly, a_seed, a_nonce, (uint64_t)CHIPMUNK_Q);
 }
 
 static inline void s_le32_store(uint8_t *a_dst, uint32_t a_v)

@@ -20,6 +20,7 @@
 #include "dap_cert.h"
 #include "dap_stream.h"
 #include "dap_stream_ctl.h"
+#include "dap_net_trans_http_stream.h"
 #include "dap_client.h"
 #include "dap_server.h"
 #include "dap_cluster.h"
@@ -320,6 +321,11 @@ static int s_init_net_stream(const dap_sdk_config_t *a_config)
     if ((l_rc = s_ensure_node_addr_cert()) != 0)
         return l_rc;
 #endif
+    /* Initialize transport abstraction registry and register built-in transports */
+    if ((l_rc = dap_net_trans_init()) != 0) return l_rc;
+#ifndef DAP_OS_WASM
+    if ((l_rc = dap_net_trans_http_stream_register()) != 0) return l_rc;
+#endif
     if ((l_rc = dap_stream_init(g_config)) != 0) return l_rc;
 #ifndef DAP_OS_WASM
     if ((l_rc = dap_stream_ctl_init()) != 0) return l_rc;
@@ -484,6 +490,7 @@ static void s_deinit_net_stream(void)
 #ifndef DAP_OS_WASM
     dap_stream_ctl_deinit();
 #endif
+    dap_net_trans_deinit();
 }
 
 static void s_deinit_net_enc(void)

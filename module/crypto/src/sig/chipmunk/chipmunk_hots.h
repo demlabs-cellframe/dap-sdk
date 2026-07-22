@@ -47,6 +47,7 @@ extern "C" {
  */
 typedef struct {
     chipmunk_poly_t a[CHIPMUNK_GAMMA];  ///< Random matrix A in NTT domain
+    uint64_t q;                          ///< Field modulus (Phase 9.14)
 } chipmunk_hots_params_t;
 
 /**
@@ -104,7 +105,8 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
  * @return 0 on success, negative on error
  */
 int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message, 
-                      size_t a_message_len, chipmunk_hots_signature_t *a_signature);
+                      size_t a_message_len, chipmunk_hots_signature_t *a_signature,
+                      const chipmunk_hots_params_t *a_params);
 
 /**
  * @brief Verify HOTS signature

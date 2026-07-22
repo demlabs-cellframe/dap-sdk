@@ -83,18 +83,18 @@ static void test_lrs_n2_anonymity(void)
 
     /* Both signers sign the same message with the same randomness. */
     dap_assert(chipmunk_lrs_sign(sig0, sig_sz, &sks[0], ring, N,
-                                 msg, sizeof(msg) - 1u, randomness) == 0,
+                                 msg, sizeof(msg) - 1u, randomness, (uint64_t)CHIPMUNK_Q) == 0,
                "LRS sign sk0");
     dap_assert(chipmunk_lrs_sign(sig1, sig_sz, &sks[1], ring, N,
-                                 msg, sizeof(msg) - 1u, randomness) == 0,
+                                 msg, sizeof(msg) - 1u, randomness, (uint64_t)CHIPMUNK_Q) == 0,
                "LRS sign sk1");
 
     /* Both must verify. */
     dap_assert(chipmunk_lrs_verify(sig0, sig_sz, ring, N,
-                                   msg, sizeof(msg) - 1u) == 0,
+                                   msg, sizeof(msg) - 1u, (uint64_t)CHIPMUNK_Q) == 0,
                "LRS verify sig0");
     dap_assert(chipmunk_lrs_verify(sig1, sig_sz, ring, N,
-                                   msg, sizeof(msg) - 1u) == 0,
+                                   msg, sizeof(msg) - 1u, (uint64_t)CHIPMUNK_Q) == 0,
                "LRS verify sig1");
 
     /* Headers (first 32 bytes) must be identical. */
@@ -311,10 +311,10 @@ static void test_lrs_n2_response_distribution(void)
     uint8_t *sig1 = DAP_NEW_Z_SIZE(uint8_t, sig_sz);
 
     dap_assert(chipmunk_lrs_sign(sig0, sig_sz, &sks[0], ring, N,
-                                 msg, sizeof(msg) - 1u, randomness) == 0,
+                                 msg, sizeof(msg) - 1u, randomness, (uint64_t)CHIPMUNK_Q) == 0,
                "LRS sign sk0");
     dap_assert(chipmunk_lrs_sign(sig1, sig_sz, &sks[1], ring, N,
-                                 msg, sizeof(msg) - 1u, randomness) == 0,
+                                 msg, sizeof(msg) - 1u, randomness, (uint64_t)CHIPMUNK_Q) == 0,
                "LRS sign sk1");
 
     /* c0_seed (offset 96 after header+ring_hash+key_image) must differ. */
@@ -473,7 +473,7 @@ static void test_lrs_n64_smoke(void)
     dap_assert(sig, "LRS N=64 alloc");
 
     int rc = chipmunk_lrs_sign(sig, sig_sz, &sk, ring, N,
-                               msg, sizeof(msg) - 1u, randomness);
+                               msg, sizeof(msg) - 1u, randomness, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         log_it(L_WARNING, "LRS N=64 sign skipped (rc=%d)", rc);
         DAP_DELETE(sig);
@@ -482,7 +482,7 @@ static void test_lrs_n64_smoke(void)
     dap_assert(rc == 0, "LRS N=64 sign OK");
 
     rc = chipmunk_lrs_verify(sig, sig_sz, ring, N,
-                             msg, sizeof(msg) - 1u);
+                             msg, sizeof(msg) - 1u, (uint64_t)CHIPMUNK_Q);
     dap_assert(rc == 0, "LRS N=64 verify OK");
 
     DAP_DELETE(sig);
