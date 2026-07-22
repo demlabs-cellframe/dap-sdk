@@ -24,7 +24,6 @@
 #pragma once
 
 #include <pthread.h>
-#include <stdatomic.h>
 #include "dap_common.h"
 
 typedef struct dap_proc_thread dap_proc_thread_t;
