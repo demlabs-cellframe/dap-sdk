@@ -983,14 +983,14 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         a_stream->esocket_uuid = 0;
         a_stream->esocket_worker = NULL;
         /* Clear error_callback to prevent spurious error reports during teardown.
-         * Do NOT clear delete_callback — the esocket delete callback (s_tls_delete
-         * or s_esocket_callback_delete) needs to run to free transport-specific
-         * resources (e.g. tls_conn_ctx_t, mimicry).  The is_deleting guard at the
-         * top of this function prevents the callback from re-entering deletion. */
+         * Do NOT blindly NULL _inheritor — TLS keeps tls_conn_ctx there for its
+         * delete_callback. Clear only when _inheritor is the stream trans_ctx, or
+         * when the stream was already detached (trans_ctx NULL) but the unified
+         * stream delete_callback would still follow a stale _inheritor. */
         l_es->callbacks.error_callback = NULL;
-        /* For non-TLS transports, _inheritor is trans_ctx which we free below.
-         * NULL it here to prevent double-free by the esocket delete callback. */
-        if (l_es->_inheritor == (void*)a_stream->trans_ctx)
+        if (l_es->_inheritor == (void*)a_stream->trans_ctx
+            || (!a_stream->trans_ctx
+                && l_es->callbacks.delete_callback == s_esocket_callback_delete))
             l_es->_inheritor = NULL;
         dap_worker_t *l_current = dap_worker_get_current();
         if (l_current == l_es_worker) {
@@ -1983,29 +1983,59 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     // Client-side streams may never be added if worker_assign didn't fire
     dap_stream_t *l_stream = NULL;
     bool l_in_list = false;
+    /* Bounded iteration to detect corrupted list pointers (heap corruption).
+     * If the list is corrupted, we must NOT follow stale next/prev pointers. */
+    size_t l_iter_limit = 10000;
     DL_FOREACH(s_streams, l_stream) {
+        if (!--l_iter_limit) {
+            log_it(L_ERROR, "s_stream_delete_from_list: iteration limit reached — "
+                   "s_streams list likely corrupted (stream=%p)", (void*)a_stream);
+            pthread_rwlock_unlock(&s_streams_lock);
+            return;
+        }
         if (l_stream == a_stream) {
             l_in_list = true;
             break;
         }
     }
     l_stream = NULL;
-    if (l_in_list)
+    if (l_in_list) {
         DL_DELETE(s_streams, a_stream);
+        /* Clear list pointers after removal so stale references are harmless */
+        a_stream->prev = NULL;
+        a_stream->next = NULL;
+    }
     if (a_stream->authorized) {
-        // It's an authorized stream, try to replace it in hastable
-        if (a_stream->primary)
-            HASH_DEL(s_authorized_streams, a_stream);
-        DL_FOREACH(s_streams, l_stream)
+        /* Only HASH_DEL if this stream is actually the table entry.
+         * HASH_DEL on a non-member (stale primary / already removed) corrupts
+         * uthash and later shows up as free(): corrupted unsorted chunks. */
+        if (a_stream->primary) {
+            dap_stream_t *l_in_hash = NULL;
+            HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_in_hash);
+            if (l_in_hash == a_stream)
+                HASH_DEL(s_authorized_streams, a_stream);
+            a_stream->primary = false;
+        }
+        l_stream = NULL;
+        l_iter_limit = 10000;
+        DL_FOREACH(s_streams, l_stream) {
+            if (!--l_iter_limit) {
+                log_it(L_ERROR, "s_stream_delete_from_list: authorized replace scan limit — "
+                       "s_streams list likely corrupted (stream=%p)", (void*)a_stream);
+                l_stream = NULL;
+                break;
+            }
             if (l_stream->node.uint64 == a_stream->node.uint64)
                 break;
+        }
         if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
             dap_link_manager_stream_replace(&a_stream->node, l_stream->is_client_to_uplink);
-        } else {
+        } else if (!dap_stream_node_addr_is_blank(&a_stream->node)) {
             dap_cluster_member_delete(s_global_links_cluster, &a_stream->node);
             dap_link_manager_stream_delete(&a_stream->node); // Used own rwlock for this cluster members
         }
+        a_stream->authorized = false;
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }

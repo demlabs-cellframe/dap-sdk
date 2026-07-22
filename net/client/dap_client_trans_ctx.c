@@ -69,6 +69,15 @@ static void s_stream_tc_cleanup_on_worker(void *a_arg)
          * cannot compare — just clear both fields. */
         l_stream->trans_ctx = NULL;
         l_stream->client_stream_ref = NULL;
+        /* Break circular reference and suppress re-entrant callbacks:
+         * - _inheritor -> trans_ctx -> stream would re-enter stream deletion
+         * - delete/error callbacks would notify FSM STREAM_ABORTED while we are
+         *   already tearing down for an intentional reconnect/close. */
+        if (l_stream->esocket) {
+            l_stream->esocket->_inheritor = NULL;
+            l_stream->esocket->callbacks.delete_callback = NULL;
+            l_stream->esocket->callbacks.error_callback = NULL;
+        }
         dap_stream_delete_unsafe(l_stream);
     }
 
