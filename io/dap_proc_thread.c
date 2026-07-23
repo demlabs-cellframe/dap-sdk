@@ -23,9 +23,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
-#ifdef DAP_OS_WINDOWS
-# include <windows.h>
-#else
+#ifndef DAP_OS_WINDOWS
 # include <unistd.h>
 # include <sys/eventfd.h>
 #endif

@@ -231,7 +231,7 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
     {
         int l_nodelay = 1;
         if (setsockopt(l_es->socket, IPPROTO_TCP, TCP_NODELAY,
-                        &l_nodelay, sizeof(l_nodelay)) < 0)
+                        (const char *)&l_nodelay, sizeof(l_nodelay)) < 0)
             log_it(L_WARNING, "TLS transport: failed to set TCP_NODELAY: %s", strerror(errno));
     }
 
