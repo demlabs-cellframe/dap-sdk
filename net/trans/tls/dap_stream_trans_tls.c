@@ -21,8 +21,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <sys/socket.h>
-#include <netinet/tcp.h>
+#ifdef DAP_OS_WINDOWS
+# include <winsock2.h>
+# include <ws2tcpip.h>
+#else
+# include <sys/socket.h>
+# include <netinet/tcp.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_config.h"

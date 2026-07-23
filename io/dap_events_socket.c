@@ -1806,6 +1806,25 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
 size_t dap_events_socket_write_inter(dap_worker_t *a_w, dap_events_socket_uuid_t a_es_uuid,
                                      void *a_data, size_t a_data_size)
 {
+#ifdef DAP_EVENTS_CAPS_IOCP
+    dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
+    if (!ol) {
+        DAP_DELETE(a_data);
+        return 0;
+    }
+    *ol = (dap_overlapped_t){ .op = io_write };
+    if (a_data && a_data_size)
+        memcpy(ol->buf, a_data, a_data_size);
+    DAP_DELETE(a_data); /* took ownership from caller */
+    debug_if(g_debug_reactor, L_INFO, "Write inter %zu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]",
+             a_data_size, a_es_uuid, a_w->id);
+    return PostQueuedCompletionStatus(a_w->context->iocp, (DWORD)a_data_size, (ULONG_PTR)a_es_uuid, (OVERLAPPED *)ol)
+               ? a_data_size
+               : (DAP_DELETE(ol),
+                  log_it(L_ERROR, "Can't schedule write_inter to %" DAP_UINT64_FORMAT_U " in context #%d, error %d",
+                         a_es_uuid, a_w->context->id, GetLastError()),
+                  0);
+#else
     dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
     l_msg->esocket_uuid = a_es_uuid;
     l_msg->data = a_data;       /* takes ownership */
@@ -1813,13 +1832,12 @@ size_t dap_events_socket_write_inter(dap_worker_t *a_w, dap_events_socket_uuid_t
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
     if (!dap_context_queue_push(a_w->queue_es_io, l_msg)) {
-        log_it(L_ERROR, "[TEST] write_inter queue_es_io full: lost %zu bytes uuid=" DAP_FORMAT_ESOCKET_UUID,
-               a_data_size, a_es_uuid);
         log_it(L_ERROR, "write inter: queue full, lost %zu bytes", a_data_size);
         DAP_DEL_MULTY(l_msg->data, l_msg);
         return 0;
     }
     return a_data_size;
+#endif
 }
 
 /**
