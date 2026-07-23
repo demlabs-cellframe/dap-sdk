@@ -27,6 +27,9 @@ typedef struct dap_mmap_file {
     uint64_t    file_size;    /**< Logical data size (<= map_size) */
     char        path[1024];   /**< File path */
     bool        read_only;    /**< If true, mmap is PROT_READ only */
+#ifdef _WIN32
+    void       *mapping;      /**< Win32 file-mapping HANDLE */
+#endif
 } dap_mmap_file_t;
 
 /**

@@ -8,15 +8,9 @@
 
 #include <string.h>
 #include <stdint.h>
-#ifdef _WIN32
-#include <winsock2.h>
-#define htobe64(x) htonll(x)
-#else
-#include <arpa/inet.h>
-#endif
 
 #include "dap_enc_kdf.h"
-#include "dap_common.h"
+#include "dap_common.h" /* portable_endian.h provides htobe64 */
 #include "KeccakHash.h"  // For shake256
 
 #define LOG_TAG "dap_enc_kdf"
