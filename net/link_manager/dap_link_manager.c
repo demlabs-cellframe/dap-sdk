@@ -1415,6 +1415,10 @@ struct link_moving_args {
 static bool s_stream_add_callback(void *a_arg)
 {
     assert(a_arg);
+    if (!s_link_manager) {
+        DAP_DELETE(a_arg);
+        return false;
+    }
     struct link_moving_args *l_args = a_arg;
     dap_stream_node_addr_t *l_node_addr = &l_args->addr;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
@@ -1486,6 +1490,10 @@ int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_upli
 static bool s_stream_replace_callback(void *a_arg)
 {
     assert(a_arg);
+    if (!s_link_manager) {
+        DAP_DELETE(a_arg);
+        return false;
+    }
     struct link_moving_args *l_args = a_arg;
     dap_stream_node_addr_t *l_node_addr = &l_args->addr;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);

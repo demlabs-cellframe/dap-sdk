@@ -2215,3 +2215,17 @@ void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count)
     }
     DAP_DELETE(a_info);
 }
+
+int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full)
+{
+    dap_worker_t *l_worker = NULL;
+    dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(&a_addr, &l_worker);
+    if (!l_uuid || !l_worker) {
+        log_it(L_WARNING, "Stream for addr " NODE_ADDR_FP_STR " not found", NODE_ADDR_FP_ARGS_S(a_addr));
+        return -1;
+    }
+    log_it(L_NOTICE, "Closing stream for addr " NODE_ADDR_FP_STR " (uuid %" DAP_UINT64_FORMAT_U ")",
+           NODE_ADDR_FP_ARGS_S(a_addr), l_uuid);
+    dap_events_socket_remove_and_delete_mt(l_worker, l_uuid);
+    return 0;
+}

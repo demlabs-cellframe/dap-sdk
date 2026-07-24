@@ -651,9 +651,13 @@ static void s_http_stream_client_read(dap_events_socket_t *a_es, void *a_arg)
 static void s_http_connect_es_connected(dap_events_socket_t *a_es)
 {
     s_http_connect_ctx_t *l_ctx = (s_http_connect_ctx_t *)a_es->callbacks.arg;
-    if (!l_ctx) return;
+    if (!l_ctx) {
+        log_it(L_WARNING, "HTTP connect: es_connected fired but no context (fd=%d)", a_es->socket);
+        return;
+    }
 
     dap_stream_t *l_stream = l_ctx->stream;
+    log_it(L_INFO, "HTTP stream esocket connected: fd=%d", a_es->socket);
     dap_net_trans_connect_cb_t l_cb = l_ctx->fsm_callback;
     DAP_DELETE(l_ctx);
     a_es->callbacks.arg = NULL;
@@ -1079,6 +1083,9 @@ static int s_http_trans_session_start(dap_stream_t *a_stream,
         return -1;
     }
 
+    debug_if(s_debug_more, L_DEBUG, "HTTP trans session start: session_id=%u esocket fd=%d",
+             a_session_id, a_stream->esocket->socket);
+
     debug_if(s_debug_more, L_DEBUG, "HTTP trans session start: session_id=%u, esocket fd=%d",
              a_session_id, a_stream->esocket->fd);
 
@@ -1175,6 +1182,21 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
 
     dap_events_socket_t *l_es = a_stream->esocket;
 
+    /* If there's pending data in buf_out (e.g., HTTP GET from session_start),
+     * flush it directly before appending new data. Otherwise the GET request
+     * and stream data get concatenated in buf_out and the server can't parse them. */
+    if (l_es->buf_out_size > 0) {
+        ssize_t l_flushed = send(l_es->socket, l_es->buf_out, l_es->buf_out_size, MSG_NOSIGNAL);
+        if (l_flushed > 0) {
+            if ((size_t)l_flushed < l_es->buf_out_size) {
+                memmove(l_es->buf_out, l_es->buf_out + l_flushed, l_es->buf_out_size - l_flushed);
+                l_es->buf_out_size -= l_flushed;
+            } else {
+                l_es->buf_out_size = 0;
+            }
+        }
+    }
+
     debug_if(s_debug_more, L_DEBUG, "HTTP trans write: size=%zu esocket=%p fd=%d _inheritor=%p buf_out_size=%zu",
              a_size, (void*)l_es, l_es->socket, (void*)l_es->_inheritor, l_es->buf_out_size);
 
@@ -1194,12 +1216,11 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
 
     if (l_es->_inheritor) {
         size_t l_ret = dap_events_socket_write_unsafe(l_es, a_data, a_size);
-        debug_if(s_debug_more, L_DEBUG, "HTTP trans write: wrote %zu bytes to esocket buf_out (now %zu)",
-                 l_ret, l_es->buf_out_size);
         return (ssize_t)l_ret;
     }
 
-    log_it(L_WARNING, "HTTP trans write: _inheritor is NULL, data dropped! size=%zu", a_size);
+    log_it(L_WARNING, "HTTP trans write: _inheritor is NULL, data dropped! size=%zu esocket fd=%d",
+           a_size, l_es->socket);
     return -1;
 }
 
