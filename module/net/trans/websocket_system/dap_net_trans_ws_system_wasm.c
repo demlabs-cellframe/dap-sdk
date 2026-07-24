@@ -235,8 +235,12 @@ void dap_net_trans_ws_system_drain_outbound(void)
                 if (n < 3 || (n % 200) == 0)
                     log_it(L_ERROR, "WS drain send failed handle=%d size=%u ret=%d (count=%" PRIu64 ")",
                            l_slot->handle, l_slot->len, l_ret, n);
-                atomic_store_explicit(&s_ws_out_rd, l_rd, memory_order_release);
-                return;
+                /* Don't stop the entire drain on one failure — skip and continue.
+                 * Otherwise a single failed fragment drops all subsequent fragments
+                 * of the same frame, breaking multi-fragment packets. */
+                l_rd++;
+                l_batch++;
+                continue;
             }
             l_rd++;
             l_batch++;

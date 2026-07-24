@@ -64,6 +64,12 @@ typedef struct dap_stream {
     size_t buf_fragments_size_total;// Full size of all fragments
     size_t buf_fragments_size_filled;// Received size
 
+    /* Partial packet carry-over for dap_stream_data_proc_read_ext.
+     * When a stream packet straddles a chunk boundary, the unprocessed
+     * tail is saved here and prepended to the next call. */
+    uint8_t *buf_pkt_partial;
+    size_t buf_pkt_partial_size;
+
     dap_stream_ch_t **channel;
     size_t channel_count;
 
