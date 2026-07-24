@@ -1501,7 +1501,7 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     }
 
     debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG,
-             "Processed %lu / %lu bytes", l_processed_size, a_data_size);
+             "Processed %zu / %zu bytes", l_processed_size, a_data_size);
 
     return l_processed_size;
 }
