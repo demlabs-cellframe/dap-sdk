@@ -1226,6 +1226,20 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         } else {
+            /* Bounds check: mem_shift + size must fit inside full_size (2A) */
+            if ((size_t)l_fragm_pkt->mem_shift + l_fragm_pkt->size > l_fragm_pkt->full_size) {
+                debug_if(s_dump_packet_headers, L_WARNING,
+                         "Input: fragment overflow mem_shift=%u size=%u full_size=%u",
+                         l_fragm_pkt->mem_shift, l_fragm_pkt->size, l_fragm_pkt->full_size);
+                l_is_clean_fragments = true;
+                break;
+            }
+            /* Reset stale buffer when full_size changes between packets (2B) */
+            if(a_stream->buf_fragments && a_stream->buf_fragments_size_total != l_fragm_pkt->full_size) {
+                DAP_DEL_Z(a_stream->buf_fragments);
+                a_stream->buf_fragments_size_total = 0;
+                a_stream->buf_fragments_size_filled = 0;
+            }
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
                 DAP_DEL_Z(a_stream->buf_fragments);
                 a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
