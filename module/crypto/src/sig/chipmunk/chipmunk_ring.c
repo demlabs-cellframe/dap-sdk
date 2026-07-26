@@ -7,8 +7,6 @@
 
 #include "chipmunk_ring.h"
 #include "lotrs_sample.h"
-#include "chipmunk_mring.h"
-#include "chipmunk_lrs.h"
 
 #include <errno.h>
 #include <string.h>
@@ -342,8 +340,6 @@ static int s_validate_table(const chipmunk_ring_table_t *a_ring, const lotrs_par
  *
  * Sort ring members by memcmp over serialized pk bytes, reject duplicates,
  * and locate the signer's pk via constant-time full scan (no early break).
- * Follows the same pattern as LRS s_canonicalise_ring and MRNG
- * chipmunk_mring_canonicalise_ring.
  */
 static int s_pk_cmp(const void *a_a, const void *a_b)
 {
@@ -1067,126 +1063,4 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
     DAP_DELETE(l_sorted_ring.pks);
 
     return l_match ? 0 : -EINVAL;
-}
-
-/* =========================================================================
- * Anonymous Ring Signature via MRNG (threshold=1, O(log N) size)
- *
- * Uses MRNG's algebraic aggregation + halving fold for logarithmic-size
- * single-signer anonymous ring signatures.  Replaces the O(N) per-member
- * structure of the legacy Ring V2 path.
- *
- * Statement: "I know sk_j for pk_j in {pk_0, ..., pk_{N-1}}"
- * Witness: b ∈ {0,1}^N (indicator), x = sk_j
- * Proof: halving fold on b̃ = (b, b∘(b-1)), depth = ceil(log2(N)) + 1
- * Size: ~20-40 KB for N=2..256 (vs O(N) for legacy Ring V2)
- * ========================================================================= */
-
-/*
- * Generate an anonymous ring signature using MRNG with threshold=1.
- *
- * @param a_out_buf     Receives allocated signature buffer. Caller owns.
- * @param a_out_size    Receives signature size.
- * @param a_signer_sk   Signer's LRS secret key.
- * @param a_ring        Ring of LRS public keys.
- * @param a_ring_size   Number of keys in ring (8..256).
- * @param a_message     Message to sign.
- * @param a_message_size Message length.
- * @param a_randomness_seed 32-byte CSPRNG seed.
- * @return CHIPMUNK_RING_OK on success, error code on failure.
- */
-chipmunk_ring_error_t chipmunk_ring_sign_anonymous(
-    uint8_t **a_out_buf, size_t *a_out_size,
-    const chipmunk_lrs_secret_key_t *a_signer_sk,
-    const chipmunk_lrs_public_key_t *a_ring,
-    size_t a_ring_size,
-    const uint8_t *a_message, size_t a_message_size,
-    const uint8_t a_randomness_seed[32])
-{
-    if (!a_out_buf || !a_out_size || !a_signer_sk || !a_ring
-        || !a_message || !a_randomness_seed) {
-        return CHIPMUNK_RING_ERR_NULL_PARAM;
-    }
-    if (a_ring_size < CHIPMUNK_RING_N_MIN || a_ring_size > CHIPMUNK_MRING_N_MAX) {
-        return CHIPMUNK_RING_ERR_N_RING_OUT_OF_RANGE;
-    }
-
-    /* MRNG sign with threshold=1, single signer */
-    const chipmunk_lrs_secret_key_t *l_sk_arr[1] = { a_signer_sk };
-    return chipmunk_ring_sign_to_bytes(
-        a_out_buf, a_out_size,
-        l_sk_arr, 1u,  /* 1 signer */
-        a_ring, (uint32_t)a_ring_size,
-        1u,  /* threshold = 1 */
-        a_message, a_message_size,
-        NULL, 0u,  /* no extra context */
-        a_randomness_seed);
-}
-
-/*
- * Verify an anonymous ring signature (MRNG with threshold=1).
- *
- * @param a_buf         Signature buffer.
- * @param a_buf_size    Signature size.
- * @param a_ring        Ring of LRS public keys.
- * @param a_ring_size   Number of keys in ring.
- * @param a_message     Message that was signed.
- * @param a_message_size Message length.
- * @return CHIPMUNK_RING_OK if valid, error code otherwise.
- */
-chipmunk_ring_error_t chipmunk_ring_verify_anonymous(
-    const uint8_t *a_buf, size_t a_buf_size,
-    const chipmunk_lrs_public_key_t *a_ring,
-    size_t a_ring_size,
-    const uint8_t *a_message, size_t a_message_size)
-{
-    if (!a_buf || !a_ring || !a_message) {
-        return CHIPMUNK_RING_ERR_NULL_PARAM;
-    }
-    if (a_ring_size < CHIPMUNK_RING_N_MIN || a_ring_size > CHIPMUNK_MRING_N_MAX) {
-        return CHIPMUNK_RING_ERR_N_RING_OUT_OF_RANGE;
-    }
-
-    return chipmunk_ring_verify_from_bytes(
-        a_buf, a_buf_size,
-        a_ring, (uint32_t)a_ring_size,
-        a_message, a_message_size,
-        NULL, 0u);  /* no extra context */
-}
-
-/*
- * Linkability for anonymous ring signatures.
- * Extracts the link tag (T) from the signature wire format and compares.
- *
- * @param a_buf1, a_buf_size1  First signature.
- * @param a_buf2, a_buf_size2  Second signature.
- * @return 1 if same signer (linked), 0 if different, negative on error.
- */
-int chipmunk_ring_link_anonymous(
-    const uint8_t *a_buf1, size_t a_buf_size1,
-    const uint8_t *a_buf2, size_t a_buf_size2)
-{
-    if (!a_buf1 || !a_buf2) return -EINVAL;
-    if (a_buf_size1 < CHIPMUNK_MRING_HEADER_BYTES ||
-        a_buf_size2 < CHIPMUNK_MRING_HEADER_BYTES) return -EINVAL;
-
-    /* Parse headers to extract T block offset */
-    chipmunk_mring_header_t l_hdr1, l_hdr2;
-    int rc1 = chipmunk_mring_header_read(&l_hdr1, a_buf1, a_buf_size1);
-    int rc2 = chipmunk_mring_header_read(&l_hdr2, a_buf2, a_buf_size2);
-    if (rc1 != 0 || rc2 != 0) return -EINVAL;
-
-    /* T block starts at fixed offset */
-    uint32_t l_t_off = chipmunk_mring_section_off_T();
-    if (a_buf_size1 < l_t_off + CHIPMUNK_MRING_T_BYTES ||
-        a_buf_size2 < l_t_off + CHIPMUNK_MRING_T_BYTES) return -EINVAL;
-
-    /* Compare T blocks (constant-time) */
-    const uint8_t *l_t1 = a_buf1 + l_t_off;
-    const uint8_t *l_t2 = a_buf2 + l_t_off;
-    uint8_t l_diff = 0u;
-    for (size_t i = 0u; i < CHIPMUNK_MRING_T_BYTES; ++i) {
-        l_diff |= l_t1[i] ^ l_t2[i];
-    }
-    return l_diff == 0u ? 1 : 0;
 }

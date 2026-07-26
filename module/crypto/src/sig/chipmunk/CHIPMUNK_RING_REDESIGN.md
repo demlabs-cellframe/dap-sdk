@@ -50,22 +50,12 @@ Relation: Σ b_i * pk_i = A_pk * X
 | 128 | ~1084 KB | ~37 KB | 29x |
 | 256 | ~2168 KB | ~39 KB | 55x |
 
-## Implementation Plan
+## Status
 
-### Phase 1: Wrapper (immediate)
-- Add `chipmunk_ring_sign_anonymous()` that calls `chipmunk_ring_sign_to_bytes()` with threshold=1
-- Add `chipmunk_ring_verify_anonymous()` that calls `chipmunk_ring_verify_from_bytes()`
-- Bridge Ring V2 key types to LRS key types
-
-### Phase 2: Integration (next)
-- Replace Ring V2 sign/verify with MRNG-based implementation
-- Keep Ring V2 wire format for backward compatibility
-- Add new wire format with MRNG header
-
-### Phase 3: Full Algebraic Aggregation (future)
-- Remove per-member structure entirely
-- Single aggregated proof for all signers
-- Fold-based verification
+This replacement proposal is not part of the Chipmunk Ring implementation.
+Chipmunk Ring remains the independent CRIN signature exposed by
+`chipmunk_ring.h`. MRNG is exposed only through `chipmunk_mring.h`; no MRNG
+wrappers or LRS key bridge belong in the Chipmunk Ring API.
 
 ## Key Files
 

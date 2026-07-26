@@ -52,9 +52,21 @@ static void s_encode_message_bytes(chipmunk_poly_t *a_out,
                                    const uint8_t a_message[CHIPMUNK_PEDERSEN_VALUE_BYTES],
                                    uint64_t q)
 {
-    uint64_t l_val = 0;
-    memcpy(&l_val, a_message, sizeof(l_val));
-    int32_t l_coeff = chipmunk_mod_q_q((int64_t)l_val, q);
+    /* P1-4 SECURITY FIX: Process full 256-bit value, not just low 64 bits.
+     * The old code read only 8 bytes (sizeof(uint64_t)) of the 32-byte value,
+     * silently ignoring the upper 24 bytes. This means commit(v) == commit(v mod 2^64),
+     * allowing an attacker to commit to v + k*2^64 and the proof would still pass.
+     * Now: reduce the full 256-bit value mod Q using 8-byte limbs. */
+    /* Reduce 256-bit value mod q using Horner's method with 64-bit limbs */
+    __uint128_t l_acc = 0;
+    for (int i = CHIPMUNK_PEDERSEN_VALUE_BYTES / 8 - 1; i >= 0; --i) {
+        uint64_t l_limb = 0;
+        memcpy(&l_limb, a_message + i * 8, sizeof(l_limb));
+        l_acc = (__uint128_t)l_limb + l_acc * (__uint128_t)q;
+        /* Reduce l_acc mod q using __int128 division */
+        l_acc %= (__uint128_t)q;
+    }
+    int32_t l_coeff = chipmunk_mod_q_q((int64_t)(uint64_t)l_acc, q);
 
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
         a_out->coeffs[i] = l_coeff;

@@ -1173,6 +1173,29 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         } else {
+            /* P0-5 SECURITY FIX: cap reassembly buffer to prevent remote OOM.
+             * A malicious peer can claim full_size=0xFFFFFFFF (~4GB) in the first
+             * fragment and exhaust node memory. 16MB covers the largest legitimate
+             * fragmented packet (anon TX ≈ 3.25MB with headroom). */
+            #define DAP_STREAM_MAX_REASSEMBLY  (16 * 1024 * 1024)
+            if (l_fragm_pkt->full_size > DAP_STREAM_MAX_REASSEMBLY) {
+                debug_if(s_dump_packet_headers, L_ERROR,
+                         "Input: fragment full_size=%u exceeds max %d, dropping",
+                         l_fragm_pkt->full_size, DAP_STREAM_MAX_REASSEMBLY);
+                l_is_clean_fragments = true;
+                break;
+            }
+            /* P0-6 SECURITY FIX: bounds-check before memcpy to prevent heap overflow.
+             * Without this, a fragment with size > (full_size - mem_shift) writes
+             * past the allocated buffer. The completion check at line below only
+             * detects the overflow AFTER the damage is done. */
+            if ((size_t)l_fragm_pkt->mem_shift + l_fragm_pkt->size > l_fragm_pkt->full_size) {
+                debug_if(s_dump_packet_headers, L_ERROR,
+                         "Input: fragment mem_shift=%u + size=%u > full_size=%u, dropping",
+                         l_fragm_pkt->mem_shift, l_fragm_pkt->size, l_fragm_pkt->full_size);
+                l_is_clean_fragments = true;
+                break;
+            }
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
                 DAP_DEL_Z(a_stream->buf_fragments);
                 a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);

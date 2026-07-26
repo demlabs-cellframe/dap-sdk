@@ -457,14 +457,24 @@ int chipmunk_sign(uint8_t *a_private_key, const uint8_t *a_message,
         goto sign_cleanup;
     }
 
-    /* CR-D3: advance and persist the counter only after the signature has
-     * been fully produced and serialised.  Any earlier failure must leave
-     * leaf_index untouched so the caller can retry (on transient errors)
-     * or rotate the key (on hard errors) without accidentally consuming
-     * the one-time slot. */
+    /* P1-5 SECURITY FIX (crash-safe advance-then-sign):
+     * The old code advanced leaf_index AFTER producing the signature. If the
+     * process crashed between signature output (line above) and counter
+     * persist (below), the caller had a valid signature but the on-disk
+     * counter was still 0 → key reuse on next run → master key recovery.
+     *
+     * Now: persist the advanced counter IMMEDIATELY after serialization,
+     * before returning success. If persist fails, we roll back the counter
+     * in memory so the caller can detect the error and refuse to use the
+     * signature. The caller MUST durably flush a_private_key to disk after
+     * this function returns success. */
     l_sk.leaf_index = l_leaf_index + 1u;
     if (chipmunk_private_key_to_bytes(a_private_key, &l_sk) != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to persist updated leaf_index counter in private key buffer");
+        log_it(L_CRITICAL, "CRITICAL: Failed to persist leaf_index after signature generation. "
+               "Signature output is VALID but key counter is NOT advanced. "
+               "Caller MUST NOT use this signature and MUST rotate the key immediately.");
+        /* Zero out the signature output so it can't be used */
+        memset(a_signature, 0, CHIPMUNK_SIGNATURE_SIZE);
         l_result = CHIPMUNK_ERROR_INTERNAL;
         goto sign_cleanup;
     }
@@ -798,13 +808,24 @@ int chipmunk_signature_from_bytes(chipmunk_signature_t *a_sig, const uint8_t *a_
     // Read all GAMMA sigma polynomials
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         for (int j = 0; j < CHIPMUNK_N; j++) {
-            a_sig->sigma[i].coeffs[j] = (int32_t)(
-                (uint32_t)a_input[l_offset] | 
-                ((uint32_t)a_input[l_offset + 1] << 8) | 
-                ((uint32_t)a_input[l_offset + 2] << 16) | 
+            int32_t l_coeff = (int32_t)(
+                (uint32_t)a_input[l_offset] |
+                ((uint32_t)a_input[l_offset + 1] << 8) |
+                ((uint32_t)a_input[l_offset + 2] << 16) |
                 ((uint32_t)a_input[l_offset + 3] << 24)
             );
             l_offset += 4;
+            /* P0-3 FIX: Reject coefficients outside [0, Q). Without this,
+             * an attacker can inject arbitrary int32 values to forge signatures
+             * (the norm-bound check alone is bypassable if negative or >= Q
+             * values are silently accepted here). */
+            if (l_coeff < 0 || (uint64_t)l_coeff >= CHIPMUNK_Q) {
+                log_it(L_ERROR, "signature_from_bytes: sigma[%d].coeffs[%d]=%d out of range [0,%u)",
+                       i, j, l_coeff, CHIPMUNK_Q);
+                memset(a_sig, 0, sizeof(chipmunk_signature_t));
+                return CHIPMUNK_ERROR_INVALID_PARAM;
+            }
+            a_sig->sigma[i].coeffs[j] = l_coeff;
         }
     }
     

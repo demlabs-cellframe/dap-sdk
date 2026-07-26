@@ -339,7 +339,20 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     }
     
     debug_if(s_debug_more, L_DEBUG, "🔍 HOTS verify: Starting detailed verification...");
-    
+
+    /* P0-3 SECURITY FIX: Reject signatures with coefficients exceeding norm bound.
+     * Without this check, the linear equation Σ a_i·σ_i == H(m)·v0 + v1 can be
+     * solved for arbitrary (σ_0, σ_1) — universal forgery. The norm bound
+     * CHIPMUNK_PHI_ALPHA_H (481) is the ONLY thing distinguishing honest
+     * signatures from arbitrary solutions. */
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        if (chipmunk_poly_chknorm_q(&a_signature->sigma[i], CHIPMUNK_PHI_ALPHA_H, a_params->q) != 0) {
+            log_it(L_ERROR, "HOTS verify: signature sigma[%d] exceeds norm bound %d (forgery attempt)",
+                   i, CHIPMUNK_PHI_ALPHA_H);
+            return -EINVAL;
+        }
+    }
+
     // Hash message to polynomial
     chipmunk_poly_t l_hm;
     if (chipmunk_poly_from_hash(&l_hm, a_message, a_message_len) != 0) {
