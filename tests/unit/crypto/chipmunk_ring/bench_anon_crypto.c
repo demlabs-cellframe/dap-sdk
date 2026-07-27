@@ -86,11 +86,13 @@ static void bench_pedersen_commit(void)
 
     for (int i = 0; i < BENCH_ITERS; ++i) {
         chipmunk_pedersen_commit_t l_commit;
-        uint8_t l_rand[32];
+        uint8_t l_rand[32], l_value[CHIPMUNK_PEDERSEN_VALUE_BYTES];
         dap_random_bytes(l_rand, 32);
+        memset(l_value, 0, sizeof(l_value));
+        { uint64_t v = 1000000 + (uint64_t)i; memcpy(l_value, &v, sizeof(v)); }
 
         clock_gettime(CLOCK_MONOTONIC, &l_start);
-        chipmunk_pedersen_commit(&l_commit, &l_params, 1000000 + i, l_rand);
+        chipmunk_pedersen_commit(&l_commit, &l_params, l_value, l_rand);
         clock_gettime(CLOCK_MONOTONIC, &l_end);
         l_total += time_ms(&l_start, &l_end);
     }
@@ -106,9 +108,11 @@ static void bench_range_proof(void)
     chipmunk_pedersen_init(&l_params, l_seed);
 
     chipmunk_pedersen_commit_t l_commit;
-    uint8_t l_rand[32];
+    uint8_t l_rand[32], l_value[CHIPMUNK_PEDERSEN_VALUE_BYTES];
     for (int i = 0; i < 32; ++i) l_rand[i] = 0xAA;
-    chipmunk_pedersen_commit(&l_commit, &l_params, 1000000, l_rand);
+    memset(l_value, 0, sizeof(l_value));
+    { uint64_t v = 1000000; memcpy(l_value, &v, sizeof(v)); }
+    chipmunk_pedersen_commit(&l_commit, &l_params, l_value, l_rand);
 
     struct timespec l_start, l_end;
     double l_prove_total = 0, l_verify_total = 0;
@@ -118,7 +122,7 @@ static void bench_range_proof(void)
         memset(&l_proof, 0, sizeof(l_proof));
 
         clock_gettime(CLOCK_MONOTONIC, &l_start);
-        chipmunk_range_proof_prove(&l_proof, &l_params, &l_commit, 1000000, l_rand, 64);
+        chipmunk_range_proof_prove(&l_proof, &l_params, &l_commit, l_value, l_rand);
         clock_gettime(CLOCK_MONOTONIC, &l_end);
         l_prove_total += time_ms(&l_start, &l_end);
 

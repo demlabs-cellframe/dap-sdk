@@ -29,6 +29,7 @@
 #include "sig/chipmunk/chipmunk_ring.h"
 #include "sig/chipmunk/chipmunk_snark.h"
 #include "sig/chipmunk/chipmunk_pedersen.h"
+#include "sig/chipmunk/chipmunk_poly.h"
 #include "sig/chipmunk/chipmunk_range_proof.h"
 #include "sig/chipmunk/chipmunk_mixnet.h"
 #include "sig/chipmunk/chipmunk_aggregation.h"
@@ -118,6 +119,31 @@ static void test_ring_keygen_sign_verify(void)
     l_rc = chipmunk_ring_verify(&l_sig, l_par, &l_ring, l_bad_msg, sizeof(l_bad_msg));
     dap_assert(l_rc != 0, "wrong message → verify fails");
 
+    /* Wrong ring (Alice removed from position 0) → verify should fail */
+    chipmunk_ring_table_t l_wrong_ring = {0};
+    l_wrong_ring.N = 8;
+    l_wrong_ring.pks = DAP_NEW_Z_COUNT(chipmunk_ring_pk_t, 8);
+    for (uint32_t i = 0; i < 8; ++i) {
+        l_wrong_ring.pks[i].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
+    }
+    /* Copy dummy keys for all positions (no Alice) */
+    for (uint32_t idx = 0; idx < 8; ++idx) {
+        chipmunk_ring_keypair_t l_dummy_kp = {0};
+        uint8_t l_dummy_seed[32];
+        for (int i = 0; i < 32; ++i) l_dummy_seed[i] = (uint8_t)(0x20 * idx + i);
+        chipmunk_ring_keygen(&l_dummy_kp, l_par, l_dummy_seed);
+        for (uint32_t i = 0; i < l_par->k; ++i) {
+            lotrs_poly_copy(l_wrong_ring.pks[idx].a_hat.polys[i], l_dummy_kp.pk.a_hat.polys[i], l_par);
+        }
+        chipmunk_ring_keypair_free(&l_dummy_kp);
+    }
+    l_rc = chipmunk_ring_verify(&l_sig, l_par, &l_wrong_ring, l_msg, sizeof(l_msg));
+    dap_assert(l_rc != 0, "wrong ring (Alice not in ring) → verify fails");
+    for (uint32_t i = 0; i < 8; ++i) {
+        lotrs_polyvec_free(&l_wrong_ring.pks[i].a_hat);
+    }
+    DAP_DELETE(l_wrong_ring.pks);
+
     /* Cleanup */
     chipmunk_ring_sig_free(&l_sig);
     chipmunk_ring_keypair_free(&l_alice_kp);
@@ -172,6 +198,27 @@ static void test_snark_prove_verify(void)
     l_rc = chipmunk_snark_verify(&l_proof, &l_ctx, &l_bad_stmt);
     dap_assert(l_rc != 1, "wrong message → SNARK verify fails");
 
+    /* Wrong ring size → fail */
+    chipmunk_snark_statement_t l_bad_ring_stmt = l_stmt;
+    l_bad_ring_stmt.ring_size = 2; /* Original was 4 */
+    l_rc = chipmunk_snark_verify(&l_proof, &l_ctx, &l_bad_ring_stmt);
+    dap_assert(l_rc != 1, "wrong ring size → SNARK verify fails");
+
+    /* Wrong signer index in witness → verify should fail
+     * (proof was created for index 2, but statement context changed) */
+    chipmunk_snark_witness_t l_bad_witness = l_witness;
+    l_bad_witness.signer_index = 0; /* Different from original */
+    chipmunk_snark_proof_t l_bad_proof;
+    memset(&l_bad_proof, 0, sizeof(l_bad_proof));
+    l_rc = chipmunk_snark_prove(&l_bad_proof, &l_ctx, &l_stmt, &l_bad_witness);
+    if (l_rc == 0) {
+        /* If prove succeeded with different index, verify with original stmt should fail */
+        l_rc = chipmunk_snark_verify(&l_bad_proof, &l_ctx, &l_stmt);
+        /* This may or may not fail depending on SNARK construction */
+        log_it(L_INFO, "Different signer index verify: %d", l_rc);
+    }
+    chipmunk_snark_proof_free(&l_bad_proof);
+
     chipmunk_snark_proof_free(&l_proof);
     chipmunk_snark_ctx_free(&l_ctx);
     log_it(L_INFO, "SNARK test cleanup done");
@@ -189,30 +236,32 @@ static void test_pedersen_range_proof_pipeline(void)
 
     /* Commit to amount */
     int64_t l_amount = 1000000;
-    uint8_t l_rand[32];
+    uint8_t l_rand[32], l_amount_bytes[CHIPMUNK_PEDERSEN_VALUE_BYTES];
     for (int i = 0; i < 32; ++i) l_rand[i] = 0xAA;
+    memset(l_amount_bytes, 0, sizeof(l_amount_bytes));
+    memcpy(l_amount_bytes, &l_amount, sizeof(l_amount));
 
     chipmunk_pedersen_commit_t l_commit;
-    int l_rc = chipmunk_pedersen_commit(&l_commit, &l_params, l_amount, l_rand);
+    int l_rc = chipmunk_pedersen_commit(&l_commit, &l_params, l_amount_bytes, l_rand);
     dap_assert(l_rc == 0, "Pedersen commit OK");
 
-    /* Generate range proof */
     chipmunk_range_proof_t l_proof;
     memset(&l_proof, 0, sizeof(l_proof));
-    l_rc = chipmunk_range_proof_prove(&l_proof, &l_params, &l_commit,
-                                       l_amount, l_rand, 64);
+    l_rc = chipmunk_range_proof_prove(&l_proof, &l_params, &l_commit, l_amount_bytes, l_rand);
     dap_assert(l_rc == 0, "range proof OK");
 
-    /* Verify range proof */
     l_rc = chipmunk_range_proof_verify(&l_proof, &l_params, &l_commit);
     dap_assert(l_rc == 1, "range proof verify OK");
 
-    /* Additive homomorphism: C(100) + C(200) = C(300) */
     chipmunk_pedersen_commit_t l_c1, l_c2, l_sum;
-    uint8_t l_r1[32], l_r2[32];
+    uint8_t l_r1[32], l_r2[32], l_v100[32], l_v200[32];
     for (int i = 0; i < 32; ++i) { l_r1[i] = 0x11; l_r2[i] = 0x22; }
-    chipmunk_pedersen_commit(&l_c1, &l_params, 100, l_r1);
-    chipmunk_pedersen_commit(&l_c2, &l_params, 200, l_r2);
+    memset(l_v100, 0, sizeof(l_v100));
+    memset(l_v200, 0, sizeof(l_v200));
+    { uint64_t v = 100; memcpy(l_v100, &v, sizeof(v)); }
+    { uint64_t v = 200; memcpy(l_v200, &v, sizeof(v)); }
+    chipmunk_pedersen_commit(&l_c1, &l_params, l_v100, l_r1);
+    chipmunk_pedersen_commit(&l_c2, &l_params, l_v200, l_r2);
     chipmunk_pedersen_add(&l_sum, &l_c1, &l_c2);
 
     /* Sum should differ from individual */
@@ -224,7 +273,101 @@ static void test_pedersen_range_proof_pipeline(void)
     }
     dap_assert(l_diff, "homomorphic sum differs from individual");
 
+    /* Same amount, same blinding → same commitment (deterministic) */
+    chipmunk_pedersen_commit_t l_c_dup;
+    chipmunk_pedersen_commit(&l_c_dup, &l_params, l_amount_bytes, l_rand);
+    int l_same = 1;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && l_same; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && l_same; ++j) {
+            if (l_commit.C[i].coeffs[j] != l_c_dup.C[i].coeffs[j]) l_same = 0;
+        }
+    }
+    dap_assert(l_same, "same amount + same blinding → same commitment");
+
+    /* Same amount, DIFFERENT blinding → different commitment */
+    uint8_t l_rand2[32];
+    for (int i = 0; i < 32; ++i) l_rand2[i] = 0xBB + i;
+    chipmunk_pedersen_commit_t l_c_diff;
+    chipmunk_pedersen_commit(&l_c_diff, &l_params, l_amount_bytes, l_rand2);
+    int l_amount_differs = 0;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && !l_amount_differs; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && !l_amount_differs; ++j) {
+            if (l_commit.C[i].coeffs[j] != l_c_diff.C[i].coeffs[j]) l_amount_differs = 1;
+        }
+    }
+    dap_assert(l_amount_differs, "same amount + different blinding → different commitment");
+
     chipmunk_range_proof_free(&l_proof);
+}
+
+/* ================================================================
+ * Test 3b: Pedersen conservation (Phase 2 — homomorphic encoding)
+ *
+ * Mirrors the ledger conservation check: C_input == Σ C_output_i.
+ * With digit encoding, encode(v1)+encode(v2)=encode(v1+v2) in R_q,
+ * so this test MUST pass (it was the root cause of anon TX failure).
+ * ================================================================ */
+static void test_pedersen_conservation(void)
+{
+    chipmunk_pedersen_params_t *l_params = DAP_NEW_Z(chipmunk_pedersen_params_t);
+    dap_assert(l_params != NULL, "conservation params alloc OK");
+    uint8_t l_seed[32];
+    for (int i = 0; i < 32; ++i) l_seed[i] = 0x42 + i;
+    chipmunk_pedersen_init(l_params, l_seed);
+
+    /* Scenario: input 500 = output 200 + output 300 */
+    uint8_t l_v500[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    uint8_t l_v200[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    uint8_t l_v300[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    memset(l_v500, 0, CHIPMUNK_PEDERSEN_VALUE_BYTES);
+    memset(l_v200, 0, CHIPMUNK_PEDERSEN_VALUE_BYTES);
+    memset(l_v300, 0, CHIPMUNK_PEDERSEN_VALUE_BYTES);
+    { uint64_t v = 500; memcpy(l_v500, &v, sizeof(v)); }
+    { uint64_t v = 200; memcpy(l_v200, &v, sizeof(v)); }
+    { uint64_t v = 300; memcpy(l_v300, &v, sizeof(v)); }
+
+    uint8_t l_r_in[32], l_r1[32], l_r2[32];
+    for (int i = 0; i < 32; ++i) { l_r_in[i] = 0x01; l_r1[i] = 0x02; l_r2[i] = 0x03; }
+
+    chipmunk_pedersen_commit_t l_c_input;
+    chipmunk_pedersen_commit(&l_c_input, l_params, l_v500, l_r_in);
+
+    chipmunk_pedersen_commit_t l_c_out1, l_c_out2;
+    chipmunk_pedersen_commit(&l_c_out1, l_params, l_v200, l_r1);
+    chipmunk_pedersen_commit(&l_c_out2, l_params, l_v300, l_r2);
+
+    chipmunk_pedersen_commit_t l_c_out_sum;
+    chipmunk_pedersen_add(&l_c_out_sum, &l_c_out1, &l_c_out2);
+
+    /* Derive combined blinding r_combined = r1 + r2 */
+    chipmunk_poly_t l_rr1[CHIPMUNK_LRS_K], l_rr2[CHIPMUNK_LRS_K], l_rr_comb[CHIPMUNK_LRS_K];
+    chipmunk_pedersen_derive_blinding(l_rr1, l_r1);
+    chipmunk_pedersen_derive_blinding(l_rr2, l_r2);
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j)
+        chipmunk_poly_add_q(&l_rr_comb[j], &l_rr1[j], &l_rr2[j], (uint64_t)CHIPMUNK_Q);
+
+    /* Expected: commit(500, r1+r2) should equal sum of output commitments */
+    chipmunk_pedersen_commit_t l_c_expected;
+    chipmunk_pedersen_commit_explicit(&l_c_expected, l_params, l_v500, l_rr_comb);
+
+    int l_match = 1;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && l_match; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && l_match; ++j) {
+            if (l_c_out_sum.C[i].coeffs[j] != l_c_expected.C[i].coeffs[j]) l_match = 0;
+        }
+    }
+    dap_assert(l_match, "CONSERVATION: C(200)+C(300)==C(500) with combined blinding");
+
+    /* Also verify input != output sum (different blinding) */
+    int l_input_differs = 0;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && !l_input_differs; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N && !l_input_differs; ++j) {
+            if (l_c_input.C[i].coeffs[j] != l_c_out_sum.C[i].coeffs[j]) l_input_differs = 1;
+        }
+    }
+    dap_assert(l_input_differs, "C(500,r_in) != C(200,r1)+C(300,r2) (different blinding)");
+
+    DAP_DELETE(l_params);
 }
 
 /* ================================================================
@@ -407,9 +550,9 @@ static void test_hots_aggregation_pipeline(void)
     /* Sign with both keys */
     const uint8_t l_msg[] = "aggregation-test";
     chipmunk_hots_signature_t l_sig1, l_sig2;
-    l_rc = chipmunk_hots_sign(&l_sk1, l_msg, sizeof(l_msg), &l_sig1);
+    l_rc = chipmunk_hots_sign(&l_sk1, l_msg, sizeof(l_msg), &l_sig1, &l_params);
     dap_assert(l_rc == 0, "sign 1 OK");
-    l_rc = chipmunk_hots_sign(&l_sk2, l_msg, sizeof(l_msg), &l_sig2);
+    l_rc = chipmunk_hots_sign(&l_sk2, l_msg, sizeof(l_msg), &l_sig2, &l_params);
     dap_assert(l_rc == 0, "sign 2 OK");
 
     /* Verify individual signatures */
@@ -441,6 +584,8 @@ int main(void)
         dap_assert(l_rc == 0, "Pedersen init OK");
         DAP_DELETE(l_params);
     }
+    test_pedersen_range_proof_pipeline();  /* Phase 2: range proof with digit encoding */
+    test_pedersen_conservation();          /* Phase 2: homomorphic conservation check */
     test_snark_prove_verify();
     test_mixnet_batch_integrity();
     test_key_image_linkability();

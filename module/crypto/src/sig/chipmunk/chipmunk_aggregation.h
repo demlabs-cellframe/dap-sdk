@@ -144,7 +144,8 @@ void chipmunk_randomizers_free(chipmunk_randomizers_t *randomizers);
  */
 int chipmunk_hots_sig_randomize(const chipmunk_hots_signature_t *sig,
                                 const chipmunk_randomizer_t *randomizer,
-                                chipmunk_hots_signature_t *randomized_sig);
+                                chipmunk_hots_signature_t *randomized_sig,
+                                uint64_t q);
 
 /**
  * Aggregate multiple randomized HOTS signatures
@@ -157,7 +158,8 @@ int chipmunk_hots_sig_randomize(const chipmunk_hots_signature_t *sig,
 int chipmunk_hots_aggregate_with_randomizers(const chipmunk_hots_signature_t *signatures,
                                              const chipmunk_randomizer_t *randomizers,
                                              size_t count,
-                                             chipmunk_aggregated_hots_sig_t *aggregated);
+                                             chipmunk_aggregated_hots_sig_t *aggregated,
+                                             uint64_t q);
 
 // === Multi-Signature Functions ===
 
@@ -170,6 +172,7 @@ int chipmunk_hots_aggregate_with_randomizers(const chipmunk_hots_signature_t *si
  * @param tree Merkle tree containing the public key
  * @param leaf_index Index of the public key in the tree
  * @param individual_sig Output individual signature
+ * @param q Field modulus
  * @return 0 on success, negative on error
  */
 int chipmunk_create_individual_signature(const uint8_t *message,
@@ -179,7 +182,8 @@ int chipmunk_create_individual_signature(const uint8_t *message,
                                          const uint8_t a_rho_seed[32],
                                          const chipmunk_tree_t *tree,
                                          uint32_t leaf_index,
-                                         chipmunk_individual_sig_t *individual_sig);
+                                         chipmunk_individual_sig_t *individual_sig,
+                                         uint64_t q);
 
 /**
  * Aggregate multiple individual signatures into multi-signature
@@ -194,7 +198,8 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
                                   size_t count,
                                   const uint8_t *message,
                                   size_t message_len,
-                                  chipmunk_multi_signature_t *multi_sig);
+                                  chipmunk_multi_signature_t *multi_sig,
+                                  uint64_t q);
 
 /**
  * Aggregate multiple individual signatures into multi-signature with tree
@@ -211,7 +216,8 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
                                             const uint8_t *message,
                                             size_t message_len,
                                             const chipmunk_tree_t *tree,
-                                            chipmunk_multi_signature_t *multi_sig);
+                                            chipmunk_multi_signature_t *multi_sig,
+                                            uint64_t q);
 
 /**
  * Verify aggregated multi-signature
@@ -222,7 +228,8 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
  */
 int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
                                     const uint8_t *message,
-                                    size_t message_len);
+                                    size_t message_len,
+                                    uint64_t q);
 
 // === Batch Verification ===
 
@@ -253,7 +260,7 @@ int chipmunk_batch_add_signature(chipmunk_batch_context_t *context,
  * @param context Batch context with signatures
  * @return 1 if all valid, 0 if any invalid, negative on error
  */
-int chipmunk_batch_verify(const chipmunk_batch_context_t *context);
+int chipmunk_batch_verify(const chipmunk_batch_context_t *context, uint64_t q);
 
 /**
  * Free batch verification context

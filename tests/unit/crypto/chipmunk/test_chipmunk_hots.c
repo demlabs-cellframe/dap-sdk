@@ -90,7 +90,7 @@ static int test_hots_basic(void) {
     chipmunk_hots_signature_t l_signature;
 
     l_result = chipmunk_hots_sign(&l_sk, (const uint8_t*)l_test_message,
-                                  strlen(l_test_message), &l_signature);
+                                  strlen(l_test_message), &l_signature, &l_params);
     if (l_result != 0) {
         log_it(L_ERROR, "❌ HOTS signing failed with code %d", l_result);
         return -1;
@@ -146,7 +146,7 @@ static int test_hots_multiple_keys(void) {
         }
 
         chipmunk_hots_signature_t l_signature;
-        if (chipmunk_hots_sign(&l_sk, (const uint8_t*)TEST_MESSAGE, strlen(TEST_MESSAGE), &l_signature) != 0) {
+        if (chipmunk_hots_sign(&l_sk, (const uint8_t*)TEST_MESSAGE, strlen(TEST_MESSAGE), &l_signature, &l_params) != 0) {
             log_it(L_ERROR, "❌ HOTS signing failed for counter %u", l_counter);
             return -1;
         }

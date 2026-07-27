@@ -92,13 +92,13 @@
 #define CHIPMUNK_MRING_LEAF_BOUND_MAX    ((int64_t)129961749712937LL) /* 37^9 */
 
 /* Ring extension degree e = deg Φ₉ (G3.1 §3); kept here to avoid params↔ext cycle. */
-#define CHIPMUNK_MRING_EXT_DEG           6
+#define CHIPMUNK_FQ6_EXT_DEG           6
 
 /*
  * G3.1 §8 — one R_q^{(e)} element serialises as e R_q polys (qpacked).
  */
-#define CHIPMUNK_MRING_EXT_QPACK_BYTES \
-        (CHIPMUNK_MRING_EXT_DEG * (uint32_t)CHIPMUNK_MRING_POLY_QPACK)
+#define CHIPMUNK_FQ6_EXT_QPACK_BYTES \
+        (CHIPMUNK_FQ6_EXT_DEG * (uint32_t)CHIPMUNK_MRING_POLY_QPACK)
 
 /* -------------------------------------------------------------------------
  * Fixed-size wire constants.
@@ -130,10 +130,10 @@
  * Single fold round: (L_r, R_r) ∈ (R_q^{(e)})² — G3.1 §8.
  * M4.1 will wire-pack; M4.0 uses the same byte budget for layout pins.
  */
-#define CHIPMUNK_MRING_FOLD_ROUND_BYTES  (2u * CHIPMUNK_MRING_EXT_QPACK_BYTES)
+#define CHIPMUNK_MRING_FOLD_ROUND_BYTES  (2u * CHIPMUNK_FQ6_EXT_QPACK_BYTES)
 
 /* Final folded scalars (a*, b*) — two R_q^{(e)} elements. */
-#define CHIPMUNK_MRING_FINAL_SCALARS_BYTES (2u * CHIPMUNK_MRING_EXT_QPACK_BYTES)
+#define CHIPMUNK_MRING_FINAL_SCALARS_BYTES (2u * CHIPMUNK_FQ6_EXT_QPACK_BYTES)
 
 /* Y_pk block: aggregated-pk claim (1 qpacked poly, G2 v2.1 §1, §4). */
 #define CHIPMUNK_MRING_YPK_BYTES         ((uint32_t)CHIPMUNK_MRING_POLY_QPACK)
@@ -153,11 +153,11 @@ _Static_assert(CHIPMUNK_MRING_POLY_ZPACK == 1280u,
                "MRNG: zpacked Chipmunk poly must be 1280 bytes");
 _Static_assert(CHIPMUNK_MRING_K_PK == 6u && CHIPMUNK_MRING_K_T == 6u,
                "MRNG: K_PK and K_T are fixed at 6 to match chipmunk_lrs_K");
-_Static_assert(CHIPMUNK_MRING_EXT_QPACK_BYTES ==
-               CHIPMUNK_MRING_EXT_DEG * CHIPMUNK_MRING_POLY_QPACK,
+_Static_assert(CHIPMUNK_FQ6_EXT_QPACK_BYTES ==
+               CHIPMUNK_FQ6_EXT_DEG * CHIPMUNK_MRING_POLY_QPACK,
                "MRNG: ext qpack = e R_q polys");
 _Static_assert(CHIPMUNK_MRING_FOLD_ROUND_BYTES ==
-               2u * CHIPMUNK_MRING_EXT_QPACK_BYTES,
+               2u * CHIPMUNK_FQ6_EXT_QPACK_BYTES,
                "MRNG: fold round = (L,R) ext elements");
 _Static_assert(CHIPMUNK_MRING_LEAF_MASK_BYTES == 3136u,
                "MRNG: leaf-mask = 49 bits × 512 coeffs");

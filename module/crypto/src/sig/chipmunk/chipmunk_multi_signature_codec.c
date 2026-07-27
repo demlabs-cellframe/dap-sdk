@@ -412,35 +412,35 @@ int chipmunk_multi_signature_deserialize(
                l_des.error_code,
                l_des.failed_field ? l_des.failed_field : "?",
                l_des.error_message ? l_des.error_message : "?");
-        chipmunk_multi_signature_wire_release(&l_wire);
+        chipmunk_multi_signature_wire_release_with_nodes(&l_wire);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_SIZE_MISMATCH;
     }
     if (l_des.bytes_read != a_buffer_size - CHIPMUNK_MULTI_SIG_HEADER_SIZE) {
-        chipmunk_multi_signature_wire_release(&l_wire);
+        chipmunk_multi_signature_wire_release_with_nodes(&l_wire);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_SIZE_MISMATCH;
     }
 
     /* Cross-validate header counters against what the schema decoded. */
     if (l_wire.signer_count != l_signer_count) {
-        chipmunk_multi_signature_wire_release(&l_wire);
+        chipmunk_multi_signature_wire_release_with_nodes(&l_wire);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_SIGNER_COUNT;
     }
     if (!l_wire.signers) {
-        chipmunk_multi_signature_wire_release(&l_wire);
+        chipmunk_multi_signature_wire_release_with_nodes(&l_wire);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_NULL;
     }
     for (uint32_t i = 0; i < l_signer_count; ++i) {
         if (l_wire.signers[i].path_length != l_path_length) {
-            chipmunk_multi_signature_wire_release(&l_wire);
+            chipmunk_multi_signature_wire_release_with_nodes(&l_wire);
             return CHIPMUNK_MULTI_SIG_CODEC_ERR_PATH_LENGTH_MISMATCH;
         }
     }
     if (l_wire.is_randomized != 0 && l_wire.is_randomized != 1) {
-        chipmunk_multi_signature_wire_release(&l_wire);
+        chipmunk_multi_signature_wire_release_with_nodes(&l_wire);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_FLAG;
     }
     if (l_wire.reserved[0] != 0 || l_wire.reserved[1] != 0 || l_wire.reserved[2] != 0) {
-        chipmunk_multi_signature_wire_release(&l_wire);
+        chipmunk_multi_signature_wire_release_with_nodes(&l_wire);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_RESERVED;
     }
 
@@ -448,7 +448,7 @@ int chipmunk_multi_signature_deserialize(
      * blocks (signers[i].nodes etc.) into the runtime struct and zeroes
      * the wire mirror.  No further release needed on success. */
     if (chipmunk_multi_signature_from_wire(&l_wire, a_multi_sig) != 0) {
-        chipmunk_multi_signature_wire_release(&l_wire);
+        chipmunk_multi_signature_wire_release_with_nodes(&l_wire);
         chipmunk_multi_signature_deep_free(a_multi_sig);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_ALLOC;
     }

@@ -91,7 +91,7 @@ static void s_fixture_clear(fixture_t *f)
         f->sigs_ready = false;
     }
     if (f->tree_ready) {
-        chipmunk_tree_clear(&f->tree);
+        chipmunk_tree_free(&f->tree);
         f->tree_ready = false;
     }
     f->num_signers = 0;
@@ -159,7 +159,7 @@ static bool s_fixture_build_n(fixture_t *f, size_t num_signers)
                      &hots_sks[i], &hots_pks[i],
                      pub_keys[i].rho_seed,
                      &f->tree, i,
-                     &f->individual_sigs[i]);
+                     &f->individual_sigs[i], (uint64_t)CHIPMUNK_Q);
         TEST_ASSERT(rc == 0, "create_individual_signature");
     }
     f->sigs_ready = true;
@@ -168,14 +168,14 @@ static bool s_fixture_build_n(fixture_t *f, size_t num_signers)
                     f->individual_sigs, num_signers,
                     (const uint8_t *)s_fixture_message,
                     sizeof(s_fixture_message) - 1,
-                    &f->tree, &f->multi_sig) == 0,
+                    &f->tree, &f->multi_sig, (uint64_t)CHIPMUNK_Q) == 0,
                 "aggregate_signatures_with_tree");
     f->multi_ready = true;
 
     TEST_ASSERT(chipmunk_verify_multi_signature(
                     &f->multi_sig,
                     (const uint8_t *)s_fixture_message,
-                    sizeof(s_fixture_message) - 1) == 1,
+                    sizeof(s_fixture_message) - 1, (uint64_t)CHIPMUNK_Q) == 1,
                 "sanity: multi_sig verifies in-memory");
 
     return true;
@@ -292,7 +292,7 @@ static bool test_round_trip(void)
     TEST_ASSERT(chipmunk_verify_multi_signature(
                     &copy,
                     (const uint8_t *)s_fixture_message,
-                    sizeof(s_fixture_message) - 1) == 1,
+                    sizeof(s_fixture_message) - 1, (uint64_t)CHIPMUNK_Q) == 1,
                 "deserialised copy verifies");
 
     DAP_DELETE(buf);
@@ -496,7 +496,7 @@ static bool test_malformed_blobs(void)
         int vrc = chipmunk_verify_multi_signature(
                       &out,
                       (const uint8_t *)s_fixture_message,
-                      sizeof(s_fixture_message) - 1);
+                      sizeof(s_fixture_message) - 1, (uint64_t)CHIPMUNK_Q);
         TEST_ASSERT(vrc != 1, "coefficient flip rejected by verifier");
         chipmunk_multi_signature_deep_free(&out);
         DAP_DELETE(clone);

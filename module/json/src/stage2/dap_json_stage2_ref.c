@@ -1898,6 +1898,17 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
  * 
  * This is a MINIMAL wrapper - just type and ref_index, NO data copy!
  */
+/**
+ * @brief Recursively materialize a Stage2 ref into a public-API-compatible value.
+ *
+ * Stage2 stores compact 8-byte refs where objects/arrays use arena-allocated
+ * uint32_t index arrays and strings point into the input buffer. The public
+ * API expects DAP_JSON_FLAG_MALLOC values with dap_json_object_storage_t /
+ * dap_json_array_storage_t and malloc'd string copies.
+ *
+ * This function bridges the two worlds by recursively converting refs into
+ * fully self-contained malloc'd values.
+ */
 static dap_json_value_t *s_materialize_ref_to_value(
     dap_json_stage2_t *a_stage2,
     uint32_t ref_index
@@ -1907,21 +1918,212 @@ static dap_json_value_t *s_materialize_ref_to_value(
         log_it(L_ERROR, "Invalid ref_index: %u (max: %zu)", ref_index, a_stage2->values_count);
         return NULL;
     }
-    
+
     dap_json_value_t *ref = &a_stage2->values[ref_index];
-    
-    // Create minimal wrapper
-    dap_json_value_t *value = s_create_value_arena(a_stage2->arena);
-    if (!value) {
+
+    switch (ref->type) {
+    case DAP_JSON_TYPE_OBJECT: {
+        /* ref->offset = (uint32_t)(uintptr_t)pair_indices  (flat uint32_t array)
+         * ref->length = pair count */
+        size_t l_count = ref->length;
+        uint32_t *l_pairs = (uint32_t *)(uintptr_t)ref->offset;
+
+        dap_json_object_storage_t *l_storage = DAP_NEW_Z(dap_json_object_storage_t);
+        if (!l_storage) return NULL;
+        l_storage->capacity = l_count > 0 ? l_count : 4;
+        l_storage->count = l_count;
+        l_storage->keys = DAP_NEW_Z_COUNT(char*, l_storage->capacity);
+        l_storage->values = DAP_NEW_Z_COUNT(dap_json_value_t*, l_storage->capacity);
+        if (!l_storage->keys || !l_storage->values) {
+            DAP_DEL_Z(l_storage->keys);
+            DAP_DEL_Z(l_storage->values);
+            DAP_DELETE(l_storage);
+            return NULL;
+        }
+
+        for (size_t i = 0; i < l_count; i++) {
+            uint32_t k_idx = l_pairs[i * 2];
+            uint32_t v_idx = l_pairs[i * 2 + 1];
+
+            /* Materialize key (always a STRING ref) */
+            if (k_idx < a_stage2->values_count) {
+                dap_json_value_t *kref = &a_stage2->values[k_idx];
+                if (kref->type == DAP_JSON_TYPE_STRING) {
+                    const char *s = (const char *)a_stage2->input + kref->offset;
+                    size_t slen = kref->length;
+                    l_storage->keys[i] = DAP_NEW_Z_COUNT(char, slen + 1);
+                    if (l_storage->keys[i]) {
+                        memcpy(l_storage->keys[i], s, slen);
+                        l_storage->keys[i][slen] = '\0';
+                    }
+                }
+            }
+
+            /* Materialize value (recursive) */
+            l_storage->values[i] = s_materialize_ref_to_value(a_stage2, v_idx);
+        }
+
+        dap_json_value_t *l_val = DAP_NEW_Z(dap_json_value_t);
+        if (!l_val) return NULL;
+        l_val->type = DAP_JSON_TYPE_OBJECT;
+        dap_json_set_storage_ptr(l_val, l_storage);
+        return l_val;
+    }
+
+    case DAP_JSON_TYPE_ARRAY: {
+        /* ref->offset = (uint32_t)(uintptr_t)element_indices  (flat uint32_t array)
+         * ref->length = element count */
+        size_t l_count = ref->length;
+        uint32_t *l_elems = (uint32_t *)(uintptr_t)ref->offset;
+
+        dap_json_array_storage_t *l_storage = DAP_NEW_Z(dap_json_array_storage_t);
+        if (!l_storage) return NULL;
+        l_storage->capacity = l_count > 0 ? l_count : 4;
+        l_storage->count = l_count;
+        l_storage->elements = DAP_NEW_Z_COUNT(dap_json_value_t*, l_storage->capacity);
+        if (!l_storage->elements) {
+            DAP_DELETE(l_storage);
+            return NULL;
+        }
+
+        for (size_t i = 0; i < l_count; i++) {
+            l_storage->elements[i] = s_materialize_ref_to_value(a_stage2, l_elems[i]);
+        }
+
+        dap_json_value_t *l_val = DAP_NEW_Z(dap_json_value_t);
+        if (!l_val) return NULL;
+        l_val->type = DAP_JSON_TYPE_ARRAY;
+        /* Arrays reuse offset/length for storage pointer (same scheme as objects) */
+        dap_json_set_storage_ptr(l_val, l_storage);
+        return l_val;
+    }
+
+    case DAP_JSON_TYPE_STRING: {
+        /* ref->offset = byte offset into a_stage2->input (content after opening quote)
+         * ref->length = string content length
+         * ref->flags may have DAP_JSON_FLAG_ESCAPED */
+        const char *s = (const char *)a_stage2->input + ref->offset;
+        size_t slen = ref->length;
+
+        char *copy;
+        size_t copy_len;
+
+        if (ref->flags & DAP_JSON_FLAG_ESCAPED) {
+            /* Unescape: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX */
+            copy = DAP_NEW_Z_COUNT(char, slen + 1);
+            if (!copy) return NULL;
+            size_t wi = 0, ri = 0;
+            while (ri < slen) {
+                if (s[ri] == '\\' && ri + 1 < slen) {
+                    ri++;
+                    switch (s[ri++]) {
+                        case '"':  copy[wi++] = '"'; break;
+                        case '\\': copy[wi++] = '\\'; break;
+                        case '/':  copy[wi++] = '/'; break;
+                        case 'b':  copy[wi++] = '\b'; break;
+                        case 'f':  copy[wi++] = '\f'; break;
+                        case 'n':  copy[wi++] = '\n'; break;
+                        case 'r':  copy[wi++] = '\r'; break;
+                        case 't':  copy[wi++] = '\t'; break;
+                        case 'u': {
+                            if (ri + 4 > slen) { copy[wi++] = '?'; break; }
+                            uint16_t cp = 0;
+                            for (int h = 0; h < 4; h++, ri++) {
+                                cp <<= 4;
+                                char c = s[ri];
+                                if (c >= '0' && c <= '9')      cp |= (c - '0');
+                                else if (c >= 'a' && c <= 'f') cp |= (c - 'a' + 10);
+                                else if (c >= 'A' && c <= 'F') cp |= (c - 'A' + 10);
+                            }
+                            /* Simple BMP → UTF-8 (covers all JSON \uXXXX) */
+                            if (cp < 0x80)       copy[wi++] = (char)cp;
+                            else if (cp < 0x800) { copy[wi++] = 0xC0|(cp>>6); copy[wi++] = 0x80|(cp&0x3F); }
+                            else                 { copy[wi++] = 0xE0|(cp>>12); copy[wi++] = 0x80|((cp>>6)&0x3F); copy[wi++] = 0x80|(cp&0x3F); }
+                            break;
+                        }
+                        default: copy[wi++] = s[ri-1]; break;
+                    }
+                } else {
+                    copy[wi++] = s[ri++];
+                }
+            }
+            copy[wi] = '\0';
+            copy_len = wi;
+        } else {
+            copy = DAP_NEW_Z_COUNT(char, slen + 1);
+            if (!copy) return NULL;
+            memcpy(copy, s, slen);
+            copy[slen] = '\0';
+            copy_len = slen;
+        }
+
+        dap_json_value_t *l_val = DAP_NEW_Z(dap_json_value_t);
+        if (!l_val) { DAP_DELETE(copy); return NULL; }
+        l_val->type = DAP_JSON_TYPE_STRING;
+        l_val->flags = 0;  /* unescaped — no longer needs ESCAPED flag */
+        dap_json_set_storage_ptr(l_val, copy);
+        (void)copy_len;  /* available for future use if length tracking is needed */
+        return l_val;
+    }
+
+    case DAP_JSON_TYPE_INT:
+    case DAP_JSON_TYPE_DOUBLE: {
+        /* Parse the number from the input buffer */
+        const char *numstr = (const char *)a_stage2->input + ref->offset;
+        size_t nlen = ref->length;
+
+        dap_json_value_t *l_val = DAP_NEW_Z(dap_json_value_t);
+        if (!l_val) return NULL;
+        l_val->type = ref->type;
+
+        if (ref->type == DAP_JSON_TYPE_INT) {
+            char buf[32];
+            size_t cplen = nlen < sizeof(buf) - 1 ? nlen : sizeof(buf) - 1;
+            memcpy(buf, numstr, cplen);
+            buf[cplen] = '\0';
+            int64_t ival = strtoll(buf, NULL, 10);
+            /* Match dap_json_value_v2_create_int: inline in offset for int32 range,
+             * storage pointer for larger values. */
+            if (ival >= INT32_MIN && ival <= INT32_MAX) {
+                l_val->offset = (uint32_t)(int32_t)ival;
+                l_val->length = 0;
+            } else {
+                int64_t *pval = DAP_NEW_Z(int64_t);
+                if (pval) *pval = ival;
+                dap_json_set_storage_ptr(l_val, pval);
+            }
+        } else {
+            char buf[64];
+            size_t cplen = nlen < sizeof(buf) - 1 ? nlen : sizeof(buf) - 1;
+            memcpy(buf, numstr, cplen);
+            buf[cplen] = '\0';
+            double dval = strtod(buf, NULL);
+            double *pval = DAP_NEW_Z(double);
+            if (pval) *pval = dval;
+            dap_json_set_storage_ptr(l_val, pval);
+        }
+        return l_val;
+    }
+
+    case DAP_JSON_TYPE_BOOLEAN: {
+        dap_json_value_t *l_val = DAP_NEW_Z(dap_json_value_t);
+        if (!l_val) return NULL;
+        l_val->type = DAP_JSON_TYPE_BOOLEAN;
+        l_val->offset = ref->offset;  /* 0=false, 1=true */
+        return l_val;
+    }
+
+    case DAP_JSON_TYPE_NULL: {
+        dap_json_value_t *l_val = DAP_NEW_Z(dap_json_value_t);
+        if (!l_val) return NULL;
+        l_val->type = DAP_JSON_TYPE_NULL;
+        return l_val;
+    }
+
+    default:
+        log_it(L_WARNING, "s_materialize_ref_to_value: unknown type %d", ref->type);
         return NULL;
     }
-    
-    value->type = (dap_json_type_t)ref->type;
-    
-    // NO data initialization! Everything stays in the ref!
-    // API layer will access data through ref when needed
-    
-    return value;
 }
 
 /**

@@ -340,7 +340,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
     }
 
     size_t  l_ret = 0, l_data_size,
-            l_max_size = l_data_size = a_data_size + sizeof(dap_stream_ch_pkt_hdr_t);
+            l_max_size = l_data_size = a_data_size + DAP_STREAM_CH_PKT_HDR_WIRE_SIZE;
 
     dap_stream_ch_pkt_hdr_mem_t l_hdr = {
         .id         = a_ch->proc->id,
@@ -349,6 +349,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         //.enc_type   = a_ch->proc->enc_type, // TODO make it clear, it's unused for now
         .seq_id     = a_ch->stream->seq_id++
     };
+    uint8_t l_hdr_wire[DAP_STREAM_CH_PKT_HDR_WIRE_SIZE];
 
     debug_if(dap_stream_get_dump_packet_headers(), L_INFO,
              "Outgoing channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"DAP_UINT64_FORMAT_X" enc_type=0x%02hhX",
@@ -384,16 +385,23 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
 #endif
     } else if (l_data_size > l_max_fragm_size) {
         /* The first fragment (has no memory shift) is the channel header
-         The rest fragments just concatenate as-is */
+         The rest fragments just concatenate as-is.
+         Must pack mem hdr → wire: sizeof(hdr_mem) is 24 on 64-bit, wire is 16. */
         size_t l_fragment_size;
         dap_stream_fragment_pkt_t *l_fragment;
         size_t l_iteration = 0;
         size_t l_remaining = l_data_size;
+
+        if (dap_stream_ch_pkt_hdr_pack(&l_hdr, l_hdr_wire, sizeof(l_hdr_wire)) != 0) {
+            log_it(L_ERROR, "dap_stream_ch_pkt_write_unsafe: channel header pack failed (fragment path)");
+            DAP_DELETE(l_buf);
+            return 0;
+        }
         
         debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
                  "Fragmenting large packet: total_size=%zu, max_frag=%zu", l_data_size, l_max_fragm_size);
         
-        for (l_fragment = (dap_stream_fragment_pkt_t*)l_buf, l_fragment_size = sizeof(dap_stream_ch_pkt_hdr_t);
+        for (l_fragment = (dap_stream_fragment_pkt_t*)l_buf, l_fragment_size = DAP_STREAM_CH_PKT_HDR_WIRE_SIZE;
              l_remaining > 0;
              l_remaining -= l_fragment_size, l_fragment_size = dap_min(l_remaining, l_max_fragm_size), l_iteration++)
         {

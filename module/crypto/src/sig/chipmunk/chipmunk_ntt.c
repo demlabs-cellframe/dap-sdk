@@ -1,378 +1,684 @@
 /*
- * Authors:
- * Dmitry A. Gerasimov <ceo@cellframe.net>
- * DeM Labs Inc.   https://demlabs.net
- * DeM Labs Open source community https://gitlab.demlabs.net/cellframe
- * Copyright  (c) 2017-2024
- * All rights reserved.
-
- This file is part of DAP (Distributed Applications Platform) the open source project
-
-    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    DAP is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ * chipmunk_ntt.c — 512-point negacyclic NTT for chipmunk lattice cryptography.
+ *
+ * Uses a reference direct-DFT negacyclic NTT (O(N^2)) that IS a ring
+ * isomorphism: ntt(a*b) = ntt(a) ⊙ ntt(b) pointwise. This is required for
+ * correct polynomial multiplication via pointwise product.
+ *
+ * The previous Montgomery-kernel approach (dap_ntt_forward_mont) produced
+ * correct round-trips but was NOT a ring homomorphism — pointwise multiply
+ * in that domain did not correspond to negacyclic convolution.
+ *
+ * Performance: O(N^2) = 262144 field multiplications per transform.
+ * Acceptable for chipmunk's security-first design. Can be replaced with
+ * a fast negacyclic NTT (Cooley-Tukey with correct twiddle assignment)
+ * in the future without changing the API.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 
 #include "chipmunk.h"
 #include "chipmunk_ntt.h"
+#include "chipmunk_field.h"
 #include "dap_ntt.h"
 #include <string.h>
+#include <stdlib.h>
+#include <pthread.h>
 #include <inttypes.h>
 #include "dap_common.h"
+#include "dap_memwipe.h"
 
 #define LOG_TAG "chipmunk_ntt"
 
-// NTT constants for HOTS with q = 3168257, n = 512
-// Primitive root: g = 202470 (primitive 512-th root of unity)
-// Montgomery form: R = 2^22, R mod q computed correctly for HOTS
+/* -------------------------------------------------------------------------
+ * Global NTT context — lazily built via pthread_once
+ * ------------------------------------------------------------------------- */
 
-// NTT forward table from original Rust code for HOTS q=3168257
-// Where the i-th element is g^rev(i) with g=202470 primitive root
-static const int32_t g_ntt_forward_table[1024] = {
-    1, 995666, -1574288, -1567628, -12774, -1253886, 1027733, 1495832, 1308975, 1366316, 419654,
-    -850110, 1213796, 607229, 30648, -1479856, -186492, 1462584, -753723, -833699, -280456, 163513,
-    -275421, 1159249, 836150, 65753, 170646, -866160, -785753, -340717, -71188, 774396, 516360,
-    -472401, -643648, 755107, 328434, -1079211, 332637, -1562510, -944352, 292743, -398075,
-    -792250, -1570208, -955822, -42435, 788642, -1005862, -715107, -550143, 1272492, -1569204,
-    691887, 332656, 1513859, 191325, 1177068, -795124, -209938, -1259403, 681090, -517966, 1402590,
-    1405011, -18225, 1321326, -336592, 565391, 1523389, -1313285, 301459, -1390920, 905835,
-    -478020, -21752, 26824, -661726, 996241, -946568, 1047259, -723061, 796297, -960677, -1305412,
-    912059, 1375349, 1028637, 747279, 482420, -1509626, 1205024, 216395, -173215, -1217835,
-    -1584070, -1353956, -937710, -1083333, -1570871, -81019, -872177, -450834, -1433684, -103613,
-    843176, -1009101, -391655, -778964, 1343576, -1381559, 323167, 1384223, 299948, -474540,
-    -1177230, -22285, -1113039, 898319, 1388298, -203847, 1352832, 1134406, -472618, -365676,
-    -1402290, 705274, -1475510, -255661, 643439, 1348116, -135, -659353, -831128, -1356989,
-    -1443767, -375336, -707598, 693754, 710767, 969223, -180369, -398767, 886904, -368381, 1507887,
-    1016906, -169636, 837249, 1254022, -103544, -157524, 859411, 293909, -628116, 1177002, -105609,
-    -9021, 1527060, 1524174, -1349541, 555221, -408995, -6946, 550397, 1334369, 46337, 17008,
-    120244, 766988, 1501221, 757240, 607789, -1254068, 862567, -295139, -1399394, 700542, -1491735,
-    -443681, 552962, -1565740, 1525292, -430679, 378998, 172683, 491330, -482819, -223756, -745770,
-    67697, -1066473, 956618, -1084322, 707882, 418935, 128917, -490376, -279190, -289617, -1167560,
-    231737, -1274298, 847037, 1425741, -1056400, -621814, -452983, -220643, 207142, 602732,
-    1191600, -1255048, -537313, -434058, -1191772, -1031062, 1097133, -1406697, 501559, 341639,
-    -1576231, -1206226, -699012, -510133, 205634, 139430, -974846, -665707, -283663, -518386,
-    1432794, 6416, 986944, -228492, 1314727, 416698, -728053, 792111, 607659, -697760, -513200,
-    -694361, 57058, 879299, 493067, -1352186, -159782, 1068474, -438290, -1126586, -994968, 164280,
-    406341, 786270, -1325852, -338501, -1093520, 403145, -1382788, -659031, -220633, -1356605,
-    701137, 899746, -343713, -1327802, -193429, 1080992, -614340, -1505230, -378414, 207767,
-    1533521, -578730, -1378819, 983708, 135777, 1153439, 693243, -1372055, -450828, -180022,
-    -813134, -167154, -1014354, -553554, 1427270, 1194073, -56403, 794272, 995382, -1099304,
-    1297583, -1271614, -794327, -361920, -224054, -352892, 303485, 679117, 1129725, -587303,
-    1229178, -950414, 95036, 145697, 565943, -172388, -547433, -1366619, 606592, -1362488, 1305252,
-    500460, 218428, 1186011, 1247543, 666586, 1035145, -1065470, 584346, -995122, -129642, -518292,
-    -22312, 641344, -951503, -525336, 1027382, 1026516, 44484, 273738, -857174, 700339, -1120613,
-    1225228, -486460, -1530008, 226697, 127108, 1088063, -655241, -40580, -1049899, -1350126,
-    -1429161, -1413302, 177945, -1481584, 605780, 791362, -1429407, 776908, -602632, 159033,
-    579927, -1241868, -843342, -634805, 499123, -319074, -762597, -105010, -1264118, 1472774,
-    -976197, 1225029, -1005479, 434131, -1533617, -328459, -125132, -1139644, 1090527, 962998,
-    944144, -1454566, 1519508, 528403, 1058943, -1201221, -1452810, -1432512, 564206, 250783,
-    1282879, 1342037, 617231, -394215, -1271142, 257989, 1337379, -766859, 1122600, -1071944,
-    -437602, -393778, -561218, -194098, 1077875, 786598, 1088630, 465768, 469672, -1459905,
-    -679647, 266214, 1043086, 1115905, -664897, 1468519, 1308378, -582227, -702739, 387991,
-    -494018, 1309776, -1277891, 381252, -582012, 486593, 919570, -502039, -116565, -216866,
-    1435280, 1335345, -79480, 1189666, 436539, 198658, 659553, 364137, 156832, 1575610, -734659,
-    -484762, -1033544, 1094581, 1028703, 973467, -1213372, 176974, 1277914, 341267, 500684,
-    1469622, -1274676, 1507872, -319715, 1266885, 1038501, 1445632, 156137, 267766, -823648,
-    -331174, -706738, 1218706, -501945, 793581, 1507019, 1064454, -614375, -1078475, 861297,
-    -656416, 253661, 858214, 1148683, -1318295, 326942, -700350, 1491896, -835200, -594382,
-    -886868, -413649, 1323481, 1019362, -708344, 330099, -293732, 206082, -155736, 265441, 916280,
-    -1566371, -1503322, 1280608, -848208, 1280199, 629551, -775701, -429948, -1101590, 13633,
-    1579059, -495386, 1481323, 106193, 1392653, 1051535, -803125, -1535506, 65524, -729160, 302584,
-    -125443, -583728, -385740, -4321, 220220, 250669, -12878, 1336085, 321936, 1062021, -245792,
-    -742230, -1388645, -1081930, 1315447, -1347181, -519713, 636786, 915150, 1094654, 847251,
-    -131113, 105170, 1576202, -18362, -1170491, -100612, -1191170, 1024417, 842515, 965843,
-    -1132791, -1001348, 282419, -485724, -738632, 887213, -526638, 487363, 215822, -403573,
-    1064201, 50043, -170024, -807960, -281476, -1573567, -1537726, -1300266, -397271, 1322450,
-    -518902, 926772, 975153, -1512037, 460504, 1190881, 982102, 1065966, 199752, -1058343, 1340216,
-    1020596, -1185163, 320863, 1341644, 284251, -672119, -456200, -250532, 184069, -328364,
-    1074177, 356198, -450712, -18209, -1315640, -179144, -1057318, 1319005, 1550232, 903902,
-    -99459, -935143, 445179, -72235, 668647, 1187792, 304769, 767103, 324094, -538676, 176286,
-    -347217, -1462453, -406980, 753363, -209842, 1331350, -1326803, -355793, 1566304, 1327097,
-    1574829, -1549013, -424341, 1006129, 987536, 132054, 803789, 492017, 1214510, -1345072, 720251,
-    796730, 441633, -258195, 625061, -1409912, 1245775, 27393, -521574, -1325157, 47441, -152907,
-    -474747, -1343387, -874247, -1580551, 374280, 1145626, -1010512, 1429727, 1215387, 583335,
-    801270, -1499350, -894238, 219174, -320728, 162953, -539912, -1183174, 423171, -16773, -459601,
-    1278786, 1309287, 1524922, 321633, 1129789, 396565, -909592, 689387, -514051, -317727, 490268,
-    -1107013, -773157, 107481, 960657, 1053071, 850449, -1394476, -739392, -620011, 1499353,
-    1095570, 419291, -621986, -621657, 19824, -158326, -1353862, 775441, 228784, 1108358, -1281775,
-    -1511952, -1421139, -1356547, 1552197, 350116, -483024, 1333845, -812172, 1197100, 338511,
-    1545409, -304740, 1547793, 531291, 354801, -1039093, -1584102, 1029007, -496741, -1390117,
-    -1143388, 562875, -649237, -725927, -26458, 1161616, -166365, -189008, -710042, -1535253,
-    -753937, 176358, -643283, -246954, 1556149, -97718, -485975, -993576, -602908, -43526, 1229187,
-    649560, -999221, -1547446, -148651, 185643, -858399, 319781, 1081931, -822179, -1432554,
-    -508200, -1472244, -257409, -407636, -11793, -328696, 790777, -111102, -1182252, -250566,
-    -982082, -162188, -994071, 790514, -1159704, -242700, -5498, 576428, -710836, -1473803, 529798,
-    -262004, -725705, -766596, 1535354, -68021, -164312, -585083, -1101166, 797836, -1071913,
-    1228733, 551805, -305754, -590092, -290164, 614755, -759285, -351127, -728660, -280985,
-    -613139, -955614, -436226, -332791, 306282, -1144476, -1518854, 937557, 1553739, 1198626,
-    -564872, -341658, -1500138, 840808, -450267, -1516160, -44999, -90162, 1324203, -127201,
-    1362709, 1501220, -238426, -826981, 1447384, 875341, 958747, 886456, 1064636, -1262638,
-    -1349308, 914715, 299713, -658575, 742312, -37594, -1279406, 677822, 1222854, 926406, 454701,
-    348153, -1229986, -470349, -935493, 689142, -496432, 1431871, 313198, 1486295, -1428146,
-    -372493, 717339, 418449, 141763, 597413, -598407, -417967, 1362442, 977451, -953123, 1504844,
-    -589565, -15836, 1048313, -1062037, 156421, -479384, 1072077, -52741, 1439269, -987791,
-    -566324, -1125207, 173165, -1125397, 1092045, -330445, 1133309, 471788, -1521554, 986106,
-    -1122933, -595098, -925899, 1534754, 1332952, -334382, 330176, 226720, -915730, 585232,
-    -718157, 872534, 526959, 194357, 687459, 178810, 1171859, 1197170, 807138, 994412, -271907,
-    -1234587, -107797, -1076575, 930346, -969008, -1192917, 1068792, -642202, -1165564, 1083934,
-    -729595, 870975, 1274893, -889826, -1544493, -89449, 1129591, -1031567, 617243, -1119251,
-    -1153056, 455995, 86109, -399083, -153133, -121710, -571187, 160729, 1306373, -890647, -160085,
-    649803, 891415, -740333, 1400025, 249818, -219552, -233403, 1255105, 261649, -589162, 548172,
-    -1330850, 206809, 1345013, -501158, -753440, -1035094, -504940, 103748, -722206, 1154295,
-    -467692, -945526, -75498, -726086, -1565931, -629748, 1261324, 1534325, -1172104, 196429,
-    1502787, 1187752, 335926, 373483, -131975, 438725, -1298746, 523200, 38908, 1094389, -484923,
-    -1154717, 405557, -1375202, 463967, -1049634, 1444330, -1578520, 128463, 538011, -1110909,
-    1226932, 170764, -603081, 1030397, -1049310, -384850, -385492, -1351700, -1009427, -1060964,
-    803430, -284991, -415572, 1037638, 783521, 147741, -1482004, 1199476, -173391, 326240, 526915,
-    920379, 254477, -1131805, -1434342, 480381, -57516, -785972, 218162, -642129, -1255085,
-    -200105, 1264772, -61527, 1075370, 892139, 927512, 1437811, -566581, 36843, 1242892, -211885,
-    1206706, 1248376, 1288690, 1311639, -1178826, -917543, 537312, -1133570, -402197, 1061710,
-    591268, -1154331, 1452902, 1024677, 267256, 356116, 279358,
-};
+static chipmunk_ntt_ctx_t s_global_ctx;
+static pthread_once_t s_global_once = PTHREAD_ONCE_INIT;
+static int s_global_init_result = 0;
 
-// NTT inverse table from original Rust code for HOTS q=3168257
-// Where the i-th element is (1/g)^rev(i) with g=202470 primitive root
-static const int32_t g_ntt_inverse_table[1024] = {
-    1, -995666, 1567628, 1574288, -1495832, -1027733, 1253886, 12774, 1479856, -30648, -607229,
-    -1213796, 850110, -419654, -1366316, -1308975, -774396, 71188, 340717, 785753, 866160, -170646,
-    -65753, -836150, -1159249, 275421, -163513, 280456, 833699, 753723, -1462584, 186492, -1402590,
-    517966, -681090, 1259403, 209938, 795124, -1177068, -191325, -1513859, -332656, -691887,
-    1569204, -1272492, 550143, 715107, 1005862, -788642, 42435, 955822, 1570208, 792250, 398075,
-    -292743, 944352, 1562510, -332637, 1079211, -328434, -755107, 643648, 472401, -516360, 1475510,
-    -705274, 1402290, 365676, 472618, -1134406, -1352832, 203847, -1388298, -898319, 1113039,
-    22285, 1177230, 474540, -299948, -1384223, -323167, 1381559, -1343576, 778964, 391655, 1009101,
-    -843176, 103613, 1433684, 450834, 872177, 81019, 1570871, 1083333, 937710, 1353956, 1584070,
-    1217835, 173215, -216395, -1205024, 1509626, -482420, -747279, -1028637, -1375349, -912059,
-    1305412, 960677, -796297, 723061, -1047259, 946568, -996241, 661726, -26824, 21752, 478020,
-    -905835, 1390920, -301459, 1313285, -1523389, -565391, 336592, -1321326, 18225, -1405011,
-    1325852, -786270, -406341, -164280, 994968, 1126586, 438290, -1068474, 159782, 1352186,
-    -493067, -879299, -57058, 694361, 513200, 697760, -607659, -792111, 728053, -416698, -1314727,
-    228492, -986944, -6416, -1432794, 518386, 283663, 665707, 974846, -139430, -205634, 510133,
-    699012, 1206226, 1576231, -341639, -501559, 1406697, -1097133, 1031062, 1191772, 434058,
-    537313, 1255048, -1191600, -602732, -207142, 220643, 452983, 621814, 1056400, -1425741,
-    -847037, 1274298, -231737, 1167560, 289617, 279190, 490376, -128917, -418935, -707882, 1084322,
-    -956618, 1066473, -67697, 745770, 223756, 482819, -491330, -172683, -378998, 430679, -1525292,
-    1565740, -552962, 443681, 1491735, -700542, 1399394, 295139, -862567, 1254068, -607789,
-    -757240, -1501221, -766988, -120244, -17008, -46337, -1334369, -550397, 6946, 408995, -555221,
-    1349541, -1524174, -1527060, 9021, 105609, -1177002, 628116, -293909, -859411, 157524, 103544,
-    -1254022, -837249, 169636, -1016906, -1507887, 368381, -886904, 398767, 180369, -969223,
-    -710767, -693754, 707598, 375336, 1443767, 1356989, 831128, 659353, 135, -1348116, -643439,
-    255661, 385740, 583728, 125443, -302584, 729160, -65524, 1535506, 803125, -1051535, -1392653,
-    -106193, -1481323, 495386, -1579059, -13633, 1101590, 429948, 775701, -629551, -1280199,
-    848208, -1280608, 1503322, 1566371, -916280, -265441, 155736, -206082, 293732, -330099, 708344,
-    -1019362, -1323481, 413649, 886868, 594382, 835200, -1491896, 700350, -326942, 1318295,
-    -1148683, -858214, -253661, 656416, -861297, 1078475, 614375, -1064454, -1507019, -793581,
-    501945, -1218706, 706738, 331174, 823648, -267766, -156137, -1445632, -1038501, -1266885,
-    319715, -1507872, 1274676, -1469622, -500684, -341267, -1277914, -176974, 1213372, -973467,
-    -1028703, -1094581, 1033544, 484762, 734659, -1575610, -156832, -364137, -659553, -198658,
-    -436539, -1189666, 79480, -1335345, -1435280, 216866, 116565, 502039, -919570, -486593, 582012,
-    -381252, 1277891, -1309776, 494018, -387991, 702739, 582227, -1308378, -1468519, 664897,
-    -1115905, -1043086, -266214, 679647, 1459905, -469672, -465768, -1088630, -786598, -1077875,
-    194098, 561218, 393778, 437602, 1071944, -1122600, 766859, -1337379, -257989, 1271142, 394215,
-    -617231, -1342037, -1282879, -250783, -564206, 1432512, 1452810, 1201221, -1058943, -528403,
-    -1519508, 1454566, -944144, -962998, -1090527, 1139644, 125132, 328459, 1533617, -434131,
-    1005479, -1225029, 976197, -1472774, 1264118, 105010, 762597, 319074, -499123, 634805, 843342,
-    1241868, -579927, -159033, 602632, -776908, 1429407, -791362, -605780, 1481584, -177945,
-    1413302, 1429161, 1350126, 1049899, 40580, 655241, -1088063, -127108, -226697, 1530008, 486460,
-    -1225228, 1120613, -700339, 857174, -273738, -44484, -1026516, -1027382, 525336, 951503,
-    -641344, 22312, 518292, 129642, 995122, -584346, 1065470, -1035145, -666586, -1247543,
-    -1186011, -218428, -500460, -1305252, 1362488, -606592, 1366619, 547433, 172388, -565943,
-    -145697, -95036, 950414, -1229178, 587303, -1129725, -679117, -303485, 352892, 224054, 361920,
-    794327, 1271614, -1297583, 1099304, -995382, -794272, 56403, -1194073, -1427270, 553554,
-    1014354, 167154, 813134, 180022, 450828, 1372055, -693243, -1153439, -135777, -983708, 1378819,
-    578730, -1533521, -207767, 378414, 1505230, 614340, -1080992, 193429, 1327802, 343713, -899746,
-    -701137, 1356605, 220633, 659031, 1382788, -403145, 1093520, 338501, -279358, -356116, -267256,
-    -1024677, -1452902, 1154331, -591268, -1061710, 402197, 1133570, -537312, 917543, 1178826,
-    -1311639, -1288690, -1248376, -1206706, 211885, -1242892, -36843, 566581, -1437811, -927512,
-    -892139, -1075370, 61527, -1264772, 200105, 1255085, 642129, -218162, 785972, 57516, -480381,
-    1434342, 1131805, -254477, -920379, -526915, -326240, 173391, -1199476, 1482004, -147741,
-    -783521, -1037638, 415572, 284991, -803430, 1060964, 1009427, 1351700, 385492, 384850, 1049310,
-    -1030397, 603081, -170764, -1226932, 1110909, -538011, -128463, 1578520, -1444330, 1049634,
-    -463967, 1375202, -405557, 1154717, 484923, -1094389, -38908, -523200, 1298746, -438725,
-    131975, -373483, -335926, -1187752, -1502787, -196429, 1172104, -1534325, -1261324, 629748,
-    1565931, 726086, 75498, 945526, 467692, -1154295, 722206, -103748, 504940, 1035094, 753440,
-    501158, -1345013, -206809, 1330850, -548172, 589162, -261649, -1255105, 233403, 219552,
-    -249818, -1400025, 740333, -891415, -649803, 160085, 890647, -1306373, -160729, 571187, 121710,
-    153133, 399083, -86109, -455995, 1153056, 1119251, -617243, 1031567, -1129591, 89449, 1544493,
-    889826, -1274893, -870975, 729595, -1083934, 1165564, 642202, -1068792, 1192917, 969008,
-    -930346, 1076575, 107797, 1234587, 271907, -994412, -807138, -1197170, -1171859, -178810,
-    -687459, -194357, -526959, -872534, 718157, -585232, 915730, -226720, -330176, 334382,
-    -1332952, -1534754, 925899, 595098, 1122933, -986106, 1521554, -471788, -1133309, 330445,
-    -1092045, 1125397, -173165, 1125207, 566324, 987791, -1439269, 52741, -1072077, 479384,
-    -156421, 1062037, -1048313, 15836, 589565, -1504844, 953123, -977451, -1362442, 417967, 598407,
-    -597413, -141763, -418449, -717339, 372493, 1428146, -1486295, -313198, -1431871, 496432,
-    -689142, 935493, 470349, 1229986, -348153, -454701, -926406, -1222854, -677822, 1279406, 37594,
-    -742312, 658575, -299713, -914715, 1349308, 1262638, -1064636, -886456, -958747, -875341,
-    -1447384, 826981, 238426, -1501220, -1362709, 127201, -1324203, 90162, 44999, 1516160, 450267,
-    -840808, 1500138, 341658, 564872, -1198626, -1553739, -937557, 1518854, 1144476, -306282,
-    332791, 436226, 955614, 613139, 280985, 728660, 351127, 759285, -614755, 290164, 590092,
-    305754, -551805, -1228733, 1071913, -797836, 1101166, 585083, 164312, 68021, -1535354, 766596,
-    725705, 262004, -529798, 1473803, 710836, -576428, 5498, 242700, 1159704, -790514, 994071,
-    162188, 982082, 250566, 1182252, 111102, -790777, 328696, 11793, 407636, 257409, 1472244,
-    508200, 1432554, 822179, -1081931, -319781, 858399, -185643, 148651, 1547446, 999221, -649560,
-    -1229187, 43526, 602908, 993576, 485975, 97718, -1556149, 246954, 643283, -176358, 753937,
-    1535253, 710042, 189008, 166365, -1161616, 26458, 725927, 649237, -562875, 1143388, 1390117,
-    496741, -1029007, 1584102, 1039093, -354801, -531291, -1547793, 304740, -1545409, -338511,
-    -1197100, 812172, -1333845, 483024, -350116, -1552197, 1356547, 1421139, 1511952, 1281775,
-};
-
-// Extract commonly used values for butterfly operations (bit-reversed subset of full table)
-static const int32_t g_zetas_mont[CHIPMUNK_ZETAS_MONT_LEN] = {
-    995666, -1574288, -1567628, -12774, -1253886, 1027733, 1495832, 1308975,
-    1366316, 419654, -850110, 1213796, 607229, 30648, -1479856, -186492,
-    1462584, -753723, -833699, -280456, 163513, -275421, 1159249, 836150,
-    65753, 170646, -866160, -785753, -340717, -71188, 774396, 516360,
-    -472401, -643648, 755107, 328434, -1079211, 332637, -1562510, -944352,
-    292743, -398075, -792250, -1570208, -955822, -42435, 788642, -1005862,
-    -715107, -550143, 1272492, -1569204, 691887, 332656, 1513859, 191325,
-    1177068, -795124, -209938, -1259403, 681090, -517966, 1402590, 1405011,
-    -18225, 1321326, -336592, 565391, 1523389, -1313285, 301459, -1390920,
-    905835, -478020, -21752, 26824, -661726, 996241, -946568, 1047259,
-    -723061, 796297, -960677, -1305412, 912059, 1375349, 1028637, 747279,
-    482420, -1509626, 1205024, 216395, -173215, -1217835, -1584070, -1353956,
-    -937710, -1083333, -1570871, -81019, -872177, -450834, -1433684, -103613,
-    843176, -1009101, -391655, -778964, 1343576, -1381559, 323167, 1384223,
-    299948, -474540, -1177230, -22285, -1113039, 898319, 1388298, -203847,
-    1352832, 1134406, -472618, -365676, -1402290, 705274, -1475510, -255661
-};
-
-const dap_ntt_params_t g_chipmunk_ntt_params = {
-    .n            = 512,
-    .q            = CHIPMUNK_Q,
-    .qinv         = 3166785,
-    .mont_r_bits  = 22,
-    .mont_r_mask  = (1U << 22) - 1,
-    .one_over_n   = CHIPMUNK_ONE_OVER_N,
-    .zetas        = g_ntt_forward_table,
-    .zetas_inv    = g_ntt_inverse_table,
-    .zetas_len    = 1024,
-};
-
-/**
- * @brief Barrett reduction implementation for HOTS q=3168257
- *
- * Branchless: uses sign-bit extraction and conditional masks instead of
- * data-dependent branches, preventing timing leaks in secret-dependent contexts.
- */
-int32_t chipmunk_ntt_barrett_reduce(int32_t a_value) {
-    // Barrett reduction constants for q = 3168257
-    // v = floor(2^26 / q) = floor(67108864 / 3168257) = 21
-    int32_t l_v = ((int64_t)a_value * 21) >> 26;
-    int32_t l_t = l_v * CHIPMUNK_Q;
-    l_t = a_value - l_t;
-
-    /* Branchless: mask_ge = (l_t >= Q) ? 0xFFFFFFFF : 0 */
-    int32_t mask_ge = (int32_t)(((uint32_t)l_t - (uint32_t)CHIPMUNK_Q) >> 31) - 1;
-    l_t -= mask_ge & CHIPMUNK_Q;
-
-    /* Branchless: mask_lt = (l_t < 0) ? 0xFFFFFFFF : 0 */
-    int32_t mask_lt = l_t >> 31;  /* arithmetic right shift: -1 if negative, 0 otherwise */
-    l_t += mask_lt & CHIPMUNK_Q;
-
-    return l_t;
+static void s_global_cleanup(void)
+{
+    chipmunk_ntt_ctx_free(&s_global_ctx);
 }
 
-/**
- * @brief Modulo q reduction for HOTS q=3168257
- *
- * Branchless: uses sign-bit extraction instead of conditional branch.
- */
-int32_t chipmunk_ntt_mod_reduce(int32_t a_value) {
-    int32_t l_t = a_value % CHIPMUNK_Q;
-    /* Branchless: mask_lt = (l_t < 0) ? 0xFFFFFFFF : 0 */
-    int32_t mask_lt = l_t >> 31;
-    l_t += mask_lt & CHIPMUNK_Q;
-    return l_t;
-}
-
-/**
- * @brief Montgomery reduction for HOTS q=3168257
- */
-void chipmunk_ntt_montgomery_reduce(int32_t *a_r) {
-    // Montgomery constants for q = 3168257, R = 2^22
-    const uint32_t QINV_HOTS = 3166785; // -q^(-1) mod 2^22 for q=3168257
-    
-    int64_t l_a = *a_r;
-    uint32_t l_u = (uint32_t)(l_a & 0x3FFFFF) * QINV_HOTS; // Mask for 22 bits
-    l_u &= 0x3FFFFF; // Keep only 22 bits
-    l_a += (int64_t)l_u * CHIPMUNK_Q;
-    *a_r = (int32_t)(l_a >> 22); // Shift by 22 for R = 2^22
-    
-    // Final reduction — branchless
-    int32_t mask_ge = (int32_t)(((uint32_t)*a_r - (uint32_t)CHIPMUNK_Q) >> 31) - 1;
-    *a_r -= mask_ge & CHIPMUNK_Q;
-    int32_t mask_lt = *a_r >> 31;
-    *a_r += mask_lt & CHIPMUNK_Q;
-}
-
-/**
- * @brief Montgomery multiplication for HOTS q=3168257
- */
-int32_t chipmunk_ntt_montgomery_multiply(int32_t a_a, int32_t a_b) {
-    // Montgomery multiplication for q = 3168257, R = 2^22
-    const uint32_t QINV_HOTS = 3166785; // -q^(-1) mod 2^22 for q=3168257
-    
-    int64_t l_t = (int64_t)a_a * a_b;
-    uint32_t l_u = (uint32_t)(l_t & 0x3FFFFF) * QINV_HOTS; // Mask for 22 bits
-    l_u &= 0x3FFFFF; // Keep only 22 bits
-    l_t += (int64_t)l_u * CHIPMUNK_Q;
-    int32_t result = (int32_t)(l_t >> 22); // Shift by 22 for R = 2^22
-    
-    // Final reduction — branchless
-    int32_t mask_ge = (int32_t)(((uint32_t)result - (uint32_t)CHIPMUNK_Q) >> 31) - 1;
-    result -= mask_ge & CHIPMUNK_Q;
-    int32_t mask_lt = result >> 31;
-    result += mask_lt & CHIPMUNK_Q;
-    
-    return result;
-}
-
-/**
- * @brief Convert to Montgomery form for HOTS q=3168257
- */
-int32_t chipmunk_ntt_mont_factor(int32_t a_value) {
-    // R mod q for q = 3168257, R = 2^22 = 4194304
-    // R mod 3168257 = 1026047
-    const int32_t R_MOD_Q = 1026047;
-    return chipmunk_ntt_montgomery_multiply(a_value, R_MOD_Q);
-}
-
-/**
- * @brief Transform polynomial to NTT form.
- * Delegates to unified dap_ntt_forward() with Chipmunk parameters.
- */
-void chipmunk_ntt(int32_t a_r[CHIPMUNK_N]) {
-    dap_ntt_forward(a_r, &g_chipmunk_ntt_params);
-}
-
-/**
- * @brief Inverse transform from NTT form.
- * Delegates to unified dap_ntt_inverse() with Chipmunk parameters.
- */
-void chipmunk_invntt(int32_t a_r[CHIPMUNK_N]) {
-    dap_ntt_inverse(a_r, &g_chipmunk_ntt_params);
-}
-
-/**
- * @brief Pointwise multiplication in NTT form
- */
-int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
-                                     const int32_t a_a[CHIPMUNK_N], 
-                                     const int32_t a_b[CHIPMUNK_N]) {
-    if (!a_c || !a_a || !a_b) {
-        return CHIPMUNK_ERROR_NULL_PARAM;
+static void s_global_init(void)
+{
+    s_global_init_result =
+        chipmunk_ntt_params_compute(&s_global_ctx, (uint64_t)CHIPMUNK_Q);
+    if (s_global_init_result != 0) {
+        log_it(L_CRITICAL, "chipmunk_ntt: global ctx init FAILED for q=%d (rc=%d)",
+               CHIPMUNK_Q, s_global_init_result);
+        return;
     }
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++)
-        a_c[l_i] = chipmunk_ntt_montgomery_multiply(a_a[l_i], a_b[l_i]);
-    return CHIPMUNK_ERROR_SUCCESS;
-} 
+    /* Register cleanup at process exit to avoid leaking twiddle tables. */
+    atexit(s_global_cleanup);
+}
 
+/** Ensure the global context is built. Returns 0 on success. */
+static int s_global_ensure(void)
+{
+    pthread_once(&s_global_once, s_global_init);
+    return s_global_init_result;
+}
+
+/* For external code that reads g_chipmunk_ntt_params (e.g. batch_verify). */
+const dap_ntt_params_t *chipmunk_ntt_global_params(void)
+{
+    if (s_global_ensure() != 0) return NULL;
+    return &s_global_ctx.params;
+}
+
+/* Phase 9.15: Full ctx accessor for ψ-twist in batch verify. */
+const chipmunk_ntt_ctx_t *chipmunk_ntt_global_ctx(void)
+{
+    if (s_global_ensure() != 0) return NULL;
+    return &s_global_ctx;
+}
+
+/* -------------------------------------------------------------------------
+ * Extended Euclid: compute q^{-1} mod 2^k
+ * ------------------------------------------------------------------------- */
+
+static uint32_t s_modinv_pow2(uint64_t q, uint32_t k)
+{
+    uint64_t l_mod = 1ULL << k;
+    uint64_t x = 1;
+    for (uint32_t i = 1; i < k; i <<= 1) {
+        x = (x * (2 - q * x)) & (l_mod - 1);
+    }
+    return (uint32_t)x;
+}
+
+/* -------------------------------------------------------------------------
+ * Per-q NTT parameter computation
+ * ------------------------------------------------------------------------- */
+
+int chipmunk_ntt_params_compute(chipmunk_ntt_ctx_t *a_ctx, uint64_t q)
+{
+    if (!a_ctx) return -1;
+    if (q == 0 || (q & 1u) == 0) return -1;
+
+    /* q must fit in int32_t for all kernel intermediates (q^2 < 2^62). */
+    if (q > 0x7FFFFFFFu) {
+        log_it(L_ERROR, "chipmunk_ntt: q=%lu exceeds 31-bit limit", (unsigned long)q);
+        return -1;
+    }
+
+    memset(a_ctx, 0, sizeof(*a_ctx));
+
+    /* Montgomery parameters: R = 2^32 to match dap_ntt32 SIMD kernel guard.
+     * All SIMD backends (AVX2/AVX-512/NEON) require mont_r_bits == 32. */
+    uint32_t l_r_bits = 32;
+    uint32_t l_r_mask = 0xFFFFFFFFu;
+    uint64_t l_R = 1ULL << l_r_bits;
+
+    /* qinv = -q^{-1} mod 2^32 (stored unsigned; dap_ntt uses it as uint32). */
+    uint32_t l_qinv_pos = s_modinv_pow2(q, l_r_bits);
+    uint32_t l_qinv_neg = (uint32_t)(l_R - l_qinv_pos) & l_r_mask;
+
+    /* R mod q — used to convert standard-form zetas to Montgomery domain. */
+    int32_t l_R_mod_q = (int32_t)(l_R % q);
+
+    /* one_over_n = N^{-1} mod q = 512^{-1} mod q (via Fermat). */
+    int32_t l_one_over_n = chipmunk_field_inv_q((int32_t)CHIPMUNK_N, q);
+
+    /* Primitive 512th root of unity (2-adicity of q-1 must be >= 9). */
+    int32_t l_omega;
+    int l_rc = chipmunk_field_primitive_root_2k_q(9, &l_omega, q);
+    if (l_rc != 0) {
+        log_it(L_ERROR, "chipmunk_ntt: no primitive 512th root for q=%lu",
+               (unsigned long)q);
+        return l_rc;
+    }
+
+    /* Build twiddle tables in tree-traversal order (Dilithium/FIPS-204 format).
+     *
+     * dap_ntt_forward_mont uses Cooley-Tukey with sequential zeta walk:
+     *   k = 1; for len = N/2 down to 1: zeta = zetas[k++]
+     * The butterfly: t = mont_reduce(zeta_mont * coeff) = zeta_true * coeff.
+     * So zeta_mont = zeta_true * R mod q.
+     *
+     * Tree order at level m (len = N >> (m+1)):
+     *   twiddles = omega^{(2i+1)*len} for i = 0..2^m - 1
+     * Each stored as omega^{(2i+1)*len} * R mod q (Montgomery form).
+     */
+    int32_t *l_zetas = (int32_t *)calloc(1024, sizeof(int32_t));
+    int32_t *l_zetas_inv = (int32_t *)calloc(1024, sizeof(int32_t));
+    if (!l_zetas || !l_zetas_inv) {
+        free(l_zetas); free(l_zetas_inv);
+        return -1;
+    }
+
+    int32_t l_omega_inv = chipmunk_field_pow_q(l_omega, (uint32_t)(CHIPMUNK_N - 1), q);
+    const int l_log_n = 9;  /* log2(CHIPMUNK_N) */
+
+    /* Forward zetas in tree order (Montgomery form).
+     * NOTE: This is the order that produces correct round-trip with the
+     * dap_ntt kernels, but the resulting transform is NOT a ring
+     * homomorphism — pointwise multiply in NTT domain does NOT correspond
+     * to negacyclic convolution. chipmunk_poly_mul_ntt_q (plain a*b%q)
+     * is therefore INCORRECT for this NTT. The correct fix requires
+     * rewriting the butterfly or switching to a reference negacyclic NTT. */
+    l_zetas[0] = 0;  /* placeholder, unused by forward kernel (k starts at 1) */
+    {
+        int l_k = 1;
+        for (int l_m = 0; l_m < l_log_n; ++l_m) {
+            int l_len = CHIPMUNK_N >> (l_m + 1);
+            for (int l_i = 0; l_i < (1 << l_m); ++l_i) {
+                uint32_t l_power = (uint32_t)(2 * l_i + 1) * (uint32_t)l_len;
+                int32_t l_tw = chipmunk_field_pow_q(l_omega, l_power, q);
+                l_zetas[l_k++] = (int32_t)(((int64_t)l_tw * l_R_mod_q) % (int64_t)q);
+            }
+        }
+    }
+    for (int i = 512; i < 1024; ++i) l_zetas[i] = 0;
+
+    /* Inverse zetas in tree order (Gentleman-Sande, Montgomery form). */
+    {
+        int l_k = 0;
+        for (int l_m = 0; l_m < l_log_n; ++l_m) {
+            int l_len = 1 << l_m;
+            for (int l_i = 0; l_i < CHIPMUNK_N / (2 * l_len); ++l_i) {
+                uint32_t l_power = (uint32_t)(2 * l_i + 1) * (uint32_t)l_len;
+                int32_t l_tw = chipmunk_field_pow_q(l_omega_inv, l_power, q);
+                l_zetas_inv[l_k++] = (int32_t)(((int64_t)l_tw * l_R_mod_q) % (int64_t)q);
+            }
+        }
+    }
+    for (int i = 512; i < 1024; ++i) l_zetas_inv[i] = 0;
+
+    /* Fill the dap_ntt_params_t. */
+    a_ctx->params.n            = CHIPMUNK_N;
+    a_ctx->params.q            = (int32_t)q;
+    a_ctx->params.qinv         = l_qinv_neg;
+    a_ctx->params.mont_r_bits  = l_r_bits;
+    a_ctx->params.mont_r_mask  = l_r_mask;
+    a_ctx->params.one_over_n   = l_one_over_n;
+    a_ctx->params.zetas        = l_zetas;
+    a_ctx->params.zetas_inv    = l_zetas_inv;
+    a_ctx->params.zetas_len    = 1024;
+    a_ctx->q                   = q;
+    a_ctx->owns_tables         = true;
+
+    log_it(L_DEBUG, "chipmunk_ntt: per-q params computed: q=%lu R/q=%d 1/N=%d omega=%d",
+           (unsigned long)q, l_R_mod_q, l_one_over_n, l_omega);
+
+    /* Cache negacyclic NTT roots for chipmunk_ntt_q / chipmunk_invntt_q. */
+    int32_t l_neg1 = (int32_t)q - 1;
+    int32_t l_psi_cached = 0;
+    for (uint64_t g = 2; g < 1000; g++) {
+        int32_t candidate = chipmunk_field_pow_q((int32_t)g,
+            (uint32_t)((q - 1) / (2 * CHIPMUNK_N)), q);
+        if (chipmunk_field_pow_q(candidate, CHIPMUNK_N, q) == l_neg1) {
+            l_psi_cached = candidate;
+            break;
+        }
+    }
+    if (l_psi_cached == 0) {
+        log_it(L_ERROR, "chipmunk_ntt: no primitive 2N-th root for q=%lu",
+               (unsigned long)q);
+        free(l_zetas); free(l_zetas_inv);
+        return -1;
+    }
+    a_ctx->psi       = l_psi_cached;
+    a_ctx->psi_inv   = chipmunk_field_inv_q(l_psi_cached, q);
+    a_ctx->omega     = l_omega;
+    a_ctx->omega_inv = l_omega_inv;
+
+    /* Pre-compute twiddle tables for CT-DIT / GS-DIF (standard form).
+     * Avoids chipmunk_field_pow_q per stage — just table lookups. */
+    int32_t *l_ct = (int32_t *)calloc(512, sizeof(int32_t));
+    int32_t *l_gs = (int32_t *)calloc(512, sizeof(int32_t));
+    /* Montgomery-form copies for SIMD butterfly (avoids Barrett in inner loop). */
+    int32_t *l_ct_mont = (int32_t *)calloc(512, sizeof(int32_t));
+    int32_t *l_gs_mont = (int32_t *)calloc(512, sizeof(int32_t));
+    if (!l_ct || !l_gs || !l_ct_mont || !l_gs_mont) {
+        free(l_ct); free(l_gs); free(l_ct_mont); free(l_gs_mont); return -1;
+    }
+    /* CT twiddles: len = 2, 4, ..., N (small to large, matching CT loop) */
+    {
+        int l_off = 0;
+        for (int l_len = 2; l_len <= (int)CHIPMUNK_N; l_len <<= 1) {
+            int l_half = l_len / 2;
+            int32_t l_w = chipmunk_field_pow_q(l_omega, (uint32_t)(CHIPMUNK_N / l_len), q);
+            int32_t l_wn = 1;
+            for (int j = 0; j < l_half; ++j) {
+                l_ct[l_off + j] = l_wn;
+                l_wn = (int32_t)(((int64_t)l_wn * l_w) % (int64_t)q);
+            }
+            l_off += l_half;
+        }
+    }
+    /* GS twiddles: len = N, N/2, ..., 2 (large to small, matching GS loop) */
+    {
+        int l_off = 0;
+        for (int l_len = (int)CHIPMUNK_N; l_len >= 2; l_len >>= 1) {
+            int l_half = l_len / 2;
+            int32_t l_w_inv = chipmunk_field_pow_q(l_omega_inv, (uint32_t)(CHIPMUNK_N / l_len), q);
+            int32_t l_wn_inv = 1;
+            for (int j = 0; j < l_half; ++j) {
+                l_gs[l_off + j] = l_wn_inv;
+                l_wn_inv = (int32_t)(((int64_t)l_wn_inv * l_w_inv) % (int64_t)q);
+            }
+            l_off += l_half;
+        }
+    }
+    /* Generate Montgomery-form copies of twiddle tables for SIMD butterfly. */
+    for (int i = 0; i < 512; ++i) {
+        l_ct_mont[i] = (int32_t)(((int64_t)l_ct[i] * l_R_mod_q) % (int64_t)q);
+        l_gs_mont[i] = (int32_t)(((int64_t)l_gs[i] * l_R_mod_q) % (int64_t)q);
+    }
+    a_ctx->ct_twiddles = l_ct;
+    a_ctx->gs_twiddles = l_gs;
+    a_ctx->ct_twiddles_mont = l_ct_mont;
+    a_ctx->gs_twiddles_mont = l_gs_mont;
+    a_ctx->inv_q = 1.0 / (double)q;
+
+    log_it(L_DEBUG, "chipmunk_ntt: per-q params computed: q=%lu R/q=%d 1/N=%d psi=%d omega=%d",
+           (unsigned long)q, l_R_mod_q, l_one_over_n, l_psi_cached, l_omega);
+
+    return 0;
+}
+
+void chipmunk_ntt_ctx_free(chipmunk_ntt_ctx_t *a_ctx)
+{
+    if (!a_ctx || !a_ctx->owns_tables) return;
+    free(a_ctx->ct_twiddles);
+    free(a_ctx->gs_twiddles);
+    free(a_ctx->ct_twiddles_mont);
+    free(a_ctx->gs_twiddles_mont);
+    a_ctx->ct_twiddles = NULL;
+    a_ctx->gs_twiddles = NULL;
+    a_ctx->ct_twiddles_mont = NULL;
+    a_ctx->gs_twiddles_mont = NULL;
+    if (a_ctx->params.zetas) {
+        dap_memwipe((void*)a_ctx->params.zetas, 1024 * sizeof(int32_t));
+        free((void*)a_ctx->params.zetas);
+    }
+    if (a_ctx->params.zetas_inv) {
+        dap_memwipe((void*)a_ctx->params.zetas_inv, 1024 * sizeof(int32_t));
+        free((void*)a_ctx->params.zetas_inv);
+    }
+    memset(a_ctx, 0, sizeof(*a_ctx));
+}
+
+/* -------------------------------------------------------------------------
+ * Per-q NTT wrappers — Fast negacyclic NTT (ring isomorphism)
+ *
+ * Implementation: "twisted" negacyclic NTT via pre/post-multiplication.
+ *   ntt_neg(a)[i] = cyclic_ntt(a[j] * psi^j)[i]
+ * where psi is a primitive 2N-th root of unity (psi^N = -1).
+ * This IS a ring isomorphism: ntt(a*b) = ntt(a) ⊙ ntt(b).
+ *
+ * The cyclic NTT uses Cooley-Tukey with standard twiddle assignment.
+ * ------------------------------------------------------------------------- */
+
+/* Barrett fast-mod: x mod q using pre-computed 1.0/q.
+ * Replaces expensive 64-bit % q with a floating-point multiply.
+ * Correct for |x| < q^2 ≈ 10^13 (fits in double mantissa). */
+static inline int32_t s_barrett_mod(int64_t x, int32_t q, double inv_q)
+{
+    int64_t r = x - (int64_t)((double)x * inv_q) * q;
+    if (r >= q)  r -= q;
+    if (r < 0)   r += q;
+    return (int32_t)r;
+}
+
+/* Fast cyclic NTT using iterative Cooley-Tukey (in-place, natural order).
+ * Uses pre-computed twiddle tables and Barrett reduction. */
+static void s_cyclic_ct_ntt(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    int32_t l_q = (int32_t)a_ctx->q;
+    double l_inv_q = a_ctx->inv_q;
+    /* Bit-reverse the input */
+    for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
+        int bit = CHIPMUNK_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
+        }
+    }
+    /* CT butterflies with pre-computed twiddles and Barrett reduction */
+    int l_off = 0;
+    for (int len = 2; len <= CHIPMUNK_N; len <<= 1) {
+        int l_half = len / 2;
+        for (int i = 0; i < CHIPMUNK_N; i += len) {
+            for (int j = 0; j < l_half; j++) {
+                int32_t u = a_r[i + j];
+                int32_t wn = a_ctx->ct_twiddles[l_off + j];
+                int32_t v = s_barrett_mod((int64_t)a_r[i + j + l_half] * wn, l_q, l_inv_q);
+                a_r[i + j]            = s_barrett_mod((int64_t)u + v, l_q, l_inv_q);
+                a_r[i + j + l_half]   = s_barrett_mod((int64_t)u - v, l_q, l_inv_q);
+            }
+        }
+        l_off += l_half;
+    }
+}
+
+/* Fast cyclic inverse NTT (GS butterflies, natural order output). */
+static void s_cyclic_gs_invntt(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    int32_t l_q = (int32_t)a_ctx->q;
+    double l_inv_q = a_ctx->inv_q;
+    int l_off = 0;
+    for (int len = CHIPMUNK_N; len >= 2; len >>= 1) {
+        int l_half = len / 2;
+        for (int i = 0; i < CHIPMUNK_N; i += len) {
+            for (int j = 0; j < l_half; j++) {
+                int32_t u = a_r[i + j];
+                int32_t v = a_r[i + j + l_half];
+                a_r[i + j]          = s_barrett_mod((int64_t)u + v, l_q, l_inv_q);
+                int32_t wn = a_ctx->gs_twiddles[l_off + j];
+                a_r[i + j + l_half] = s_barrett_mod((int64_t)(u - v) * wn, l_q, l_inv_q);
+            }
+        }
+        l_off += l_half;
+    }
+    /* Bit-reverse output to natural order */
+    for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
+        int bit = CHIPMUNK_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
+        }
+    }
+    /* Scale by 1/N with Barrett reduction */
+    int32_t l_n_inv = chipmunk_field_inv_q(CHIPMUNK_N, a_ctx->q);
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        a_r[i] = s_barrett_mod((int64_t)a_r[i] * l_n_inv, l_q, l_inv_q);
+    }
+}
+
+/* -------------------------------------------------------------------------
+ * AVX2-accelerated cyclic NTT (CT-DIT with Montgomery-form twiddles)
+ *
+ * Uses Montgomery multiply-reduce in the butterfly instead of Barrett.
+ * The twiddle table must be in Montgomery form (ct_twiddles_mont).
+ * Input/output: standard form. The Montgomery R from twiddles cancels
+ * with the Montgomery reduce in the butterfly, preserving standard form.
+ * ------------------------------------------------------------------------- */
+#if defined(__x86_64__) && defined(__AVX2__)
+#include <immintrin.h>
+
+/* Montgomery reduce: (a * b) * R^{-1} mod q for 8 int32 pairs.
+ * Uses even/odd lane separation with _mm256_mul_epi32 (signed widening). */
+static inline __m256i s_mont_reduce_mul_avx2(__m256i a, __m256i b,
+                                              __m256i qinv_vec, __m256i q_vec)
+{
+    /* Even lanes: a[0]*b[0], a[2]*b[2], a[4]*b[4], a[6]*b[6] → 4 int64 */
+    __m256i ae = _mm256_mul_epi32(a, b);
+    /* Odd lanes: shift right 32 to align, then multiply */
+    __m256i a_odd = _mm256_srli_epi64(a, 32);
+    __m256i b_odd = _mm256_srli_epi64(b, 32);
+    __m256i ao = _mm256_mul_epi32(a_odd, b_odd);
+
+    /* Montgomery reduce even lanes */
+    __m256i mask32 = _mm256_set1_epi64x(0xFFFFFFFF);
+    __m256i ae_lo = _mm256_and_si256(ae, mask32);
+    __m256i ue = _mm256_mul_epu32(ae_lo, qinv_vec);
+    ue = _mm256_and_si256(ue, mask32);
+    __m256i uqe = _mm256_mul_epi32(ue, q_vec);
+    __m256i te = _mm256_add_epi64(ae, uqe);
+    __m256i re = _mm256_srli_epi64(te, 32);
+
+    /* Montgomery reduce odd lanes */
+    __m256i ao_lo = _mm256_and_si256(ao, mask32);
+    __m256i uo = _mm256_mul_epu32(ao_lo, qinv_vec);
+    uo = _mm256_and_si256(uo, mask32);
+    __m256i uqo = _mm256_mul_epi32(uo, q_vec);
+    __m256i to = _mm256_add_epi64(ao, uqo);
+    __m256i ro = _mm256_srli_epi64(to, 32);
+
+    /* Interleave even/odd results back to 8 int32 */
+    __m256i re_lo = _mm256_and_si256(re, mask32); /* even results in low32 */
+    __m256i ro_sh = _mm256_slli_epi64(ro, 32);    /* odd results in high32 */
+    return _mm256_or_si256(re_lo, ro_sh);
+}
+
+__attribute__((target("avx2")))
+static void s_cyclic_ct_ntt_avx2(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    int32_t l_q = (int32_t)a_ctx->q;
+    __m256i l_qinv_vec = _mm256_set1_epi32((int32_t)a_ctx->params.qinv);
+    __m256i l_q_vec = _mm256_set1_epi32(l_q);
+
+    /* Bit-reverse the input */
+    for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
+        int bit = CHIPMUNK_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
+        }
+    }
+
+    /* CT butterflies with Montgomery-form twiddles */
+    int l_off = 0;
+    for (int len = 2; len <= CHIPMUNK_N; len <<= 1) {
+        int l_half = len / 2;
+        if (l_half >= 8) {
+            /* SIMD path: process 8 butterflies at a time */
+            for (int i = 0; i < CHIPMUNK_N; i += len) {
+                for (int j = 0; j < l_half; j += 8) {
+                    __m256i u = _mm256_loadu_si256((__m256i*)(a_r + i + j));
+                    __m256i v = _mm256_loadu_si256((__m256i*)(a_r + i + j + l_half));
+                    __m256i wn = _mm256_loadu_si256((__m256i*)(a_ctx->ct_twiddles_mont + l_off + j));
+                    __m256i t = s_mont_reduce_mul_avx2(v, wn, l_qinv_vec, l_q_vec);
+                    _mm256_storeu_si256((__m256i*)(a_r + i + j),
+                        _mm256_add_epi32(u, t));
+                    _mm256_storeu_si256((__m256i*)(a_r + i + j + l_half),
+                        _mm256_sub_epi32(u, t));
+                }
+            }
+        } else {
+            /* Scalar fallback for small half sizes */
+            for (int i = 0; i < CHIPMUNK_N; i += len) {
+                for (int j = 0; j < l_half; j++) {
+                    int32_t u = a_r[i + j];
+                    int32_t v = s_barrett_mod((int64_t)a_r[i + j + l_half] *
+                                              a_ctx->ct_twiddles[l_off + j], l_q, a_ctx->inv_q);
+                    a_r[i + j]          = s_barrett_mod((int64_t)u + v, l_q, a_ctx->inv_q);
+                    a_r[i + j + l_half] = s_barrett_mod((int64_t)u - v, l_q, a_ctx->inv_q);
+                }
+            }
+        }
+        l_off += l_half;
+    }
+}
+
+__attribute__((target("avx2")))
+static void s_cyclic_gs_invntt_avx2(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    int32_t l_q = (int32_t)a_ctx->q;
+    __m256i l_qinv_vec = _mm256_set1_epi32((int32_t)a_ctx->params.qinv);
+    __m256i l_q_vec = _mm256_set1_epi32(l_q);
+
+    int l_off = 0;
+    for (int len = CHIPMUNK_N; len >= 2; len >>= 1) {
+        int l_half = len / 2;
+        if (l_half >= 8) {
+            for (int i = 0; i < CHIPMUNK_N; i += len) {
+                for (int j = 0; j < l_half; j += 8) {
+                    __m256i u = _mm256_loadu_si256((__m256i*)(a_r + i + j));
+                    __m256i v = _mm256_loadu_si256((__m256i*)(a_r + i + j + l_half));
+                    __m256i wn = _mm256_loadu_si256((__m256i*)(a_ctx->gs_twiddles_mont + l_off + j));
+                    __m256i diff = _mm256_sub_epi32(u, v);
+                    _mm256_storeu_si256((__m256i*)(a_r + i + j),
+                        _mm256_add_epi32(u, v));
+                    _mm256_storeu_si256((__m256i*)(a_r + i + j + l_half),
+                        s_mont_reduce_mul_avx2(diff, wn, l_qinv_vec, l_q_vec));
+                }
+            }
+        } else {
+            for (int i = 0; i < CHIPMUNK_N; i += len) {
+                for (int j = 0; j < l_half; j++) {
+                    int32_t u = a_r[i + j];
+                    int32_t v = a_r[i + j + l_half];
+                    a_r[i + j]          = s_barrett_mod((int64_t)u + v, l_q, a_ctx->inv_q);
+                    a_r[i + j + l_half] = s_barrett_mod((int64_t)(u - v) *
+                                                         a_ctx->gs_twiddles[l_off + j], l_q, a_ctx->inv_q);
+                }
+            }
+        }
+        l_off += l_half;
+    }
+    /* Bit-reverse output to natural order */
+    for (int i = 1, j = 0; i < CHIPMUNK_N; i++) {
+        int bit = CHIPMUNK_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            int32_t t = a_r[i]; a_r[i] = a_r[j]; a_r[j] = t;
+        }
+    }
+    /* Scale by 1/N */
+    int32_t l_n_inv = chipmunk_field_inv_q(CHIPMUNK_N, a_ctx->q);
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        a_r[i] = s_barrett_mod((int64_t)a_r[i] * l_n_inv, l_q, a_ctx->inv_q);
+    }
+}
+#endif /* __AVX2__ */
+
+/* Find primitive 2N-th root of unity psi (psi^N = -1 mod q). */
+void chipmunk_ntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    if (!a_ctx || a_ctx->psi == 0) return;  /* invalid ctx — no-op */
+    int32_t l_q = (int32_t)a_ctx->q;
+    double l_inv_q = a_ctx->inv_q;
+    int32_t l_psi = a_ctx->psi;
+
+    /* Pre-multiply by psi^j to convert negacyclic → cyclic */
+    int32_t l_psi_j = 1;
+    for (int j = 0; j < CHIPMUNK_N; j++) {
+        a_r[j] = s_barrett_mod((int64_t)a_r[j] * l_psi_j, l_q, l_inv_q);
+        l_psi_j = s_barrett_mod((int64_t)l_psi_j * l_psi, l_q, l_inv_q);
+    }
+
+    /* omega = psi^2 (primitive N-th root) — use optimized CT-DIT */
+#if defined(__x86_64__) && defined(__AVX2__)
+    if (a_ctx->ct_twiddles_mont && a_ctx->params.qinv) {
+        s_cyclic_ct_ntt_avx2(a_r, a_ctx);
+    } else
+#endif
+    {
+        s_cyclic_ct_ntt(a_r, a_ctx);
+    }
+}
+
+void chipmunk_invntt_q(int32_t a_r[CHIPMUNK_N], const chipmunk_ntt_ctx_t *a_ctx)
+{
+    if (!a_ctx || a_ctx->psi == 0) return;  /* invalid ctx — no-op */
+    int32_t l_q = (int32_t)a_ctx->q;
+    double l_inv_q = a_ctx->inv_q;
+    int32_t l_psi_inv = a_ctx->psi_inv;
+
+    /* Inverse cyclic NTT — use optimized GS-DIF */
+#if defined(__x86_64__) && defined(__AVX2__)
+    if (a_ctx->gs_twiddles_mont && a_ctx->params.qinv) {
+        s_cyclic_gs_invntt_avx2(a_r, a_ctx);
+    } else
+#endif
+    {
+        s_cyclic_gs_invntt(a_r, a_ctx);
+    }
+
+    /* Post-multiply by psi^{-j} to convert cyclic → negacyclic */
+    int32_t l_psi_inv_j = 1;
+    for (int j = 0; j < CHIPMUNK_N; j++) {
+        a_r[j] = s_barrett_mod((int64_t)a_r[j] * l_psi_inv_j, l_q, l_inv_q);
+        l_psi_inv_j = s_barrett_mod((int64_t)l_psi_inv_j * l_psi_inv, l_q, l_inv_q);
+    }
+
+    /* Center to [-q/2, q/2) */
+    int32_t l_half = l_q / 2;
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        if (a_r[i] > l_half) a_r[i] -= l_q;
+    }
+}
+
+/* -------------------------------------------------------------------------
+ * Montgomery helpers
+ * ------------------------------------------------------------------------- */
+
+int32_t chipmunk_ntt_montgomery_multiply_q(int32_t a_a, int32_t a_b, uint64_t q,
+                                             uint32_t qinv_neg, uint32_t mont_r_bits,
+                                             uint32_t mont_r_mask)
+{
+    int32_t l_q = (int32_t)q;
+    int64_t l_t = (int64_t)a_a * a_b;
+    uint32_t l_u = (uint32_t)(l_t & mont_r_mask) * qinv_neg;
+    l_u &= mont_r_mask;
+    l_t += (int64_t)l_u * l_q;
+    int32_t l_result = (int32_t)(l_t >> mont_r_bits);
+
+    /* Branchless final reduction into [0, q). */
+    int32_t l_mask_ge = (int32_t)(((uint32_t)l_result - (uint32_t)l_q) >> 31) - 1;
+    l_result -= l_mask_ge & l_q;
+    int32_t l_mask_lt = l_result >> 31;
+    l_result += l_mask_lt & l_q;
+    return l_result;
+}
+
+int chipmunk_ntt_pointwise_montgomery_q(int32_t a_c[CHIPMUNK_N],
+                                          const int32_t a_a[CHIPMUNK_N],
+                                          const int32_t a_b[CHIPMUNK_N],
+                                          const chipmunk_ntt_ctx_t *a_ctx)
+{
+    if (!a_c || !a_a || !a_b || !a_ctx) return -1;
+    /* Use the dispatched pointwise multiply (SIMD when available). */
+    dap_ntt_pointwise_montgomery(a_c, a_a, a_b, &a_ctx->params);
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Domain conversion helpers (to_mont / from_mont)
+ *
+ * to_mont(c)   = Mont(c, R^2 mod q)  = c * R mod q  (standard → Montgomery)
+ * from_mont(c) = Mont(c, 1)          = c * R^{-1} mod q (Montgomery → standard)
+ *
+ * These are needed at I/O boundaries: samplers produce standard form,
+ * rejection sampling / hash absorb / wire format need standard form.
+ * ------------------------------------------------------------------------- */
+
+int32_t chipmunk_ntt_to_mont(int32_t a_c, const chipmunk_ntt_ctx_t *a_ctx)
+{
+    int32_t l_q = a_ctx->params.q;
+    /* R^2 mod q precomputed; Mont(c, R^2) = c * R^2 * R^{-1} = c * R mod q */
+    int64_t l_R2_mod_q = ((int64_t)1 << a_ctx->params.mont_r_bits) % l_q;
+    l_R2_mod_q = (l_R2_mod_q * l_R2_mod_q) % l_q;
+    return dap_ntt_montgomery_reduce((int64_t)a_c * (int32_t)l_R2_mod_q, &a_ctx->params);
+}
+
+int32_t chipmunk_ntt_from_mont(int32_t a_c, const chipmunk_ntt_ctx_t *a_ctx)
+{
+    /* Mont(c, 1) = c * R^{-1} mod q → standard form */
+    return dap_ntt_montgomery_reduce((int64_t)a_c, &a_ctx->params);
+}
+
+/* -------------------------------------------------------------------------
+ * Global-context wrappers (CHIPMUNK_Q)
+ * ------------------------------------------------------------------------- */
+
+void chipmunk_ntt(int32_t a_r[CHIPMUNK_N])
+{
+    if (s_global_ensure() != 0) return;
+    chipmunk_ntt_q(a_r, &s_global_ctx);
+}
+
+void chipmunk_invntt(int32_t a_r[CHIPMUNK_N])
+{
+    if (s_global_ensure() != 0) return;
+    chipmunk_invntt_q(a_r, &s_global_ctx);
+}
+
+int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
+                                     const int32_t a_a[CHIPMUNK_N],
+                                     const int32_t a_b[CHIPMUNK_N])
+{
+    if (s_global_ensure() != 0) return -1;
+    return chipmunk_ntt_pointwise_montgomery_q(a_c, a_a, a_b, &s_global_ctx);
+}

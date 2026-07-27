@@ -102,8 +102,20 @@ int dap_chipmunk_hash_shake128(uint8_t *a_output, size_t a_outlen, const uint8_t
 int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
 
 /**
+ * @brief Generate random polynomial for matrix A based on seed and nonce (parameterized)
+ *
+ * @param a_poly Output polynomial coefficients array
+ * @param a_seed Input seed (must be 32 bytes)
+ * @param a_nonce Nonce value
+ * @param q Prime modulus
+ * @return Returns 0 on success, -1 for NULL pointers, -2 for overflow, -3 for memory allocation failure
+ */
+int dap_chipmunk_hash_sample_matrix_q(int32_t *a_poly, const uint8_t a_seed[32],
+                                       uint16_t a_nonce, uint64_t q);
+
+/**
  * @brief Generate random polynomial for matrix A based on seed and nonce
- * 
+ *
  * @param a_poly Output polynomial coefficients array
  * @param a_seed Input seed (must be 32 bytes)
  * @param a_nonce Nonce value

@@ -177,7 +177,7 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
     secure_clean(&l_rho_hash, sizeof(l_rho_hash));
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        if (dap_chipmunk_hash_sample_matrix(l_hots_params->a[i].coeffs, l_rho_seed, i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(l_hots_params->a[i].coeffs, l_rho_seed, i, (uint64_t)CHIPMUNK_Q) != 0) {
             log_it(L_ERROR, "Failed to generate public matrix polynomial A[%d]", i);
             l_result = CHIPMUNK_ERROR_HASH_FAILED;
             goto cleanup;
@@ -343,34 +343,30 @@ void dap_chipmunk_compute_hots_pk_internal(const chipmunk_hots_params_t *a_param
                                            const chipmunk_hots_sk_t *a_hots_sk,
                                            chipmunk_hots_pk_t *a_hots_pk_out)
 {
-    chipmunk_poly_t l_v0_time_sum;
-    chipmunk_poly_t l_v1_time_sum;
-    memset(&l_v0_time_sum, 0, sizeof(l_v0_time_sum));
-    memset(&l_v1_time_sum, 0, sizeof(l_v1_time_sum));
+    /* Phase 9.15: Accumulate pk in NTT domain. */
+    chipmunk_poly_t l_v0_ntt_sum;
+    chipmunk_poly_t l_v1_ntt_sum;
+    memset(&l_v0_ntt_sum, 0, sizeof(l_v0_ntt_sum));
+    memset(&l_v1_ntt_sum, 0, sizeof(l_v1_ntt_sum));
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         chipmunk_poly_t l_term_v0_ntt;
-        chipmunk_poly_mul_ntt(&l_term_v0_ntt, &a_params->a[i], &a_hots_sk->s0[i]);
+        chipmunk_poly_mul_ntt_q(&l_term_v0_ntt, &a_params->a[i], &a_hots_sk->s0[i], (uint64_t)CHIPMUNK_Q);
 
         chipmunk_poly_t l_term_v1_ntt;
-        chipmunk_poly_mul_ntt(&l_term_v1_ntt, &a_params->a[i], &a_hots_sk->s1[i]);
-
-        chipmunk_poly_t l_term_v0_time = l_term_v0_ntt;
-        chipmunk_poly_t l_term_v1_time = l_term_v1_ntt;
-        chipmunk_invntt(l_term_v0_time.coeffs);
-        chipmunk_invntt(l_term_v1_time.coeffs);
+        chipmunk_poly_mul_ntt_q(&l_term_v1_ntt, &a_params->a[i], &a_hots_sk->s1[i], (uint64_t)CHIPMUNK_Q);
 
         if (i == 0) {
-            l_v0_time_sum = l_term_v0_time;
-            l_v1_time_sum = l_term_v1_time;
+            l_v0_ntt_sum = l_term_v0_ntt;
+            l_v1_ntt_sum = l_term_v1_ntt;
         } else {
-            chipmunk_poly_add(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time);
-            chipmunk_poly_add(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time);
+            chipmunk_poly_add_ntt_q(&l_v0_ntt_sum, &l_v0_ntt_sum, &l_term_v0_ntt, (uint64_t)CHIPMUNK_Q);
+            chipmunk_poly_add_ntt_q(&l_v1_ntt_sum, &l_v1_ntt_sum, &l_term_v1_ntt, (uint64_t)CHIPMUNK_Q);
         }
     }
 
-    a_hots_pk_out->v0 = l_v0_time_sum;
-    a_hots_pk_out->v1 = l_v1_time_sum;
+    a_hots_pk_out->v0 = l_v0_ntt_sum;
+    a_hots_pk_out->v1 = l_v1_ntt_sum;
 }
 
 int chipmunk_sign(uint8_t *a_private_key, const uint8_t *a_message,
@@ -426,13 +422,14 @@ int chipmunk_sign(uint8_t *a_private_key, const uint8_t *a_message,
     }
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        if (dap_chipmunk_hash_sample_matrix(l_hots_params.a[i].coeffs, l_sk.pk.rho_seed, i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(l_hots_params.a[i].coeffs, l_sk.pk.rho_seed, i, (uint64_t)CHIPMUNK_Q) != 0) {
             log_it(L_ERROR, "Failed to generate public matrix polynomial A[%d]", i);
             l_result = CHIPMUNK_ERROR_HASH_FAILED;
             goto sign_cleanup;
         }
         chipmunk_poly_ntt(&l_hots_params.a[i]);
     }
+    l_hots_params.q = (uint64_t)CHIPMUNK_Q;
 
     /* CR-D3: derive (s0, s1) for the current leaf_index using the
      * domain-separated SHA3 derivation shared with chipmunk_keypair so that
@@ -444,7 +441,7 @@ int chipmunk_sign(uint8_t *a_private_key, const uint8_t *a_message,
         goto sign_cleanup;
     }
 
-    l_result = chipmunk_hots_sign(&l_hots_sk, a_message, a_message_len, &l_hots_sig);
+    l_result = chipmunk_hots_sign(&l_hots_sk, a_message, a_message_len, &l_hots_sig, &l_hots_params);
     if (l_result != 0) {
         log_it(L_ERROR, "HOTS signature failed with error %d", l_result);
         goto sign_cleanup;
@@ -548,14 +545,15 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
     // Генерируем HOTS параметры из rho_seed
     chipmunk_hots_params_t l_hots_params = {0};
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        if (dap_chipmunk_hash_sample_matrix(l_hots_params.a[i].coeffs, l_pk.rho_seed, i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(l_hots_params.a[i].coeffs, l_pk.rho_seed, i, (uint64_t)CHIPMUNK_Q) != 0) {
             log_it(L_ERROR, "Failed to generate polynomial A[%d]", i);
             return CHIPMUNK_ERROR_HASH_FAILED;
         }
         // Преобразуем в NTT домен
         chipmunk_poly_ntt(&l_hots_params.a[i]);
     }
-    
+    l_hots_params.q = (uint64_t)CHIPMUNK_Q;
+
     // Создаем HOTS публичный ключ
     chipmunk_hots_pk_t l_hots_pk = {0};
     memcpy(&l_hots_pk.v0, &l_pk.v0, sizeof(chipmunk_poly_t));
@@ -609,7 +607,7 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
     debug_if(s_debug_more, L_INFO, "Writing v0 polynomial at offset %zu (size %d)", l_offset, CHIPMUNK_N * 4);
     for (int i = 0; i < CHIPMUNK_N; i++) {
         // Apply same modulo operation as in deserialization for consistency
-        int32_t l_coeff = ((a_key->v0.coeffs[i] % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
+        int32_t l_coeff = chipmunk_mod_q_q((int64_t)a_key->v0.coeffs[i], (uint64_t)CHIPMUNK_Q);
         a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
         a_output[l_offset + 1] = (uint8_t)((l_coeff >> 8) & 0xFF);
         a_output[l_offset + 2] = (uint8_t)((l_coeff >> 16) & 0xFF);
@@ -621,7 +619,7 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
     debug_if(s_debug_more, L_INFO, "Writing v1 polynomial at offset %zu (size %d)", l_offset, CHIPMUNK_N * 4);
     for (int i = 0; i < CHIPMUNK_N; i++) {
         // Apply same modulo operation as in deserialization for consistency
-        int32_t l_coeff = ((a_key->v1.coeffs[i] % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
+        int32_t l_coeff = chipmunk_mod_q_q((int64_t)a_key->v1.coeffs[i], (uint64_t)CHIPMUNK_Q);
         a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
         a_output[l_offset + 1] = (uint8_t)((l_coeff >> 8) & 0xFF);
         a_output[l_offset + 2] = (uint8_t)((l_coeff >> 16) & 0xFF);
@@ -728,7 +726,7 @@ int chipmunk_public_key_from_bytes(chipmunk_public_key_t *a_key, const uint8_t *
         
         // Интерпретируем как знаковое число и приводим к диапазону [0, Q-1]
         int32_t l_signed = (int32_t)l_raw;
-        a_key->v0.coeffs[i] = ((l_signed % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
+        a_key->v0.coeffs[i] = chipmunk_mod_q_q((int64_t)l_signed, (uint64_t)CHIPMUNK_Q);
     }
     
     // Read v1 polynomial (CHIPMUNK_N * 4 bytes)
@@ -741,7 +739,7 @@ int chipmunk_public_key_from_bytes(chipmunk_public_key_t *a_key, const uint8_t *
         
         // Интерпретируем как знаковое число и приводим к диапазону [0, Q-1]
         int32_t l_signed = (int32_t)l_raw;
-        a_key->v1.coeffs[i] = ((l_signed % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
+        a_key->v1.coeffs[i] = chipmunk_mod_q_q((int64_t)l_signed, (uint64_t)CHIPMUNK_Q);
     }
     
     return CHIPMUNK_ERROR_SUCCESS;
@@ -901,7 +899,7 @@ int chipmunk_keypair_from_seed(const uint8_t a_seed[32],
     secure_clean(&l_rho_hash, sizeof(l_rho_hash));
 
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        if (dap_chipmunk_hash_sample_matrix(l_hots_params->a[i].coeffs, l_rho_seed, i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(l_hots_params->a[i].coeffs, l_rho_seed, i, (uint64_t)CHIPMUNK_Q) != 0) {
             log_it(L_ERROR, "Failed to generate public matrix polynomial A[%d]", i);
             l_result = CHIPMUNK_ERROR_HASH_FAILED;
             goto cleanup;

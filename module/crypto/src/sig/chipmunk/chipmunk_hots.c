@@ -68,7 +68,12 @@ int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_setup");
         return -EINVAL;
     }
-    
+
+    /* Set the field modulus — callers zero-init the struct, so q would be 0
+     * (causing divide-by-zero in chipmunk_mod_q_q). This is the single point
+     * where q is assigned for HOTS. */
+    a_params->q = (uint64_t)CHIPMUNK_Q;
+
     debug_if(s_debug_more, L_INFO, "🔧 HOTS setup: Generating public parameters...");
 
     // CR-D5 fix: the previous implementation zero-initialised only 4 of the 36
@@ -107,8 +112,8 @@ int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
         for (int j = 0; j < CHIPMUNK_N; j++) {
             int32_t l_coeff;
             memcpy(&l_coeff, l_buf + j * sizeof(int32_t), sizeof(int32_t));
-            a_params->a[i].coeffs[j] = l_coeff % (int32_t)CHIPMUNK_Q;
-            if (a_params->a[i].coeffs[j] < 0) a_params->a[i].coeffs[j] += CHIPMUNK_Q;
+            /* Phase 9.14b: use parameterized mod_q. */
+            a_params->a[i].coeffs[j] = chipmunk_mod_q_q((int64_t)l_coeff, a_params->q);
         }
         DAP_DELETE(l_buf);
 
@@ -176,22 +181,24 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
         memcpy(l_s0_seed + 32, &l_s0_nonce, 4);
         
         chipmunk_poly_uniform_mod_p(&a_sk->s0[i], l_s0_seed, CHIPMUNK_PHI);
+        dap_memwipe(l_s0_seed, sizeof(l_s0_seed));
         debug_if(s_debug_more, L_DEBUG, "  s0[%d] first coeffs: %d %d %d %d", i,
                a_sk->s0[i].coeffs[0], a_sk->s0[i].coeffs[1], a_sk->s0[i].coeffs[2], a_sk->s0[i].coeffs[3]);
-        
+
         // Convert s0[i] to NTT domain for storage
         chipmunk_ntt(a_sk->s0[i].coeffs);
-        
+
         // Generate s1[i] in time domain, then convert to NTT
         uint8_t l_s1_seed[36];
         memcpy(l_s1_seed, l_derived_seed, 32);
         uint32_t l_s1_nonce = a_counter + CHIPMUNK_GAMMA + i;
         memcpy(l_s1_seed + 32, &l_s1_nonce, 4);
-        
+
         chipmunk_poly_uniform_mod_p(&a_sk->s1[i], l_s1_seed, CHIPMUNK_PHI_ALPHA_H);
+        dap_memwipe(l_s1_seed, sizeof(l_s1_seed));
         debug_if(s_debug_more, L_DEBUG, "  s1[%d] first coeffs: %d %d %d %d", i,
                a_sk->s1[i].coeffs[0], a_sk->s1[i].coeffs[1], a_sk->s1[i].coeffs[2], a_sk->s1[i].coeffs[3]);
-        
+
         // Convert s1[i] to NTT domain for storage
         chipmunk_ntt(a_sk->s1[i].coeffs);
         
@@ -199,67 +206,51 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
                a_sk->s1[i].coeffs[0], a_sk->s1[i].coeffs[1], a_sk->s1[i].coeffs[2], a_sk->s1[i].coeffs[3]);
     }
     
-    // Initialize public key in time domain
+    // Phase 9.15: Public key accumulated and stored in NTT domain
     memset(&a_pk->v0, 0, sizeof(a_pk->v0));
     memset(&a_pk->v1, 0, sizeof(a_pk->v1));
     
-    chipmunk_poly_t l_v0_time_sum, l_v1_time_sum;
-    memset(&l_v0_time_sum, 0, sizeof(l_v0_time_sum));
-    memset(&l_v1_time_sum, 0, sizeof(l_v1_time_sum));
+    chipmunk_poly_t l_v0_ntt_sum, l_v1_ntt_sum;
+    memset(&l_v0_ntt_sum, 0, sizeof(l_v0_ntt_sum));
+    memset(&l_v1_ntt_sum, 0, sizeof(l_v1_ntt_sum));
     
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         // a[i] * s0[i] - ALL in NTT domain
         chipmunk_poly_t l_term_v0_ntt;
-        chipmunk_poly_mul_ntt(&l_term_v0_ntt, &a_params->a[i], &a_sk->s0[i]);
-        debug_if(s_debug_more, L_DEBUG, "  After a[%d] * s0[%d]: term_v0_ntt[0-3] = %d %d %d %d", i, i,
-               l_term_v0_ntt.coeffs[0], l_term_v0_ntt.coeffs[1], l_term_v0_ntt.coeffs[2], l_term_v0_ntt.coeffs[3]);
+        chipmunk_poly_mul_ntt_q(&l_term_v0_ntt, &a_params->a[i], &a_sk->s0[i], a_params->q);
         
         // a[i] * s1[i] - ALL in NTT domain
         chipmunk_poly_t l_term_v1_ntt;
-        chipmunk_poly_mul_ntt(&l_term_v1_ntt, &a_params->a[i], &a_sk->s1[i]);
-        debug_if(s_debug_more, L_DEBUG, "  After a[%d] * s1[%d]: term_v1_ntt[0-3] = %d %d %d %d", i, i,
-               l_term_v1_ntt.coeffs[0], l_term_v1_ntt.coeffs[1], l_term_v1_ntt.coeffs[2], l_term_v1_ntt.coeffs[3]);
+        chipmunk_poly_mul_ntt_q(&l_term_v1_ntt, &a_params->a[i], &a_sk->s1[i], a_params->q);
         
-        // Convert to time domain for accumulation
-        // Original Rust: pk.v0 += (&(a * s0)).into(); - .into() means converting to time domain!
-        chipmunk_poly_t l_term_v0_time = l_term_v0_ntt;
-        chipmunk_poly_t l_term_v1_time = l_term_v1_ntt;
-        
-        chipmunk_invntt(l_term_v0_time.coeffs);
-        chipmunk_invntt(l_term_v1_time.coeffs);
-        
-        debug_if(s_debug_more, L_DEBUG, "  After invNTT term_v0_time[0-3] = %d %d %d %d",
-               l_term_v0_time.coeffs[0], l_term_v0_time.coeffs[1], l_term_v0_time.coeffs[2], l_term_v0_time.coeffs[3]);
-        debug_if(s_debug_more, L_DEBUG, "  After invNTT term_v1_time[0-3] = %d %d %d %d",
-               l_term_v1_time.coeffs[0], l_term_v1_time.coeffs[1], l_term_v1_time.coeffs[2], l_term_v1_time.coeffs[3]);
-        
-        // Accumulate in time domain
+        /* Phase 9.15: Accumulate in NTT domain (no invNTT needed).
+         * pk.v0/v1 are now stored NTT-native. Wire-serializer will do
+         * invNTT on encode (see chipmunk_signature_to_bytes). */
         if (i == 0) {
-            l_v0_time_sum = l_term_v0_time;
-            l_v1_time_sum = l_term_v1_time;
+            l_v0_ntt_sum = l_term_v0_ntt;
+            l_v1_ntt_sum = l_term_v1_ntt;
         } else {
-            chipmunk_poly_add(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time);
-            chipmunk_poly_add(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time);
+            chipmunk_poly_add_ntt_q(&l_v0_ntt_sum, &l_v0_ntt_sum, &l_term_v0_ntt, a_params->q);
+            chipmunk_poly_add_ntt_q(&l_v1_ntt_sum, &l_v1_ntt_sum, &l_term_v1_ntt, a_params->q);
         }
-        
-        debug_if(s_debug_more, L_DEBUG, "  After addition: v0_time_sum[0-3] = %d %d %d %d",
-               l_v0_time_sum.coeffs[0], l_v0_time_sum.coeffs[1], l_v0_time_sum.coeffs[2], l_v0_time_sum.coeffs[3]);
-        debug_if(s_debug_more, L_DEBUG, "  After addition: v1_time_sum[0-3] = %d %d %d %d",
-               l_v1_time_sum.coeffs[0], l_v1_time_sum.coeffs[1], l_v1_time_sum.coeffs[2], l_v1_time_sum.coeffs[3]);
     }
     
-    // Initialize public key in time domain
-    // Original Rust: HotsPK { v0: HOTSPoly, v1: HOTSPoly } - this is time domain
-    a_pk->v0 = l_v0_time_sum;
-    a_pk->v1 = l_v1_time_sum;
+    // Store public key in NTT domain
+    a_pk->v0 = l_v0_ntt_sum;
+    a_pk->v1 = l_v1_ntt_sum;
     
-    debug_if(s_debug_more, L_DEBUG, "✓ Public key computed and stored in time domain (CORRECTED METHOD)");
-    debug_if(s_debug_more, L_DEBUG, "  v0 (time) first coeffs: %d %d %d %d",
+    debug_if(s_debug_more, L_DEBUG, "✓ Public key computed and stored in NTT domain");
+    debug_if(s_debug_more, L_DEBUG, "  v0 (NTT) first coeffs: %d %d %d %d",
            a_pk->v0.coeffs[0], a_pk->v0.coeffs[1], a_pk->v0.coeffs[2], a_pk->v0.coeffs[3]);
-    debug_if(s_debug_more, L_DEBUG, "  v1 (time) first coeffs: %d %d %d %d",
+    debug_if(s_debug_more, L_DEBUG, "  v1 (NTT) first coeffs: %d %d %d %d",
            a_pk->v1.coeffs[0], a_pk->v1.coeffs[1], a_pk->v1.coeffs[2], a_pk->v1.coeffs[3]);
     
     debug_if(s_debug_more, L_DEBUG, "✓ HOTS keygen completed with unique s0[i] and s1[i]");
+
+    /* Wipe secret key derivation material from stack. */
+    dap_memwipe(l_derived_seed, sizeof(l_derived_seed));
+    dap_memwipe(l_seed_and_counter, sizeof(l_seed_and_counter));
+    dap_memwipe(&l_hash_out, sizeof(l_hash_out));
     return 0;
 }
 
@@ -273,8 +264,9 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
  * @return 0 on success, negative on error
  */
 int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message, 
-                      size_t a_message_len, chipmunk_hots_signature_t *a_signature) {
-    if (!a_sk || !a_message || !a_signature) {
+                      size_t a_message_len, chipmunk_hots_signature_t *a_signature,
+                      const chipmunk_hots_params_t *a_params) {
+    if (!a_sk || !a_message || !a_signature || !a_params) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_sign");
         return -EINVAL;
     }
@@ -296,81 +288,34 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
     // Result of signature is stored in time domain!
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         debug_if(s_debug_more, L_DEBUG, "🔢 Computing σ[%d] = s0[%d] * H(m) + s1[%d]...", i, i, i);
-        
-        // Debug secret key components (they are already in NTT domain)
-        debug_if(s_debug_more, L_DEBUG, "  s0[%d] first coeffs: %d %d %d %d", i,
-               a_sk->s0[i].coeffs[0], a_sk->s0[i].coeffs[1], a_sk->s0[i].coeffs[2], a_sk->s0[i].coeffs[3]);
-        debug_if(s_debug_more, L_DEBUG, "  s1[%d] first coeffs: %d %d %d %d", i,
-               a_sk->s1[i].coeffs[0], a_sk->s1[i].coeffs[1], a_sk->s1[i].coeffs[2], a_sk->s1[i].coeffs[3]);
-        
-        /* CR-7.2 Blinding: protect s0*H(m) and s1 addition from timing side-channel.
+
+        /* σ[i] = s0[i] * H(m) + s1[i]  (all in NTT domain)
          *
-         * Instead of computing σ = s0*H(m) + s1 directly (which exposes s0 and s1
-         * to power/timing analysis through NTT coefficient reduction), we:
-         *
-         *   1. Generate random mask r
-         *   2. Compute s0_blinded = s0 + r  (randomized input to multiplication)
-         *   3. Compute term1 = s0_blinded * H(m)  (randomized input)
-         *   4. Compute term2 = r * H(m)  (randomized input)
-         *   5. s0*H(m) = term1 - term2  (blinded result)
-         *   6. Similarly blind s1 addition: s1_blinded = s1 + r2, subtract r2
-         *
-         * Both multiplications now have randomized inputs, protecting the secret
-         * key from side-channel analysis. */
-        chipmunk_poly_t l_r, l_s0_blinded, l_term1, l_term2;
-        chipmunk_poly_t l_r2, l_s1_blinded;
-
-        /* Generate random mask r for s0*H(m) blinding */
-        uint8_t l_r_seed[32];
-        dap_random_bytes(l_r_seed, 32);
-        if (chipmunk_poly_from_hash(&l_r, l_r_seed, 32) != 0) return -EINVAL;
-        chipmunk_ntt(l_r.coeffs);
-
-        /* s0_blinded = s0 + r */
-        chipmunk_poly_add_ntt(&l_s0_blinded, &a_sk->s0[i], &l_r);
-
-        /* term1 = s0_blinded * H(m) (randomized input) */
-        chipmunk_poly_mul_ntt(&l_term1, &l_s0_blinded, &l_hm);
-
-        /* term2 = r * H(m) (randomized input) */
-        chipmunk_poly_mul_ntt(&l_term2, &l_r, &l_hm);
-
-        /* s0*H(m) = term1 - term2 */
+         * The previous CR-7.2 "blinding" was algebraically a no-op that
+         * tripled the leakage surface without providing any real masking
+         * (the mask was immediately subtracted off). Removed per security
+         * audit. For real SCA protection, use first-order masking where
+         * s0 = s0_a + s0_b and the two multiplications never touch the
+         * same share. */
         chipmunk_poly_t l_s0_hm;
-        chipmunk_poly_sub_ntt(&l_s0_hm, &l_term1, &l_term2);
+        chipmunk_poly_mul_ntt_q(&l_s0_hm, &a_sk->s0[i], &l_hm, a_params->q);
 
-        /* Generate random mask r2 for s1 blinding */
-        uint8_t l_r2_seed[32];
-        dap_random_bytes(l_r2_seed, 32);
-        if (chipmunk_poly_from_hash(&l_r2, l_r2_seed, 32) != 0) return -EINVAL;
-        chipmunk_ntt(l_r2.coeffs);
-
-        /* s1_blinded = s1 + r2 */
-        chipmunk_poly_add_ntt(&l_s1_blinded, &a_sk->s1[i], &l_r2);
-
-        /* σ[i] = s0*H(m) + s1 = (s0*H(m) + s1_blinded) - r2 */
         chipmunk_poly_t l_temp;
-        chipmunk_poly_add_ntt(&l_temp, &l_s0_hm, &l_s1_blinded);
-        chipmunk_poly_sub_ntt(&l_temp, &l_temp, &l_r2);
+        chipmunk_poly_add_ntt_q(&l_temp, &l_s0_hm, &a_sk->s1[i], a_params->q);
 
-        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT, blinded) first coeffs: %d %d %d %d", i,
+        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT) first coeffs: %d %d %d %d", i,
                l_temp.coeffs[0], l_temp.coeffs[1], l_temp.coeffs[2], l_temp.coeffs[3]);
         
-        // Convert result to time domain for storage
+        // Phase 9.15: Store sigma in NTT domain (no invNTT)
         a_signature->sigma[i] = l_temp;
-        chipmunk_invntt(a_signature->sigma[i].coeffs);
-        
-        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (time) first coeffs: %d %d %d %d", i,
-               a_signature->sigma[i].coeffs[0], a_signature->sigma[i].coeffs[1], 
-               a_signature->sigma[i].coeffs[2], a_signature->sigma[i].coeffs[3]);
 
-        /* Wipe local copies that held blinded secret key material */
-        dap_memwipe(&l_s0_blinded, sizeof(l_s0_blinded));
-        dap_memwipe(&l_s1_blinded, sizeof(l_s1_blinded));
-        dap_memwipe(l_r_seed, sizeof(l_r_seed));
-        dap_memwipe(l_r2_seed, sizeof(l_r2_seed));
+        /* Wipe local copy that held secret-derived result */
+        dap_memwipe(&l_s0_hm, sizeof(l_s0_hm));
     }
     
+    /* Wipe message hash polynomial (shared across all GAMMA iterations) */
+    dap_memwipe(&l_hm, sizeof(l_hm));
+
     debug_if(s_debug_more, L_DEBUG, "✓ HOTS signature generation completed");
     return 0;
 }
@@ -413,14 +358,9 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     debug_if(s_debug_more, L_DEBUG, "  H(m)_ntt first coeffs: %d %d %d %d", 
            l_hm_ntt.coeffs[0], l_hm_ntt.coeffs[1], l_hm_ntt.coeffs[2], l_hm_ntt.coeffs[3]);
     
-    // Transform public key to NTT domain for operations
-    // Original Rust: HOTSNTTPoly::from(&pk.v0) and HOTSNTTPoly::from(&pk.v1)
-    // Public key is stored in time domain, convert to NTT domain for operations
+    // Phase 9.15: Public key is already in NTT domain — use directly
     chipmunk_poly_t l_v0_ntt = a_pk->v0;
     chipmunk_poly_t l_v1_ntt = a_pk->v1;
-    
-    chipmunk_ntt(l_v0_ntt.coeffs);
-    chipmunk_ntt(l_v1_ntt.coeffs);
     
     debug_if(s_debug_more, L_DEBUG, "✓ Public key transformed to NTT domain");
     debug_if(s_debug_more, L_DEBUG, "  v0_ntt first coeffs: %d %d %d %d", 
@@ -437,11 +377,8 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         debug_if(s_debug_more, L_DEBUG, "  Processing pair %d/%d...", i+1, CHIPMUNK_GAMMA);
         
-        // Transform σ_i from time to NTT domain for operations
-        // Original Rust: HOTSNTTPoly::from(s) - this is conversion FROM time TO NTT domain!
-        // σ_i is stored in time domain, convert TO NTT domain for operations
+        // Phase 9.15: σ_i is already in NTT domain — use directly
         chipmunk_poly_t l_sigma_i_ntt = a_signature->sigma[i];
-        chipmunk_ntt(l_sigma_i_ntt.coeffs);
         
         debug_if(s_debug_more, L_DEBUG, "    a[%d] (already NTT) first coeffs: %d %d %d %d", i,
                a_params->a[i].coeffs[0], a_params->a[i].coeffs[1], a_params->a[i].coeffs[2], a_params->a[i].coeffs[3]);
@@ -452,7 +389,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
         
         // Multiply a_i * σ_i in NTT domain - a[i] is already in NTT domain!
         chipmunk_poly_t l_term;
-        chipmunk_poly_mul_ntt(&l_term, &a_params->a[i], &l_sigma_i_ntt);
+        chipmunk_poly_mul_ntt_q(&l_term, &a_params->a[i], &l_sigma_i_ntt, a_params->q);
         
         debug_if(s_debug_more, L_DEBUG, "    a[%d] * σ[%d] first coeffs: %d %d %d %d", i, i,
                l_term.coeffs[0], l_term.coeffs[1], l_term.coeffs[2], l_term.coeffs[3]);
@@ -461,7 +398,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
         if (i == 0) {
             l_left_ntt = l_term;
         } else {
-            chipmunk_poly_add_ntt(&l_left_ntt, &l_left_ntt, &l_term);
+            chipmunk_poly_add_ntt_q(&l_left_ntt, &l_left_ntt, &l_term, a_params->q);
         }
         
         debug_if(s_debug_more, L_DEBUG, "    Running sum first coeffs: %d %d %d %d",
@@ -476,13 +413,13 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     
     // Compute right side
     chipmunk_poly_t l_hm_v0;
-    chipmunk_poly_mul_ntt(&l_hm_v0, &l_hm_ntt, &l_v0_ntt);
+    chipmunk_poly_mul_ntt_q(&l_hm_v0, &l_hm_ntt, &l_v0_ntt, a_params->q);
     
     debug_if(s_debug_more, L_DEBUG, "  H(m) * v0 first coeffs: %d %d %d %d",
            l_hm_v0.coeffs[0], l_hm_v0.coeffs[1], l_hm_v0.coeffs[2], l_hm_v0.coeffs[3]);
     
     chipmunk_poly_t l_right_ntt;
-    chipmunk_poly_add_ntt(&l_right_ntt, &l_hm_v0, &l_v1_ntt);
+    chipmunk_poly_add_ntt_q(&l_right_ntt, &l_hm_v0, &l_v1_ntt, a_params->q);
     
     debug_if(s_debug_more, L_DEBUG, "✓ Right side computed: H(m) * v0 + v1 in NTT domain");
     debug_if(s_debug_more, L_DEBUG, "  Final right sum first coeffs: %d %d %d %d",
@@ -495,7 +432,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     debug_if(s_debug_more, L_DEBUG, "  Right NTT first coeffs: %d %d %d %d",
            l_right_ntt.coeffs[0], l_right_ntt.coeffs[1], l_right_ntt.coeffs[2], l_right_ntt.coeffs[3]);
     
-    bool l_ntt_equal = chipmunk_poly_equal(&l_left_ntt, &l_right_ntt);
+    bool l_ntt_equal = chipmunk_poly_equal_q(&l_left_ntt, &l_right_ntt, a_params->q);
     if (l_ntt_equal) {
         debug_if(s_debug_more, L_DEBUG, "✅ NTT DOMAIN VERIFICATION SUCCESSFUL!");
         return 0;  // Standard C convention: 0 for success
@@ -515,7 +452,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
            l_right_time.coeffs[0], l_right_time.coeffs[1], l_right_time.coeffs[2], l_right_time.coeffs[3]);
     
     // Use exact comparison function as in original Rust code
-    bool l_equal = chipmunk_poly_equal(&l_left_time, &l_right_time);
+    bool l_equal = chipmunk_poly_equal_q(&l_left_time, &l_right_time, a_params->q);
     
     if (l_equal) {
         debug_if(s_debug_more, L_DEBUG, "✅ TIME DOMAIN VERIFICATION SUCCESSFUL: Equations match!");

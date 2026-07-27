@@ -141,7 +141,7 @@ int dap_sign_ring_create(dap_sign_t **a_out,
         if (!l_sig) { DAP_DELETE(l_ring); return -ENOMEM; }
 
         int l_rc = chipmunk_lrs_sign(l_sig, l_sig_sz, l_sk, l_ring, l_N,
-                                     a_msg, a_msg_len, a_seed);
+                                     a_msg, a_msg_len, a_seed, (uint64_t)CHIPMUNK_Q);
         DAP_DELETE(l_ring);
         if (l_rc != 0) {
             dap_memwipe(l_sig, l_sig_sz);
@@ -211,7 +211,7 @@ int dap_sign_ring_verify(const dap_sign_t *a_sign,
         int l_rc = chipmunk_lrs_verify(
             a_sign->pkey_n_sign, a_sign->header.sign_size,
             l_ring, a_ring_size,
-            a_msg, a_msg_len);
+            a_msg, a_msg_len, (uint64_t)CHIPMUNK_Q);
         DAP_DELETE(l_ring);
         return l_rc;
     }

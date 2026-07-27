@@ -74,7 +74,7 @@ static int s_mul(chipmunk_poly_t *a_out,
     if (rc != 0) return rc;
     rc = chipmunk_poly_ntt(&r);
     if (rc != 0) return rc;
-    chipmunk_poly_mul_ntt(a_out, &l, &r);
+    chipmunk_poly_mul_ntt_q(a_out, &l, &r, (uint64_t)CHIPMUNK_Q);
     return chipmunk_poly_invntt(a_out);
 }
 
@@ -102,7 +102,7 @@ static bool s_test_inverse_identity(void)
                    "sample sparse-ternary challenge");
 
         chipmunk_poly_t xinv;
-        const int rc = chipmunk_mring_poly_invert(&xinv, &x);
+        const int rc = chipmunk_mring_poly_invert_q(&xinv, &x, (uint64_t)CHIPMUNK_Q);
         if (rc == -EDOM) {
             continue; /* rare non-invertible; skip */
         }
@@ -125,7 +125,7 @@ static bool s_test_zero_noninvertible(void)
     chipmunk_poly_t zero;
     memset(&zero, 0, sizeof(zero));
     chipmunk_poly_t out;
-    dap_assert(chipmunk_mring_poly_invert(&out, &zero) == -EDOM,
+    dap_assert(chipmunk_mring_poly_invert_q(&out, &zero, (uint64_t)CHIPMUNK_Q) == -EDOM,
                "zero polynomial must report -EDOM");
 
     /* The constant polynomial 1 is trivially self-inverse. */
@@ -133,7 +133,7 @@ static bool s_test_zero_noninvertible(void)
     memset(&one, 0, sizeof(one));
     one.coeffs[0] = 1;
     chipmunk_poly_t one_inv;
-    dap_assert(chipmunk_mring_poly_invert(&one_inv, &one) == 0,
+    dap_assert(chipmunk_mring_poly_invert_q(&one_inv, &one, (uint64_t)CHIPMUNK_Q) == 0,
                "constant 1 must be invertible");
     dap_assert(s_poly_is_const_one(&one_inv),
                "inverse of 1 must be 1");
@@ -155,7 +155,7 @@ static bool s_test_empirical_rate(void)
             continue;
         }
         chipmunk_poly_t xinv;
-        const int rc = chipmunk_mring_poly_invert(&xinv, &x);
+        const int rc = chipmunk_mring_poly_invert_q(&xinv, &x, (uint64_t)CHIPMUNK_Q);
         if (rc == -EDOM) {
             ++noninv;
         } else if (rc != 0) {
