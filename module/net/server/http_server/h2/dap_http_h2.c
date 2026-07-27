@@ -226,9 +226,14 @@ dap_h2_stream_t *dap_h2_stream_find(dap_h2_connection_t *a_conn, uint32_t a_stre
 {
     if (!a_conn)
         return NULL;
-    for (dap_h2_stream_t *l_st = a_conn->streams; l_st; l_st = l_st->next)
+    fprintf(stderr, "DBG find: conn=%p streams=%p id=%u\n",
+            (void*)a_conn, (void*)a_conn->streams, a_stream_id);
+    for (dap_h2_stream_t *l_st = a_conn->streams; l_st; l_st = l_st->next) {
+        fprintf(stderr, "DBG find: l_st=%p id=%u next=%p\n",
+                (void*)l_st, l_st->id, (void*)l_st->next);
         if (l_st->id == a_stream_id)
             return l_st;
+    }
     return NULL;
 }
 
@@ -928,6 +933,8 @@ uint32_t dap_h2_connection_send_request(dap_h2_connection_t *a_conn, const char 
         return 0;
     a_conn->last_local_stream_id = l_stream_id;
     l_stream->state = DAP_H2_SSTATE_OPEN;
+    fprintf(stderr, "DBG send_req: after create conn=%p streams=%p stream=%p\n",
+            (void*)a_conn, (void*)a_conn->streams, (void*)l_stream);
 
     /* Build pseudo-headers + user headers for HPACK encoding */
     size_t l_total_hdrs = 4 + a_header_count;
