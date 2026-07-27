@@ -85,13 +85,15 @@ static void s_derive32(const uint8_t a_label[16],
  * chipmunk_verify do so leaves verify identically under any rho_seed.
  */
 static int s_build_hots_params(const uint8_t a_rho_seed[32],
-                               chipmunk_hots_params_t *a_params)
+                               chipmunk_hots_params_t *a_params,
+                               uint64_t q)
 {
     memset(a_params, 0, sizeof(*a_params));
+    a_params->q = q;  /* Set field modulus before any arithmetic uses it */
     for (int i = 0; i < CHIPMUNK_GAMMA; ++i) {
-        if (dap_chipmunk_hash_sample_matrix(a_params->a[i].coeffs,
-                                            a_rho_seed,
-                                            i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix_q(a_params->a[i].coeffs,
+                                              a_rho_seed,
+                                              i, q) != 0) {
             log_it(L_ERROR, "Failed to sample A[%d] from rho_seed", i);
             return CHIPMUNK_ERROR_HASH_FAILED;
         }
@@ -108,13 +110,14 @@ static int s_build_hots_params(const uint8_t a_rho_seed[32],
  * collision resistance of the digest.
  */
 static int s_leaf_digest_from_hots_pk(const chipmunk_hots_pk_t *a_hots_pk,
-                                      chipmunk_hvc_poly_t *a_digest_out)
+                                      chipmunk_hvc_poly_t *a_digest_out,
+                                      uint64_t q)
 {
     chipmunk_public_key_t l_wrap;
     memset(&l_wrap, 0, sizeof(l_wrap));
     memcpy(&l_wrap.v0, &a_hots_pk->v0, sizeof(chipmunk_poly_t));
     memcpy(&l_wrap.v1, &a_hots_pk->v1, sizeof(chipmunk_poly_t));
-    return chipmunk_hots_pk_to_hvc_poly(&l_wrap, a_digest_out);
+    return chipmunk_hots_pk_to_hvc_poly_q(&l_wrap, a_digest_out, q);
 }
 
 /*
@@ -129,7 +132,7 @@ static int s_leaf_digest_from_hots_pk(const chipmunk_hots_pk_t *a_hots_pk,
  * private_key_from_bytes funnel through it so the tree is guaranteed
  * bit-identical between the two paths.
  */
-static int s_materialise_tree(chipmunk_ht_private_key_t *a_sk)
+static int s_materialise_tree(chipmunk_ht_private_key_t *a_sk, uint64_t q)
 {
     int l_rc = CHIPMUNK_ERROR_SUCCESS;
     chipmunk_hvc_poly_t *l_leaf_digests = NULL;
@@ -137,7 +140,7 @@ static int s_materialise_tree(chipmunk_ht_private_key_t *a_sk)
     chipmunk_hots_sk_t   l_leaf_sk;
     memset(&l_leaf_sk, 0, sizeof(l_leaf_sk));
 
-    l_rc = s_build_hots_params(a_sk->pk.rho_seed, &a_sk->hots_params);
+    l_rc = s_build_hots_params(a_sk->pk.rho_seed, &a_sk->hots_params, q);
     if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
         goto fail;
     }
@@ -168,7 +171,7 @@ static int s_materialise_tree(chipmunk_ht_private_key_t *a_sk)
             goto fail;
         }
         dap_chipmunk_compute_hots_pk_internal(&a_sk->hots_params, &l_leaf_sk, &l_leaf_pks[i]);
-        l_rc = s_leaf_digest_from_hots_pk(&l_leaf_pks[i], &l_leaf_digests[i]);
+        l_rc = s_leaf_digest_from_hots_pk(&l_leaf_pks[i], &l_leaf_digests[i], q);
         if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
             log_it(L_ERROR, "Leaf-%u digest conversion failed: %d", i, l_rc);
             goto fail;
@@ -226,7 +229,8 @@ fail:
  */
 static int s_keypair_internal(const uint8_t a_seed[32],
                               chipmunk_ht_public_key_t  *a_pk,
-                              chipmunk_ht_private_key_t *a_sk)
+                              chipmunk_ht_private_key_t *a_sk,
+                              uint64_t q)
 {
     if (!a_seed || !a_pk || !a_sk) {
         return CHIPMUNK_ERROR_NULL_PARAM;
@@ -251,7 +255,7 @@ static int s_keypair_internal(const uint8_t a_seed[32],
     s_derive32(s_ht_hasher_label,  a_seed, 32, a_sk->pk.hasher_seed);
     a_sk->leaf_index = 0u;
 
-    int l_rc = s_materialise_tree(a_sk);
+    int l_rc = s_materialise_tree(a_sk, q);
     if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
         chipmunk_ht_private_key_clear(a_sk);
         return l_rc;
@@ -289,7 +293,7 @@ int chipmunk_ht_keypair(chipmunk_ht_public_key_t  *a_pk_out,
         log_it(L_ERROR, "dap_random_bytes failed for hypertree seed");
         return CHIPMUNK_ERROR_INIT_FAILED;
     }
-    int l_rc = s_keypair_internal(l_seed, a_pk_out, a_sk_out);
+    int l_rc = s_keypair_internal(l_seed, a_pk_out, a_sk_out, (uint64_t)CHIPMUNK_Q);
     s_wipe(l_seed, sizeof(l_seed));
     return l_rc;
 }
@@ -299,7 +303,7 @@ int chipmunk_ht_keypair_from_seed(const uint8_t a_seed[32],
                                    chipmunk_ht_private_key_t *a_sk_out)
 {
     if (!a_seed) return CHIPMUNK_ERROR_NULL_PARAM;
-    return s_keypair_internal(a_seed, a_pk_out, a_sk_out);
+    return s_keypair_internal(a_seed, a_pk_out, a_sk_out, (uint64_t)CHIPMUNK_Q);
 }
 
 /* ---------------------------------------------------------------------- *
@@ -325,7 +329,7 @@ static int s_sign_at_leaf(chipmunk_ht_private_key_t *a_sk,
         log_it(L_ERROR, "Hypertree sign: leaf-%u secret derivation failed", a_leaf_index);
         goto out;
     }
-    l_ret = chipmunk_hots_sign(&l_leaf_sk, a_msg, a_len, &l_hots_sig);
+    l_ret = chipmunk_hots_sign(&l_leaf_sk, a_msg, a_len, &l_hots_sig, &a_sk->hots_params);
     if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Hypertree sign: HOTS sign failed at leaf %u: %d",
                a_leaf_index, l_ret);
@@ -460,7 +464,8 @@ int chipmunk_ht_sign_pop(chipmunk_ht_private_key_t *a_sk,
 
 static int s_verify_any_committed_leaf(const chipmunk_ht_public_key_t *a_pk,
                                        const uint8_t *a_msg, size_t a_len,
-                                       const chipmunk_ht_signature_t *a_sig)
+                                       const chipmunk_ht_signature_t *a_sig,
+                                       uint64_t q)
 {
     if (!a_pk || !a_msg || !a_sig) {
         return CHIPMUNK_ERROR_NULL_PARAM;
@@ -497,7 +502,7 @@ static int s_verify_any_committed_leaf(const chipmunk_ht_public_key_t *a_pk,
 
     /* 1. Rebuild HOTS params from the public rho_seed. */
     chipmunk_hots_params_t l_hots_params;
-    int l_rc = s_build_hots_params(a_pk->rho_seed, &l_hots_params);
+    int l_rc = s_build_hots_params(a_pk->rho_seed, &l_hots_params, q);
     if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
         return l_rc;
     }
@@ -518,7 +523,7 @@ static int s_verify_any_committed_leaf(const chipmunk_ht_public_key_t *a_pk,
     /* 3. Compute the leaf digest from the signed leaf_pk and compare it
      *    against the auth path via honest leaf pinning (CR-D15.A). */
     chipmunk_hvc_poly_t l_leaf_digest;
-    l_rc = s_leaf_digest_from_hots_pk(&a_sig->leaf_pk, &l_leaf_digest);
+    l_rc = s_leaf_digest_from_hots_pk(&a_sig->leaf_pk, &l_leaf_digest, q);
     if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
         return l_rc;
     }
@@ -552,7 +557,7 @@ int chipmunk_ht_verify(const chipmunk_ht_public_key_t *a_pk,
                a_sig->leaf_index);
         return CHIPMUNK_ERROR_VERIFY_FAILED;
     }
-    return s_verify_any_committed_leaf(a_pk, a_msg, a_len, a_sig);
+    return s_verify_any_committed_leaf(a_pk, a_msg, a_len, a_sig, (uint64_t)CHIPMUNK_Q);
 }
 
 int chipmunk_ht_verify_pop(const chipmunk_ht_public_key_t *a_pk,
@@ -570,7 +575,7 @@ int chipmunk_ht_verify_pop(const chipmunk_ht_public_key_t *a_pk,
                a_sig->leaf_index, CHIPMUNK_HT_POP_LEAF_INDEX);
         return CHIPMUNK_ERROR_VERIFY_FAILED;
     }
-    return s_verify_any_committed_leaf(a_pk, a_msg, a_len, a_sig);
+    return s_verify_any_committed_leaf(a_pk, a_msg, a_len, a_sig, (uint64_t)CHIPMUNK_Q);
 }
 
 /* ---------------------------------------------------------------------- *
@@ -688,7 +693,7 @@ int chipmunk_ht_private_key_from_bytes(chipmunk_ht_private_key_t *a_sk_out,
     if (l_rc != CHIPMUNK_ERROR_SUCCESS) goto fail;
 
     /* Rebuild the tree from key_seed + pk.rho_seed + pk.hasher_seed. */
-    l_rc = s_materialise_tree(a_sk_out);
+    l_rc = s_materialise_tree(a_sk_out, (uint64_t)CHIPMUNK_Q);
     if (l_rc != CHIPMUNK_ERROR_SUCCESS) goto fail;
 
     /* Integrity self-check: the rebuilt root MUST match the one in the

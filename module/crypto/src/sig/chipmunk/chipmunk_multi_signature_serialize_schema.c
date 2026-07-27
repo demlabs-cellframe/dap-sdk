@@ -276,6 +276,19 @@ void chipmunk_multi_signature_wire_release(
     memset(a_wire, 0, sizeof(*a_wire));
 }
 
+void chipmunk_multi_signature_wire_release_with_nodes(
+        chipmunk_multi_signature_wire_t *a_wire)
+{
+    if (!a_wire) return;
+    if (a_wire->signers) {
+        for (uint32_t i = 0; i < a_wire->signer_count; ++i) {
+            DAP_DEL_Z(a_wire->signers[i].nodes);
+        }
+        DAP_DEL_Z(a_wire->signers);
+    }
+    memset(a_wire, 0, sizeof(*a_wire));
+}
+
 int chipmunk_multi_signature_from_wire(
         chipmunk_multi_signature_wire_t  *a_wire,
         chipmunk_multi_signature_t       *a_out_runtime)

@@ -21,13 +21,14 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <inttypes.h>
 #include <string.h>
+#include <arpa/inet.h>
 
 #include "dap_common.h"
-#include "dap_events_socket.h"
 #include "dap_strfuncs.h"
 #include "dap_stream_obfuscation_mimicry.h"
-#include "dap_rand.h"
+#include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_stream_mimicry"
 
@@ -260,7 +261,7 @@ int dap_stream_mimicry_generate_client_hello(dap_stream_mimicry_t *a_mimicry,
     l_offset += 2;
     
     // Random (32 bytes)
-    dap_random_bytes(&l_hello[l_offset], 32);
+    randombytes(&l_hello[l_offset], 32);
     l_offset += 32;
     
     // Session ID (empty for now)
@@ -374,7 +375,7 @@ int dap_stream_mimicry_generate_server_hello(dap_stream_mimicry_t *a_mimicry,
     l_offset += 2;
     
     // Random (32 bytes)
-    dap_random_bytes(&l_hello[l_offset], 32);
+    randombytes(&l_hello[l_offset], 32);
     l_offset += 32;
     
     // Session ID (empty)
@@ -697,7 +698,7 @@ static int s_wrap_websocket(dap_stream_mimicry_t *a_mimicry,
     // Masking key (if masked)
     uint8_t l_masking_key[4] = {0};
     if (l_mask) {
-        dap_random_bytes(l_masking_key, 4);
+        randombytes(l_masking_key, 4);
         memcpy(&l_output[l_offset], l_masking_key, 4);
         l_offset += 4;
     }
@@ -798,7 +799,7 @@ static int s_unwrap_websocket(dap_stream_mimicry_t *a_mimicry,
     *a_out_data = l_payload;
     *a_out_size = l_payload_len;
 
-    log_it(L_DEBUG, "Unwrapped %" DAP_UINT64_FORMAT_U " bytes from WebSocket frame", l_payload_len);
+    log_it(L_DEBUG, "Unwrapped %" PRIu64 " bytes from WebSocket frame", l_payload_len);
     return 0;
 }
 

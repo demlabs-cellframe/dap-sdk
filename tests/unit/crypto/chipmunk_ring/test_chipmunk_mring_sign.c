@@ -8,6 +8,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 
 #include <stdint.h>
@@ -136,6 +137,8 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_mring_sign");
     dap_common_init("test_chipmunk_mring_sign", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     test_sign_verify_roundtrip();
     test_sign_verify_n8();

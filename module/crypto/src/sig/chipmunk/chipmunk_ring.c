@@ -246,9 +246,9 @@ int chipmunk_ring_link(const chipmunk_ring_sig_t *a_sig1, const chipmunk_ring_si
     if (a_sig1->len < l_hdr_bytes || a_sig2->len < l_hdr_bytes) return -EINVAL;
 
     chipmunk_ring_header_t l_hdr1 = {0}, l_hdr2 = {0};
-    dap_deserialize_result_t l_d1 = dap_serialize_from_buffer_raw(&s_chipmunk_ring_header_schema,
+    dap_deserialize_result_t l_d1 = dap_serialize_from_buffer_raw_zero(&s_chipmunk_ring_header_schema,
                                                                    a_sig1->data, l_hdr_bytes, &l_hdr1, NULL);
-    dap_deserialize_result_t l_d2 = dap_serialize_from_buffer_raw(&s_chipmunk_ring_header_schema,
+    dap_deserialize_result_t l_d2 = dap_serialize_from_buffer_raw_zero(&s_chipmunk_ring_header_schema,
                                                                    a_sig2->data, l_hdr_bytes, &l_hdr2, NULL);
     if (l_d1.error_code != 0 || l_d2.error_code != 0) return -EINVAL;
 
@@ -349,16 +349,16 @@ static int s_pk_cmp(const void *a_a, const void *a_b)
 {
     /* Compare over the a_hat polynomial vector coefficients.
      * Use the polyvec n field (number of polynomials) for bounds.
-     * Each polynomial has CHIPMUNK_N coefficients allocated, but only
-     * the first d may be valid — however since allocations use
-     * sizeof(lotrs_poly_t) = CHIPMUNK_N * 8, all 512 are addressable. */
+     * lotrs_poly_t has LOTRS_D_MAX coefficients — must NOT use CHIPMUNK_N
+     * here because LOTRS ring dimension d (max 128) differs from Chipmunk
+     * NTT dimension N (512). Using CHIPMUNK_N would read past the buffer. */
     const chipmunk_ring_pk_t *l_a = (const chipmunk_ring_pk_t *)a_a;
     const chipmunk_ring_pk_t *l_b = (const chipmunk_ring_pk_t *)a_b;
     if (!l_a->a_hat.polys || !l_b->a_hat.polys) return 0;
     uint32_t l_n = l_a->a_hat.n < l_b->a_hat.n ? l_a->a_hat.n : l_b->a_hat.n;
     for (uint32_t i = 0u; i < l_n; ++i) {
         if (!l_a->a_hat.polys[i] || !l_b->a_hat.polys[i]) continue;
-        for (uint32_t j = 0u; j < CHIPMUNK_N; ++j) {
+        for (uint32_t j = 0u; j < LOTRS_D_MAX; ++j) {
             int32_t l_diff = l_a->a_hat.polys[i]->coeffs[j] - l_b->a_hat.polys[i]->coeffs[j];
             if (l_diff != 0) return (l_diff > 0) ? 1 : -1;
         }
@@ -459,15 +459,15 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
 
     /* Generate A matrix (shared across retries). */
     lotrs_polymat_t l_A = lotrs_polymat_alloc(a_par, a_par->k, a_par->l);
-    if (!l_A.rows) return -ENOMEM;
+    if (!l_A.rows) { DAP_DELETE(l_sorted_ring.pks); return -ENOMEM; }
     const char *l_a_domain = "crin-A-v1";
     lotrs_xof_t *l_xof_a = lotrs_xof_new((const uint8_t *)l_a_domain, strlen(l_a_domain));
-    if (!l_xof_a) { lotrs_polymat_free(&l_A); return -ENOMEM; }
+    if (!l_xof_a) { lotrs_polymat_free(&l_A); DAP_DELETE(l_sorted_ring.pks); return -ENOMEM; }
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         for (uint32_t j = 0u; j < a_par->l; ++j) {
             l_rc = lotrs_sample_uniform(l_A.rows[i].polys[j], l_xof_a, a_par);
             if (l_rc != 0) {
-                lotrs_xof_free(l_xof_a); lotrs_polymat_free(&l_A); return l_rc;
+                lotrs_xof_free(l_xof_a); lotrs_polymat_free(&l_A); DAP_DELETE(l_sorted_ring.pks); return l_rc;
             }
         }
     }
@@ -479,7 +479,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
     lotrs_polyvec_t *l_z = DAP_NEW_Z_COUNT(lotrs_polyvec_t, l_N);
     if (!l_T || !l_c_arr || !l_z) {
         DAP_DELETE(l_T); DAP_DELETE(l_c_arr); DAP_DELETE(l_z);
-        lotrs_polymat_free(&l_A); return -ENOMEM;
+        lotrs_polymat_free(&l_A); DAP_DELETE(l_sorted_ring.pks); return -ENOMEM;
     }
 
     for (uint32_t i = 0u; i < l_N; ++i) {
@@ -491,7 +491,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
                 lotrs_polyvec_free(&l_T[j]); lotrs_poly_free(l_c_arr[j]); lotrs_polyvec_free(&l_z[j]);
             }
             DAP_DELETE(l_T); DAP_DELETE(l_c_arr); DAP_DELETE(l_z);
-            lotrs_polymat_free(&l_A); return -ENOMEM;
+            lotrs_polymat_free(&l_A); DAP_DELETE(l_sorted_ring.pks); return -ENOMEM;
         }
     }
 
@@ -857,7 +857,7 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
 
     /* Read header. */
     chipmunk_ring_header_t l_hdr = {0};
-    dap_deserialize_result_t l_deser = dap_serialize_from_buffer_raw(&s_chipmunk_ring_header_schema,
+    dap_deserialize_result_t l_deser = dap_serialize_from_buffer_raw_zero(&s_chipmunk_ring_header_schema,
                                                                      a_sig->data, l_hdr_bytes,
                                                                      &l_hdr, NULL);
     if (l_deser.error_code != 0) return -EINVAL;

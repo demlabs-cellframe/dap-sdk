@@ -105,7 +105,8 @@ static void s_ch_io_callback(void * a_msg)
     pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
     if (l_msg_ch == NULL) {
         if (l_msg->data_size) {
-            log_it(L_DEBUG, "We got i/o message for client thats now not in list. Lost %zu data", l_msg->data_size);
+            log_it(L_WARNING, "ch_io: channel uuid=%u not in worker list, dropped %zu bytes",
+                   (unsigned)l_msg->ch_uuid, l_msg->data_size);
             DAP_DELETE(l_msg->data);
         }
         DAP_DELETE(l_msg);
@@ -121,7 +122,15 @@ static void s_ch_io_callback(void * a_msg)
     if (l_msg->flags_unset & DAP_SOCK_READY_TO_WRITE)
         dap_stream_ch_set_ready_to_write_unsafe(l_msg_ch, false);
     if (l_msg->data_size && l_msg->data) {
-        dap_stream_ch_pkt_write_unsafe(l_msg_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
+        size_t l_written = dap_stream_ch_pkt_write_unsafe(l_msg_ch, l_msg->ch_pkt_type,
+                                                          l_msg->data, l_msg->data_size);
+        if (l_written == 0) {
+            log_it(L_WARNING, "ch_io: write_unsafe failed ch_uuid=%u type=0x%02x size=%zu",
+                   (unsigned)l_msg->ch_uuid, l_msg->ch_pkt_type, l_msg->data_size);
+#ifndef DAP_EVENTS_CAPS_IOCP
+            dap_stream_ch_set_ready_to_write_unsafe(l_msg_ch, false);
+#endif
+        }
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);
@@ -153,7 +162,15 @@ static void s_ch_send_callback(void *a_msg)
         log_it(L_WARNING, "Stream found, but channel '%c' isn't set", l_msg->ch_id);
         goto ret_n_clear;
     }
-    dap_stream_ch_pkt_write_unsafe(l_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
+    size_t l_written = dap_stream_ch_pkt_write_unsafe(l_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
+    if (l_written == 0 && l_msg->data_size) {
+        log_it(L_WARNING, "ch_send: write_unsafe failed es=0x%016" DAP_UINT64_FORMAT_x
+               " ch='%c' type=0x%02x size=%zu",
+               l_msg->uuid, l_msg->ch_id, l_msg->ch_pkt_type, l_msg->data_size);
+#ifndef DAP_EVENTS_CAPS_IOCP
+        dap_stream_ch_set_ready_to_write_unsafe(l_ch, false);
+#endif
+    }
     DAP_DEL_Z(l_msg->data);
 ret_n_clear:
     if (l_msg->data) {

@@ -169,10 +169,8 @@ static inline bool dap_json_string_scan(
     uint32_t *a_out_end_offset
 )
 {
-    // Fast path: get current CPU architecture (respects manual override)
     dap_cpu_arch_t arch = dap_cpu_arch_get();
     
-    // Dispatch with branch prediction hints (usually AVX2/NEON on modern CPUs)
     switch (arch) {
 #if DAP_PLATFORM_X86
         case DAP_CPU_ARCH_AVX512:
@@ -204,11 +202,9 @@ static inline bool dap_json_string_scan(
         case DAP_CPU_ARCH_REFERENCE:
         case DAP_CPU_ARCH_AUTO:
         default:
-            // Fallback to reference implementation
             return dap_json_string_scan_ref(a_input, a_input_len, a_out_string, a_out_end_offset);
     }
     
-    // Should not reach here
     return dap_json_string_scan_ref(a_input, a_input_len, a_out_string, a_out_end_offset);
 }
 

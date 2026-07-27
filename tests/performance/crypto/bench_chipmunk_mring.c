@@ -182,7 +182,7 @@ static void s_bench_lrs(uint32_t a_N)
     uint8_t *sig = malloc(sig_size);
 
     int rc = chipmunk_lrs_sign(sig, sig_size, &sk, ring, a_N,
-                               msg, sizeof(msg) - 1u, randomness);
+                               msg, sizeof(msg) - 1u, randomness, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         printf("SKIP (sign rc=%d)\n", rc);
         free(sig); free(ring);
@@ -191,37 +191,37 @@ static void s_bench_lrs(uint32_t a_N)
 
     for (int w = 0; w < WARMUP_SIGN - 1; w++) {
         chipmunk_lrs_sign(sig, sig_size, &sk, ring, a_N,
-                          msg, sizeof(msg) - 1u, randomness);
+                          msg, sizeof(msg) - 1u, randomness, (uint64_t)CHIPMUNK_Q);
     }
 
     uint64_t t0 = now_ns();
     for (int i = 0; i < ITERS_SIGN; i++) {
         BARRIER();
         chipmunk_lrs_sign(sig, sig_size, &sk, ring, a_N,
-                          msg, sizeof(msg) - 1u, randomness);
+                          msg, sizeof(msg) - 1u, randomness, (uint64_t)CHIPMUNK_Q);
         BARRIER();
     }
     uint64_t dt_sign = now_ns() - t0;
 
     chipmunk_lrs_sign(sig, sig_size, &sk, ring, a_N,
-                      msg, sizeof(msg) - 1u, randomness);
+                      msg, sizeof(msg) - 1u, randomness, (uint64_t)CHIPMUNK_Q);
 
     for (int w = 0; w < WARMUP_VER; w++) {
         chipmunk_lrs_verify(sig, sig_size, ring, a_N,
-                            msg, sizeof(msg) - 1u);
+                            msg, sizeof(msg) - 1u, (uint64_t)CHIPMUNK_Q);
     }
 
     t0 = now_ns();
     for (int i = 0; i < ITERS_VER; i++) {
         BARRIER();
         chipmunk_lrs_verify(sig, sig_size, ring, a_N,
-                            msg, sizeof(msg) - 1u);
+                            msg, sizeof(msg) - 1u, (uint64_t)CHIPMUNK_Q);
         BARRIER();
     }
     uint64_t dt_ver = now_ns() - t0;
 
     int v_rc = chipmunk_lrs_verify(sig, sig_size, ring, a_N,
-                                   msg, sizeof(msg) - 1u);
+                                   msg, sizeof(msg) - 1u, (uint64_t)CHIPMUNK_Q);
 
     printf("sign=%7.3f ms  verify=%6.3f ms  %s\n",
            (double)dt_sign / (ITERS_SIGN * 1000000.0),

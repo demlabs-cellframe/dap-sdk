@@ -83,10 +83,14 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
 
     if (!l_json_arr_errors) {
         dap_json_t *l_json_obj_errors = dap_json_object_new();
+        dap_json_t *l_json_arr_errors_new = dap_json_array_new();
+        dap_json_object_add_array(l_json_obj_errors, "errors", l_json_arr_errors_new);
         dap_json_array_add(a_json_arr_reply, l_json_obj_errors);
-        l_json_arr_errors = dap_json_array_new();
-        dap_json_object_add_array(l_json_obj_errors, "errors", l_json_arr_errors);
-    } 
+        /* Re-fetch borrowed ref: wrappers are detached after parent takes ownership */
+        int l_len = dap_json_array_length(a_json_arr_reply);
+        dap_json_t *l_errors_obj = dap_json_array_get_idx(a_json_arr_reply, l_len - 1);
+        l_json_arr_errors = dap_json_object_get_array(l_errors_obj, "errors");
+    }
     dap_json_t* l_obj_error = dap_json_object_new();
     dap_json_object_add_int(l_obj_error, "code", a_code_error);
     dap_json_object_add_string(l_obj_error, "message", l_msg);

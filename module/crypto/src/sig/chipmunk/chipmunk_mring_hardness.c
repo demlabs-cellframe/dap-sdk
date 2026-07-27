@@ -12,7 +12,7 @@
 
 #include "chipmunk_mring_hardness.h"
 #include "chipmunk_mring_params.h"
-#include "chipmunk_mring_ext.h"   /* CHIPMUNK_MRING_EXT_DEG (e) */
+#include "chipmunk_fq6_ext.h"   /* CHIPMUNK_FQ6_EXT_DEG (e) */
 
 #ifndef M_PI
 #  define M_PI 3.14159265358979323846
@@ -179,7 +179,7 @@ uint32_t chipmunk_mring_hardness_mlwe_bits(void)
  *
  *     S = F_{qᵉ} \ {0}   in the ring extension R_q^{(e)} = R_q[Y]/Φ₉,
  *
- * with e = CHIPMUNK_MRING_EXT_DEG = 6.  ALL nonzero differences in S are
+ * with e = CHIPMUNK_FQ6_EXT_DEG = 6.  ALL nonzero differences in S are
  * invertible by construction (proven in test_chipmunk_mring_subtractive).
  * The relevant security quantity is therefore the SUBTRACTIVE-SET SIZE
  *
@@ -196,7 +196,7 @@ uint32_t chipmunk_mring_hardness_invertibility_bits(void)
     /* log₂|S| = log₂(qᵉ − 1), e = extension degree.  Compute as
      * e·log₂ q + log₂(1 − q⁻ᵉ); the correction is ≈ −2⁻¹³⁰, negligible,
      * so e·log₂ q is exact to floor precision. */
-    const double e_deg  = (double)CHIPMUNK_MRING_EXT_DEG;
+    const double e_deg  = (double)CHIPMUNK_FQ6_EXT_DEG;
     const double q_bits = log2((double)CHIPMUNK_MRING_Q);
     const double l_bits = e_deg * q_bits;
 

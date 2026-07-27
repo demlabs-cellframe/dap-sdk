@@ -67,20 +67,20 @@ static uint64_t s_leaf_xof_u64(leaf_xof_reader_t *a_r)
            | ((uint64_t)l_b[7] << 56);
 }
 
-static int64_t s_center_coeff_i64(int32_t a_c)
+static int64_t s_center_coeff_i64_q(int32_t a_c, uint64_t q)
 {
     int64_t l_v = a_c;
-    const int64_t l_half = (int64_t)CHIPMUNK_Q / 2;
-    const int64_t l_q = (int64_t)CHIPMUNK_Q;
+    const int64_t l_half = (int64_t)q / 2;
+    const int64_t l_q = (int64_t)q;
     /* Branchless: mask is -1 (all ones) when condition holds, 0 otherwise. */
     const int64_t l_hi = -(int64_t)(l_v > l_half);
     const int64_t l_lo = -(int64_t)(l_v < -l_half);
     return l_v - (l_q & l_hi) + (l_q & l_lo);
 }
 
-static int32_t s_reduce_coeff_i64(int64_t a_v)
+static int32_t s_reduce_coeff_i64_q(int64_t a_v, uint64_t q)
 {
-    const int64_t l_q = (int64_t)CHIPMUNK_Q;
+    const int64_t l_q = (int64_t)q;
     int64_t l_r = a_v % l_q;
     const int64_t l_half = l_q / 2;
     /* Branchless: normalize into [-half, half). */
@@ -110,16 +110,16 @@ static int s_leaf_mask_inf_norm(const int64_t a_coeffs[CHIPMUNK_MRING_N],
     return 0;
 }
 
-static void s_ext_apply_leaf_mask(chipmunk_mring_ext_t *a_b,
+static void s_ext_apply_leaf_mask(chipmunk_fq6_ext_t *a_b,
                                   const int64_t a_omega[CHIPMUNK_MRING_N],
-                                  int32_t a_sign)
+                                  int32_t a_sign, uint64_t q)
 {
     for (size_t i = 0u; i < CHIPMUNK_MRING_N; ++i) {
-        int64_t l_v = s_center_coeff_i64(a_b->c[0].coeffs[i]);
+        int64_t l_v = s_center_coeff_i64_q(a_b->c[0].coeffs[i], q);
         l_v += (int64_t)a_sign * a_omega[i];
-        a_b->c[0].coeffs[i] = s_reduce_coeff_i64(l_v);
+        a_b->c[0].coeffs[i] = s_reduce_coeff_i64_q(l_v, q);
     }
-    chipmunk_mring_ext_canonicalize(a_b);
+    chipmunk_fq6_ext_canonicalize_q(a_b, q);
 }
 
 int64_t chipmunk_mring_leaf_bound_for_depth(uint32_t a_fold_depth)
@@ -241,7 +241,7 @@ int chipmunk_mring_leaf_mask_unpack(int64_t a_out[CHIPMUNK_MRING_N],
 /* ------------------------------------------------------------------ */
 
 typedef struct extvec {
-    chipmunk_mring_ext_t *slots;
+    chipmunk_fq6_ext_t *slots;
     uint32_t length;
 } extvec_t;
 
@@ -250,13 +250,13 @@ static int s_extvec_alloc(extvec_t *a_v, uint32_t a_len)
     if (!a_v || a_len == 0u) {
         return -EINVAL;
     }
-    a_v->slots = DAP_NEW_Z_COUNT(chipmunk_mring_ext_t, a_len);
+    a_v->slots = DAP_NEW_Z_COUNT(chipmunk_fq6_ext_t, a_len);
     if (!a_v->slots) {
         return -ENOMEM;
     }
     a_v->length = a_len;
     for (uint32_t i = 0u; i < a_len; ++i) {
-        chipmunk_mring_ext_zero(&a_v->slots[i]);
+        chipmunk_fq6_ext_zero(&a_v->slots[i]);
     }
     return 0;
 }
@@ -271,10 +271,10 @@ static void s_extvec_free(extvec_t *a_v)
     a_v->length = 0u;
 }
 
-static bool s_ext_equal(const chipmunk_mring_ext_t *a,
-                        const chipmunk_mring_ext_t *b)
+static bool s_ext_equal(const chipmunk_fq6_ext_t *a,
+                        const chipmunk_fq6_ext_t *b)
 {
-    for (uint32_t j = 0u; j < CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (uint32_t j = 0u; j < CHIPMUNK_FQ6_EXT_DEG; ++j) {
         for (size_t k = 0u; k < CHIPMUNK_N; ++k) {
             if (a->c[j].coeffs[k] != b->c[j].coeffs[k]) {
                 return false;
@@ -284,7 +284,7 @@ static bool s_ext_equal(const chipmunk_mring_ext_t *a,
     return true;
 }
 
-static int s_ext_inner_product(chipmunk_mring_ext_t *a_out,
+static int s_ext_inner_product(chipmunk_fq6_ext_t *a_out,
                                const extvec_t *a_left,
                                const extvec_t *a_right)
 {
@@ -294,16 +294,16 @@ static int s_ext_inner_product(chipmunk_mring_ext_t *a_out,
     if (a_left->length != a_right->length || a_left->length == 0u) {
         return -EINVAL;
     }
-    chipmunk_mring_ext_zero(a_out);
+    chipmunk_fq6_ext_zero(a_out);
     for (uint32_t i = 0u; i < a_left->length; ++i) {
-        chipmunk_mring_ext_t l_prod;
-        int rc = chipmunk_mring_ext_mul(&l_prod,
+        chipmunk_fq6_ext_t l_prod;
+        int rc = chipmunk_fq6_ext_mul(&l_prod,
                                         &a_left->slots[i],
                                         &a_right->slots[i]);
         if (rc != 0) {
             return rc;
         }
-        rc = chipmunk_mring_ext_add(a_out, a_out, &l_prod);
+        rc = chipmunk_fq6_ext_add(a_out, a_out, &l_prod);
         if (rc != 0) {
             return rc;
         }
@@ -321,7 +321,7 @@ static int s_embed_polyvec(extvec_t *a_out,
         return -EINVAL;
     }
     for (uint32_t i = 0u; i < a_in->length; ++i) {
-        chipmunk_mring_ext_embed(&a_out->slots[i], &a_in->slots[i]);
+        chipmunk_fq6_ext_embed(&a_out->slots[i], &a_in->slots[i]);
     }
     return 0;
 }
@@ -330,7 +330,8 @@ static int s_build_padded_public(extvec_t *a_P,
                                    uint32_t a_padded_dim,
                                    uint32_t a_n_ring,
                                    const chipmunk_poly_t *a_pks,
-                                   const chipmunk_poly_t *a_c)
+                                   const chipmunk_poly_t *a_c,
+                                   uint64_t q)
 {
     chipmunk_mring_polyvec_t l_P;
     const uint32_t l_aug = chipmunk_mring_augmented_dim(a_n_ring);
@@ -338,7 +339,7 @@ static int s_build_padded_public(extvec_t *a_P,
     if (rc != 0) {
         return rc;
     }
-    rc = chipmunk_mring_eval_public_P(&l_P, a_c, a_pks, a_n_ring);
+    rc = chipmunk_mring_eval_public_P(&l_P, a_c, a_pks, a_n_ring, q);
     if (rc != 0) {
         chipmunk_mring_polyvec_free(&l_P);
         return rc;
@@ -349,7 +350,7 @@ static int s_build_padded_public(extvec_t *a_P,
         return rc;
     }
     for (uint32_t i = 0u; i < l_aug; ++i) {
-        chipmunk_mring_ext_embed(&a_P->slots[i], &l_P.slots[i]);
+        chipmunk_fq6_ext_embed(&a_P->slots[i], &l_P.slots[i]);
     }
     chipmunk_mring_polyvec_free(&l_P);
     return 0;
@@ -377,7 +378,7 @@ static int s_build_padded_witness(extvec_t *a_b,
         return rc;
     }
     for (uint32_t i = 0u; i < l_aug; ++i) {
-        chipmunk_mring_ext_embed(&a_b->slots[i], &l_b.slots[i]);
+        chipmunk_fq6_ext_embed(&a_b->slots[i], &l_b.slots[i]);
     }
     chipmunk_mring_polyvec_free(&l_b);
     return 0;
@@ -386,7 +387,7 @@ static int s_build_padded_witness(extvec_t *a_b,
 static uint32_t s_fold_opening_index(uint32_t a_round, uint32_t a_side,
                                      uint32_t a_y_deg, uint32_t a_lane)
 {
-    return (((a_round * 2u + a_side) * (uint32_t)CHIPMUNK_MRING_EXT_DEG
+    return (((a_round * 2u + a_side) * (uint32_t)CHIPMUNK_FQ6_EXT_DEG
              + a_y_deg)
             * (uint32_t)CHIPMUNK_MRING_K_PK)
            + a_lane;
@@ -401,7 +402,7 @@ int chipmunk_mring_fold_derive_opening(
         return -EINVAL;
     }
     if (a_side > 1u
-        || a_y_deg >= (uint32_t)CHIPMUNK_MRING_EXT_DEG) {
+        || a_y_deg >= (uint32_t)CHIPMUNK_FQ6_EXT_DEG) {
         return -EINVAL;
     }
 
@@ -422,16 +423,17 @@ int chipmunk_mring_fold_derive_opening(
     return 0;
 }
 
-static int s_ext_vcom_commit(chipmunk_mring_ext_t *a_C_out,
+static int s_ext_vcom_commit(chipmunk_fq6_ext_t *a_C_out,
                              const chipmunk_mring_vcom_gens_t *a_gens,
-                             const chipmunk_mring_ext_t *a_x,
+                             const chipmunk_fq6_ext_t *a_x,
                              const uint8_t a_fold_opening_seed[32],
-                             uint32_t a_round, uint32_t a_side)
+                             uint32_t a_round, uint32_t a_side,
+                             uint64_t q)
 {
     if (!a_C_out || !a_gens || !a_x || !a_fold_opening_seed) {
         return -EINVAL;
     }
-    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_FQ6_EXT_DEG; ++j) {
         chipmunk_poly_t l_r[CHIPMUNK_MRING_K_PK];
         int rc = chipmunk_mring_fold_derive_opening(
             l_r, a_fold_opening_seed, a_round, a_side, j);
@@ -439,25 +441,26 @@ static int s_ext_vcom_commit(chipmunk_mring_ext_t *a_C_out,
             return rc;
         }
         rc = chipmunk_mring_vcom_commit(&a_C_out->c[j], a_gens,
-                                        &a_x->c[j], l_r);
+                                        &a_x->c[j], l_r, q);
         if (rc != 0) {
             return rc;
         }
     }
-    chipmunk_mring_ext_canonicalize(a_C_out);
+    chipmunk_fq6_ext_canonicalize_q(a_C_out, q);
     return 0;
 }
 
-static int s_ext_vcom_open(chipmunk_mring_ext_t *a_x_out,
-                           const chipmunk_mring_ext_t *a_C,
+static int s_ext_vcom_open(chipmunk_fq6_ext_t *a_x_out,
+                           const chipmunk_fq6_ext_t *a_C,
                            const chipmunk_mring_vcom_gens_t *a_gens,
                            const uint8_t a_fold_opening_seed[32],
-                           uint32_t a_round, uint32_t a_side)
+                           uint32_t a_round, uint32_t a_side,
+                           uint64_t q)
 {
     if (!a_x_out || !a_C || !a_gens || !a_fold_opening_seed) {
         return -EINVAL;
     }
-    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_FQ6_EXT_DEG; ++j) {
         chipmunk_poly_t l_r[CHIPMUNK_MRING_K_PK];
         int rc = chipmunk_mring_fold_derive_opening(
             l_r, a_fold_opening_seed, a_round, a_side, j);
@@ -465,24 +468,25 @@ static int s_ext_vcom_open(chipmunk_mring_ext_t *a_x_out,
             return rc;
         }
         rc = chipmunk_mring_vcom_open(&a_x_out->c[j], &a_C->c[j],
-                                      a_gens, l_r);
+                                      a_gens, l_r, q);
         if (rc != 0) {
             return rc;
         }
     }
-    chipmunk_mring_ext_canonicalize(a_x_out);
+    chipmunk_fq6_ext_canonicalize_q(a_x_out, q);
     return 0;
 }
 
 static int s_one_fold_round(extvec_t *a_b,
                             extvec_t *a_P,
-                            chipmunk_mring_ext_t *a_rho,
-                            chipmunk_mring_ext_t *a_CL_out,
-                            chipmunk_mring_ext_t *a_CR_out,
+                            chipmunk_fq6_ext_t *a_rho,
+                            chipmunk_fq6_ext_t *a_CL_out,
+                            chipmunk_fq6_ext_t *a_CR_out,
                             const chipmunk_mring_vcom_gens_t *a_gens,
                             const uint8_t a_fold_opening_seed[32],
                             const uint8_t a_fs_seed[32],
-                            uint32_t a_round_idx)
+                            uint32_t a_round_idx,
+                            uint64_t q)
 {
     const uint32_t l_len = a_b->length;
     if (l_len < 2u || (l_len & 1u) != 0u) {
@@ -521,7 +525,7 @@ static int s_one_fold_round(extvec_t *a_b,
         l_pR.slots[j] = a_P->slots[l_h + j];
     }
 
-    chipmunk_mring_ext_t l_L, l_R;
+    chipmunk_fq6_ext_t l_L, l_R;
     rc = s_ext_inner_product(&l_L, &l_bL, &l_pR);
     if (rc != 0) {
         goto cleanup_halves;
@@ -531,16 +535,16 @@ static int s_one_fold_round(extvec_t *a_b,
         goto cleanup_halves;
     }
 
-    chipmunk_mring_ext_canonicalize(&l_L);
-    chipmunk_mring_ext_canonicalize(&l_R);
+    chipmunk_fq6_ext_canonicalize_q(&l_L, q);
+    chipmunk_fq6_ext_canonicalize_q(&l_R, q);
 
     rc = s_ext_vcom_commit(a_CL_out, a_gens, &l_L,
-                           a_fold_opening_seed, a_round_idx, 0u);
+                           a_fold_opening_seed, a_round_idx, 0u, q);
     if (rc != 0) {
         goto cleanup_halves;
     }
     rc = s_ext_vcom_commit(a_CR_out, a_gens, &l_R,
-                           a_fold_opening_seed, a_round_idx, 1u);
+                           a_fold_opening_seed, a_round_idx, 1u, q);
     if (rc != 0) {
         goto cleanup_halves;
     }
@@ -549,12 +553,12 @@ static int s_one_fold_round(extvec_t *a_b,
     chipmunk_mring_transcript_fold_round_fs(l_fs, a_fs_seed, a_round_idx,
                                             a_CL_out, a_CR_out);
 
-    chipmunk_mring_ext_t l_x, l_x_inv;
-    rc = chipmunk_mring_ext_sample_challenge(&l_x, l_fs, 0u);
+    chipmunk_fq6_ext_t l_x, l_x_inv;
+    rc = chipmunk_fq6_ext_sample_challenge_q(&l_x, l_fs, 0u, q);
     if (rc != 0) {
         goto cleanup_halves;
     }
-    rc = chipmunk_mring_ext_scalar_invert(&l_x_inv, &l_x);
+    rc = chipmunk_fq6_ext_scalar_invert_q(&l_x_inv, &l_x, q);
     if (rc != 0) {
         goto cleanup_halves;
     }
@@ -571,39 +575,39 @@ static int s_one_fold_round(extvec_t *a_b,
     }
 
     for (uint32_t j = 0u; j < l_h; ++j) {
-        chipmunk_mring_ext_t l_xb, l_xinvp;
-        rc = chipmunk_mring_ext_mul(&l_xb, &l_x, &l_bR.slots[j]);
+        chipmunk_fq6_ext_t l_xb, l_xinvp;
+        rc = chipmunk_fq6_ext_mul(&l_xb, &l_x, &l_bR.slots[j]);
         if (rc != 0) {
             goto cleanup_new;
         }
-        rc = chipmunk_mring_ext_add(&l_b_new.slots[j], &l_bL.slots[j], &l_xb);
+        rc = chipmunk_fq6_ext_add(&l_b_new.slots[j], &l_bL.slots[j], &l_xb);
         if (rc != 0) {
             goto cleanup_new;
         }
-        rc = chipmunk_mring_ext_mul(&l_xinvp, &l_x_inv, &l_pR.slots[j]);
+        rc = chipmunk_fq6_ext_mul(&l_xinvp, &l_x_inv, &l_pR.slots[j]);
         if (rc != 0) {
             goto cleanup_new;
         }
-        rc = chipmunk_mring_ext_add(&l_p_new.slots[j], &l_pL.slots[j], &l_xinvp);
+        rc = chipmunk_fq6_ext_add(&l_p_new.slots[j], &l_pL.slots[j], &l_xinvp);
         if (rc != 0) {
             goto cleanup_new;
         }
     }
 
-    chipmunk_mring_ext_t l_xinvL, l_xR, l_sum;
-    rc = chipmunk_mring_ext_mul(&l_xinvL, &l_x_inv, &l_L);
+    chipmunk_fq6_ext_t l_xinvL, l_xR, l_sum;
+    rc = chipmunk_fq6_ext_mul(&l_xinvL, &l_x_inv, &l_L);
     if (rc != 0) {
         goto cleanup_new;
     }
-    rc = chipmunk_mring_ext_mul(&l_xR, &l_x, &l_R);
+    rc = chipmunk_fq6_ext_mul(&l_xR, &l_x, &l_R);
     if (rc != 0) {
         goto cleanup_new;
     }
-    rc = chipmunk_mring_ext_add(&l_sum, &l_xinvL, &l_xR);
+    rc = chipmunk_fq6_ext_add(&l_sum, &l_xinvL, &l_xR);
     if (rc != 0) {
         goto cleanup_new;
     }
-    rc = chipmunk_mring_ext_add(a_rho, a_rho, &l_sum);
+    rc = chipmunk_fq6_ext_add(a_rho, a_rho, &l_sum);
     if (rc != 0) {
         goto cleanup_new;
     }
@@ -661,11 +665,11 @@ int chipmunk_mring_fold_proof_alloc(chipmunk_mring_fold_proof_t *a_proof,
     }
     a_proof->fold_depth = a_fold_depth;
     for (uint32_t i = 0u; i < a_fold_depth; ++i) {
-        chipmunk_mring_ext_zero(&a_proof->rounds[i].C_L);
-        chipmunk_mring_ext_zero(&a_proof->rounds[i].C_R);
+        chipmunk_fq6_ext_zero(&a_proof->rounds[i].C_L);
+        chipmunk_fq6_ext_zero(&a_proof->rounds[i].C_R);
     }
-    chipmunk_mring_ext_zero(&a_proof->a_star);
-    chipmunk_mring_ext_zero(&a_proof->b_star);
+    chipmunk_fq6_ext_zero(&a_proof->a_star);
+    chipmunk_fq6_ext_zero(&a_proof->b_star);
     return 0;
 }
 
@@ -691,7 +695,8 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
                               const uint8_t a_ring_hash[CHIPMUNK_MRING_HASH_BYTES],
                               const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES],
                               const uint8_t a_fold_opening_seed
-                                  [CHIPMUNK_MRING_FOLD_OPENING_BYTES])
+                                  [CHIPMUNK_MRING_FOLD_OPENING_BYTES],
+                              uint64_t q)
 {
     if (!a_proof || !a_proof->rounds || !a_proof->leaf_mask || !a_b_indicator || !a_pks
         || !a_c || !a_Y_pk || !a_ring_hash || !a_fs_seed
@@ -716,32 +721,32 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
     }
 
     extvec_t l_b, l_P;
-    chipmunk_mring_ext_t l_rho;
+    chipmunk_fq6_ext_t l_rho;
     rc = s_build_padded_witness(&l_b, l_pad, a_b_indicator, a_n_ring);
     if (rc != 0) {
         return rc;
     }
-    rc = s_build_padded_public(&l_P, l_pad, a_n_ring, a_pks, a_c);
+    rc = s_build_padded_public(&l_P, l_pad, a_n_ring, a_pks, a_c, q);
     if (rc != 0) {
         s_extvec_free(&l_b);
         return rc;
     }
 
     chipmunk_poly_t l_rho_base;
-    rc = chipmunk_mring_eval_public_rho(&l_rho_base, a_c, a_t, a_Y_pk);
+    rc = chipmunk_mring_eval_public_rho_q(&l_rho_base, a_c, a_t, a_Y_pk, q);
     if (rc != 0) {
         s_extvec_free(&l_P);
         s_extvec_free(&l_b);
         return rc;
     }
-    chipmunk_mring_ext_embed(&l_rho, &l_rho_base);
+    chipmunk_fq6_ext_embed(&l_rho, &l_rho_base);
 
     for (uint32_t r = 0u; r < l_depth; ++r) {
         rc = s_one_fold_round(&l_b, &l_P, &l_rho,
                               &a_proof->rounds[r].C_L,
                               &a_proof->rounds[r].C_R,
                               &l_gens, a_fold_opening_seed,
-                              a_fs_seed, r);
+                              a_fs_seed, r, q);
         if (rc != 0) {
             log_it(L_ERROR, "MRNG fold_prove: round %u failed (rc=%d)",
                    (unsigned)r, rc);
@@ -759,8 +764,8 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
 
     a_proof->b_star = l_b.slots[0];
     a_proof->a_star = l_P.slots[0];
-    chipmunk_mring_ext_canonicalize(&a_proof->b_star);
-    chipmunk_mring_ext_canonicalize(&a_proof->a_star);
+    chipmunk_fq6_ext_canonicalize_q(&a_proof->b_star, q);
+    chipmunk_fq6_ext_canonicalize_q(&a_proof->a_star, q);
 
     const int64_t l_leaf_bound =
         chipmunk_mring_leaf_bound_for_depth(l_depth);
@@ -774,7 +779,7 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
         s_extvec_free(&l_b);
         return rc;
     }
-    s_ext_apply_leaf_mask(&a_proof->b_star, a_proof->leaf_mask, +1);
+    s_ext_apply_leaf_mask(&a_proof->b_star, a_proof->leaf_mask, +1, q);
 
     s_extvec_free(&l_P);
     s_extvec_free(&l_b);
@@ -788,7 +793,8 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
                                uint32_t a_t,
                                const chipmunk_poly_t *a_Y_pk,
                                const uint8_t a_ring_hash[CHIPMUNK_MRING_HASH_BYTES],
-                               const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES])
+                               const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES],
+                               uint64_t q)
 {
     if (!a_proof || !a_proof->rounds || !a_proof->leaf_mask || !a_pks || !a_c || !a_Y_pk
         || !a_ring_hash || !a_fs_seed) {
@@ -810,48 +816,48 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
     }
 
     extvec_t l_P;
-    rc = s_build_padded_public(&l_P, l_pad, a_n_ring, a_pks, a_c);
+    rc = s_build_padded_public(&l_P, l_pad, a_n_ring, a_pks, a_c, q);
     if (rc != 0) {
         return rc;
     }
 
     chipmunk_poly_t l_rho_base;
-    rc = chipmunk_mring_eval_public_rho(&l_rho_base, a_c, a_t, a_Y_pk);
+    rc = chipmunk_mring_eval_public_rho_q(&l_rho_base, a_c, a_t, a_Y_pk, q);
     if (rc != 0) {
         s_extvec_free(&l_P);
         return rc;
     }
-    chipmunk_mring_ext_t l_rho;
-    chipmunk_mring_ext_embed(&l_rho, &l_rho_base);
+    chipmunk_fq6_ext_t l_rho;
+    chipmunk_fq6_ext_embed(&l_rho, &l_rho_base);
 
     for (uint32_t r = 0u; r < l_depth; ++r) {
-        const chipmunk_mring_ext_t *l_CL = &a_proof->rounds[r].C_L;
-        const chipmunk_mring_ext_t *l_CR = &a_proof->rounds[r].C_R;
+        const chipmunk_fq6_ext_t *l_CL = &a_proof->rounds[r].C_L;
+        const chipmunk_fq6_ext_t *l_CR = &a_proof->rounds[r].C_R;
 
         uint8_t l_fs[32];
         chipmunk_mring_transcript_fold_round_fs(l_fs, a_fs_seed, r, l_CL, l_CR);
 
-        chipmunk_mring_ext_t l_L, l_R;
+        chipmunk_fq6_ext_t l_L, l_R;
         rc = s_ext_vcom_open(&l_L, l_CL, &l_gens,
-                             a_proof->fold_opening_seed, r, 0u);
+                             a_proof->fold_opening_seed, r, 0u, q);
         if (rc != 0) {
             s_extvec_free(&l_P);
             return -EBADMSG;
         }
         rc = s_ext_vcom_open(&l_R, l_CR, &l_gens,
-                             a_proof->fold_opening_seed, r, 1u);
+                             a_proof->fold_opening_seed, r, 1u, q);
         if (rc != 0) {
             s_extvec_free(&l_P);
             return -EBADMSG;
         }
 
-        chipmunk_mring_ext_t l_x, l_x_inv;
-        rc = chipmunk_mring_ext_sample_challenge(&l_x, l_fs, 0u);
+        chipmunk_fq6_ext_t l_x, l_x_inv;
+        rc = chipmunk_fq6_ext_sample_challenge_q(&l_x, l_fs, 0u, q);
         if (rc != 0) {
             s_extvec_free(&l_P);
             return rc;
         }
-        rc = chipmunk_mring_ext_scalar_invert(&l_x_inv, &l_x);
+        rc = chipmunk_fq6_ext_scalar_invert_q(&l_x_inv, &l_x, q);
         if (rc != 0) {
             s_extvec_free(&l_P);
             return rc;
@@ -890,8 +896,8 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
             return rc;
         }
         for (uint32_t j = 0u; j < l_h; ++j) {
-            chipmunk_mring_ext_t l_xinvp;
-            rc = chipmunk_mring_ext_mul(&l_xinvp, &l_x_inv, &l_pR.slots[j]);
+            chipmunk_fq6_ext_t l_xinvp;
+            rc = chipmunk_fq6_ext_mul(&l_xinvp, &l_x_inv, &l_pR.slots[j]);
             if (rc != 0) {
                 s_extvec_free(&l_p_new);
                 s_extvec_free(&l_pR);
@@ -899,7 +905,7 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
                 s_extvec_free(&l_P);
                 return rc;
             }
-            rc = chipmunk_mring_ext_add(&l_p_new.slots[j], &l_pL.slots[j], &l_xinvp);
+            rc = chipmunk_fq6_ext_add(&l_p_new.slots[j], &l_pL.slots[j], &l_xinvp);
             if (rc != 0) {
                 s_extvec_free(&l_p_new);
                 s_extvec_free(&l_pR);
@@ -909,8 +915,8 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
             }
         }
 
-        chipmunk_mring_ext_t l_xinvL, l_xR, l_sum;
-        rc = chipmunk_mring_ext_mul(&l_xinvL, &l_x_inv, &l_L);
+        chipmunk_fq6_ext_t l_xinvL, l_xR, l_sum;
+        rc = chipmunk_fq6_ext_mul(&l_xinvL, &l_x_inv, &l_L);
         if (rc != 0) {
             s_extvec_free(&l_p_new);
             s_extvec_free(&l_pR);
@@ -918,7 +924,7 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
             s_extvec_free(&l_P);
             return rc;
         }
-        rc = chipmunk_mring_ext_mul(&l_xR, &l_x, &l_R);
+        rc = chipmunk_fq6_ext_mul(&l_xR, &l_x, &l_R);
         if (rc != 0) {
             s_extvec_free(&l_p_new);
             s_extvec_free(&l_pR);
@@ -926,7 +932,7 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
             s_extvec_free(&l_P);
             return rc;
         }
-        rc = chipmunk_mring_ext_add(&l_sum, &l_xinvL, &l_xR);
+        rc = chipmunk_fq6_ext_add(&l_sum, &l_xinvL, &l_xR);
         if (rc != 0) {
             s_extvec_free(&l_p_new);
             s_extvec_free(&l_pR);
@@ -934,7 +940,7 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
             s_extvec_free(&l_P);
             return rc;
         }
-        rc = chipmunk_mring_ext_add(&l_rho, &l_rho, &l_sum);
+        rc = chipmunk_fq6_ext_add(&l_rho, &l_rho, &l_sum);
         if (rc != 0) {
             s_extvec_free(&l_p_new);
             s_extvec_free(&l_pR);
@@ -958,10 +964,10 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
         return -EBADMSG;
     }
 
-    chipmunk_mring_ext_t l_a_cmp = l_P.slots[0];
-    chipmunk_mring_ext_canonicalize(&l_a_cmp);
-    chipmunk_mring_ext_t l_a_star = a_proof->a_star;
-    chipmunk_mring_ext_canonicalize(&l_a_star);
+    chipmunk_fq6_ext_t l_a_cmp = l_P.slots[0];
+    chipmunk_fq6_ext_canonicalize_q(&l_a_cmp, q);
+    chipmunk_fq6_ext_t l_a_star = a_proof->a_star;
+    chipmunk_fq6_ext_canonicalize_q(&l_a_star, q);
     if (!s_ext_equal(&l_a_cmp, &l_a_star)) {
         s_extvec_free(&l_P);
         return -EBADMSG;
@@ -976,17 +982,17 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
         return -EBADMSG;
     }
 
-    chipmunk_mring_ext_t l_b_unmask = a_proof->b_star;
-    s_ext_apply_leaf_mask(&l_b_unmask, a_proof->leaf_mask, -1);
+    chipmunk_fq6_ext_t l_b_unmask = a_proof->b_star;
+    s_ext_apply_leaf_mask(&l_b_unmask, a_proof->leaf_mask, -1, q);
 
-    chipmunk_mring_ext_t l_prod;
-    rc = chipmunk_mring_ext_mul(&l_prod, &l_b_unmask, &a_proof->a_star);
+    chipmunk_fq6_ext_t l_prod;
+    rc = chipmunk_fq6_ext_mul(&l_prod, &l_b_unmask, &a_proof->a_star);
     if (rc != 0) {
         s_extvec_free(&l_P);
         return rc;
     }
-    chipmunk_mring_ext_canonicalize(&l_prod);
-    chipmunk_mring_ext_canonicalize(&l_rho);
+    chipmunk_fq6_ext_canonicalize_q(&l_prod, q);
+    chipmunk_fq6_ext_canonicalize_q(&l_rho, q);
     if (!s_ext_equal(&l_prod, &l_rho)) {
         s_extvec_free(&l_P);
         return -EBADMSG;
@@ -1000,20 +1006,20 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
 /*  M4.1 — R_q^{(e)} wire pack/unpack                                   */
 /* ------------------------------------------------------------------ */
 
-int chipmunk_mring_ext_qpack(uint8_t *a_out, size_t a_out_size,
-                             const chipmunk_mring_ext_t *a_x)
+int chipmunk_fq6_ext_qpack(uint8_t *a_out, size_t a_out_size,
+                             const chipmunk_fq6_ext_t *a_x)
 {
     if (!a_out || !a_x) {
         return -EINVAL;
     }
-    if (a_out_size < (size_t)CHIPMUNK_MRING_EXT_QPACK_BYTES) {
+    if (a_out_size < (size_t)CHIPMUNK_FQ6_EXT_QPACK_BYTES) {
         return -EINVAL;
     }
 
     uint8_t *l_p = a_out;
-    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_FQ6_EXT_DEG; ++j) {
         const int rc =
-            chipmunk_lrs_poly_qpack(l_p, &a_x->c[j]);
+            chipmunk_lrs_poly_qpack(l_p, &a_x->c[j], (uint64_t)CHIPMUNK_Q);
         if (rc != 0) {
             return rc;
         }
@@ -1022,39 +1028,41 @@ int chipmunk_mring_ext_qpack(uint8_t *a_out, size_t a_out_size,
     return 0;
 }
 
-int chipmunk_mring_ext_qunpack(chipmunk_mring_ext_t *a_out,
-                               const uint8_t *a_in, size_t a_in_size)
+int chipmunk_fq6_ext_qunpack(chipmunk_fq6_ext_t *a_out,
+                               const uint8_t *a_in, size_t a_in_size,
+                               uint64_t q)
 {
     if (!a_out || !a_in) {
         return -EINVAL;
     }
-    if (a_in_size < (size_t)CHIPMUNK_MRING_EXT_QPACK_BYTES) {
+    if (a_in_size < (size_t)CHIPMUNK_FQ6_EXT_QPACK_BYTES) {
         return -EINVAL;
     }
 
     const uint8_t *l_p = a_in;
-    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_FQ6_EXT_DEG; ++j) {
         const int rc =
-            chipmunk_lrs_poly_qunpack(&a_out->c[j], l_p);
+            chipmunk_lrs_poly_qunpack(&a_out->c[j], l_p, q);
         if (rc != 0) {
             return rc;
         }
         l_p += CHIPMUNK_MRING_POLY_QPACK;
     }
-    chipmunk_mring_ext_canonicalize(a_out);
+    chipmunk_fq6_ext_canonicalize_q(a_out, q);
     return 0;
 }
 
 static int s_fold_write_ext(uint8_t *a_dst, size_t a_dst_size,
-                            const chipmunk_mring_ext_t *a_x)
+                            const chipmunk_fq6_ext_t *a_x)
 {
-    return chipmunk_mring_ext_qpack(a_dst, a_dst_size, a_x);
+    return chipmunk_fq6_ext_qpack(a_dst, a_dst_size, a_x);
 }
 
-static int s_fold_read_ext(chipmunk_mring_ext_t *a_out,
-                           const uint8_t *a_src, size_t a_src_size)
+static int s_fold_read_ext(chipmunk_fq6_ext_t *a_out,
+                           const uint8_t *a_src, size_t a_src_size,
+                           uint64_t q)
 {
-    return chipmunk_mring_ext_qunpack(a_out, a_src, a_src_size);
+    return chipmunk_fq6_ext_qunpack(a_out, a_src, a_src_size, q);
 }
 
 int chipmunk_mring_fold_write(uint8_t *a_buf, size_t a_buf_size,
@@ -1082,7 +1090,7 @@ int chipmunk_mring_fold_write(uint8_t *a_buf, size_t a_buf_size,
 
     const uint32_t l_off_fold = chipmunk_mring_section_off_fold();
     const uint32_t l_round_bytes = CHIPMUNK_MRING_FOLD_ROUND_BYTES;
-    const uint32_t l_ext_bytes = CHIPMUNK_MRING_EXT_QPACK_BYTES;
+    const uint32_t l_ext_bytes = CHIPMUNK_FQ6_EXT_QPACK_BYTES;
 
     for (uint32_t r = 0u; r < a_fold_depth; ++r) {
         uint8_t *l_base = a_buf + l_off_fold + r * l_round_bytes;
@@ -1129,7 +1137,8 @@ int chipmunk_mring_fold_write(uint8_t *a_buf, size_t a_buf_size,
 
 int chipmunk_mring_fold_read(chipmunk_mring_fold_proof_t *a_proof,
                              uint32_t a_fold_depth,
-                             const uint8_t *a_buf, size_t a_buf_size)
+                             const uint8_t *a_buf, size_t a_buf_size,
+                             uint64_t q)
 {
     if (!a_proof || !a_proof->rounds || !a_buf) {
         return -EINVAL;
@@ -1152,18 +1161,18 @@ int chipmunk_mring_fold_read(chipmunk_mring_fold_proof_t *a_proof,
 
     const uint32_t l_off_fold = chipmunk_mring_section_off_fold();
     const uint32_t l_round_bytes = CHIPMUNK_MRING_FOLD_ROUND_BYTES;
-    const uint32_t l_ext_bytes = CHIPMUNK_MRING_EXT_QPACK_BYTES;
+    const uint32_t l_ext_bytes = CHIPMUNK_FQ6_EXT_QPACK_BYTES;
 
     for (uint32_t r = 0u; r < a_fold_depth; ++r) {
         const uint8_t *l_base = a_buf + l_off_fold + r * l_round_bytes;
-        int rc = s_fold_read_ext(&a_proof->rounds[r].C_L, l_base, l_ext_bytes);
+        int rc = s_fold_read_ext(&a_proof->rounds[r].C_L, l_base, l_ext_bytes, q);
         if (rc != 0) {
             log_it(L_ERROR, "MRNG fold_read: C_L[%u] unpack failed (rc=%d)",
                    (unsigned)r, rc);
             return rc;
         }
         rc = s_fold_read_ext(&a_proof->rounds[r].C_R,
-                             l_base + l_ext_bytes, l_ext_bytes);
+                             l_base + l_ext_bytes, l_ext_bytes, q);
         if (rc != 0) {
             log_it(L_ERROR, "MRNG fold_read: C_R[%u] unpack failed (rc=%d)",
                    (unsigned)r, rc);
@@ -1172,13 +1181,13 @@ int chipmunk_mring_fold_read(chipmunk_mring_fold_proof_t *a_proof,
     }
 
     const uint32_t l_off_final = chipmunk_mring_section_off_final(a_fold_depth);
-    int rc = s_fold_read_ext(&a_proof->a_star, a_buf + l_off_final, l_ext_bytes);
+    int rc = s_fold_read_ext(&a_proof->a_star, a_buf + l_off_final, l_ext_bytes, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG fold_read: a* unpack failed (rc=%d)", rc);
         return rc;
     }
     rc = s_fold_read_ext(&a_proof->b_star,
-                         a_buf + l_off_final + l_ext_bytes, l_ext_bytes);
+                         a_buf + l_off_final + l_ext_bytes, l_ext_bytes, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG fold_read: b* unpack failed (rc=%d)", rc);
         return rc;

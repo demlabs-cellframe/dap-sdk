@@ -148,7 +148,7 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
     
     uint32_t l_size_range = l_max_cleartext - l_min_cleartext;
     uint32_t l_random_offset;
-    dap_random_bytes((uint8_t*)&l_random_offset, sizeof(l_random_offset));
+    randombytes((uint8_t*)&l_random_offset, sizeof(l_random_offset));
     l_random_offset = l_random_offset % (l_size_range + 1);
     
     size_t l_final_size = l_min_cleartext + l_random_offset;
@@ -197,7 +197,7 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
     
     // Fill random padding
     if (l_padding_size > 0) {
-        dap_random_bytes(l_cleartext + l_required_size, l_padding_size);
+        randombytes(l_cleartext + l_required_size, l_padding_size);
     }
     
     // Create cipher key (KDF based on cleartext_total_size)
@@ -305,7 +305,7 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
     
     // Deserialize header
     obfuscated_header_t l_header;
-    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
+    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw_zero(
         &s_obfuscated_header_schema,
         l_decrypted,
         l_header_size,

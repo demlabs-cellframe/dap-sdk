@@ -83,7 +83,7 @@ static inline int dap_stream_pkt_hdr_unpack(const uint8_t *a_wire, size_t a_wire
                                              dap_stream_pkt_hdr_mem_t *a_mem)
 {
     if (a_wire_size < DAP_STREAM_PKT_HDR_WIRE_SIZE) return -1;
-    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw_zero(
         &g_dap_stream_pkt_hdr_schema, a_wire, a_wire_size, a_mem, NULL);
     return r.error_code;
 }
@@ -140,7 +140,7 @@ static inline int dap_stream_srv_pkt_unpack(const uint8_t *a_wire, size_t a_wire
                                              dap_stream_srv_pkt_mem_t *a_mem)
 {
     if (a_wire_size < DAP_STREAM_SRV_PKT_WIRE_SIZE) return -1;
-    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw_zero(
         &g_dap_stream_srv_pkt_schema, a_wire, a_wire_size, a_mem, NULL);
     return r.error_code;
 }

@@ -20,6 +20,7 @@ GNU General Public License for more details.
 
 See more details here <http://www.gnu.org/licenses/>.
 */
+#define _GNU_SOURCE  /* for vasprintf */
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>

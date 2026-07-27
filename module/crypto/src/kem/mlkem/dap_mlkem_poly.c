@@ -187,7 +187,7 @@ static void s_poly_basemul_ref(int16_t *a_r, const int16_t *a_a, const int16_t *
  * Dispatch init — resolved once, cached thereafter
  * ============================================================================ */
 
-static void s_mlkem_poly_dispatch_init(void)
+void MLKEM_NAMESPACE(_poly_dispatch_init)(void)
 {
     dap_algo_class_t l_class = dap_algo_class_register("MLKEM_POLY");
 
@@ -227,7 +227,6 @@ static void s_mlkem_poly_dispatch_init(void)
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_poly_basemul,     dap_mlkem_poly_basemul_montgomery_neon);
 }
 
-#define POLY_ENSURE() DAP_DISPATCH_ENSURE(s_compress_d4, s_mlkem_poly_dispatch_init)
 
 /* ============================================================================
  * Public API — thin wrappers over dispatch pointers
@@ -235,7 +234,6 @@ static void s_mlkem_poly_dispatch_init(void)
 
 void MLKEM_NAMESPACE(_poly_compress)(uint8_t *a_r, dap_mlkem_poly *a_a)
 {
-    POLY_ENSURE();
 #if MLKEM_POLYCOMPRESSEDBYTES == 128
     s_compress_d4_ptr(a_r, a_a->coeffs);
 #elif MLKEM_POLYCOMPRESSEDBYTES == 160
@@ -245,7 +243,6 @@ void MLKEM_NAMESPACE(_poly_compress)(uint8_t *a_r, dap_mlkem_poly *a_a)
 
 void MLKEM_NAMESPACE(_poly_decompress)(dap_mlkem_poly *a_r, const uint8_t *a_a)
 {
-    POLY_ENSURE();
 #if MLKEM_POLYCOMPRESSEDBYTES == 128
     s_decompress_d4_ptr(a_r->coeffs, a_a);
 #elif MLKEM_POLYCOMPRESSEDBYTES == 160
@@ -255,25 +252,21 @@ void MLKEM_NAMESPACE(_poly_decompress)(dap_mlkem_poly *a_r, const uint8_t *a_a)
 
 void MLKEM_NAMESPACE(_poly_tobytes)(uint8_t *a_r, dap_mlkem_poly *a_a)
 {
-    POLY_ENSURE();
     s_tobytes_ptr(a_r, a_a->coeffs);
 }
 
 void MLKEM_NAMESPACE(_poly_frombytes)(dap_mlkem_poly *a_r, const uint8_t *a_a)
 {
-    POLY_ENSURE();
     s_frombytes_ptr(a_r->coeffs, a_a);
 }
 
 void MLKEM_NAMESPACE(_poly_frommsg)(dap_mlkem_poly *a_r, const uint8_t a_msg[MLKEM_INDCPA_MSGBYTES])
 {
-    POLY_ENSURE();
     s_frommsg_ptr(a_r->coeffs, a_msg);
 }
 
 void MLKEM_NAMESPACE(_poly_tomsg)(uint8_t a_msg[MLKEM_INDCPA_MSGBYTES], dap_mlkem_poly *a_a)
 {
-    POLY_ENSURE();
     s_tomsg_ptr(a_msg, a_a->coeffs);
 }
 
@@ -340,7 +333,6 @@ void MLKEM_NAMESPACE(_poly_basemul_montgomery)(dap_mlkem_poly *a_r,
                                                 const dap_mlkem_poly *a_a,
                                                 const dap_mlkem_poly *a_b)
 {
-    POLY_ENSURE();
     s_poly_basemul_ptr(a_r->coeffs, a_a->coeffs, a_b->coeffs, NULL);
 }
 
@@ -374,6 +366,5 @@ MLKEM_HOTFN void MLKEM_NAMESPACE(_poly_sub)(dap_mlkem_poly *a_r, const dap_mlkem
 void MLKEM_NAMESPACE(_poly_mulcache_compute)(dap_mlkem_poly_mulcache *a_cache,
                                               const dap_mlkem_poly *a_b)
 {
-    POLY_ENSURE();
     s_mulcache_compute_ptr(a_cache->coeffs, a_b->coeffs);
 }

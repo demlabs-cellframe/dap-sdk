@@ -43,8 +43,22 @@ typedef int SOCKET;
 
 #define DAP_EVENTS_SOCKET_MAX 8194
 
-// Caps for different platforms
-#if defined (DAP_OS_ANDROID)
+// Caps for different platforms (WASM before Linux: Emscripten reports Linux)
+#if defined(DAP_OS_WASM)
+    #define DAP_EVENTS_CAPS_POLL
+    #if defined(DAP_OS_WASM_MT)
+        #define DAP_EVENTS_CAPS_WASM_SAB
+        #define DAP_EVENTS_CAPS_QUEUE_WASM_SAB
+        #define DAP_EVENTS_CAPS_EVENT_WASM_SAB
+        #define DAP_EVENTS_CAPS_PIPE_POSIX
+    #else
+        #define DAP_EVENTS_CAPS_PIPE_POSIX
+        #define DAP_EVENTS_CAPS_QUEUE_PIPE
+        #define DAP_EVENTS_CAPS_EVENT_PIPE
+    #endif
+    #include <sys/types.h>
+    #include <netinet/in.h>
+#elif defined (DAP_OS_ANDROID)
     #define DAP_EVENTS_CAPS_POLL
     #define DAP_EVENTS_CAPS_PIPE_POSIX
     #define DAP_EVENTS_CAPS_QUEUE_PIPE2
@@ -75,24 +89,6 @@ typedef int SOCKET;
     #include <sys/socket.h>
     #include <sys/types.h>
     #include <sys/un.h>
-#elif defined(DAP_OS_WASM)
-    #define DAP_EVENTS_CAPS_POLL
-    #if defined(DAP_OS_WASM_MT)
-        /* Emscripten pthread workers cannot use pipe() for IPC
-         * (returns EOPNOTSUPP) nor can they rely on poll() to wake up on
-         * pipe fds cross-thread. Use SAB + Atomics.wait/notify instead. */
-        #define DAP_EVENTS_CAPS_WASM_SAB
-        #define DAP_EVENTS_CAPS_QUEUE_WASM_SAB
-        #define DAP_EVENTS_CAPS_EVENT_WASM_SAB
-        #define DAP_EVENTS_CAPS_PIPE_POSIX   /* create_pipe() rarely used in WASM */
-    #else
-        /* ST: Emscripten has pipe()+fcntl, not pipe2() — no linker stubs. */
-        #define DAP_EVENTS_CAPS_PIPE_POSIX
-        #define DAP_EVENTS_CAPS_QUEUE_PIPE
-        #define DAP_EVENTS_CAPS_EVENT_PIPE
-    #endif
-    #include <sys/types.h>
-    #include <netinet/in.h>
 #elif defined (DAP_OS_UNIX)
     #define DAP_EVENTS_CAPS_POLL
     #define DAP_EVENTS_CAPS_PIPE_POSIX
@@ -305,7 +301,7 @@ typedef struct dap_events_socket {
         buf_out_size,   buf_out_size_max;
 
     dap_events_socket_t * pipe_out; // Pipe socket with data for output
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     pthread_rwlock_t buf_out_lock;
 #endif
     struct sockaddr_storage addr_storage;

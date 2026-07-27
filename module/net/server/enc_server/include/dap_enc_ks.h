@@ -36,7 +36,8 @@
 struct dap_http_client;
 typedef struct dap_enc_key dap_enc_key_t;
 typedef struct dap_enc_ks_key{
-    char id[DAP_ENC_KS_KEY_ID_SIZE];
+    char id[DAP_ENC_KS_KEY_ID_SIZE + 1]; /* +1 for NUL terminator; s_gen_session_id
+                                            writes exactly KEY_ID_SIZE chars */
     dap_enc_key_t *key;
     time_t time_created;
     pthread_mutex_t mutex;

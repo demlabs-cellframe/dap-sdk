@@ -309,6 +309,10 @@ static bool s_test_encryption_error_handling(void) {
  * @brief Main test function
  */
 int main(void) {
+    dap_set_appname("test");
+    dap_common_init(dap_get_appname(), NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
     printf("=== Encryption Unit Tests ===\n");
     fflush(stdout);
 

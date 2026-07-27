@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <dap_enc.h>
+#include <dap_common.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -857,6 +859,10 @@ static void s_test_ntt16_simd_correctness(void)
 
 int main(void)
 {
+    dap_set_appname("test");
+    dap_common_init(dap_get_appname(), NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
     dap_print_module_name("dap_math_bignum");
 
     s_test_ntt_symmetry();

@@ -73,7 +73,7 @@ uint32_t chipmunk_mring_hardness_mlwe_bits(void);
  * the stale G2 v2 §A3 partial-splitting model — see the .c for history).
  *
  * The corrected MRNG fold draws challenges from S = F_{qᵉ} \ {0} in the
- * ring extension R_q^{(e)} = R_q[Y]/Φ₉ (e = CHIPMUNK_MRING_EXT_DEG = 6),
+ * ring extension R_q^{(e)} = R_q[Y]/Φ₉ (e = CHIPMUNK_FQ6_EXT_DEG = 6),
  * whose nonzero differences are all invertible.  Returns
  *   log₂|S| = log₂(qᵉ − 1) ≈ e·log₂ q ≈ 129.6 bits,
  * which bounds the single-shot fold knowledge error κ ≤ D·2/|S|

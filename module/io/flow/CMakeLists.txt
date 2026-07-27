@@ -6,7 +6,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
 file(GLOB DAP_IO_FLOW_SOURCES *.c)
 file(GLOB DAP_IO_FLOW_HEADERS include/*.h)
 
-if(LINUX OR ANDROID)
+# Host platform backends (linux eBPF/cBPF, darwin kqueue, …) are not for WASM.
+# Under Emscripten, LINUX may still be set for POSIX shims — skip platform GLOB.
+if(DAP_WASM)
+elseif(LINUX OR ANDROID)
     file(GLOB PLAT_SRCS linux/*.c)
     file(GLOB PLAT_HDRS linux/*.h)
     list(APPEND DAP_IO_FLOW_SOURCES ${PLAT_SRCS})
@@ -33,7 +36,8 @@ create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_IO_FLOW_SOURCES
 dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_crypto dap_hash dap_hash_table)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-if(LINUX OR ANDROID)
+if(DAP_WASM)
+elseif(LINUX OR ANDROID)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux)
 elseif(APPLE)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/darwin)

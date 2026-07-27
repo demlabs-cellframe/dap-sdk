@@ -294,6 +294,7 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_CHIPMUNK: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
         case SIG_TYPE_CHIPMUNK_MRING: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING;
         case SIG_TYPE_CHIPMUNK_LRS: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LRS;
+        case SIG_TYPE_CHIPMUNK_RING: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING;
         case SIG_TYPE_LOTRS: return DAP_ENC_KEY_TYPE_SIG_LOTRS;
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
@@ -328,6 +329,7 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_NTRU_PRIME: return "sig_ntru_prime";
         case SIG_TYPE_CHIPMUNK: return "sig_chipmunk";
         case SIG_TYPE_CHIPMUNK_MRING: return "sig_chipmunk_mring";
+        case SIG_TYPE_CHIPMUNK_RING: return "sig_chipmunk_ring";
         case SIG_TYPE_CHIPMUNK_LRS: return "sig_chipmunk_lrs";
         case SIG_TYPE_LOTRS: return "sig_lotrs";
 #ifdef DAP_ECDSA
@@ -372,7 +374,7 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk") ) {
          l_sign_type.type = SIG_TYPE_CHIPMUNK;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_ring") ) {
-         l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING;
+         l_sign_type.type = SIG_TYPE_CHIPMUNK_RING;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_mring") ) {
          l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_lrs") ) {
@@ -696,7 +698,6 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
     }
 
     size_t l_sign_data_size = a_chain_sign->header.sign_size;
-    // deserialize signature
     uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key->type, l_sign_data_ser, &l_sign_data_size);
 
     if ( !l_sign_data ){
@@ -765,16 +766,16 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
 uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 {
     if (!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL) {
-        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        debug_if(s_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
     dap_sign_hdr_mem_t l_mem;
     if (dap_sign_hdr_unpack((const uint8_t *)&a_chain_sign->header, DAP_SIGN_HDR_WIRE_SIZE, &l_mem) != 0) {
-        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        debug_if(s_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
     if (l_mem.type_raw == (uint32_t)SIG_TYPE_NULL) {
-        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        debug_if(s_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
     return (uint64_t)sizeof(dap_sign_t) + l_mem.sign_size + l_mem.sign_pkey_size;
@@ -860,7 +861,7 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
  */
 DAP_INLINE const char *dap_sign_get_str_recommended_types()
 {
-    return "sig_dil\nsig_falcon\nsig_ntru_prime\n"
+    return "sig_dil\nsig_falcon\nsig_ntru_prime\nsig_chipmunk_ring\n"
 #ifdef DAP_ECDSA
     "sig_ecdsa\n"
     "sig_multi_ecdsa_dil\n"
@@ -1341,7 +1342,7 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
         return -4;
     }
 
-    int l_verify_rc = chipmunk_verify_multi_signature(&l_multi_sig, l_msg0, l_len0);
+    int l_verify_rc = chipmunk_verify_multi_signature(&l_multi_sig, l_msg0, l_len0, (uint64_t)CHIPMUNK_Q);
     if (l_verify_rc == 1) {
         chipmunk_multi_signature_deep_free(&l_multi_sig);
         return 0;

@@ -9,8 +9,20 @@
 addToLibrary({
 
     /* ==================================================================
+     * Helper: detect Node.js vs browser
+     * ================================================================== */
+    _dap_is_node: function() {
+        return typeof process !== 'undefined' && process.versions && process.versions.node;
+    },
+
+    /* ==================================================================
      * HTTP POST — async version (ST mode, main thread safe)
      * Calls C callback with result: _dap_http_async_callback(req_id, ptr, len, status)
+     *
+     * In Node.js: uses synchronous http (blocks main thread but C code
+     *             is already blocking via pthread_cond_timedwait, so
+     *             we need synchronous response to unblock it).
+     * In browser: uses async XHR (callback fires from event loop).
      * ================================================================== */
 
     js_http_post_async__deps: ['$UTF8ToString', 'malloc', '_dap_http_async_callback'],
@@ -23,6 +35,82 @@ addToLibrary({
             ? HEAPU8.slice(a_body, a_body + a_body_len)
             : null;
 
+        // Node.js path: synchronous HTTP via child_process (no event loop blocking)
+        if (typeof require === 'function' && typeof process !== 'undefined' && process.versions && process.versions.node) {
+            try {
+                var parsed = new URL(url);
+                var httpModule = parsed.protocol === 'https:' ? require('https') : require('http');
+
+                // Use synchronous request via deasync-style approach
+                // We need to make this truly synchronous without blocking event loop
+                var done = false;
+                var respData = null;
+                var respStatus = -1;
+
+                var options = {
+                    hostname: parsed.hostname,
+                    port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+                    path: parsed.pathname + parsed.search,
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': contentType || 'application/json',
+                        'Content-Length': bodySlice ? bodySlice.length : 0,
+                    },
+                };
+
+                var req = httpModule.request(options, function(res) {
+                    var chunks = [];
+                    res.on('data', function(chunk) { chunks.push(chunk); });
+                    res.on('end', function() {
+                        respData = Buffer.concat(chunks);
+                        respStatus = (res.statusCode >= 200 && res.statusCode < 300) ? 0 : (-res.statusCode || -1);
+                        done = true;
+                    });
+                });
+                req.on('error', function(e) {
+                    respStatus = -1;
+                    done = true;
+                });
+                req.setTimeout(15000, function() {
+                    req.destroy();
+                    respStatus = -1;
+                    done = true;
+                });
+                if (bodySlice) req.write(Buffer.from(bodySlice));
+                req.end();
+
+                // Synchronous wait using Atomics (SharedArrayBuffer approach)
+                // Create a shared buffer for synchronization
+                var sab = new SharedArrayBuffer(4);
+                var i32 = new Int32Array(sab);
+
+                // Set up a timer to check done flag and wake
+                var interval = setInterval(function() {
+                    if (done) {
+                        Atomics.store(i32, 0, 1);
+                        Atomics.notify(i32, 0);
+                    }
+                }, 5);
+
+                // Wait for response (with timeout)
+                Atomics.wait(i32, 0, 0, 16000);
+                clearInterval(interval);
+
+                if (respStatus === 0 && respData && respData.length > 0) {
+                    var ptr = _malloc(respData.length + 1);
+                    HEAPU8.set(respData, ptr);
+                    HEAPU8[ptr + respData.length] = 0;
+                    __dap_http_async_callback(a_req_id, ptr, respData.length, 0);
+                } else {
+                    __dap_http_async_callback(a_req_id, 0, 0, respStatus || -1);
+                }
+            } catch (e) {
+                __dap_http_async_callback(a_req_id, 0, 0, -1);
+            }
+            return;
+        }
+
+        // Browser path: async XMLHttpRequest
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, true);
         xhr.responseType = "arraybuffer";
@@ -69,9 +157,67 @@ addToLibrary({
         var contentType = a_content_type_ptr ? UTF8ToString(a_content_type_ptr) : null;
         var extraHeaders = a_extra_headers_ptr ? UTF8ToString(a_extra_headers_ptr) : null;
 
+        // Node.js path: synchronous HTTP via execSync subprocess
+        // Note: Emscripten pthread workers define process.versions.node,
+        // so we also check typeof require === 'function' to detect actual Node.js.
+        if (typeof require === 'function' && typeof process !== 'undefined' && process.versions && process.versions.node) {
+            var parsed = new URL(url);
+            var execSync = require('child_process').execSync;
+            var b64 = (a_body && a_body_len > 0)
+                ? Buffer.from(HEAPU8.slice(a_body, a_body + a_body_len)).toString('base64')
+                : '';
+            var proto = parsed.protocol === 'https:' ? 'https' : 'http';
+            var port = parsed.port || (proto === 'https' ? 443 : 80);
+            var script = [
+                'const h=require(' + JSON.stringify(proto) + ');',
+                'const b=Buffer.from(' + JSON.stringify(b64) + ',"base64");',
+                'const r=h.request({hostname:' + JSON.stringify(parsed.hostname) + ',port:' + port + ',path:"/",method:"POST",',
+                'headers:{"Content-Type":' + JSON.stringify(contentType || 'application/json') + ',"Content-Length":b.length}},',
+                'function(res){const d=[];res.on("data",c=>d.push(c));',
+                'res.on("end",()=>{process.stdout.write(Buffer.concat(d).toString("base64"));process.exit(0)});});',
+                'r.on("error",()=>process.exit(1));r.setTimeout(15000,()=>{r.destroy();process.exit(1)});',
+                'if(b.length>0)r.write(b);r.end();',
+            ].join('');
+            var responseData = null;
+            var result = -1;
+            try {
+                var result_b64 = execSync('node -e ' + JSON.stringify(script), {
+                    encoding: 'utf-8',
+                    timeout: 20000,
+                });
+                if (result_b64) {
+                    responseData = Buffer.from(result_b64, 'base64');
+                    result = 0;
+                }
+            } catch (e) {
+                result = -1;
+            }
+            if (result === 0 && responseData && responseData.length > 0) {
+                var ptr = _malloc(responseData.length + 1);
+                HEAPU8.set(responseData, ptr);
+                HEAPU8[ptr + responseData.length] = 0;
+                setValue(a_out_ptr_addr, ptr, '*');
+                setValue(a_out_len_addr, responseData.length, 'i32');
+            } else {
+                setValue(a_out_ptr_addr, 0, '*');
+                setValue(a_out_len_addr, 0, 'i32');
+            }
+            return result;
+        }
+
+        // Browser path: synchronous XHR.
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, false);
-        xhr.responseType = "arraybuffer";
+        // Request a binary response. Sync XHR with responseType is supported on
+        // Web Workers (where this MT path runs). Guard with try/catch for the
+        // legacy main-thread restriction, falling back to binary string decode.
+        var binaryAsString = false;
+        try {
+            xhr.responseType = "arraybuffer";
+        } catch (e) {
+            binaryAsString = true;
+            xhr.overrideMimeType("text/plain; charset=x-user-defined");
+        }
         if (contentType) xhr.setRequestHeader("Content-Type", contentType);
 
         if (extraHeaders) {
@@ -92,13 +238,22 @@ addToLibrary({
         }
 
         if (xhr.status >= 200 && xhr.status < 300) {
-            var response = new Uint8Array(xhr.response);
-            if (response.length > 0) {
-                var ptr = _malloc(response.length + 1);
-                HEAPU8.set(response, ptr);
-                HEAPU8[ptr + response.length] = 0;
+            var responseBytes = null;
+            if (binaryAsString) {
+                // x-user-defined: each char is a raw byte 0x00-0xFF
+                var text = xhr.responseText || "";
+                responseBytes = new Uint8Array(text.length);
+                for (var j = 0; j < text.length; j++)
+                    responseBytes[j] = text.charCodeAt(j) & 0xff;
+            } else if (xhr.response && xhr.response.byteLength > 0) {
+                responseBytes = new Uint8Array(xhr.response);
+            }
+            if (responseBytes && responseBytes.length > 0) {
+                var ptr = _malloc(responseBytes.length + 1);
+                HEAPU8.set(responseBytes, ptr);
+                HEAPU8[ptr + responseBytes.length] = 0;
                 setValue(a_out_ptr_addr, ptr, '*');
-                setValue(a_out_len_addr, response.length, 'i32');
+                setValue(a_out_len_addr, responseBytes.length, 'i32');
             } else {
                 setValue(a_out_ptr_addr, 0, '*');
                 setValue(a_out_len_addr, 0, 'i32');

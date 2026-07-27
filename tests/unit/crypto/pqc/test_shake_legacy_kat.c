@@ -23,6 +23,7 @@
  *  while keeping the test fast and the diff readable.
  */
 
+#include <dap_enc.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -168,6 +169,10 @@ static void s_test_dilithium_mode2_legacy_keypair(void)
 
 int main(void)
 {
+    dap_set_appname("test");
+    dap_common_init(dap_get_appname(), NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
     s_test_shake_canonical_fips202();
     s_test_shake_legacy_master_compat();
     s_test_dilithium_mode2_legacy_keypair();

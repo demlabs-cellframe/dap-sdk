@@ -72,12 +72,16 @@ int chipmunk_mring_transcript_fold_round_fs(
     uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
     const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES],
     uint32_t a_round,
-    const chipmunk_mring_ext_t *a_CL,
-    const chipmunk_mring_ext_t *a_CR);
+    const chipmunk_fq6_ext_t *a_CL,
+    const chipmunk_fq6_ext_t *a_CR);
 
 /*
  * Bind-block FS digest absorbing fold commitments + scalars (on-wire b*).
  * c* = sparse_ternary(SHA3-256("chipmunk-mring-bind-fs-v1" ‖ …)).
+ *
+ * Absorbs: fs_seed ‖ c ‖ M_pk ‖ M_T ‖ Y_pk ‖ T ‖ fold_commitments ‖ a* ‖ b* ‖ ω
+ * Y_pk, T, n_ring and t are included for soundness: swapping them after
+ * the fact invalidates c*.
  */
 int chipmunk_mring_transcript_bind_fs(
     uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
@@ -85,6 +89,10 @@ int chipmunk_mring_transcript_bind_fs(
     const chipmunk_poly_t *a_c,
     const chipmunk_poly_t *a_M_pk,
     const chipmunk_poly_t *a_M_T,
+    const chipmunk_poly_t *a_Y_pk,
+    const chipmunk_poly_t *a_T_tag,
+    uint32_t a_n_ring,
+    uint32_t a_threshold,
     const chipmunk_mring_fold_proof_t *a_proof,
     uint32_t a_fold_depth);
 

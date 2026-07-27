@@ -88,22 +88,27 @@ static int s_hash_len_prefixed(uint8_t a_out[32],
     return ok ? 0 : -EIO;
 }
 
-static int32_t s_center_q(int32_t a_v)
+/* Branchless full centered reduction: maps any int32 to [-q/2, q/2).
+ * Handles both > q/2 and < -q/2 without data-dependent branches.
+ * Required for constant-time processing of secret witness data. */
+static int32_t s_center_q(int32_t a_v, uint64_t q)
 {
-    if (a_v > CHIPMUNK_Q / 2) {
-        return a_v - CHIPMUNK_Q;
-    }
-    return a_v;
-}
-
-static int32_t s_mod_q_i64(int64_t a_v)
-{
-    int64_t l_r = a_v % CHIPMUNK_Q;
-    if (l_r < 0) {
-        l_r += CHIPMUNK_Q;
-    }
+    int64_t l_v = (int64_t)a_v;
+    int64_t l_q = (int64_t)q;
+    int64_t l_half = l_q / 2;
+    /* Reduce to [0, q) first */
+    int64_t l_r = l_v % l_q;
+    /* Branchless: mask is -1 when condition holds, 0 otherwise */
+    int64_t l_neg = -(int64_t)(l_r < 0);     /* -1 if negative */
+    l_r += l_q & l_neg;                       /* add q if negative → [0, q) */
+    /* Now center: subtract q if > q/2 */
+    int64_t l_hi = -(int64_t)(l_r > l_half);
+    l_r -= l_q & l_hi;                        /* l_r - q when > half → wraps to negative */
+    l_r -= l_q & (~l_hi & -(int64_t)(l_r >= l_q));  /* edge: exactly q → 0 */
     return (int32_t)l_r;
 }
+
+/* chipmunk_mod_q is now in chipmunk_poly.h — unified across all modules */
 
 static int s_build_xof_input(uint8_t **a_out, size_t *a_out_size,
                              const char *a_domain,
@@ -179,6 +184,15 @@ static uint32_t s_xof_u32(lrs_xof_reader_t *a_reader)
     return s_le32_load(b);
 }
 
+static uint64_t s_xof_u64(lrs_xof_reader_t *a_reader)
+{
+    uint64_t l_v = 0;
+    for (int l_i = 0; l_i < 8; ++l_i) {
+        l_v |= ((uint64_t)s_xof_u8(a_reader)) << (8 * l_i);
+    }
+    return l_v;
+}
+
 static uint16_t s_xof_u16(lrs_xof_reader_t *a_reader)
 {
     uint16_t l_lo = s_xof_u8(a_reader);
@@ -187,9 +201,15 @@ static uint16_t s_xof_u16(lrs_xof_reader_t *a_reader)
 }
 
 int chipmunk_lrs_poly_qpack(uint8_t a_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
-                            const chipmunk_poly_t *a_poly)
+                            const chipmunk_poly_t *a_poly, uint64_t q)
 {
     if (!a_out || !a_poly) {
+        return -EINVAL;
+    }
+    /* Guard: coefficients are packed CHIPMUNK_LRS_Q_BITS wide. If q exceeds
+     * 2^CHIPMUNK_LRS_Q_BITS, coefficients in [2^Q_BITS, q) would silently
+     * overflow into the next coefficient's bit field. */
+    if (q > ((uint64_t)1u << CHIPMUNK_LRS_Q_BITS)) {
         return -EINVAL;
     }
 
@@ -201,12 +221,12 @@ int chipmunk_lrs_poly_qpack(uint8_t a_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
     for (size_t i = 0; i < CHIPMUNK_N; ++i) {
         int32_t l_coeff = a_poly->coeffs[i];
         if (l_coeff < 0) {
-            if (l_coeff < -CHIPMUNK_Q / 2) {
+            if (l_coeff < -(int32_t)(q / 2)) {
                 return -EINVAL;
             }
-            l_coeff += CHIPMUNK_Q;
+            l_coeff += (int32_t)q;
         }
-        if (l_coeff < 0 || l_coeff >= CHIPMUNK_Q) {
+        if (l_coeff < 0 || (uint32_t)l_coeff >= (uint32_t)q) {
             return -EINVAL;
         }
 
@@ -226,9 +246,12 @@ int chipmunk_lrs_poly_qpack(uint8_t a_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
 }
 
 int chipmunk_lrs_poly_qunpack(chipmunk_poly_t *a_poly,
-                              const uint8_t a_in[CHIPMUNK_LRS_POLY_QPACK_BYTES])
+                              const uint8_t a_in[CHIPMUNK_LRS_POLY_QPACK_BYTES], uint64_t q)
 {
     if (!a_poly || !a_in) {
+        return -EINVAL;
+    }
+    if (q > ((uint64_t)1u << CHIPMUNK_LRS_Q_BITS)) {
         return -EINVAL;
     }
 
@@ -248,7 +271,7 @@ int chipmunk_lrs_poly_qunpack(chipmunk_poly_t *a_poly,
         uint32_t l_coeff = (uint32_t)(l_acc & ((1u << CHIPMUNK_LRS_Q_BITS) - 1u));
         l_acc >>= CHIPMUNK_LRS_Q_BITS;
         l_bits -= CHIPMUNK_LRS_Q_BITS;
-        if (l_coeff >= CHIPMUNK_Q) {
+        if ((uint32_t)l_coeff >= (uint32_t)q) {
             return -EINVAL;
         }
         a_poly->coeffs[i] = (int32_t)l_coeff;
@@ -328,7 +351,7 @@ int chipmunk_lrs_poly_zunpack(chipmunk_poly_t *a_poly,
 }
 
 int chipmunk_lrs_poly_chknorm_centered(const chipmunk_poly_t *a_poly,
-                                       int32_t a_bound)
+                                       int32_t a_bound, uint64_t q)
 {
     if (!a_poly || a_bound < 0) {
         return -EINVAL;
@@ -336,13 +359,17 @@ int chipmunk_lrs_poly_chknorm_centered(const chipmunk_poly_t *a_poly,
     for (size_t i = 0; i < CHIPMUNK_N; ++i) {
         int32_t l_c = a_poly->coeffs[i];
         if (l_c < 0) {
-            if (l_c < -CHIPMUNK_Q / 2) {
+            if (l_c < -(int32_t)(q / 2)) {
                 return -EINVAL;
             }
-        } else if (l_c >= CHIPMUNK_Q) {
+        } else if (l_c >= (int32_t)q) {
             return -EINVAL;
         }
-        l_c = s_center_q(l_c);
+        l_c = s_center_q(l_c, q);
+        /* Closed interval [-bound, bound] to match h_to_short_poly which
+         * generates coefficients in [-bound, +bound] inclusive (range = 2*bound+1).
+         * The previous half-open [-bound, bound) incorrectly rejected the
+         * maximum value +bound, causing "witness within B_x" test failures. */
         if (l_c < -a_bound || l_c > a_bound) {
             return 1;
         }
@@ -355,7 +382,7 @@ int chipmunk_lrs_h_to_poly_q(chipmunk_poly_t *a_poly,
                              uint32_t a_params_id,
                              const uint8_t *a_seed_material,
                              size_t a_seed_material_size,
-                             uint32_t a_index)
+                             uint32_t a_index, uint64_t q)
 {
     if (!a_poly || a_params_id != CHIPMUNK_LRS_PARAMS_C0) {
         return -EINVAL;
@@ -372,13 +399,13 @@ int chipmunk_lrs_h_to_poly_q(chipmunk_poly_t *a_poly,
     lrs_xof_reader_t l_reader;
     s_xof_reader_init(&l_reader, l_input, l_input_size);
 
-    const uint32_t l_threshold = UINT32_MAX - (UINT32_MAX % CHIPMUNK_Q);
+    const uint64_t l_threshold = UINT64_MAX - (UINT64_MAX % q);
     for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-        uint32_t l_v;
+        uint64_t l_v;
         do {
-            l_v = s_xof_u32(&l_reader);
+            l_v = s_xof_u64(&l_reader);
         } while (l_v >= l_threshold);
-        a_poly->coeffs[i] = (int32_t)(l_v % CHIPMUNK_Q);
+        a_poly->coeffs[i] = (int32_t)(l_v % q);
     }
 
     dap_memwipe(&l_reader, sizeof(l_reader));
@@ -497,7 +524,8 @@ int chipmunk_lrs_derive_A_pk(chipmunk_poly_t a_A_pk[CHIPMUNK_LRS_K],
     for (uint32_t i = 0; i < CHIPMUNK_LRS_K; ++i) {
         int l_rc = chipmunk_lrs_h_to_poly_q(&a_A_pk[i], "chipmunk-ring-system-A-pk",
                                             a_params_id,
-                                            l_params_le, sizeof(l_params_le), i);
+                                            l_params_le, sizeof(l_params_le), i,
+                                            (uint64_t)CHIPMUNK_Q);
         if (l_rc != 0) {
             return l_rc;
         }
@@ -516,7 +544,8 @@ int chipmunk_lrs_derive_A_I(chipmunk_poly_t a_A_I[CHIPMUNK_LRS_K],
     for (uint32_t i = 0; i < CHIPMUNK_LRS_K; ++i) {
         int l_rc = chipmunk_lrs_h_to_poly_q(&a_A_I[i], "chipmunk-lrs-image-matrix",
                                             a_params_id,
-                                            a_P, CHIPMUNK_LRS_POLY_QPACK_BYTES, i);
+                                            a_P, CHIPMUNK_LRS_POLY_QPACK_BYTES, i,
+                                            (uint64_t)CHIPMUNK_Q);
         if (l_rc != 0) {
             return l_rc;
         }
@@ -526,38 +555,110 @@ int chipmunk_lrs_derive_A_I(chipmunk_poly_t a_A_I[CHIPMUNK_LRS_K],
 
 int chipmunk_lrs_relation_eval(chipmunk_poly_t *a_out,
                                const chipmunk_poly_t a_A[CHIPMUNK_LRS_K],
-                               const chipmunk_poly_t a_x[CHIPMUNK_LRS_K])
+                               const chipmunk_poly_t a_x[CHIPMUNK_LRS_K], uint64_t q)
 {
     if (!a_out || !a_A || !a_x) {
         return -EINVAL;
     }
 
-    memset(a_out, 0, sizeof(*a_out));
+    /* NTT-native: accumulate Σ A[j]*x[j] pointwise in NTT domain.
+     * Eliminates K-1 redundant invNTTs (was K round-trips, now 1 invNTT). */
+    chipmunk_poly_t l_acc_ntt;
+    memset(&l_acc_ntt, 0, sizeof(l_acc_ntt));
 
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
         chipmunk_poly_t l_A = a_A[j];
         chipmunk_poly_t l_x = a_x[j];
-        chipmunk_poly_t l_prod;
 
         int l_rc = chipmunk_poly_ntt(&l_A);
-        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
-            return l_rc;
-        }
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
         l_rc = chipmunk_poly_ntt(&l_x);
-        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
-            return l_rc;
-        }
-        chipmunk_poly_mul_ntt(&l_prod, &l_A, &l_x);
-        l_rc = chipmunk_poly_invntt(&l_prod);
-        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
-            return l_rc;
-        }
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
 
+        chipmunk_poly_t l_prod;
+        chipmunk_poly_mul_ntt_q(&l_prod, &l_A, &l_x, q);
         for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-            a_out->coeffs[i] = s_mod_q_i64((int64_t)a_out->coeffs[i] + l_prod.coeffs[i]);
+            int64_t l_s = (int64_t)l_acc_ntt.coeffs[i] + l_prod.coeffs[i];
+            int32_t l_r = (int32_t)(l_s % (int64_t)q);
+            if (l_r < 0) l_r += (int32_t)q;
+            l_acc_ntt.coeffs[i] = l_r;
         }
     }
 
+    /* Single invNTT → time-domain result */
+    int l_rc = chipmunk_poly_invntt(&l_acc_ntt);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
+
+    /* Canonicalize to [0,q) — branchless for CT safety */
+    for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+        int64_t l_v = (int64_t)l_acc_ntt.coeffs[i];
+        int64_t l_neg = -(int64_t)(l_v < 0);
+        l_v += (int64_t)q & l_neg;
+        a_out->coeffs[i] = (int32_t)l_v;
+    }
+    return 0;
+}
+
+/* NTT-native relation_eval: accepts A already in NTT domain.
+ * Saves K forward NTTs of A per call (A is reused across ring steps/attempts). */
+static int s_relation_eval_ntt(chipmunk_poly_t *a_out,
+                                const chipmunk_poly_t a_A_ntt[CHIPMUNK_LRS_K],
+                                const chipmunk_poly_t a_x[CHIPMUNK_LRS_K], uint64_t q)
+{
+    if (!a_out || !a_A_ntt || !a_x) return -EINVAL;
+
+    chipmunk_poly_t l_acc_ntt;
+    memset(&l_acc_ntt, 0, sizeof(l_acc_ntt));
+
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        chipmunk_poly_t l_x = a_x[j];
+        int l_rc = chipmunk_poly_ntt(&l_x);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
+
+        chipmunk_poly_t l_prod;
+        chipmunk_poly_mul_ntt_q(&l_prod, &a_A_ntt[j], &l_x, q);
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            int64_t l_s = (int64_t)l_acc_ntt.coeffs[i] + l_prod.coeffs[i];
+            int32_t l_r = (int32_t)(l_s % (int64_t)q);
+            if (l_r < 0) l_r += (int32_t)q;
+            l_acc_ntt.coeffs[i] = l_r;
+        }
+    }
+
+    int l_rc = chipmunk_poly_invntt(&l_acc_ntt);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
+
+    for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+        int64_t l_v = (int64_t)l_acc_ntt.coeffs[i];
+        int64_t l_neg = -(int64_t)(l_v < 0);
+        l_v += (int64_t)q & l_neg;
+        a_out->coeffs[i] = (int32_t)l_v;
+    }
+    return 0;
+}
+
+/* Phase 9.15: Pure NTT-domain relation_eval — no NTT/invNTT inside.
+ * Both A_ntt[] and x_ntt[] must be pre-NTT'd. Output is NTT-domain.
+ * Caller is responsible for invNTT if time-domain output is needed. */
+static int s_relation_eval_ntt_native(chipmunk_poly_t *a_out_ntt,
+                                       const chipmunk_poly_t a_A_ntt[CHIPMUNK_LRS_K],
+                                       const chipmunk_poly_t a_x_ntt[CHIPMUNK_LRS_K],
+                                       uint64_t q)
+{
+    if (!a_out_ntt || !a_A_ntt || !a_x_ntt) return -EINVAL;
+
+    memset(a_out_ntt, 0, sizeof(*a_out_ntt));
+
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        chipmunk_poly_t l_prod;
+        chipmunk_poly_mul_ntt_q(&l_prod, &a_A_ntt[j], &a_x_ntt[j], q);
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            int64_t l_s = (int64_t)a_out_ntt->coeffs[i] + l_prod.coeffs[i];
+            int32_t l_r = (int32_t)(l_s % (int64_t)q);
+            if (l_r < 0) l_r += (int32_t)q;
+            a_out_ntt->coeffs[i] = l_r;
+        }
+    }
     return 0;
 }
 
@@ -582,7 +683,7 @@ int chipmunk_lrs_keypair_from_seeds(chipmunk_lrs_public_key_t *a_pk,
         dap_memwipe(l_x, sizeof(l_x));
         return l_rc;
     }
-    l_rc = chipmunk_lrs_relation_eval(&l_P, l_A, l_x);
+    l_rc = chipmunk_lrs_relation_eval(&l_P, l_A, l_x, (uint64_t)CHIPMUNK_Q);
     if (l_rc != 0) {
         dap_memwipe(l_x, sizeof(l_x));
         dap_memwipe(l_A, sizeof(l_A));
@@ -592,7 +693,7 @@ int chipmunk_lrs_keypair_from_seeds(chipmunk_lrs_public_key_t *a_pk,
     memset(a_pk, 0, sizeof(*a_pk));
     a_pk->magic = CHIPMUNK_LRS_MAGIC_CLPK;
     a_pk->params_id = CHIPMUNK_LRS_PARAMS_C0;
-    l_rc = chipmunk_lrs_poly_qpack(a_pk->P, &l_P);
+    l_rc = chipmunk_lrs_poly_qpack(a_pk->P, &l_P, (uint64_t)CHIPMUNK_Q);
     if (l_rc == 0) {
         memset(a_sk, 0, sizeof(*a_sk));
         a_sk->magic = CHIPMUNK_LRS_MAGIC_CLSK;
@@ -626,10 +727,10 @@ int chipmunk_lrs_key_image(uint8_t a_key_image[CHIPMUNK_LRS_POLY_QPACK_BYTES],
     }
     l_rc = chipmunk_lrs_derive_A_I(l_A_I, CHIPMUNK_LRS_PARAMS_C0, a_sk->P);
     if (l_rc == 0) {
-        l_rc = chipmunk_lrs_relation_eval(&l_I, l_A_I, l_x);
+        l_rc = chipmunk_lrs_relation_eval(&l_I, l_A_I, l_x, (uint64_t)CHIPMUNK_Q);
     }
     if (l_rc == 0) {
-        l_rc = chipmunk_lrs_poly_qpack(a_key_image, &l_I);
+        l_rc = chipmunk_lrs_poly_qpack(a_key_image, &l_I, (uint64_t)CHIPMUNK_Q);
     }
 
     dap_memwipe(l_x, sizeof(l_x));
@@ -647,7 +748,7 @@ int chipmunk_lrs_public_key_validate(const chipmunk_lrs_public_key_t *a_pk)
     }
 
     chipmunk_poly_t l_P;
-    int l_rc = chipmunk_lrs_poly_qunpack(&l_P, a_pk->P);
+    int l_rc = chipmunk_lrs_poly_qunpack(&l_P, a_pk->P, (uint64_t)CHIPMUNK_Q);
     dap_memwipe(&l_P, sizeof(l_P));
     return l_rc;
 }
@@ -694,12 +795,12 @@ static int s_h_to_wide_poly(chipmunk_poly_t *a_poly,
                             const uint8_t *a_seed_material,
                             size_t a_seed_material_size,
                             uint32_t a_index,
-                            int32_t a_bound)
+                            int32_t a_bound, uint64_t q)
 {
     if (!a_poly || a_bound <= 0) {
         return -EINVAL;
     }
-    if (a_bound >= (int32_t)(CHIPMUNK_Q / 2)) {
+    if (a_bound >= (int32_t)(q / 2)) {
         return -EINVAL;
     }
 
@@ -740,7 +841,7 @@ int chipmunk_lrs_h_to_bounded_poly(chipmunk_poly_t *a_poly,
 {
     return s_h_to_wide_poly(a_poly, a_domain, a_params_id,
                             a_seed_material, a_seed_material_size,
-                            a_index, a_bound);
+                            a_index, a_bound, (uint64_t)CHIPMUNK_Q);
 }
 
 int chipmunk_lrs_ring_hash(uint8_t a_out[32],
@@ -850,15 +951,15 @@ static int s_pop_challenge_seed(uint8_t a_out[32],
  */
 static int s_relation_eval_centered(chipmunk_poly_t *a_out,
                                     const chipmunk_poly_t a_A[CHIPMUNK_LRS_K],
-                                    const chipmunk_poly_t a_y[CHIPMUNK_LRS_K])
+                                    const chipmunk_poly_t a_y[CHIPMUNK_LRS_K], uint64_t q)
 {
     chipmunk_poly_t l_y_red[CHIPMUNK_LRS_K];
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
         for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-            l_y_red[j].coeffs[i] = s_mod_q_i64((int64_t)a_y[j].coeffs[i]);
+            l_y_red[j].coeffs[i] = chipmunk_mod_q_q((int64_t)a_y[j].coeffs[i], q);
         }
     }
-    int l_rc = chipmunk_lrs_relation_eval(a_out, a_A, l_y_red);
+    int l_rc = chipmunk_lrs_relation_eval(a_out, a_A, l_y_red, q);
     dap_memwipe(l_y_red, sizeof(l_y_red));
     return l_rc;
 }
@@ -869,11 +970,11 @@ static int s_relation_eval_centered(chipmunk_poly_t *a_out,
  */
 static int s_mul_challenge_witness_centered(chipmunk_poly_t a_cx[CHIPMUNK_LRS_K],
                                             const chipmunk_poly_t *a_c,
-                                            const chipmunk_poly_t a_x[CHIPMUNK_LRS_K])
+                                            const chipmunk_poly_t a_x[CHIPMUNK_LRS_K], uint64_t q)
 {
     chipmunk_poly_t l_c_red = *a_c;
     for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-        l_c_red.coeffs[i] = s_mod_q_i64((int64_t)l_c_red.coeffs[i]);
+        l_c_red.coeffs[i] = chipmunk_mod_q_q((int64_t)l_c_red.coeffs[i], q);
     }
     int l_rc = chipmunk_poly_ntt(&l_c_red);
     if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
@@ -884,7 +985,7 @@ static int s_mul_challenge_witness_centered(chipmunk_poly_t a_cx[CHIPMUNK_LRS_K]
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
         chipmunk_poly_t l_x_red = a_x[j];
         for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-            l_x_red.coeffs[i] = s_mod_q_i64((int64_t)l_x_red.coeffs[i]);
+            l_x_red.coeffs[i] = chipmunk_mod_q_q((int64_t)l_x_red.coeffs[i], q);
         }
         l_rc = chipmunk_poly_ntt(&l_x_red);
         if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
@@ -892,7 +993,7 @@ static int s_mul_challenge_witness_centered(chipmunk_poly_t a_cx[CHIPMUNK_LRS_K]
             dap_memwipe(&l_c_red, sizeof(l_c_red));
             return l_rc;
         }
-        chipmunk_poly_mul_ntt(&a_cx[j], &l_c_red, &l_x_red);
+        chipmunk_poly_mul_ntt_q(&a_cx[j], &l_c_red, &l_x_red, q);
         l_rc = chipmunk_poly_invntt(&a_cx[j]);
         dap_memwipe(&l_x_red, sizeof(l_x_red));
         if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
@@ -901,10 +1002,46 @@ static int s_mul_challenge_witness_centered(chipmunk_poly_t a_cx[CHIPMUNK_LRS_K]
         }
         for (size_t i = 0; i < CHIPMUNK_N; ++i) {
             int32_t l_c = a_cx[j].coeffs[i];
-            if (l_c < 0 || l_c >= CHIPMUNK_Q) {
-                l_c = s_mod_q_i64((int64_t)l_c);
+            if (l_c < 0 || l_c >= (int32_t)q) {
+                l_c = chipmunk_mod_q_q((int64_t)l_c, q);
             }
-            a_cx[j].coeffs[i] = s_center_q(l_c);
+            a_cx[j].coeffs[i] = s_center_q(l_c, q);
+        }
+    }
+    dap_memwipe(&l_c_red, sizeof(l_c_red));
+    return 0;
+}
+
+/* Phase 9.15: NTT-native variant — c is time-domain, x_ntt is pre-NTT'd.
+ * Eliminates K forward NTTs of x per call (x is reused across attempts). */
+static int s_mul_cx_ntt_native(chipmunk_poly_t a_cx[CHIPMUNK_LRS_K],
+                                const chipmunk_poly_t *a_c,
+                                const chipmunk_poly_t a_x_ntt[CHIPMUNK_LRS_K],
+                                uint64_t q)
+{
+    chipmunk_poly_t l_c_red = *a_c;
+    for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+        l_c_red.coeffs[i] = chipmunk_mod_q_q((int64_t)l_c_red.coeffs[i], q);
+    }
+    int l_rc = chipmunk_poly_ntt(&l_c_red);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+        dap_memwipe(&l_c_red, sizeof(l_c_red));
+        return l_rc;
+    }
+
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        chipmunk_poly_mul_ntt_q(&a_cx[j], &l_c_red, &a_x_ntt[j], q);
+        l_rc = chipmunk_poly_invntt(&a_cx[j]);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            dap_memwipe(&l_c_red, sizeof(l_c_red));
+            return l_rc;
+        }
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            int32_t l_c = a_cx[j].coeffs[i];
+            if (l_c < 0 || l_c >= (int32_t)q) {
+                l_c = chipmunk_mod_q_q((int64_t)l_c, q);
+            }
+            a_cx[j].coeffs[i] = s_center_q(l_c, q);
         }
     }
     dap_memwipe(&l_c_red, sizeof(l_c_red));
@@ -914,7 +1051,7 @@ static int s_mul_challenge_witness_centered(chipmunk_poly_t a_cx[CHIPMUNK_LRS_K]
 int chipmunk_lrs_pop_create(uint8_t *a_pop,
                             size_t a_pop_size,
                             const chipmunk_lrs_secret_key_t *a_sk,
-                            const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES])
+                            const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES], uint64_t q)
 {
     if (!a_pop || a_pop_size != CHIPMUNK_LRS_POP_BYTES ||
         !a_sk || !a_randomness_seed) {
@@ -951,6 +1088,21 @@ int chipmunk_lrs_pop_create(uint8_t *a_pop,
         return l_rc;
     }
 
+    /* Phase 9.15: Pre-NTT A_pk and x for hot-path reuse. */
+    chipmunk_poly_t l_A_pk_ntt[CHIPMUNK_LRS_K];
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        l_A_pk_ntt[j] = l_A_pk[j];
+        chipmunk_ntt(l_A_pk_ntt[j].coeffs);
+    }
+    chipmunk_poly_t l_x_ntt[CHIPMUNK_LRS_K];
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        l_x_ntt[j] = l_x[j];
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            l_x_ntt[j].coeffs[i] = chipmunk_mod_q_q((int64_t)l_x_ntt[j].coeffs[i], q);
+        }
+        chipmunk_ntt(l_x_ntt[j].coeffs);
+    }
+
     /*
      * Mask sampler seed binds the caller-provided randomness to the
      * concrete LRS public key so the same randomness reused against a
@@ -961,7 +1113,9 @@ int chipmunk_lrs_pop_create(uint8_t *a_pop,
     uint8_t *l_mask_seed = DAP_NEW_Z_SIZE(uint8_t, l_mask_seed_size);
     if (!l_mask_seed) {
         dap_memwipe(l_x, sizeof(l_x));
+        dap_memwipe(l_x_ntt, sizeof(l_x_ntt));
         dap_memwipe(l_A_pk, sizeof(l_A_pk));
+        dap_memwipe(l_A_pk_ntt, sizeof(l_A_pk_ntt));
         dap_memwipe(&l_pk, sizeof(l_pk));
         return -ENOMEM;
     }
@@ -985,17 +1139,35 @@ int chipmunk_lrs_pop_create(uint8_t *a_pop,
                                     CHIPMUNK_LRS_PARAMS_C0, l_mask_seed,
                                     l_mask_seed_size,
                                     l_attempt * CHIPMUNK_LRS_K + j,
-                                    CHIPMUNK_LRS_MASK_BOUND);
+                                    CHIPMUNK_LRS_MASK_BOUND, q);
             if (l_rc != 0) {
                 goto cleanup;
             }
         }
 
-        l_rc = s_relation_eval_centered(&l_T, l_A_pk, l_y);
+        /* Phase 9.15: Use NTT-native relation_eval with pre-NTT'd A_pk.
+         * y is sampled in wide form → reduce + NTT inside helper. */
+        {
+            chipmunk_poly_t l_y_red[CHIPMUNK_LRS_K];
+            for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+                l_y_red[j] = l_y[j];
+                for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+                    l_y_red[j].coeffs[i] = chipmunk_mod_q_q((int64_t)l_y_red[j].coeffs[i], q);
+                }
+                chipmunk_ntt(l_y_red[j].coeffs);
+            }
+            chipmunk_poly_t l_T_ntt;
+            s_relation_eval_ntt_native(&l_T_ntt, l_A_pk_ntt, l_y_red, q);
+            chipmunk_invntt(l_T_ntt.coeffs);
+            for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+                l_T.coeffs[i] = chipmunk_mod_q_q((int64_t)l_T_ntt.coeffs[i], q);
+            }
+            dap_memwipe(l_y_red, sizeof(l_y_red));
+        }
         if (l_rc != 0) {
             goto cleanup;
         }
-        l_rc = chipmunk_lrs_poly_qpack(l_T_packed, &l_T);
+        l_rc = chipmunk_lrs_poly_qpack(l_T_packed, &l_T, q);
         if (l_rc != 0) {
             goto cleanup;
         }
@@ -1013,7 +1185,7 @@ int chipmunk_lrs_pop_create(uint8_t *a_pop,
             goto cleanup;
         }
 
-        l_rc = s_mul_challenge_witness_centered(l_cx, &l_challenge, l_x);
+        l_rc = s_mul_cx_ntt_native(l_cx, &l_challenge, l_x_ntt, q);
         if (l_rc != 0) {
             goto cleanup;
         }
@@ -1042,9 +1214,9 @@ int chipmunk_lrs_pop_create(uint8_t *a_pop,
             chipmunk_poly_t l_z_poly;
             for (size_t i = 0; i < CHIPMUNK_N; ++i) {
                 int32_t l_zi = l_y[j].coeffs[i] + l_cx[j].coeffs[i];
-                l_z_poly.coeffs[i] = s_mod_q_i64((int64_t)l_zi);
+                l_z_poly.coeffs[i] = chipmunk_mod_q_q((int64_t)l_zi, q);
             }
-            l_rc = chipmunk_lrs_poly_qpack(l_z_packed[j], &l_z_poly);
+            l_rc = chipmunk_lrs_poly_qpack(l_z_packed[j], &l_z_poly, q);
             dap_memwipe(&l_z_poly, sizeof(l_z_poly));
             if (l_rc != 0) {
                 goto cleanup;
@@ -1078,7 +1250,9 @@ int chipmunk_lrs_pop_create(uint8_t *a_pop,
 
 cleanup:
     dap_memwipe(l_x, sizeof(l_x));
+    dap_memwipe(l_x_ntt, sizeof(l_x_ntt));
     dap_memwipe(l_A_pk, sizeof(l_A_pk));
+    dap_memwipe(l_A_pk_ntt, sizeof(l_A_pk_ntt));
     dap_memwipe(l_y, sizeof(l_y));
     dap_memwipe(l_cx, sizeof(l_cx));
     dap_memwipe(&l_T, sizeof(l_T));
@@ -1095,7 +1269,7 @@ cleanup:
 
 int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
                             size_t a_pop_size,
-                            const chipmunk_lrs_public_key_t *a_pk)
+                            const chipmunk_lrs_public_key_t *a_pk, uint64_t q)
 {
     if (!a_pop || a_pop_size != CHIPMUNK_LRS_POP_BYTES || !a_pk) {
         return -EINVAL;
@@ -1141,11 +1315,11 @@ int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
 
     chipmunk_poly_t l_z[CHIPMUNK_LRS_K];
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
-        l_rc = chipmunk_lrs_poly_qunpack(&l_z[j], p);
+        l_rc = chipmunk_lrs_poly_qunpack(&l_z[j], p, q);
         if (l_rc != 0) {
             goto vfail;
         }
-        l_rc = chipmunk_lrs_poly_chknorm_centered(&l_z[j], CHIPMUNK_LRS_RESPONSE_BOUND);
+        l_rc = chipmunk_lrs_poly_chknorm_centered(&l_z[j], CHIPMUNK_LRS_RESPONSE_BOUND, q);
         if (l_rc != 0) {
             l_rc = (l_rc == 1) ? -EINVAL : l_rc;
             goto vfail;
@@ -1167,7 +1341,7 @@ int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
     }
 
     chipmunk_poly_t l_P;
-    l_rc = chipmunk_lrs_poly_qunpack(&l_P, a_pk->P);
+    l_rc = chipmunk_lrs_poly_qunpack(&l_P, a_pk->P, q);
     if (l_rc != 0) {
         goto vfail;
     }
@@ -1178,7 +1352,7 @@ int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
      * legs.
      */
     chipmunk_poly_t l_sum_Az;
-    l_rc = chipmunk_lrs_relation_eval(&l_sum_Az, l_A_pk, l_z);
+    l_rc = chipmunk_lrs_relation_eval(&l_sum_Az, l_A_pk, l_z, q);
     if (l_rc != 0) {
         goto vfail;
     }
@@ -1188,14 +1362,14 @@ int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
         chipmunk_poly_t l_c_red = l_challenge;
         chipmunk_poly_t l_P_red = l_P;
         for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-            l_c_red.coeffs[i] = s_mod_q_i64((int64_t)l_c_red.coeffs[i]);
+            l_c_red.coeffs[i] = chipmunk_mod_q_q((int64_t)l_c_red.coeffs[i], q);
         }
         l_rc = chipmunk_poly_ntt(&l_c_red);
         if (l_rc == CHIPMUNK_ERROR_SUCCESS) {
             l_rc = chipmunk_poly_ntt(&l_P_red);
         }
         if (l_rc == CHIPMUNK_ERROR_SUCCESS) {
-            chipmunk_poly_mul_ntt(&l_cP, &l_c_red, &l_P_red);
+            chipmunk_poly_mul_ntt_q(&l_cP, &l_c_red, &l_P_red, q);
             l_rc = chipmunk_poly_invntt(&l_cP);
         }
         dap_memwipe(&l_c_red, sizeof(l_c_red));
@@ -1208,11 +1382,11 @@ int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
     chipmunk_poly_t l_T_prime;
     for (size_t i = 0; i < CHIPMUNK_N; ++i) {
         int64_t l_v = (int64_t)l_sum_Az.coeffs[i] - (int64_t)l_cP.coeffs[i];
-        l_T_prime.coeffs[i] = s_mod_q_i64(l_v);
+        l_T_prime.coeffs[i] = chipmunk_mod_q_q(l_v, q);
     }
 
     uint8_t l_T_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES];
-    l_rc = chipmunk_lrs_poly_qpack(l_T_packed, &l_T_prime);
+    l_rc = chipmunk_lrs_poly_qpack(l_T_packed, &l_T_prime, q);
     if (l_rc != 0) {
         goto vfail;
     }
@@ -1262,7 +1436,10 @@ size_t chipmunk_lrs_signature_size(uint32_t a_ring_size)
 typedef struct lrs_ring_member_ctx {
     chipmunk_poly_t A_pk[CHIPMUNK_LRS_K];
     chipmunk_poly_t A_I[CHIPMUNK_LRS_K];
+    chipmunk_poly_t A_pk_ntt[CHIPMUNK_LRS_K];  /* A_pk in NTT domain (cached) */
+    chipmunk_poly_t A_I_ntt[CHIPMUNK_LRS_K];  /* A_I in NTT domain (cached) */
     chipmunk_poly_t P_poly;
+    chipmunk_poly_t P_ntt;  /* Phase 9.15: P in NTT domain (cached) */
 } lrs_ring_member_ctx_t;
 
 static int s_derive_ring_member_ctx(lrs_ring_member_ctx_t *a_ctx,
@@ -1280,7 +1457,21 @@ static int s_derive_ring_member_ctx(lrs_ring_member_ctx_t *a_ctx,
     if (l_rc != 0) {
         return l_rc;
     }
-    return chipmunk_lrs_poly_qunpack(&a_ctx->P_poly, a_pk->P);
+    /* Pre-compute NTT-domain copies of A_pk and A_I for hot-path reuse. */
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        a_ctx->A_pk_ntt[j] = a_ctx->A_pk[j];
+        l_rc = chipmunk_poly_ntt(&a_ctx->A_pk_ntt[j]);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
+        a_ctx->A_I_ntt[j] = a_ctx->A_I[j];
+        l_rc = chipmunk_poly_ntt(&a_ctx->A_I_ntt[j]);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) return l_rc;
+    }
+    l_rc = chipmunk_lrs_poly_qunpack(&a_ctx->P_poly, a_pk->P, (uint64_t)CHIPMUNK_Q);
+    if (l_rc != 0) return l_rc;
+    /* Phase 9.15: Pre-NTT P for simulate_branch hot path. */
+    a_ctx->P_ntt = a_ctx->P_poly;
+    l_rc = chipmunk_poly_ntt(&a_ctx->P_ntt);
+    return l_rc;
 }
 
 /*
@@ -1410,12 +1601,12 @@ static int s_simulate_branch(uint8_t a_T_pk_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES
                              const lrs_ring_member_ctx_t *a_ctx,
                              const chipmunk_poly_t *a_I_poly,
                              const chipmunk_poly_t *a_c_poly,
-                             const chipmunk_poly_t a_z[CHIPMUNK_LRS_K])
+                             const chipmunk_poly_t a_z[CHIPMUNK_LRS_K], uint64_t q)
 {
     chipmunk_poly_t l_sum_A_pk_z, l_sum_A_I_z;
-    int l_rc = chipmunk_lrs_relation_eval(&l_sum_A_pk_z, a_ctx->A_pk, a_z);
+    int l_rc = s_relation_eval_ntt(&l_sum_A_pk_z, a_ctx->A_pk_ntt, a_z, q);
     if (l_rc == 0) {
-        l_rc = chipmunk_lrs_relation_eval(&l_sum_A_I_z, a_ctx->A_I, a_z);
+        l_rc = s_relation_eval_ntt(&l_sum_A_I_z, a_ctx->A_I_ntt, a_z, q);
     }
     if (l_rc != 0) {
         return l_rc;
@@ -1424,22 +1615,20 @@ static int s_simulate_branch(uint8_t a_T_pk_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES
     chipmunk_poly_t l_cP, l_cI;
     {
         chipmunk_poly_t l_c_red = *a_c_poly;
-        chipmunk_poly_t l_P_red = a_ctx->P_poly;
         chipmunk_poly_t l_I_red = *a_I_poly;
         for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-            l_c_red.coeffs[i] = s_mod_q_i64((int64_t)l_c_red.coeffs[i]);
+            l_c_red.coeffs[i] = chipmunk_mod_q_q((int64_t)l_c_red.coeffs[i], q);
         }
         l_rc = chipmunk_poly_ntt(&l_c_red);
-        if (l_rc == CHIPMUNK_ERROR_SUCCESS) l_rc = chipmunk_poly_ntt(&l_P_red);
+        /* Phase 9.15: P_ntt is pre-computed, I needs NTT. */
         if (l_rc == CHIPMUNK_ERROR_SUCCESS) l_rc = chipmunk_poly_ntt(&l_I_red);
         if (l_rc == CHIPMUNK_ERROR_SUCCESS) {
-            chipmunk_poly_mul_ntt(&l_cP, &l_c_red, &l_P_red);
-            chipmunk_poly_mul_ntt(&l_cI, &l_c_red, &l_I_red);
+            chipmunk_poly_mul_ntt_q(&l_cP, &l_c_red, &a_ctx->P_ntt, q);
+            chipmunk_poly_mul_ntt_q(&l_cI, &l_c_red, &l_I_red, q);
             l_rc = chipmunk_poly_invntt(&l_cP);
             if (l_rc == CHIPMUNK_ERROR_SUCCESS) l_rc = chipmunk_poly_invntt(&l_cI);
         }
         dap_memwipe(&l_c_red, sizeof(l_c_red));
-        dap_memwipe(&l_P_red, sizeof(l_P_red));
         dap_memwipe(&l_I_red, sizeof(l_I_red));
         if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
             return l_rc;
@@ -1448,14 +1637,14 @@ static int s_simulate_branch(uint8_t a_T_pk_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES
 
     chipmunk_poly_t l_T_pk, l_T_I;
     for (size_t i = 0; i < CHIPMUNK_N; ++i) {
-        l_T_pk.coeffs[i] = s_mod_q_i64((int64_t)l_sum_A_pk_z.coeffs[i] -
-                                       (int64_t)l_cP.coeffs[i]);
-        l_T_I.coeffs[i]  = s_mod_q_i64((int64_t)l_sum_A_I_z.coeffs[i] -
-                                       (int64_t)l_cI.coeffs[i]);
+        l_T_pk.coeffs[i] = chipmunk_mod_q_q((int64_t)l_sum_A_pk_z.coeffs[i] -
+                                       (int64_t)l_cP.coeffs[i], q);
+        l_T_I.coeffs[i]  = chipmunk_mod_q_q((int64_t)l_sum_A_I_z.coeffs[i] -
+                                       (int64_t)l_cI.coeffs[i], q);
     }
-    l_rc = chipmunk_lrs_poly_qpack(a_T_pk_packed, &l_T_pk);
+    l_rc = chipmunk_lrs_poly_qpack(a_T_pk_packed, &l_T_pk, q);
     if (l_rc == 0) {
-        l_rc = chipmunk_lrs_poly_qpack(a_T_I_packed, &l_T_I);
+        l_rc = chipmunk_lrs_poly_qpack(a_T_I_packed, &l_T_I, q);
     }
     dap_memwipe(&l_sum_A_pk_z, sizeof(l_sum_A_pk_z));
     dap_memwipe(&l_sum_A_I_z, sizeof(l_sum_A_I_z));
@@ -1472,20 +1661,20 @@ static int s_simulate_branch(uint8_t a_T_pk_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES
  */
 static int s_real_commitments(uint8_t a_T_pk_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES],
                               uint8_t a_T_I_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES],
-                              const chipmunk_poly_t a_A_pk[CHIPMUNK_LRS_K],
-                              const chipmunk_poly_t a_A_I[CHIPMUNK_LRS_K],
-                              const chipmunk_poly_t a_y[CHIPMUNK_LRS_K])
+                              const chipmunk_poly_t a_A_pk_ntt[CHIPMUNK_LRS_K],
+                              const chipmunk_poly_t a_A_I_ntt[CHIPMUNK_LRS_K],
+                              const chipmunk_poly_t a_y[CHIPMUNK_LRS_K], uint64_t q)
 {
     chipmunk_poly_t l_T_pk, l_T_I;
-    int l_rc = s_relation_eval_centered(&l_T_pk, a_A_pk, a_y);
+    int l_rc = s_relation_eval_ntt(&l_T_pk, a_A_pk_ntt, a_y, q);
     if (l_rc == 0) {
-        l_rc = s_relation_eval_centered(&l_T_I, a_A_I, a_y);
+        l_rc = s_relation_eval_ntt(&l_T_I, a_A_I_ntt, a_y, q);
     }
     if (l_rc == 0) {
-        l_rc = chipmunk_lrs_poly_qpack(a_T_pk_packed, &l_T_pk);
+        l_rc = chipmunk_lrs_poly_qpack(a_T_pk_packed, &l_T_pk, q);
     }
     if (l_rc == 0) {
-        l_rc = chipmunk_lrs_poly_qpack(a_T_I_packed, &l_T_I);
+        l_rc = chipmunk_lrs_poly_qpack(a_T_I_packed, &l_T_I, q);
     }
     dap_memwipe(&l_T_pk, sizeof(l_T_pk));
     dap_memwipe(&l_T_I, sizeof(l_T_I));
@@ -1499,7 +1688,7 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
                       size_t a_ring_size,
                       const uint8_t *a_message,
                       size_t a_message_size,
-                      const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES])
+                      const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES], uint64_t q)
 {
     if (!a_sig || !a_sk || !a_ring || !a_randomness_seed ||
         (!a_message && a_message_size != 0) ||
@@ -1552,13 +1741,34 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
     if (l_rc != 0) {
         goto out;
     }
+
+    /* Phase 9.15: Pre-NTT x once (reduced + NTT'd). Used for key image
+     * computation AND for cx computation in the attempt loop. Eliminates
+     * K forward NTTs of x per attempt (K*N_r NTTs saved per signing). */
+    chipmunk_poly_t l_x_ntt[CHIPMUNK_LRS_K];
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        l_x_ntt[j] = l_x[j];
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            l_x_ntt[j].coeffs[i] = chipmunk_mod_q_q((int64_t)l_x_ntt[j].coeffs[i], q);
+        }
+        chipmunk_ntt(l_x_ntt[j].coeffs);
+    }
+
     chipmunk_poly_t l_I_poly;
-    l_rc = chipmunk_lrs_relation_eval(&l_I_poly, l_ring_ctx[l_signer_idx].A_I, l_x);
+    /* Phase 9.15: Key image using pre-NTT'd A_I and pre-NTT'd x. */
+    {
+        chipmunk_poly_t l_I_ntt;
+        s_relation_eval_ntt_native(&l_I_ntt, l_ring_ctx[l_signer_idx].A_I_ntt, l_x_ntt, q);
+        chipmunk_invntt(l_I_ntt.coeffs);
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            l_I_poly.coeffs[i] = chipmunk_mod_q_q((int64_t)l_I_ntt.coeffs[i], q);
+        }
+    }
     if (l_rc != 0) {
         goto out;
     }
     uint8_t l_I_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES];
-    l_rc = chipmunk_lrs_poly_qpack(l_I_packed, &l_I_poly);
+    l_rc = chipmunk_lrs_poly_qpack(l_I_packed, &l_I_poly, q);
     if (l_rc != 0) {
         goto out;
     }
@@ -1633,7 +1843,7 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
                                     CHIPMUNK_LRS_PARAMS_C0, l_rnd_seed,
                                     l_rnd_seed_size,
                                     l_attempt * CHIPMUNK_LRS_K + j,
-                                    CHIPMUNK_LRS_MASK_BOUND);
+                                    CHIPMUNK_LRS_MASK_BOUND, q);
             if (l_rc != 0) {
                 goto loop_out;
             }
@@ -1648,7 +1858,7 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
                     CHIPMUNK_LRS_PARAMS_C0, l_rnd_seed, l_rnd_seed_size,
                     l_attempt * (uint32_t)(a_ring_size * CHIPMUNK_LRS_K) +
                         (uint32_t)(i * CHIPMUNK_LRS_K) + j,
-                    CHIPMUNK_LRS_RESPONSE_BOUND);
+                    CHIPMUNK_LRS_RESPONSE_BOUND, q);
                 if (l_rc != 0) {
                     goto loop_out;
                 }
@@ -1657,8 +1867,8 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
 
         /* Compute signer's real commitments, then seed for the (s+1)%n step. */
         l_rc = s_real_commitments(l_T_pk_packed, l_T_I_packed,
-                                  l_ring_ctx[l_signer_idx].A_pk,
-                                  l_ring_ctx[l_signer_idx].A_I, l_y);
+                                  l_ring_ctx[l_signer_idx].A_pk_ntt,
+                                  l_ring_ctx[l_signer_idx].A_I_ntt, l_y, q);
         if (l_rc != 0) {
             goto loop_out;
         }
@@ -1686,7 +1896,7 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
             l_rc = s_simulate_branch(l_T_pk_packed, l_T_I_packed,
                                      &l_ring_ctx[cur], &l_I_poly,
                                      &l_c_poly,
-                                     &l_z_branches[cur * CHIPMUNK_LRS_K]);
+                                     &l_z_branches[cur * CHIPMUNK_LRS_K], q);
             if (l_rc != 0) {
                 goto loop_out;
             }
@@ -1709,7 +1919,7 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
         if (l_rc != 0) {
             goto loop_out;
         }
-        l_rc = s_mul_challenge_witness_centered(l_cx, &l_c_poly, l_x);
+        l_rc = s_mul_cx_ntt_native(l_cx, &l_c_poly, l_x_ntt, q);
         if (l_rc != 0) {
             goto loop_out;
         }
@@ -1734,7 +1944,7 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
             chipmunk_poly_t *l_zs = &l_z_branches[l_signer_idx * CHIPMUNK_LRS_K + j];
             for (size_t i = 0; i < CHIPMUNK_N; ++i) {
                 int32_t l_zi = l_y[j].coeffs[i] + l_cx[j].coeffs[i];
-                l_zs->coeffs[i] = s_center_q(s_mod_q_i64((int64_t)l_zi));
+                l_zs->coeffs[i] = s_center_q(chipmunk_mod_q_q((int64_t)l_zi, q), q);
             }
         }
         l_done = 1;
@@ -1763,13 +1973,13 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
     for (size_t i = 0; i < a_ring_size; ++i) {
         for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
             chipmunk_poly_t l_z = l_z_branches[i * CHIPMUNK_LRS_K + j];
-            /* Convert centered to canonical [0,q) for qpack. */
+            /* Convert centered to canonical [0,q) for qpack — branchless */
             for (size_t k = 0; k < CHIPMUNK_N; ++k) {
-                if (l_z.coeffs[k] < 0) {
-                    l_z.coeffs[k] += CHIPMUNK_Q;
-                }
+                int64_t l_v = (int64_t)l_z.coeffs[k];
+                int64_t l_neg = -(int64_t)(l_v < 0);
+                l_z.coeffs[k] = (int32_t)(l_v + ((int64_t)q & l_neg));
             }
-            l_rc = chipmunk_lrs_poly_qpack(p, &l_z);
+            l_rc = chipmunk_lrs_poly_qpack(p, &l_z, q);
             if (l_rc != 0) {
                 dap_memwipe(&l_z, sizeof(l_z));
                 goto loop_out;
@@ -1782,6 +1992,7 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
 
 loop_out:
     dap_memwipe(l_x, sizeof(l_x));
+    dap_memwipe(l_x_ntt, sizeof(l_x_ntt));
     dap_memwipe(l_y, sizeof(l_y));
     dap_memwipe(l_cx, sizeof(l_cx));
     dap_memwipe(&l_c_poly, sizeof(l_c_poly));
@@ -1817,7 +2028,7 @@ int chipmunk_lrs_verify(const uint8_t *a_sig,
                         const chipmunk_lrs_public_key_t *a_ring,
                         size_t a_ring_size,
                         const uint8_t *a_message,
-                        size_t a_message_size)
+                        size_t a_message_size, uint64_t q)
 {
     if (!a_sig || !a_ring || (!a_message && a_message_size != 0) ||
         a_message_size > UINT32_MAX ||
@@ -1886,7 +2097,7 @@ int chipmunk_lrs_verify(const uint8_t *a_sig,
     p += 32u;
 
     chipmunk_poly_t l_I_poly;
-    l_rc = chipmunk_lrs_poly_qunpack(&l_I_poly, p);
+    l_rc = chipmunk_lrs_poly_qunpack(&l_I_poly, p, q);
     if (l_rc != 0) {
         goto vfail;
     }
@@ -1910,20 +2121,20 @@ int chipmunk_lrs_verify(const uint8_t *a_sig,
     for (size_t i = 0; i < a_ring_size; ++i) {
         for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
             chipmunk_poly_t *l_z = &l_z_branches[i * CHIPMUNK_LRS_K + j];
-            l_rc = chipmunk_lrs_poly_qunpack(l_z, p);
+            l_rc = chipmunk_lrs_poly_qunpack(l_z, p, q);
             if (l_rc != 0) {
                 goto vfail;
             }
             l_rc = chipmunk_lrs_poly_chknorm_centered(l_z,
-                                                      CHIPMUNK_LRS_RESPONSE_BOUND);
+                                                      CHIPMUNK_LRS_RESPONSE_BOUND, q);
             if (l_rc != 0) {
                 l_rc = (l_rc == 1) ? -EINVAL : l_rc;
                 goto vfail;
             }
             for (size_t k = 0; k < CHIPMUNK_N; ++k) {
                 int32_t v = l_z->coeffs[k];
-                if (v > CHIPMUNK_Q / 2) {
-                    l_z->coeffs[k] = v - CHIPMUNK_Q;
+                if (v > (int32_t)(q / 2)) {
+                    l_z->coeffs[k] = v - (int32_t)q;
                 }
             }
             p += CHIPMUNK_LRS_POLY_QPACK_BYTES;
@@ -1960,7 +2171,7 @@ int chipmunk_lrs_verify(const uint8_t *a_sig,
         l_rc = s_simulate_branch(l_T_pk_packed, l_T_I_packed,
                                  &l_ring_ctx[i], &l_I_poly,
                                  &l_c_poly,
-                                 &l_z_branches[i * CHIPMUNK_LRS_K]);
+                                 &l_z_branches[i * CHIPMUNK_LRS_K], q);
         if (l_rc != 0) {
             goto vfail;
         }

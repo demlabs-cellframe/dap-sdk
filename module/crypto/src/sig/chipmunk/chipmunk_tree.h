@@ -279,12 +279,23 @@ int chipmunk_hvc_hash_decom_then_hash(const chipmunk_hvc_hasher_t *a_hasher,
 // =================UTILITY FUNCTIONS=================
 
 /**
+ * @brief Convert HOTS public key to HVC polynomial (parameterized)
+ * @param[in] a_hots_pk HOTS public key
+ * @param[out] a_hvc_poly HVC polynomial representation
+ * @param[in] q Prime modulus
+ * @return CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
+ */
+int chipmunk_hots_pk_to_hvc_poly_q(const chipmunk_public_key_t *a_hots_pk,
+                                    chipmunk_hvc_poly_t *a_hvc_poly,
+                                    uint64_t q);
+
+/**
  * @brief Convert HOTS public key to HVC polynomial
  * @param[in] a_hots_pk HOTS public key
  * @param[out] a_hvc_poly HVC polynomial representation
  * @return CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
  */
-int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk, 
+int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
                                   chipmunk_hvc_poly_t *a_hvc_poly);
 
 /**

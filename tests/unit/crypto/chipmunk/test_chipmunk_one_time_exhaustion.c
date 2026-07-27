@@ -24,6 +24,7 @@
  *      function of (key material, message).
  */
 
+#include <dap_enc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -55,6 +56,8 @@ static uint32_t s_read_leaf_index_be32(const uint8_t *a_priv_buf)
 int main(void)
 {
     dap_common_init("chipmunk-one-time-exhaustion", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     uint8_t l_pub[CHIPMUNK_PUBLIC_KEY_SIZE];
     uint8_t l_priv[CHIPMUNK_PRIVATE_KEY_SIZE];

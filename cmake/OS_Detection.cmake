@@ -14,6 +14,9 @@ if(EMSCRIPTEN)
     else()
         add_definitions(-DDAP_OS_WASM_ST)
     endif()
+    # wasm32: uint64_t is unsigned long long; avoid -Werror=format on legacy %lu/%zu logs
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=format")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=format")
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(OS_TYPE_DESKTOP ON)
     set(LINUX ON)
@@ -117,7 +120,7 @@ if(UNIX)
         set(BSD ON)
     endif()
 
-    if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" )
+    if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT DAP_WASM)
         add_definitions ("-DDAP_OS_LINUX")
     endif()
 
@@ -270,17 +273,27 @@ if(UNIX)
     endif()
 
     if (DAP_WASM)
-        set(_CCOPT "-std=gnu11 ${CFLAGS_WARNINGS} -fno-strict-aliasing -sDISABLE_EXCEPTION_CATCHING=1 -Wno-dangling")
+        # Cross-compiling upstream SDK with Emscripten's clang surfaces warnings the
+        # native GCC build never emitted; keep them visible but non-fatal for WASM.
+        set(_CCOPT "-std=gnu11 ${CFLAGS_WARNINGS} -Wno-error -fno-strict-aliasing -sDISABLE_EXCEPTION_CATCHING=1 -Wno-dangling")
         if(DAP_DEBUG)
             set(_CCOPT "${_CCOPT} -DDAP_DEBUG -g3 -gsource-map")
         else()
-            set(_CCOPT "${_CCOPT} -O3 -flto")
+            # -O3 (runtime optimization) only; NO -flto. Emscripten resolves -flto
+            # against the bitcode lto/libc.a, and wasm-ld then fails to pull libc
+            # bitcode (htons/ntohs) in after the LTO codegen step
+            # ("attempt to add bitcode file after LTO"). LTO is just cross-module
+            # inlining; disabling it does not change -O3 codegen quality.
+            set(_CCOPT "${_CCOPT} -O3")
         endif()
         set(_LOPT "-sFORCE_FILESYSTEM=1")
         set(_LOPT "${_LOPT} -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','stringToUTF8']")
-        if(WASM_ENABLE_PTHREADS)
-            set(_LOPT "${_LOPT} -sWASMFS -lopfs.js")
-        endif()
+        # NOTE: WASMFS/OPFS disabled — Emscripten >= 6.0 requires JSPI or
+        # worker context for OPFS backend creation.  MEMFS is used instead.
+        # Re-enable when a worker-based init path is implemented.
+        # if(WASM_ENABLE_PTHREADS)
+        #     set(_LOPT "${_LOPT} -sWASMFS -lopfs.js")
+        # endif()
     endif()
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT}")

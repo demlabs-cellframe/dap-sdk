@@ -64,32 +64,27 @@ extern void dap_ntt_dispatch_init(void);
 
 static inline void dap_ntt_forward(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
 {
-    DAP_DISPATCH_ENSURE(dap_ntt_forward, dap_ntt_dispatch_init);
     dap_ntt_forward_ptr(a_coeffs, a_params);
 }
 
 static inline void dap_ntt_inverse(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
 {
-    DAP_DISPATCH_ENSURE(dap_ntt_inverse, dap_ntt_dispatch_init);
     dap_ntt_inverse_ptr(a_coeffs, a_params);
 }
 
 static inline void dap_ntt_forward_mont(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
 {
-    DAP_DISPATCH_ENSURE(dap_ntt_forward_mont, dap_ntt_dispatch_init);
     dap_ntt_forward_mont_ptr(a_coeffs, a_params);
 }
 
 static inline void dap_ntt_inverse_mont(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
 {
-    DAP_DISPATCH_ENSURE(dap_ntt_inverse_mont, dap_ntt_dispatch_init);
     dap_ntt_inverse_mont_ptr(a_coeffs, a_params);
 }
 
 static inline void dap_ntt_pointwise_montgomery(int32_t *a_c, const int32_t *a_a,
                                                 const int32_t *a_b, const dap_ntt_params_t *a_params)
 {
-    DAP_DISPATCH_ENSURE(dap_ntt_pointwise_montgomery, dap_ntt_dispatch_init);
     dap_ntt_pointwise_montgomery_ptr(a_c, a_a, a_b, a_params);
 }
 
@@ -97,20 +92,17 @@ static inline void dap_ntt_pointwise_montgomery(int32_t *a_c, const int32_t *a_a
 
 static inline void dap_ntt16_forward(int16_t *a_coeffs, const dap_ntt_params16_t *a_params)
 {
-    DAP_DISPATCH_ENSURE(dap_ntt16_forward, dap_ntt_dispatch_init);
     dap_ntt16_forward_ptr(a_coeffs, a_params);
 }
 
 static inline void dap_ntt16_inverse(int16_t *a_coeffs, const dap_ntt_params16_t *a_params)
 {
-    DAP_DISPATCH_ENSURE(dap_ntt16_inverse, dap_ntt_dispatch_init);
     dap_ntt16_inverse_ptr(a_coeffs, a_params);
 }
 
 static inline void dap_ntt16_basemul(int16_t a_r[2], const int16_t a_a[2], const int16_t a_b[2],
                                      int16_t a_zeta, const dap_ntt_params16_t *a_params)
 {
-    DAP_DISPATCH_ENSURE(dap_ntt16_basemul, dap_ntt_dispatch_init);
     dap_ntt16_basemul_ptr(a_r, a_a, a_b, a_zeta, a_params);
 }
 

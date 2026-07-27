@@ -88,6 +88,10 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #include "dap_timerfd.h"
 #include "dap_context.h"
+
+/* Forward declaration — dap_context_queue_push defined in module/io/flow/ */
+struct dap_context_queue;
+bool dap_context_queue_push(struct dap_context_queue *a_queue, void *a_item);
 #if defined(DAP_EVENTS_CAPS_WASM_SAB)
 #include "dap_wasm_sab_ipc.h"
 #endif
@@ -434,7 +438,7 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
     }
     l_msg->esocket_uuid = a_es_uuid;
     l_msg->worker_new = a_worker_new;
-    if( dap_events_socket_queue_ptr_send(a_worker_old->queue_es_reassign, l_msg) != 0 ){
+    if (!dap_context_queue_push(a_worker_old->queue_es_reassign, l_msg)){
 #ifdef DAP_OS_WINDOWS
         log_it(L_ERROR,"Haven't sent reassign message with esocket %" DAP_FORMAT_SOCKET, a_es ? a_es->socket : (SOCKET)-1);
 #else
@@ -665,13 +669,30 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                 if ((size_t)l_got < sizeof(l_batch) / sizeof(l_batch[0]))
                     break;
             }
-#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
             int l_read_errno = 0;
             char l_body[PIPE_BUF] = { '\0' };
             ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
             l_read_errno = errno;
             if(l_read_ret > 0) {
                 //debug_if(l_read_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Read %ld bytes from pipe [es %d]", l_read_ret, a_esocket->fd2);
+                if (l_read_ret % sizeof(void*)) {
+                    log_it(L_CRITICAL, "[!] Read unaligned chunk [%zd bytes] from pipe, skip it", l_read_ret);
+                    return -3;
+                }
+                for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
+                    void *l_queue_ptr = *(void**)(l_body + shift);
+                    a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
+                }
+            }
+            else if ((l_read_errno != EAGAIN) && (l_read_errno != EWOULDBLOCK))
+                log_it(L_ERROR, "Can't read message from pipe");
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
+            int l_read_errno = 0;
+            char l_body[PIPE_BUF] = { '\0' };
+            ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
+            l_read_errno = errno;
+            if(l_read_ret > 0) {
                 if (l_read_ret % sizeof(void*)) {
                     log_it(L_CRITICAL, "[!] Read unaligned chunk [%zd bytes] from pipe, skip it", l_read_ret);
                     return -3;
@@ -835,7 +856,7 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
         log_it(L_ERROR, "Event socket %"DAP_FORMAT_SOCKET" accepted data but callback is NULL ", a_esocket->socket);
 }
 
-#ifdef DAP_EVENTS_CAPS_QUEUE_PIPE2
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
 
 /**
  *  Waits on the socket
@@ -890,7 +911,7 @@ static void *s_dap_events_socket_buf_thread(void *arg)
         pthread_exit(0);
     }
     SOCKET l_sock = INVALID_SOCKET;
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
         l_sock = l_es->fd2;
 #elif defined(DAP_EVENTS_CAPS_QUEUE_MQUEUE)
         l_sock = l_es->mqd;
@@ -984,6 +1005,61 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
     *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
     a_es->buf_out_size += sizeof(a_arg);
     pthread_rwlock_unlock(&a_es->buf_out_lock);
+}
+#endif
+
+#ifdef DAP_EVENTS_CAPS_QUEUE_PIPE
+/**
+ * @brief s_queue_ptr_send_pipe_st
+ * Single-threaded (no-pthread) enqueue used by WASM ST builds. The write end
+ * (fd2) is non-blocking; there is no helper thread to drain it, so under
+ * backpressure pointers are appended to the in-memory backlog (buf_out) and
+ * flushed FIFO on the next send. The reactor drains the read end on every loop
+ * iteration, so the pipe regains capacity between sends.
+ */
+static int s_queue_ptr_send_pipe_st(dap_events_socket_t *a_es, void *a_arg)
+{
+    // Preserve FIFO order: flush whatever was buffered earlier before the new ptr.
+    while (a_es->buf_out_size >= sizeof(void*)) {
+        ssize_t l_w = write(a_es->fd2, a_es->buf_out, a_es->buf_out_size);
+        if (l_w > 0) {
+            if (l_w % sizeof(void*))
+                return log_it(L_CRITICAL, "[!] Wrote unaligned chunk [%zd bytes] to queue pipe", l_w), -3;
+            a_es->buf_out_size -= (size_t)l_w;
+            if (a_es->buf_out_size)
+                memmove(a_es->buf_out, a_es->buf_out + l_w, a_es->buf_out_size);
+        } else if (l_w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            break; // pipe full — keep the remainder buffered
+        } else if (l_w < 0) {
+            return log_it(L_ERROR, "Can't flush queue pipe, error %d: \"%s\"", errno, dap_strerror(errno)), errno;
+        } else {
+            break;
+        }
+    }
+
+    // Backlog drained — try writing the new pointer straight to the pipe.
+    if (!a_es->buf_out_size) {
+        ssize_t l_w = write(a_es->fd2, &a_arg, sizeof(a_arg));
+        if (l_w == (ssize_t)sizeof(a_arg))
+            return 0;
+        if (l_w >= 0)
+            return log_it(L_CRITICAL, "[!] Partial pointer write [%zd bytes] to queue pipe", l_w), -3;
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
+            return log_it(L_ERROR, "Can't send ptr to queue pipe, error %d: \"%s\"", errno, dap_strerror(errno)), errno;
+    }
+
+    // Backpressure path: append the pointer to the backlog, growing it on demand.
+    if (a_es->buf_out_size + sizeof(void*) > a_es->buf_out_size_max) {
+        size_t l_new_max = a_es->buf_out_size_max + DAP_QUEUE_MAX_MSGS * sizeof(void*);
+        byte_t *l_new = DAP_REALLOC(a_es->buf_out, l_new_max);
+        if (!l_new)
+            return log_it(L_ERROR, "Out of memory growing queue pipe backlog"), -666;
+        a_es->buf_out = l_new;
+        a_es->buf_out_size_max = l_new_max;
+    }
+    *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
+    a_es->buf_out_size += sizeof(void*);
+    return 0;
 }
 #endif
 
@@ -1541,15 +1617,22 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 #if defined(DAP_EVENTS_CAPS_QUEUE_WASM_SAB)
     if (!a_es->sab_channel)
         return log_it(L_ERROR, "queue_ptr_send: no SAB channel on es %p", a_es), -EBADF;
-    int l_rc = dap_wasm_sab_channel_push_ptr(a_es->sab_channel, a_arg);
-    if (l_rc == -ENOSPC) {
-        log_it(L_WARNING, "SAB queue full on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
-        return ENOSPC;
+    /* Retry on full queue — the worker thread should drain it quickly.
+     * Back off briefly between attempts to avoid burning CPU. */
+    for (int l_attempt = 0; l_attempt < 32; l_attempt++) {
+        int l_rc = dap_wasm_sab_channel_push_ptr(a_es->sab_channel, a_arg);
+        if (l_rc == 0) return 0;
+        if (l_rc != -ENOSPC) return l_rc;
+        /* Queue full — yield and retry */
+        dap_usleep(1000);
     }
-    return l_rc;
-#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+    log_it(L_DEBUG, "SAB queue full after retries on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
+    return -ENOSPC;
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     s_add_ptr_to_buf(a_es, a_arg);
     return 0;
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
+    return s_queue_ptr_send_pipe_st(a_es, a_arg);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
     assert(a_es);
     assert(a_es->mqd);
@@ -1707,7 +1790,7 @@ void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_sock
     }
     *l_es_uuid_ptr = a_es_uuid;
 
-    if( dap_events_socket_queue_ptr_send( a_worker->queue_es_delete, l_es_uuid_ptr ) != 0 ){
+    if (!dap_context_queue_push(a_worker->queue_es_delete, l_es_uuid_ptr)){
         log_it(L_ERROR,"Can't send %"DAP_UINT64_FORMAT_U" uuid in queue",a_es_uuid);
         DAP_DELETE(l_es_uuid_ptr);
     }
@@ -1750,9 +1833,8 @@ void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uu
     else
         l_msg->flags_unset = DAP_SOCK_READY_TO_READ;
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
-    if (l_ret) {
-        log_it(L_ERROR, "dap_events_socket_queue_ptr_send() error %d", l_ret);
+    if (!dap_context_queue_push(a_worker->queue_es_io, l_msg)) {
+        log_it(L_ERROR, "Failed to push io message to worker queue");
         DAP_DELETE(l_msg);
     }
 #endif
@@ -1795,9 +1877,8 @@ void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uu
     else
         l_msg->flags_unset = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg );
-    if (l_ret) {
-        log_it(L_ERROR, "set writable mt: wasn't send pointer to queue: code %d", l_ret);
+    if (!dap_context_queue_push(a_worker->queue_es_io, l_msg)) {
+        log_it(L_ERROR, "set writable mt: failed to push to worker queue");
         DAP_DELETE(l_msg);
     }
 #endif
@@ -1837,10 +1918,11 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
-    return l_ret
-        ? ( log_it(L_ERROR, "queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0 )
-        : a_data_size;
+    if (!dap_context_queue_push(a_worker->queue_es_io, l_msg))
+        return a_data_size;
+    log_it(L_ERROR, "queue push() failed for write_mt");
+    DAP_DEL_MULTY(l_msg->data, l_msg);
+    return 0;
 #endif
 }
 
@@ -1901,10 +1983,11 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
         size_t ret = dap_events_socket_write_unsafe(l_es, l_msg->data, l_msg->data_size);
         return DAP_DEL_MULTY(l_msg->data, l_msg), ret;
     }
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
-    return l_ret
-        ? log_it(L_ERROR, "dap_events_socket_queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
-        : l_data_size;
+    if (!dap_context_queue_push(a_worker->queue_es_io, l_msg))
+        return l_data_size;
+    log_it(L_ERROR, "queue push() failed for set_readable_mt");
+    DAP_DEL_MULTY(l_msg->data, l_msg);
+    return 0;
 #endif
 }
 

@@ -129,7 +129,13 @@ static inline void s_chacha20_encrypt_dispatch(uint8_t *a_out, const uint8_t *a_
         const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
         const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE], uint32_t a_counter)
 {
-    if (a_len >= 256) {
+    /* SIMD ChaCha20 processes CHACHA_LANES blocks (64 bytes each) per iteration.
+     * AVX2/AVX2-512VL use 8 lanes → 512 bytes per iteration.
+     * The SIMD tail calls back into dap_chacha20_encrypt() → dispatch.
+     * If the threshold is smaller than the SIMD block size, data between
+     * [threshold, block_size) recurses infinitely.  Use 512 to cover all
+     * current SIMD variants (SSE2=256, AVX2=512, AVX2-512VL=512). */
+    if (a_len >= 512) {
         DAP_DISPATCH_INLINE_CALL(dap_chacha20_encrypt, a_out, a_in, a_len, a_key, a_nonce, a_counter);
         return;
     }
@@ -177,13 +183,11 @@ static inline dap_poly1305_blocks_fn_t dap_poly1305_blocks_resolve(void)
         if (l_feat.has_avx512_ifma && l_feat.has_avx512vl)
             return dap_poly1305_blocks_avx512_ifma;
     }
-    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_AVX2, dap_poly1305_blocks_avx2);
+    if (arch >= DAP_CPU_ARCH_AVX2)
+        return dap_poly1305_blocks_avx2;
 #elif DAP_PLATFORM_ARM
-/* NEON multi-block kernel is intentionally disabled on AArch64 due known test-mismatch
- * on existing upstream NEON implementation for this revision. */
-#if !defined(__aarch64__)
-    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON, dap_poly1305_blocks_neon);
-#endif
+    if (arch >= DAP_CPU_ARCH_NEON)
+        return dap_poly1305_blocks_neon;
 #endif
 
     return s_poly1305_blocks_ref;

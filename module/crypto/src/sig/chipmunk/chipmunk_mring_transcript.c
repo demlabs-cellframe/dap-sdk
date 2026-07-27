@@ -10,6 +10,7 @@
 #include "dap_common.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake256.h"
+#include "dap_memwipe.h"
 #include "chipmunk_mring_transcript.h"
 #include "chipmunk_poly.h"
 
@@ -94,13 +95,13 @@ static int s_pk_qpack_cmp(const void *a, const void *b)
     return memcmp(l_a->P, l_b->P, CHIPMUNK_LRS_POLY_QPACK_BYTES);
 }
 
-static void s_absorb_ext(uint64_t a_st[25], const chipmunk_mring_ext_t *a_x)
+static void s_absorb_ext(uint64_t a_st[25], const chipmunk_fq6_ext_t *a_x)
 {
     size_t l_comp_size = sizeof(a_x->c[0].coeffs);
-    size_t l_abs_len = (size_t)CHIPMUNK_MRING_EXT_DEG * l_comp_size;
+    size_t l_abs_len = (size_t)CHIPMUNK_FQ6_EXT_DEG * l_comp_size;
     uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
     if (!l_abs) return;
-    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
+    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_FQ6_EXT_DEG; ++j) {
         memcpy(l_abs + j * l_comp_size,
                (const uint8_t *)a_x->c[j].coeffs, l_comp_size);
     }
@@ -301,8 +302,8 @@ int chipmunk_mring_transcript_fold_round_fs(
     uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
     const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES],
     uint32_t a_round,
-    const chipmunk_mring_ext_t *a_CL,
-    const chipmunk_mring_ext_t *a_CR)
+    const chipmunk_fq6_ext_t *a_CL,
+    const chipmunk_fq6_ext_t *a_CR)
 {
     if (!a_out || !a_fs_seed || !a_CL || !a_CR) {
         return -EINVAL;
@@ -325,7 +326,13 @@ int chipmunk_mring_transcript_fold_round_fs(
     }
     s_absorb_ext(l_st, a_CL);
     s_absorb_ext(l_st, a_CR);
-    dap_hash_shake256_squeezeblocks(a_out, 1u, l_st);
+    /* squeezeblocks writes a_nblocks × DAP_SHAKE256_RATE (136) bytes,
+     * but a_out is only CHIPMUNK_MRING_HASH_BYTES (32). Use a temp. */
+    uint8_t l_block[DAP_SHAKE256_RATE];
+    dap_hash_shake256_squeezeblocks(l_block, 1u, l_st);
+    memcpy(a_out, l_block, CHIPMUNK_MRING_HASH_BYTES);
+    dap_memwipe(l_block, sizeof(l_block));
+    dap_memwipe(l_st, sizeof(l_st));
     return 0;
 }
 
@@ -335,10 +342,15 @@ int chipmunk_mring_transcript_bind_fs(
     const chipmunk_poly_t *a_c,
     const chipmunk_poly_t *a_M_pk,
     const chipmunk_poly_t *a_M_T,
+    const chipmunk_poly_t *a_Y_pk,
+    const chipmunk_poly_t *a_T_tag,
+    uint32_t a_n_ring,
+    uint32_t a_threshold,
     const chipmunk_mring_fold_proof_t *a_proof,
     uint32_t a_fold_depth)
 {
     if (!a_out || !a_fs_seed || !a_c || !a_M_pk || !a_M_T
+        || !a_Y_pk || !a_T_tag
         || !a_proof || !a_proof->rounds || a_fold_depth == 0u) {
         return -EINVAL;
     }
@@ -349,26 +361,37 @@ int chipmunk_mring_transcript_bind_fs(
     uint8_t l_c_qpack[CHIPMUNK_MRING_POLY_QPACK];
     uint8_t l_mpk_qpack[CHIPMUNK_MRING_POLY_QPACK];
     uint8_t l_mt_qpack[CHIPMUNK_MRING_POLY_QPACK];
-    int rc = chipmunk_lrs_poly_qpack(l_c_qpack, a_c);
+    uint8_t l_ypk_qpack[CHIPMUNK_MRING_POLY_QPACK];
+    uint8_t l_ttag_qpack[CHIPMUNK_MRING_POLY_QPACK];
+    int rc = chipmunk_lrs_poly_qpack(l_c_qpack, a_c, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         return rc;
     }
-    rc = chipmunk_lrs_poly_qpack(l_mpk_qpack, a_M_pk);
+    rc = chipmunk_lrs_poly_qpack(l_mpk_qpack, a_M_pk, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         return rc;
     }
-    rc = chipmunk_lrs_poly_qpack(l_mt_qpack, a_M_T);
+    rc = chipmunk_lrs_poly_qpack(l_mt_qpack, a_M_T, (uint64_t)CHIPMUNK_Q);
+    if (rc != 0) {
+        return rc;
+    }
+    rc = chipmunk_lrs_poly_qpack(l_ypk_qpack, a_Y_pk, (uint64_t)CHIPMUNK_Q);
+    if (rc != 0) {
+        return rc;
+    }
+    rc = chipmunk_lrs_poly_qpack(l_ttag_qpack, a_T_tag, (uint64_t)CHIPMUNK_Q);
     if (rc != 0) {
         return rc;
     }
 
     const size_t l_round_bytes =
-        (size_t)a_fold_depth * 2u * (size_t)CHIPMUNK_MRING_EXT_QPACK_BYTES;
+        (size_t)a_fold_depth * 2u * (size_t)CHIPMUNK_FQ6_EXT_QPACK_BYTES;
     const size_t l_payload_size =
         CHIPMUNK_MRING_HASH_BYTES
-        + 3u * (size_t)CHIPMUNK_MRING_POLY_QPACK
+        + 5u * (size_t)CHIPMUNK_MRING_POLY_QPACK
+        + sizeof(uint32_t) * 2u  /* n_ring + threshold */
         + l_round_bytes
-        + 2u * (size_t)CHIPMUNK_MRING_EXT_QPACK_BYTES
+        + 2u * (size_t)CHIPMUNK_FQ6_EXT_QPACK_BYTES
         + (size_t)CHIPMUNK_MRING_LEAF_MASK_BYTES;
 
     uint8_t *l_payload = DAP_NEW_Z_SIZE(uint8_t, l_payload_size);
@@ -385,38 +408,44 @@ int chipmunk_mring_transcript_bind_fs(
     p += CHIPMUNK_MRING_POLY_QPACK;
     memcpy(p, l_mt_qpack, CHIPMUNK_MRING_POLY_QPACK);
     p += CHIPMUNK_MRING_POLY_QPACK;
+    memcpy(p, l_ypk_qpack, CHIPMUNK_MRING_POLY_QPACK);
+    p += CHIPMUNK_MRING_POLY_QPACK;
+    memcpy(p, l_ttag_qpack, CHIPMUNK_MRING_POLY_QPACK);
+    p += CHIPMUNK_MRING_POLY_QPACK;
+    s_le32_store(p, a_n_ring); p += sizeof(uint32_t);
+    s_le32_store(p, a_threshold); p += sizeof(uint32_t);
 
     for (uint32_t r = 0u; r < a_fold_depth; ++r) {
-        rc = chipmunk_mring_ext_qpack(p, CHIPMUNK_MRING_EXT_QPACK_BYTES,
+        rc = chipmunk_fq6_ext_qpack(p, CHIPMUNK_FQ6_EXT_QPACK_BYTES,
                                       &a_proof->rounds[r].C_L);
         if (rc != 0) {
             DAP_DELETE(l_payload);
             return rc;
         }
-        p += CHIPMUNK_MRING_EXT_QPACK_BYTES;
-        rc = chipmunk_mring_ext_qpack(p, CHIPMUNK_MRING_EXT_QPACK_BYTES,
+        p += CHIPMUNK_FQ6_EXT_QPACK_BYTES;
+        rc = chipmunk_fq6_ext_qpack(p, CHIPMUNK_FQ6_EXT_QPACK_BYTES,
                                       &a_proof->rounds[r].C_R);
         if (rc != 0) {
             DAP_DELETE(l_payload);
             return rc;
         }
-        p += CHIPMUNK_MRING_EXT_QPACK_BYTES;
+        p += CHIPMUNK_FQ6_EXT_QPACK_BYTES;
     }
 
-    rc = chipmunk_mring_ext_qpack(p, CHIPMUNK_MRING_EXT_QPACK_BYTES,
+    rc = chipmunk_fq6_ext_qpack(p, CHIPMUNK_FQ6_EXT_QPACK_BYTES,
                                   &a_proof->a_star);
     if (rc != 0) {
         DAP_DELETE(l_payload);
         return rc;
     }
-    p += CHIPMUNK_MRING_EXT_QPACK_BYTES;
-    rc = chipmunk_mring_ext_qpack(p, CHIPMUNK_MRING_EXT_QPACK_BYTES,
+    p += CHIPMUNK_FQ6_EXT_QPACK_BYTES;
+    rc = chipmunk_fq6_ext_qpack(p, CHIPMUNK_FQ6_EXT_QPACK_BYTES,
                                   &a_proof->b_star);
     if (rc != 0) {
         DAP_DELETE(l_payload);
         return rc;
     }
-    p += CHIPMUNK_MRING_EXT_QPACK_BYTES;
+    p += CHIPMUNK_FQ6_EXT_QPACK_BYTES;
 
     /* Absorb leaf_mask ω (49-bit packed, LEAF_MASK_BYTES). */
     if (!a_proof->leaf_mask) {

@@ -12,5 +12,10 @@ size_t dap_enc_chacha20_poly1305_calc_decode_size(size_t a_size);
 
 size_t dap_enc_chacha20_poly1305_encrypt(dap_enc_key_t *a_key, const void *a_in,
         size_t a_in_size, void **a_out);
+size_t dap_enc_chacha20_poly1305_encrypt_fast(dap_enc_key_t *a_key, const void *a_in,
+        size_t a_in_size, void *a_out, size_t a_out_size_max);
+
 size_t dap_enc_chacha20_poly1305_decrypt(dap_enc_key_t *a_key, const void *a_in,
         size_t a_in_size, void **a_out);
+size_t dap_enc_chacha20_poly1305_decrypt_fast(dap_enc_key_t *a_key, const void *a_in,
+        size_t a_in_size, void *a_out, size_t a_out_size_max);

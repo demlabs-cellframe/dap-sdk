@@ -102,8 +102,7 @@ static int s_derive_x_seed_from_anything(uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTE
 
 dap_enc_key_t *dap_enc_chipmunk_ring_key_new(void)
 {
-    dap_enc_key_t *l_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING);
-    return l_key;
+    return dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING);
 }
 
 dap_enc_key_t *dap_enc_chipmunk_ring_key_generate(const void *a_kex_buf, size_t a_kex_size,
@@ -136,7 +135,7 @@ dap_enc_key_t *dap_enc_chipmunk_ring_key_generate(const void *a_kex_buf, size_t 
         return NULL;
     }
 
-    dap_enc_key_t *l_key = dap_enc_chipmunk_ring_key_new();
+    dap_enc_key_t *l_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING);
     if (!l_key) {
         DAP_DEL_Z(l_pk);
         dap_memwipe(l_sk, sizeof(*l_sk));
@@ -150,10 +149,20 @@ dap_enc_key_t *dap_enc_chipmunk_ring_key_generate(const void *a_kex_buf, size_t 
     return l_key;
 }
 
-void dap_enc_chipmunk_ring_key_new_callback(dap_enc_key_t *a_key)
+void dap_enc_chipmunk_mring_key_new_callback(dap_enc_key_t *a_key)
 {
     if (!a_key) return;
     a_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING;
+    a_key->pub_key_data = NULL;
+    a_key->pub_key_data_size = 0;
+    a_key->priv_key_data = NULL;
+    a_key->priv_key_data_size = 0;
+}
+
+void dap_enc_chipmunk_ring_key_new_callback(dap_enc_key_t *a_key)
+{
+    if (!a_key) return;
+    a_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING;
     a_key->pub_key_data = NULL;
     a_key->pub_key_data_size = 0;
     a_key->priv_key_data = NULL;
@@ -168,6 +177,7 @@ void dap_enc_chipmunk_ring_key_generate_callback(dap_enc_key_t *a_key,
     (void)a_key_size;
     if (!a_key) return;
 
+    const dap_enc_key_type_t l_key_type = a_key->type;
     dap_enc_key_t *l_tmp = dap_enc_chipmunk_ring_key_generate(a_kex_buf, a_kex_size,
                                                               a_seed, a_seed_size,
                                                               NULL, 0);
@@ -183,7 +193,7 @@ void dap_enc_chipmunk_ring_key_generate_callback(dap_enc_key_t *a_key,
     if (a_key->pub_key_data) {
         DAP_DELETE(a_key->pub_key_data);
     }
-    a_key->type               = l_tmp->type;
+    a_key->type               = l_key_type;
     a_key->pub_key_data       = l_tmp->pub_key_data;
     a_key->pub_key_data_size  = l_tmp->pub_key_data_size;
     a_key->priv_key_data      = l_tmp->priv_key_data;
@@ -234,13 +244,13 @@ void *dap_enc_chipmunk_ring_read_public_key(const uint8_t *a_buf, size_t a_bufle
     return l_pk;
 }
 
-size_t dap_enc_chipmunk_ring_ser_public_key_size(const void *a_key)
+uint64_t dap_enc_chipmunk_ring_ser_public_key_size(const void *a_key)
 {
     (void)a_key;
     return sizeof(chipmunk_lrs_public_key_t);
 }
 
-size_t dap_enc_chipmunk_ring_deser_public_key_size(const void *a_buf)
+uint64_t dap_enc_chipmunk_ring_deser_public_key_size(const void *a_buf)
 {
     (void)a_buf;
     return sizeof(chipmunk_lrs_public_key_t);
@@ -277,13 +287,13 @@ void *dap_enc_chipmunk_ring_read_private_key(const uint8_t *a_buf, size_t a_bufl
     return l_sk;
 }
 
-size_t dap_enc_chipmunk_ring_ser_private_key_size(const void *a_key)
+uint64_t dap_enc_chipmunk_ring_ser_private_key_size(const void *a_key)
 {
     (void)a_key;
     return sizeof(chipmunk_lrs_secret_key_t);
 }
 
-size_t dap_enc_chipmunk_ring_deser_private_key_size(const void *a_buf)
+uint64_t dap_enc_chipmunk_ring_deser_private_key_size(const void *a_buf)
 {
     (void)a_buf;
     return sizeof(chipmunk_lrs_secret_key_t);

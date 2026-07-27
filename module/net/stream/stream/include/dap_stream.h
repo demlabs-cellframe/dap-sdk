@@ -24,6 +24,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <pthread.h>
+#include <stdbool.h>
+#include "dap_http_server.h"
 #include "dap_events_socket.h"
 #include "dap_config.h"
 #include "dap_stream_session.h"
@@ -39,9 +41,6 @@
 #include "dap_hash_compat.h"
 
 #define STREAM_KEEPALIVE_TIMEOUT    3   // How  often send keeplive messages (seconds)
-
-/** Stream creation counter (incremented by transport modules) */
-extern _Atomic uint64_t dap_stream_created_count;
 
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;
@@ -65,14 +64,18 @@ typedef struct dap_stream {
     size_t buf_fragments_size_total;// Full size of all fragments
     size_t buf_fragments_size_filled;// Received size
 
+    /* Partial packet carry-over for dap_stream_data_proc_read_ext.
+     * When a stream packet straddles a chunk boundary, the unprocessed
+     * tail is saved here and prepended to the next call. */
+    uint8_t *buf_pkt_partial;
+    size_t buf_pkt_partial_size;
+
     dap_stream_ch_t **channel;
     size_t channel_count;
 
     size_t seq_id;
     size_t stream_size;
     size_t client_last_seq_id_packet;
-    size_t stat_packets_lost;
-    size_t stat_packets_replayed;
 
     dap_ht_handle_t hh;
     struct dap_stream *prev, *next;
@@ -129,12 +132,17 @@ typedef struct dap_stream_info {
 int dap_stream_init(dap_config_t * g_config);
 
 bool dap_stream_get_dump_packet_headers();
-bool dap_stream_get_debug();
+bool dap_stream_get_debug(void);
 
 void dap_stream_deinit();
 
-dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_cluster_node_addr_t *a_addr, bool a_authorized);
+void dap_stream_add_proc_http(dap_http_server_t * sh, const char * url);
 
+void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
+
+void dap_stream_add_proc_dns(dap_server_t *a_dns_server);
+
+dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_cluster_node_addr_t *a_addr, bool a_authorized);
 size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
 size_t dap_stream_data_proc_read_ext(dap_stream_t * a_stream, const void *a_data, size_t a_data_size);
 size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
@@ -172,18 +180,19 @@ void dap_stream_delete_from_list(dap_stream_t *a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
+void dap_stream_load_preferred_encryption_config(dap_config_t *a_config);
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
 
 bool dap_stream_callback_server_keepalive(void *a_arg);
 bool dap_stream_callback_client_keepalive(void *a_arg);
 
+// autorization stream block
 int dap_stream_add_addr(dap_cluster_node_addr_t a_addr, void *a_id);
 int dap_stream_add_to_list(dap_stream_t *a_stream);
 int dap_stream_delete_addr(dap_cluster_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 
-dap_stream_t *dap_stream_find_stream_ptr_by_addr(dap_cluster_node_addr_t *a_addr);
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_cluster_node_addr_t *a_addr, dap_worker_t **a_worker);
 dap_list_t *dap_stream_find_all_by_addr(dap_cluster_node_addr_t *a_addr);
 dap_stream_info_t *dap_stream_get_all_links_info(size_t *a_count);
@@ -202,8 +211,4 @@ static inline size_t dap_stream_get_links_count(void) {
 typedef void (*dap_stream_member_callback_t)(dap_cluster_node_addr_t *a_addr);
 void dap_stream_set_member_callbacks(dap_stream_member_callback_t a_add,
                                      dap_stream_member_callback_t a_del);
-
-typedef dap_stream_t *(*dap_stream_from_esocket_callback_t)(dap_events_socket_t *a_es);
-void dap_stream_set_client_esocket_callback(dap_stream_from_esocket_callback_t a_callback);
-
 

@@ -1,3 +1,4 @@
+#include <dap_enc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -169,7 +170,8 @@ static int test_performance_variable_signers(size_t num_signers)
             &hots_secret_keys[i], &hots_public_keys[i],
             public_keys[i].rho_seed,
             &tree, i,
-            &individual_sigs[i]
+            &individual_sigs[i],
+            (uint64_t)CHIPMUNK_Q
         );
 
         if (ret != 0) {
@@ -197,7 +199,8 @@ static int test_performance_variable_signers(size_t num_signers)
     ret = chipmunk_aggregate_signatures_with_tree(
         individual_sigs, num_signers,
         (uint8_t*)test_message, message_len,
-        &tree, &multi_sig
+        &tree, &multi_sig,
+        (uint64_t)CHIPMUNK_Q
     );
 
     if (ret != 0) {
@@ -213,7 +216,7 @@ static int test_performance_variable_signers(size_t num_signers)
     debug_if(s_debug_more, L_INFO, "Verifying aggregated signature...");
     double verification_start = get_time_ms();
 
-    ret = chipmunk_verify_multi_signature(&multi_sig, (uint8_t*)test_message, message_len);
+    ret = chipmunk_verify_multi_signature(&multi_sig, (uint8_t*)test_message, message_len, (uint64_t)CHIPMUNK_Q);
 
     double verification_time = get_time_ms() - verification_start;
     log_it(L_INFO, "   ⏱️ Verification: %.3f seconds", verification_time);
@@ -266,7 +269,8 @@ int main(int argc, char *argv[])
     dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);  // Clean output without timestamps/modules
 
     // Initialize Chipmunk module
-    dap_enc_chipmunk_init();
+    dap_common_init("chipmunk-performance-test", NULL);
+    dap_enc_init();  /* Full crypto init (chipmunk + SIMD dispatch) */
 
     // Allow enabling debug output via environment variable or command line
     char *debug_env = getenv("CHIPMUNK_DEBUG");

@@ -254,12 +254,35 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
     return l_json;
 }
 
+/* Forward declaration */
+dap_json_t* dap_json_parse_string_mutable(const char *a_json_string);
+
 /**
  * @brief Unwrap dap_json_t to get dap_json_value_t
+ * @details For IMMUTABLE mode, converts to MUTABLE in-place (lazy promotion).
  */
 static inline dap_json_value_t* s_unwrap_value(dap_json_t *a_json)
 {
-    return a_json && a_json->mode == DAP_JSON_MODE_MUTABLE ? a_json->mode_data.mutable.value : NULL;
+    if (!a_json) return NULL;
+    if (a_json->mode == DAP_JSON_MODE_MUTABLE)
+        return a_json->mode_data.mutable.value;
+
+    /* Lazy promotion: serialize immutable tape → parse as mutable DOM */
+    char *l_str = dap_json_to_string(a_json);
+    if (!l_str) return NULL;
+
+    dap_json_t *l_mut = dap_json_parse_string_mutable(l_str);
+    DAP_DELETE(l_str);
+    if (!l_mut) return NULL;
+
+    /* Steal the mutable DOM value into the original wrapper */
+    a_json->mode = DAP_JSON_MODE_MUTABLE;
+    a_json->mode_data.mutable.value = l_mut->mode_data.mutable.value;
+    a_json->mode_data.mutable.stage2 = l_mut->mode_data.mutable.stage2;
+    l_mut->mode_data.mutable.value = NULL; /* prevent double-free */
+    dap_json_object_free(l_mut);
+
+    return a_json->mode_data.mutable.value;
 }
 
 /**
@@ -350,12 +373,12 @@ static inline const char* dap_json_get_string_value(const dap_json_value_t *a_va
 dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len)
 {
     if (!a_json_buffer) {
-        log_it(L_ERROR, "NULL JSON buffer");
+        log_it(L_DEBUG, "NULL JSON buffer");
         return NULL;
     }
     
     if (a_buffer_len == 0) {
-        log_it(L_ERROR, "Empty JSON buffer");
+        log_it(L_DEBUG, "Empty JSON buffer");
         return NULL;
     }
     
@@ -364,7 +387,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     const uint8_t *l_input = (const uint8_t*)a_json_buffer;
     
     if (!dap_json_detect_encoding(l_input, a_buffer_len, &l_enc_info)) {
-        log_it(L_ERROR, "Failed to detect encoding");
+        log_it(L_DEBUG, "Failed to detect encoding");
         return NULL;
     }
     
@@ -387,7 +410,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         if (!dap_json_transcode_to_utf8(l_enc_info.data_start, l_enc_info.data_len,
                                         l_enc_info.encoding,
                                         &l_transcoded, &l_parse_len)) {
-            log_it(L_ERROR, "Failed to transcode %s to UTF-8",
+            log_it(L_DEBUG, "Failed to transcode %s to UTF-8",
                    dap_json_encoding_name(l_enc_info.encoding));
             return NULL;
         }
@@ -400,14 +423,14 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     // Stage 1: Tokenization (UTF-8 only)
     dap_json_stage1_t *l_stage1 = dap_json_stage1_create(l_parse_input, l_parse_len);
     if (!l_stage1) {
-        log_it(L_ERROR, "Failed to initialize Stage 1");
+        log_it(L_DEBUG, "Failed to initialize Stage 1");
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
     
     int l_ret = dap_json_stage1_run(l_stage1);
     if (l_ret != STAGE1_SUCCESS) {
-        log_it(L_ERROR, "Stage 1 tokenization failed: error %d", l_ret);
+        log_it(L_DEBUG, "Stage 1 tokenization failed: error %d", l_ret);
         dap_json_stage1_free(l_stage1);
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
@@ -415,7 +438,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     
     // Check for empty/whitespace-only input (no structural tokens)
     if (l_stage1->indices_count == 0) {
-        log_it(L_ERROR, "No JSON content found (whitespace-only or empty input)");
+        log_it(L_DEBUG, "No JSON content found (whitespace-only or empty input)");
         dap_json_stage1_free(l_stage1);
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
@@ -443,7 +466,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
             for (const char *l_p = l_str_start; l_p < l_str_start + l_str_len && *l_p && *l_p != '"'; l_p++) {
                 // STRICT: Reject unescaped control characters (0x00-0x1F)
                 if ((unsigned char)*l_p < 0x20 && *l_p != '\t' && *l_p != '\n' && *l_p != '\r') {
-                    log_it(L_ERROR, "Unescaped control character 0x%02X in string at position %u", 
+                    log_it(L_DEBUG, "Unescaped control character 0x%02X in string at position %u", 
                            (unsigned char)*l_p, l_str_pos);
                     dap_json_stage1_free(l_stage1);
                     if (l_transcoded) DAP_DELETE(l_transcoded);
@@ -455,7 +478,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                         // Unicode escape
                         l_p += 2; // skip \u
                         if ((l_p + 4) > (l_str_start + l_str_len)) {
-                            log_it(L_ERROR, "Incomplete Unicode escape at position %u", l_str_pos);
+                            log_it(L_DEBUG, "Incomplete Unicode escape at position %u", l_str_pos);
                             dap_json_stage1_free(l_stage1);
                             if (l_transcoded) DAP_DELETE(l_transcoded);
                             return NULL;
@@ -470,7 +493,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                             else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
                             else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
                             else {
-                                log_it(L_ERROR, "Invalid hex digit in Unicode escape");
+                                log_it(L_DEBUG, "Invalid hex digit in Unicode escape");
                                 dap_json_stage1_free(l_stage1);
                                 if (l_transcoded) DAP_DELETE(l_transcoded);
                                 return NULL;
@@ -485,7 +508,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                             const char *l_next = l_p + 1;
                             if ((l_next + 6) > (l_str_start + l_str_len) || 
                                 l_next[0] != '\\' || l_next[1] != 'u') {
-                                log_it(L_ERROR, "Unpaired high surrogate U+%04X at position %zu", 
+                                log_it(L_DEBUG, "Unpaired high surrogate U+%04X at position %zu", 
                                        cp, (size_t)(l_p - (const char*)l_parse_input));
                                 dap_json_stage1_free(l_stage1);
                                 if (l_transcoded) DAP_DELETE(l_transcoded);
@@ -501,7 +524,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                                 else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
                                 else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
                                 else {
-                                    log_it(L_ERROR, "Invalid hex in low surrogate");
+                                    log_it(L_DEBUG, "Invalid hex in low surrogate");
                                     dap_json_stage1_free(l_stage1);
                                     if (l_transcoded) DAP_DELETE(l_transcoded);
                                     return NULL;
@@ -510,7 +533,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                             }
                             
                             if (low < 0xDC00 || low > 0xDFFF) {
-                                log_it(L_ERROR, "Invalid low surrogate U+%04X after high U+%04X", low, cp);
+                                log_it(L_DEBUG, "Invalid low surrogate U+%04X after high U+%04X", low, cp);
                                 dap_json_stage1_free(l_stage1);
                                 if (l_transcoded) DAP_DELETE(l_transcoded);
                                 return NULL;
@@ -521,7 +544,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                         } 
                         else if (cp >= 0xDC00 && cp <= 0xDFFF) {
                             // Low surrogate without high - INVALID
-                            log_it(L_ERROR, "Unpaired low surrogate U+%04X at position %zu", 
+                            log_it(L_DEBUG, "Unpaired low surrogate U+%04X at position %zu", 
                                    cp, (size_t)(l_p - (const char*)l_parse_input));
                             dap_json_stage1_free(l_stage1);
                             if (l_transcoded) DAP_DELETE(l_transcoded);
@@ -537,7 +560,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     }
     
     if (!dap_json_build_tape(l_stage1, &l_tape, &l_tape_count)) {
-        log_it(L_ERROR, "Failed to build tape");
+        log_it(L_DEBUG, "Failed to build tape");
         dap_json_stage1_free(l_stage1);
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
@@ -572,17 +595,65 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
 dap_json_t* dap_json_parse_string(const char *a_json_string)
 {
     if (!a_json_string) {
-        log_it(L_ERROR, "NULL JSON string");
+        log_it(L_DEBUG, "NULL JSON string");
         return NULL;
     }
     
     size_t l_len = strlen(a_json_string);
     if (l_len == 0) {
-        log_it(L_ERROR, "Empty JSON string");
+        log_it(L_DEBUG, "Empty JSON string");
         return NULL;
     }
     
     return dap_json_parse_buffer(a_json_string, l_len);
+}
+
+/**
+ * @brief Parse JSON string into a MUTABLE value (stage1 + stage2 DOM)
+ * @details Unlike dap_json_parse_string() which returns an IMMUTABLE tape,
+ *          this returns a fully mutable DOM that can be used with add/get/set APIs.
+ */
+dap_json_t* dap_json_parse_string_mutable(const char *a_json_string)
+{
+    if (!a_json_string || !*a_json_string) return NULL;
+
+    size_t l_len = strlen(a_json_string);
+    dap_json_stage1_t *l_stage1 = dap_json_stage1_create(
+        (const uint8_t *)a_json_string, l_len);
+    if (!l_stage1) return NULL;
+
+    if (dap_json_stage1_run(l_stage1) != STAGE1_SUCCESS) {
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+
+    dap_json_stage2_t *l_stage2 = dap_json_stage2_new(l_stage1);
+    if (!l_stage2) {
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+
+    if (dap_json_stage2_run(l_stage2) != STAGE2_SUCCESS) {
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+
+    dap_json_value_t *l_root = dap_json_stage2_get_root(l_stage2);
+    if (!l_root) {
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+
+    dap_json_t *l_result = s_wrap_value(l_root);
+    if (l_result) {
+        l_result->mode_data.mutable.stage2 = l_stage2; /* owns cleanup */
+    } else {
+        dap_json_stage2_free(l_stage2);
+    }
+    dap_json_stage1_free(l_stage1);
+    return l_result;
 }
 
 /* ========================================================================== */
@@ -803,7 +874,7 @@ dap_json_t* dap_json_array_new(void)
 int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
 {
     if (!a_array || !a_item) {
-        log_it(L_ERROR, "NULL array or item");
+        log_it(L_DEBUG, "NULL array or item");
         return -1;
     }
     
@@ -811,12 +882,12 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
     dap_json_value_t *l_item = s_unwrap_value(a_item);
     
     if (!l_array || l_array->type != DAP_JSON_TYPE_ARRAY) {
-        log_it(L_ERROR, "Not an array");
+        log_it(L_DEBUG, "Not an array");
         return -1;
     }
     
     if (!l_item) {
-        log_it(L_ERROR, "NULL item value");
+        log_it(L_DEBUG, "NULL item value");
         return -1;
     }
     
@@ -1118,7 +1189,7 @@ dap_json_t* dap_json_array_get_array(dap_json_t* a_array, size_t a_idx)
 static int s_array_insert_at(dap_json_t* a_array, size_t a_idx, dap_json_t* a_elem)
 {
     if (!a_array || !a_elem) {
-        log_it(L_ERROR, "NULL array or element");
+        log_it(L_DEBUG, "NULL array or element");
         return -1;
     }
     
@@ -1126,18 +1197,18 @@ static int s_array_insert_at(dap_json_t* a_array, size_t a_idx, dap_json_t* a_el
     dap_json_value_t *l_elem = s_unwrap_value(a_elem);
     
     if (!l_array || l_array->type != DAP_JSON_TYPE_ARRAY) {
-        log_it(L_ERROR, "Not an array");
+        log_it(L_DEBUG, "Not an array");
         return -1;
     }
     
     if (!l_elem) {
-        log_it(L_ERROR, "NULL element value");
+        log_it(L_DEBUG, "NULL element value");
         return -1;
     }
     
     dap_json_array_storage_t *l_storage = s_get_array_storage(l_array);
     if (!l_storage) {
-        log_it(L_ERROR, "Invalid array storage");
+        log_it(L_DEBUG, "Invalid array storage");
         return -1;
     }
     
@@ -1281,7 +1352,7 @@ int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
     
     //  Check mode
     if (a_array->mode == DAP_JSON_MODE_IMMUTABLE) {
-        log_it(L_ERROR, "Cannot delete from ARENA (immutable) array");
+        log_it(L_DEBUG, "Cannot delete from ARENA (immutable) array");
         return -1;
     }
     
@@ -1289,7 +1360,7 @@ int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
     dap_json_array_storage_t *l_storage = s_get_array_storage(l_array);
     
     if (!l_storage) {
-        log_it(L_ERROR, "Invalid array storage");
+        log_it(L_DEBUG, "Invalid array storage");
         return -1;
     }
     
@@ -1332,7 +1403,7 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
     
     //  Check mode
     if (a_array->mode == DAP_JSON_MODE_IMMUTABLE) {
-        log_it(L_ERROR, "Cannot sort ARENA (immutable) array");
+        log_it(L_DEBUG, "Cannot sort ARENA (immutable) array");
         return;
     }
     
@@ -1340,7 +1411,7 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
     dap_json_array_storage_t *l_storage = s_get_array_storage(l_array);
     
     if (!l_storage) {
-        log_it(L_ERROR, "Invalid array storage");
+        log_it(L_DEBUG, "Invalid array storage");
         return;
     }
     
@@ -1422,24 +1493,24 @@ int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char
 int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const char* a_value, const int a_len)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "NULL object or key");
+        log_it(L_DEBUG, "NULL object or key");
         return -1;
     }
     
     // IMMUTABLE mode doesn't support mutations
     if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
-        log_it(L_ERROR, "Cannot mutate IMMUTABLE JSON (parsed JSON is read-only)");
+        log_it(L_DEBUG, "Cannot mutate IMMUTABLE JSON (parsed JSON is read-only)");
         return -1;
     }
     
     if (a_len < 0) {
-        log_it(L_ERROR, "Invalid length: %d", a_len);
+        log_it(L_DEBUG, "Invalid length: %d", a_len);
         return -1;
     }
     
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Not an object");
+        log_it(L_DEBUG, "Not an object");
         return -1;
     }
     
@@ -1469,13 +1540,13 @@ int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value)
 int dap_json_object_add_int64(dap_json_t* a_json, const char* a_key, int64_t a_value)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "NULL object or key");
+        log_it(L_DEBUG, "NULL object or key");
         return -1;
     }
     
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Not an object");
+        log_it(L_DEBUG, "Not an object");
         return -1;
     }
     
@@ -1494,13 +1565,13 @@ int dap_json_object_add_int64(dap_json_t* a_json, const char* a_key, int64_t a_v
 int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a_value)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "NULL object or key");
+        log_it(L_DEBUG, "NULL object or key");
         return -1;
     }
     
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Not an object");
+        log_it(L_DEBUG, "Not an object");
         return -1;
     }
     
@@ -1550,13 +1621,13 @@ int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a
 int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t a_value)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "NULL object or key");
+        log_it(L_DEBUG, "NULL object or key");
         return -1;
     }
     
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Not an object");
+        log_it(L_DEBUG, "Not an object");
         return -1;
     }
     
@@ -1594,13 +1665,13 @@ int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t
 int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_value)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "NULL object or key");
+        log_it(L_DEBUG, "NULL object or key");
         return -1;
     }
     
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Not an object");
+        log_it(L_DEBUG, "Not an object");
         return -1;
     }
     
@@ -1619,13 +1690,13 @@ int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_v
 int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "NULL object or key");
+        log_it(L_DEBUG, "NULL object or key");
         return -1;
     }
     
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Not an object");
+        log_it(L_DEBUG, "Not an object");
         return -1;
     }
     
@@ -1662,13 +1733,13 @@ int dap_json_object_add_time(dap_json_t* a_json, const char* a_key, dap_time_t a
 int dap_json_object_add_null(dap_json_t* a_json, const char* a_key)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "NULL object or key");
+        log_it(L_DEBUG, "NULL object or key");
         return -1;
     }
     
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Not an object");
+        log_it(L_DEBUG, "Not an object");
         return -1;
     }
     
@@ -1687,7 +1758,7 @@ int dap_json_object_add_null(dap_json_t* a_json, const char* a_key)
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value)
 {
     if (!a_json || !a_key || !a_value) {
-        log_it(L_ERROR, "NULL object, key or value");
+        log_it(L_DEBUG, "NULL object, key or value");
         return -1;
     }
     
@@ -1695,12 +1766,12 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
     dap_json_value_t *l_value = s_unwrap_value(a_value);
     
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Not an object");
+        log_it(L_DEBUG, "Not an object");
         return -1;
     }
     
     if (!l_value) {
-        log_it(L_ERROR, "NULL value");
+        log_it(L_DEBUG, "NULL value");
         return -1;
     }
     
@@ -1922,7 +1993,7 @@ const char* dap_json_object_get_string_n(dap_json_t* a_json, const char* a_key, 
 const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "object_get_string: NULL json or key");
+        log_it(L_DEBUG, "object_get_string: NULL json or key");
         return NULL;
     }
     
@@ -2175,7 +2246,7 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
         // offset → pointer to uint64
         uint64_t *l_ptr = (uint64_t*)dap_json_get_storage_ptr(l_value);
         if (!l_ptr) {
-            log_it(L_ERROR, "NULL pointer for UINT64 storage");
+            log_it(L_DEBUG, "NULL pointer for UINT64 storage");
             return false;
         }
         *a_out = *l_ptr;
@@ -3278,7 +3349,7 @@ char* dap_json_to_string_pretty(dap_json_t* a_json)
 dap_json_t* dap_json_from_file(const char* a_file_path)
 {
     if (!a_file_path) {
-        log_it(L_ERROR, "NULL file path provided");
+        log_it(L_DEBUG, "NULL file path provided");
         return NULL;
     }
     
@@ -3336,7 +3407,7 @@ dap_json_t* dap_json_from_file(const char* a_file_path)
 int dap_json_to_file(const char* a_file_path, dap_json_t* a_json)
 {
     if (!a_file_path || !a_json) {
-        log_it(L_ERROR, "NULL parameter provided");
+        log_it(L_DEBUG, "NULL parameter provided");
         return -1;
     }
     
