@@ -117,6 +117,23 @@ int chipmunk_range_proof_bdlop_prove(chipmunk_range_proof_bdlop_t *a_proof,
                                       const uint8_t a_seed[32]);
 
 /*
+ * Create a range proof with explicit blinding polynomials.
+ * Used for the anchor output whose blinding must close the Pedersen gap.
+ *
+ * \param a_proof      Output proof.
+ * \param a_params     Pedersen/BDLOP parameters.
+ * \param a_value      The value to prove range of.
+ * \param a_r          Pre-derived blinding polynomials (for Pedersen commit).
+ * \param a_seed       32-byte seed for BDLOP proof masking derivation.
+ * \return 0 on success, negative errno on error.
+ */
+int chipmunk_range_proof_bdlop_prove_explicit(chipmunk_range_proof_bdlop_t *a_proof,
+                                                const chipmunk_pedersen_params_t *a_params,
+                                                const uint8_t a_value[CHIPMUNK_PEDERSEN_VALUE_BYTES],
+                                                const chipmunk_poly_t a_r[CHIPMUNK_BDLOP_L],
+                                                const uint8_t a_seed[32]);
+
+/*
  * Verify a range proof.
  *
  * Checks:

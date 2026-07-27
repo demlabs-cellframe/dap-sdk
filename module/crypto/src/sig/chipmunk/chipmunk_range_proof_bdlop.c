@@ -159,6 +159,61 @@ int chipmunk_range_proof_bdlop_prove(chipmunk_range_proof_bdlop_t *a_proof,
     return 0;
 }
 
+int chipmunk_range_proof_bdlop_prove_explicit(chipmunk_range_proof_bdlop_t *a_proof,
+                                                const chipmunk_pedersen_params_t *a_params,
+                                                const uint8_t a_value[CHIPMUNK_PEDERSEN_VALUE_BYTES],
+                                                const chipmunk_poly_t a_r[CHIPMUNK_BDLOP_L],
+                                                const uint8_t a_seed[32])
+{
+    if (!a_proof || !a_params || !a_value || !a_r || !a_seed)
+        return -EINVAL;
+    if (!a_params->initialized)
+        return -EINVAL;
+
+    memset(a_proof, 0, sizeof(*a_proof));
+    a_proof->bits = CHIPMUNK_RANGE_BDLOP_BITS;
+
+    memcpy(a_proof->value, a_value, CHIPMUNK_PEDERSEN_VALUE_BYTES);
+
+    uint64_t l_val = 0;
+    memcpy(&l_val, a_value, sizeof(l_val));
+#if CHIPMUNK_RANGE_BDLOP_BITS < 64
+    if (l_val >= (1ULL << CHIPMUNK_RANGE_BDLOP_BITS)) {
+        log_it(L_ERROR, "Range proof (explicit): value exceeds 2^%u", CHIPMUNK_RANGE_BDLOP_BITS);
+        return -EINVAL;
+    }
+#endif
+    for (uint32_t i = sizeof(uint64_t); i < CHIPMUNK_PEDERSEN_VALUE_BYTES; ++i) {
+        if (a_value[i] != 0) {
+            log_it(L_ERROR, "Range proof (explicit): value exceeds 64 bits");
+            return -EINVAL;
+        }
+    }
+
+    chipmunk_poly_t l_msg;
+    s_value_to_bit_poly(&l_msg, l_val);
+
+    /* Use provided blinding polynomials directly */
+    int l_rc = chipmunk_bdlop_commit_poly(&a_proof->commit, a_params, &l_msg, a_r);
+    if (l_rc != 0) {
+        dap_memwipe(&l_msg, sizeof(l_msg));
+        return l_rc;
+    }
+
+    l_rc = chipmunk_bdlop_opening_prove(&a_proof->proof, a_params,
+                                         &a_proof->commit,
+                                         &l_msg, a_r, 1, a_seed);
+
+    dap_memwipe(&l_msg, sizeof(l_msg));
+
+    if (l_rc != 0) {
+        log_it(L_ERROR, "Range proof (explicit): BDLOP opening failed: %d", l_rc);
+        return l_rc;
+    }
+
+    return 0;
+}
+
 /* =======================================================================
  *  Verify
  * ======================================================================= */
