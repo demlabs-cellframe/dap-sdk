@@ -283,6 +283,17 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .sign_get =                         NULL,
         .sign_verify =                      NULL
     },
+    /* Post-quantum KEM types 12-17 are declared in the enum but have no
+     * implementations in this SDK.  We register their names so that
+     * dap_enc_get_type_name() / dap_enc_key_type_find_by_name() return
+     * a meaningful string instead of "undefined", and so the table scan
+     * doesn't log spurious warnings for these slots.  Operations are NULL. */
+    [DAP_ENC_KEY_TYPE_RLWE_MSRLN16]   = { .name = "RLWE_MSRLN16" },
+    [DAP_ENC_KEY_TYPE_RLWE_BCNS15]    = { .name = "RLWE_BCNS15" },
+    [DAP_ENC_KEY_TYPE_LWE_FRODO]      = { .name = "LWE_FRODO" },
+    [DAP_ENC_KEY_TYPE_CODE_MCBITS]    = { .name = "CODE_MCBITS" },
+    [DAP_ENC_KEY_TYPE_NTRU]           = { .name = "NTRU" },
+    [DAP_ENC_KEY_TYPE_MLWE_KYBER]     = { .name = "MLWE_KYBER" },
     [DAP_ENC_KEY_TYPE_KEM_KYBER512] = {
         .name =                             "KYBER",
         .enc =                              NULL,
