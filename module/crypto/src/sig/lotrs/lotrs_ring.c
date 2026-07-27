@@ -183,12 +183,18 @@ int64_t lotrs_mod_reduce(__int128_t x, uint64_t q)
     if (x >= 0) {
         q_approx = (__int128_t)((__uint128_t)x * mu >> (2 * k));
     } else {
-        /* For negative x, compute as positive then negate. */
+        /* For negative x, floor(x/q) = -ceil(|x|/q).
+         * Barrett gives floor(|x|*mu/2^(2k)) ≈ floor(|x|/q), so we need
+         * to negate and add 1 when |x|*mu is not exactly divisible by 2^(2k).
+         * This keeps the error ≤2 (same as positive case). */
         __uint128_t abs_x = (__uint128_t)(-x);
-        q_approx = -(__int128_t)(abs_x * mu >> (2 * k));
+        __uint128_t prod = abs_x * mu;
+        __uint128_t quot = prod >> (2 * k);
+        int not_exact = (prod & (((__uint128_t)1 << (2 * k)) - 1)) != 0;
+        q_approx = -(__int128_t)(quot + (not_exact ? 1 : 0));
     }
     int64_t r = (int64_t)(x - q_approx * (__int128_t)q);
-    /* Correction: at most 2 iterations (Barrett guarantee). */
+    /* Correction: at most 2 iterations (Barrett guarantee with corrected q_approx). */
     if (r >= (int64_t)q) r -= (int64_t)q;
     if (r >= (int64_t)q) r -= (int64_t)q;
     if (r < 0) r += (int64_t)q;

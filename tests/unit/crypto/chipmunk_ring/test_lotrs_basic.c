@@ -145,12 +145,13 @@ static void test_wire_format(void)
 {
     const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
 
-    /* Wire size check. */
+    /* Wire size check (uses compact coefficient encoding, not always 8 bytes). */
     uint32_t l_wire = lotrs_wire_size(l_par);
+    uint32_t l_poly_bytes = (uint32_t)lotrs_poly_bytes(l_par);
     uint32_t l_expected = LOTRS_WIRE_HEADER_BYTES
-        + l_par->k * l_par->d * 8u
-        + l_par->d * 8u
-        + (l_par->l + l_par->k) * l_par->d * 8u;
+        + l_par->k * l_poly_bytes
+        + l_poly_bytes
+        + (l_par->l + l_par->k) * l_poly_bytes;
     dap_assert(l_wire == l_expected, "wire size formula");
 
     /* Header pack/unpack roundtrip. */

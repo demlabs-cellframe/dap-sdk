@@ -31,6 +31,7 @@
 #include <stddef.h>
 
 #include "lotrs_params.h"
+#include "lotrs_ring.h"  /* lotrs_poly_bytes() for compact coefficient encoding */
 
 #define LOTRS_WIRE_MAGIC     0x4C545253u  /* 'LTRS' LE */
 #define LOTRS_WIRE_VERSION   1u
@@ -50,13 +51,13 @@ typedef struct lotrs_wire_header {
     uint32_t flags;
 } lotrs_wire_header_t;
 
-/* Wire size for given parameters. */
+/* Wire size for given parameters. Uses compact coefficient encoding
+ * (ceil(ceil(log2(q))/8) bytes per coefficient, not always 8). */
 static inline uint32_t lotrs_wire_size(const lotrs_params_t *a_par)
 {
     uint32_t l_k = a_par->k;
     uint32_t l_l = a_par->l;
-    uint32_t l_d = a_par->d;
-    uint32_t l_poly_bytes = l_d * 8u;
+    uint32_t l_poly_bytes = (uint32_t)lotrs_poly_bytes(a_par);
     return LOTRS_WIRE_HEADER_BYTES
          + l_k * l_poly_bytes               /* w block */
          + l_poly_bytes                      /* c block */

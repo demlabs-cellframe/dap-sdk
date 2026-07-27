@@ -373,6 +373,11 @@ size_t dap_json_stage1_scan_number_ref(
     // Integer part
     if(l_input[i] == '0') {
         i++;
+        // STRICT JSON: Leading zeros are forbidden (e.g. "01", "007")
+        // After '0', only '.', 'e', 'E', or end-of-token are allowed
+        if(i < l_len && l_input[i] >= '0' && l_input[i] <= '9') {
+            return l_start; // Error: leading zero (e.g. "01")
+        }
     }
     else {
         while(i < l_len && l_input[i] >= '0' && l_input[i] <= '9') {
@@ -444,7 +449,19 @@ size_t dap_json_stage1_scan_literal_ref(
     else {
         return l_start; // Not a literal
     }
-    
+
+    // STRICT JSON: Literal must be followed by a structural character or whitespace
+    // Reject "true1", "falsey", "nullify", etc.
+    size_t l_end = i + l_length;
+    if(l_end < l_len) {
+        uint8_t l_next = l_input[l_end];
+        // Valid terminators: structural chars, whitespace, end of input
+        if((l_next >= 'a' && l_next <= 'z') || (l_next >= 'A' && l_next <= 'Z') ||
+           (l_next >= '0' && l_next <= '9') || l_next == '_') {
+            return l_start; // Error: literal followed by alphanumeric (e.g. "true1")
+        }
+    }
+
     // Return position after literal
     return i + l_length;
 }
