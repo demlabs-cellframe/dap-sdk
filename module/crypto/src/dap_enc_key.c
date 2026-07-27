@@ -283,6 +283,17 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .sign_get =                         NULL,
         .sign_verify =                      NULL
     },
+    /* Post-quantum KEM types 12-17 are declared in the enum but have no
+     * implementations in this SDK.  We register their names so that
+     * dap_enc_get_type_name() / dap_enc_key_type_find_by_name() return
+     * a meaningful string instead of "undefined", and so the table scan
+     * doesn't log spurious warnings for these slots.  Operations are NULL. */
+    [DAP_ENC_KEY_TYPE_RLWE_MSRLN16]   = { .name = "RLWE_MSRLN16" },
+    [DAP_ENC_KEY_TYPE_RLWE_BCNS15]    = { .name = "RLWE_BCNS15" },
+    [DAP_ENC_KEY_TYPE_LWE_FRODO]      = { .name = "LWE_FRODO" },
+    [DAP_ENC_KEY_TYPE_CODE_MCBITS]    = { .name = "CODE_MCBITS" },
+    [DAP_ENC_KEY_TYPE_NTRU]           = { .name = "NTRU" },
+    [DAP_ENC_KEY_TYPE_MLWE_KYBER]     = { .name = "MLWE_KYBER" },
     [DAP_ENC_KEY_TYPE_KEM_KYBER512] = {
         .name =                             "KYBER",
         .enc =                              NULL,
@@ -1532,13 +1543,17 @@ const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type)
     return a_key_type >= DAP_ENC_KEY_TYPE_NULL && a_key_type <= DAP_ENC_KEY_TYPE_LAST &&
            s_callbacks[a_key_type].name && *s_callbacks[a_key_type].name
                ? s_callbacks[a_key_type].name
-               : ( log_it(L_WARNING, "Name was not set for key type %d", a_key_type), "undefined");
+               : "undefined";
 }
 
 dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name){ // TODO: use uthash
     for(dap_enc_key_type_t i = 0; i <= DAP_ENC_KEY_TYPE_LAST; i++){
-        const char * l_current_key_name = dap_enc_get_type_name(i);
-        if(l_current_key_name && !strcmp(a_name, l_current_key_name))
+        /* Skip unregistered types silently — the name lookup is supposed
+         * to scan the whole table, so logging a warning for each empty
+         * slot would flood the console on every call. */
+        if (!s_callbacks[i].name || !*s_callbacks[i].name)
+            continue;
+        if (!strcmp(a_name, s_callbacks[i].name))
             return i;
     }
     log_it(L_WARNING, "No key type with name %s", a_name);

@@ -278,10 +278,11 @@ static bool s_test_encryption_error_handling(void) {
                            l_encrypted_data, sizeof(l_encrypted_data), 0);
     DAP_TEST_ASSERT(l_result == 0, "Encryption should return 0 (no bytes written) with NULL input data");
 
-    // Test with zero input size
+    // Test with zero input size — IAES256 produces an authenticated block (1 length byte
+    // + padding) even for empty plaintext, so the result is non-zero (typically 16 bytes).
     l_result = dap_enc_code(l_key, l_test_data, 0,
                            l_encrypted_data, sizeof(l_encrypted_data), 0);
-    DAP_TEST_ASSERT(l_result == 0, "Encryption should return 0 (no bytes written) with zero input size");
+    DAP_TEST_ASSERT(l_result > 0, "Encryption with zero input should produce authenticated block");
 
     // Test with insufficient output buffer
     l_result = dap_enc_code(l_key, l_test_data, sizeof(l_test_data),

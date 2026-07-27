@@ -163,6 +163,7 @@ typedef struct { int handle; int code; } ws_close_args_t;
 #define WS_OUT_DRAIN_BATCH 64u
 
 typedef struct ws_out_slot {
+    _Atomic uint32_t seq;   /* seqlock: 0 = empty, wr+1 = ready */
     int      handle;
     uint32_t len;
     uint8_t  data[WS_OUT_DATA_MAX];
@@ -183,6 +184,13 @@ static void s_ws_out_init_once(void)
         log_it(L_ERROR, "WS outbound ring alloc failed");
 }
 
+/*
+ * Per-slot sequence counter (seqlock) to close the TOCTOU between the
+ * producer writing slot data and the consumer reading it.  The slot is
+ * reserved by CAS on s_ws_out_wr, data is written, then a release-store
+ * on the slot's own "ready" field makes the writes visible to the
+ * consumer which loads that field with acquire ordering.
+ */
 static bool s_ws_out_push(int a_handle, const void *a_data, int a_len)
 {
     s_ws_out_init_once();
@@ -204,10 +212,15 @@ static bool s_ws_out_push(int a_handle, const void *a_data, int a_len)
     } while (!atomic_compare_exchange_weak_explicit(
         &s_ws_out_wr, &l_wr, l_next, memory_order_acq_rel, memory_order_relaxed));
 
+    /* Write all slot data FIRST, then publish with release ordering. */
     ws_out_slot_t *l_slot = &s_ws_out_slots[l_wr % WS_OUT_RING_CAP];
     l_slot->handle = a_handle;
     l_slot->len = (uint32_t)a_len;
     memcpy(l_slot->data, a_data, (size_t)a_len);
+    /* Store the wr index into the slot so the consumer can verify the slot
+     * was fully written before the wr it observed.  This closes the window
+     * between CAS-reserve and data-write completion. */
+    atomic_store_explicit(&l_slot->seq, l_wr + 1, memory_order_release);
     return true;
 }
 
@@ -228,6 +241,14 @@ void dap_net_trans_ws_system_drain_outbound(void)
 
         while (l_rd < l_wr && l_batch < WS_OUT_DRAIN_BATCH) {
             ws_out_slot_t *l_slot = &s_ws_out_slots[l_rd % WS_OUT_RING_CAP];
+            /* Seqlock: verify the producer finished writing this slot.
+             * seq must equal l_rd+1 (wr value the producer stored after write). */
+            uint32_t l_seq = atomic_load_explicit(&l_slot->seq, memory_order_acquire);
+            if (l_seq != l_rd + 1) {
+                /* Producer hasn't finished writing — stop draining this round */
+                atomic_store_explicit(&s_ws_out_rd, l_rd, memory_order_release);
+                goto drain_done;
+            }
             int l_ret = js_ws_send(l_slot->handle, l_slot->data, (int)l_slot->len);
             if (l_ret <= 0) {
                 static _Atomic uint64_t s_drain_fail;
@@ -235,8 +256,12 @@ void dap_net_trans_ws_system_drain_outbound(void)
                 if (n < 3 || (n % 200) == 0)
                     log_it(L_ERROR, "WS drain send failed handle=%d size=%u ret=%d (count=%" PRIu64 ")",
                            l_slot->handle, l_slot->len, l_ret, n);
-                atomic_store_explicit(&s_ws_out_rd, l_rd, memory_order_release);
-                return;
+                /* Don't stop the entire drain on one failure — skip and continue.
+                 * Otherwise a single failed fragment drops all subsequent fragments
+                 * of the same frame, breaking multi-fragment packets. */
+                l_rd++;
+                l_batch++;
+                continue;
             }
             l_rd++;
             l_batch++;
@@ -246,6 +271,8 @@ void dap_net_trans_ws_system_drain_outbound(void)
         if (l_rd >= atomic_load_explicit(&s_ws_out_wr, memory_order_acquire))
             break;
     }
+drain_done:
+    ;
 }
 
 static void s_proxy_ws_create(void *a_arg)  { ws_create_args_t *l = a_arg; l->result = js_ws_create(l->url); }

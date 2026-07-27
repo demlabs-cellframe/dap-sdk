@@ -195,7 +195,7 @@ int lotrs_sign(lotrs_signature_t *a_sig,
 
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         uint8_t l_w_buf[8 * 128];
-        size_t l_w_buf_len = a_par->d * 8u;
+        size_t l_w_buf_len = lotrs_poly_bytes(a_par);
         lotrs_poly_pack(l_w_buf, l_w_buf_len, l_w.polys[i], a_par);
         l_rc = lotrs_xof_absorb(l_xof_c, l_w_buf, l_w_buf_len);
         if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_w); lotrs_polymat_free(&l_A); lotrs_polyvec_free(&l_y); lotrs_xof_free(l_xof); return l_rc; }
@@ -330,7 +330,7 @@ int lotrs_verify(const lotrs_signature_t *a_sig,
     if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z); return l_rc; }
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         uint8_t l_w_buf[8 * 128];
-        size_t l_w_buf_len = a_par->d * 8u;
+        size_t l_w_buf_len = lotrs_poly_bytes(a_par);
         lotrs_poly_pack(l_w_buf, l_w_buf_len, l_w.polys[i], a_par);
         l_rc = lotrs_xof_absorb(l_xof_c, l_w_buf, l_w_buf_len);
         if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z); return l_rc; }
@@ -423,35 +423,34 @@ int lotrs_verify(const lotrs_signature_t *a_sig,
         }
     }
 
-    /* rhs = c * pk. */
+    /* rhs = c * pk. Try each PK in the ring (ring signature support). */
     lotrs_polyvec_t l_rhs = lotrs_polyvec_alloc(a_par, a_par->k);
     if (!l_rhs.polys) {
         lotrs_polyvec_free(&l_lhs); lotrs_polymat_free(&l_A);
         lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
         return -ENOMEM;
     }
-    for (uint32_t i = 0u; i < a_par->k; ++i) {
-        lotrs_poly_mul(l_rhs.polys[i], l_c, a_ring->pks[0].a_hat.polys[i], a_par);
-    }
 
-    /* Check lhs == rhs. */
-    int l_match = 1;
-    for (uint32_t i = 0u; i < a_par->k; ++i) {
-        for (uint32_t j = 0u; j < a_par->d; ++j) {
-            if (l_lhs.polys[i]->coeffs[j] % a_par->q !=
-                l_rhs.polys[i]->coeffs[j] % a_par->q) {
-                debug_if(1, L_DEBUG, "LoTRS verify: algebraic FAILED at [%u][%u]: "
-                         "lhs=%lu rhs=%lu diff=%ld",
-                         i, j,
-                         (unsigned long)(l_lhs.polys[i]->coeffs[j] % a_par->q),
-                         (unsigned long)(l_rhs.polys[i]->coeffs[j] % a_par->q),
-                         (long)((int64_t)(l_lhs.polys[i]->coeffs[j] % a_par->q) -
-                                (int64_t)(l_rhs.polys[i]->coeffs[j] % a_par->q)));
-                l_match = 0;
-                break;
+    uint32_t l_ring_size = a_ring->N * a_ring->T;
+    int l_match = 0;
+
+    for (uint32_t r = 0u; r < l_ring_size && !l_match; ++r) {
+        /* Compute rhs = c * pk[r]. */
+        for (uint32_t i = 0u; i < a_par->k; ++i) {
+            lotrs_poly_mul(l_rhs.polys[i], l_c, a_ring->pks[r].a_hat.polys[i], a_par);
+        }
+
+        /* Check lhs == rhs for this ring member. */
+        l_match = 1;
+        for (uint32_t i = 0u; i < a_par->k && l_match; ++i) {
+            for (uint32_t j = 0u; j < a_par->d; ++j) {
+                if (l_lhs.polys[i]->coeffs[j] % a_par->q !=
+                    l_rhs.polys[i]->coeffs[j] % a_par->q) {
+                    l_match = 0;
+                    break;
+                }
             }
         }
-        if (!l_match) break;
     }
 
     lotrs_polyvec_free(&l_lhs);
@@ -583,7 +582,7 @@ int lotrs_sign_round2(lotrs_round2_output_t *a_out,
     if (l_rc != 0) { lotrs_xof_free(l_xof_c); return l_rc; }
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         uint8_t l_w_buf[8 * 128];
-        size_t l_w_buf_len = a_par->d * 8u;
+        size_t l_w_buf_len = lotrs_poly_bytes(a_par);
         lotrs_poly_pack(l_w_buf, l_w_buf_len, a_w_agg->polys[i], a_par);
         l_rc = lotrs_xof_absorb(l_xof_c, l_w_buf, l_w_buf_len);
         if (l_rc != 0) { lotrs_xof_free(l_xof_c); return l_rc; }

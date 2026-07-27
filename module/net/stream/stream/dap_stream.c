@@ -738,6 +738,8 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 #endif
 
     DAP_DEL_Z(a_stream->buf_fragments);
+    DAP_DEL_Z(a_stream->buf_pkt_partial);
+    a_stream->buf_pkt_partial_size = 0;
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
 }
@@ -1067,38 +1069,89 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     if (!a_stream || !a_data || a_data_size == 0) {
         return 0;
     }
-    
-    byte_t *l_pos = (byte_t*)a_data;
-    byte_t *l_end = l_pos + a_data_size;
-    size_t l_shift = 0, l_processed_size = 0;
-    
-    while (l_pos < l_end && (l_pos = memchr(l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos)))) {
+
+    /* If we have carry-over from a previous call, prepend it to new data
+     * so straddling packets are reassembled correctly. */
+    byte_t *l_combined = NULL;
+    const byte_t *l_data;
+    size_t l_data_size;
+
+    if (a_stream->buf_pkt_partial && a_stream->buf_pkt_partial_size > 0) {
+        l_data_size = a_stream->buf_pkt_partial_size + a_data_size;
+        l_combined = DAP_NEW_Z_SIZE(byte_t, l_data_size);
+        if (l_combined) {
+            memcpy(l_combined, a_stream->buf_pkt_partial, a_stream->buf_pkt_partial_size);
+            memcpy(l_combined + a_stream->buf_pkt_partial_size, a_data, a_data_size);
+            l_data = l_combined;
+        } else {
+            /* OOM — drop partial, process new data alone */
+            l_data = (const byte_t*)a_data;
+            l_data_size = a_data_size;
+        }
+        DAP_DEL_Z(a_stream->buf_pkt_partial);
+        a_stream->buf_pkt_partial_size = 0;
+    } else {
+        l_data = (const byte_t*)a_data;
+        l_data_size = a_data_size;
+    }
+
+    byte_t *l_pos = (byte_t*)l_data;
+    byte_t *l_end = l_pos + l_data_size;
+    size_t l_shift = 0;
+
+    /* Process complete packets */
+    for (;;) {
+        if (l_pos >= l_end)
+            break;
+        /* Find next packet signature */
+        l_pos = memchr(l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos));
+        if (!l_pos)
+            break;
+
         if ((size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t)) {
+            /* Partial header at tail — save for later */
             break;
         }
-        
+
         if (!memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig))) {
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
             if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
-            } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
-                debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %lu", l_shift);
-                s_stream_proc_pkt_in(a_stream, l_pkt);
-            } else {
+                l_pos += l_shift;
+                continue;
+            }
+            l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size;
+            if (l_shift > (size_t)(l_end - l_pos)) {
+                /* Packet doesn't fit — partial, save for later */
                 break;
             }
+            s_stream_proc_pkt_in(a_stream, l_pkt);
             l_pos += l_shift;
-            l_processed_size += l_shift;
         } else {
-            ++l_pos;
+            l_pos++;
         }
     }
-    
-    debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG, 
-             "Processed %lu / %lu bytes", l_processed_size, a_data_size);
-    
-    return l_processed_size;
+
+    /* Save unprocessed tail for the next call.
+     * l_pos now points either at NULL-found break (if memchr returned NULL,
+     * l_pos was set to NULL and the loop broke), or at a partial packet
+     * header/payload that doesn't fit.
+     * Handle the memchr-returned-NULL case: l_pos = NULL means we
+     * consumed everything. */
+    if (l_pos == NULL) {
+        /* memchr found nothing — all data consumed */
+    } else if (l_pos < l_end) {
+        size_t l_remaining = (size_t)(l_end - l_pos);
+        a_stream->buf_pkt_partial = DAP_NEW_Z_SIZE(byte_t, l_remaining);
+        if (a_stream->buf_pkt_partial) {
+            memcpy(a_stream->buf_pkt_partial, l_pos, l_remaining);
+            a_stream->buf_pkt_partial_size = l_remaining;
+        }
+    }
+
+    DAP_DEL_Z(l_combined);
+    return a_data_size;
 }
 
 /**
@@ -1129,8 +1182,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
 
-    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u", 
-           a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
+    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u",
+             a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
 
     switch (a_pkt->hdr.type) {
     case STREAM_PKT_TYPE_FRAGMENT_PACKET: {
@@ -1164,7 +1217,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             break;
         }
 
-        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu", 
+        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu",
                l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
 
         if(a_stream->buf_fragments_size_filled != l_fragm_pkt->mem_shift) {
@@ -1185,16 +1238,19 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                 l_is_clean_fragments = true;
                 break;
             }
-            /* P0-6 SECURITY FIX: bounds-check before memcpy to prevent heap overflow.
-             * Without this, a fragment with size > (full_size - mem_shift) writes
-             * past the allocated buffer. The completion check at line below only
-             * detects the overflow AFTER the damage is done. */
+            /* Bounds check (P0-6 / upstream 2A): mem_shift + size must fit inside full_size */
             if ((size_t)l_fragm_pkt->mem_shift + l_fragm_pkt->size > l_fragm_pkt->full_size) {
                 debug_if(s_dump_packet_headers, L_ERROR,
-                         "Input: fragment mem_shift=%u + size=%u > full_size=%u, dropping",
+                         "Input: fragment overflow mem_shift=%u size=%u full_size=%u",
                          l_fragm_pkt->mem_shift, l_fragm_pkt->size, l_fragm_pkt->full_size);
                 l_is_clean_fragments = true;
                 break;
+            }
+            /* Reset stale buffer when full_size changes between packets (upstream 2B) */
+            if(a_stream->buf_fragments && a_stream->buf_fragments_size_total != l_fragm_pkt->full_size) {
+                DAP_DEL_Z(a_stream->buf_fragments);
+                a_stream->buf_fragments_size_total = 0;
+                a_stream->buf_fragments_size_filled = 0;
             }
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
                 DAP_DEL_Z(a_stream->buf_fragments);

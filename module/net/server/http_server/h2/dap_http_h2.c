@@ -226,9 +226,10 @@ dap_h2_stream_t *dap_h2_stream_find(dap_h2_connection_t *a_conn, uint32_t a_stre
 {
     if (!a_conn)
         return NULL;
-    for (dap_h2_stream_t *l_st = a_conn->streams; l_st; l_st = l_st->next)
+    for (dap_h2_stream_t *l_st = a_conn->streams; l_st; l_st = l_st->next) {
         if (l_st->id == a_stream_id)
             return l_st;
+    }
     return NULL;
 }
 

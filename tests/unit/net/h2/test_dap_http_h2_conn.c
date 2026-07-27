@@ -115,7 +115,8 @@ static void test_client_init(void)
     s_mock_esocket_init(&l_es);
 
     dap_h2_connection_t l_conn;
-    assert(dap_h2_connection_client_init(&l_conn, &l_es) == 0);
+    int l_rc = dap_h2_connection_client_init(&l_conn, &l_es);
+    assert(l_rc == 0);
     assert(l_conn.is_client);
     assert(l_conn.state == DAP_H2_CONN_SETTINGS);
     assert(l_conn.esocket == &l_es);
@@ -134,18 +135,21 @@ static void test_server_preface_input(void)
     s_mock_esocket_init(&l_es);
 
     dap_h2_connection_t l_conn;
-    assert(dap_h2_connection_init(&l_conn, NULL, &l_es) == 0);
+    int l_rc = dap_h2_connection_init(&l_conn, NULL, &l_es);
+    assert(l_rc == 0);
     assert(l_conn.state == DAP_H2_CONN_PREFACE);
 
     static const uint8_t s_preface[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
     size_t l_cons = 0;
 
-    assert(dap_h2_connection_input(&l_conn, s_preface, 12, &l_cons) == 0);
+    l_rc = dap_h2_connection_input(&l_conn, s_preface, 12, &l_cons);
+    assert(l_rc == 0);
     assert(l_cons == 12);
     assert(l_conn.preface_received == 12);
     assert(l_conn.state == DAP_H2_CONN_PREFACE);
 
-    assert(dap_h2_connection_input(&l_conn, s_preface + 12, 12, &l_cons) == 0);
+    l_rc = dap_h2_connection_input(&l_conn, s_preface + 12, 12, &l_cons);
+    assert(l_rc == 0);
     assert(l_cons == 12);
     assert(l_conn.preface_received == DAP_H2_CONNECTION_PREFACE_LEN);
     assert(l_conn.state == DAP_H2_CONN_SETTINGS);
@@ -154,8 +158,10 @@ static void test_server_preface_input(void)
     s_mock_esocket_reset(&l_es);
 
     /* One-shot preface on a fresh connection */
-    assert(dap_h2_connection_init(&l_conn, NULL, &l_es) == 0);
-    assert(dap_h2_connection_input(&l_conn, s_preface, 24, &l_cons) == 0);
+    l_rc = dap_h2_connection_init(&l_conn, NULL, &l_es);
+    assert(l_rc == 0);
+    l_rc = dap_h2_connection_input(&l_conn, s_preface, 24, &l_cons);
+    assert(l_rc == 0);
     assert(l_cons == 24);
     assert(l_conn.preface_received == DAP_H2_CONNECTION_PREFACE_LEN);
     assert(l_conn.state == DAP_H2_CONN_SETTINGS);
@@ -172,7 +178,8 @@ static void test_send_request_client(void)
     s_mock_esocket_init(&l_es);
 
     dap_h2_connection_t l_conn;
-    assert(dap_h2_connection_client_init(&l_conn, &l_es) == 0);
+    int l_rc = dap_h2_connection_client_init(&l_conn, &l_es);
+    assert(l_rc == 0);
     s_mock_esocket_reset(&l_es);
     l_conn.esocket = &l_es;
 

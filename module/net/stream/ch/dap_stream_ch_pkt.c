@@ -415,13 +415,18 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
             l_fragment->size        = l_fragment_size;
             l_fragment->full_size   = l_max_size;
             l_fragment->mem_shift   = l_max_size - l_remaining;
-            
-            // Copy data safely — first fragment is packed wire header, not raw hdr_mem
-            const void *l_src = l_fragment->mem_shift ? 
-                                a_data + l_fragment->mem_shift - DAP_STREAM_CH_PKT_HDR_WIRE_SIZE : 
-                                (const void*)l_hdr_wire;
-            
-            memcpy(l_fragment->data, l_src, l_fragment_size);
+
+            // First fragment: serialize channel header into wire format
+            // (dap_stream_ch_pkt_hdr_mem_t is NOT packed — memcpy on 32-bit WASM
+            //  produces garbage because the struct has alignment padding before seq_id)
+            if (!l_fragment->mem_shift) {
+                dap_stream_ch_pkt_hdr_pack(&l_hdr, l_fragment->data, l_fragment_size);
+            } else {
+            // Subsequent fragments: raw payload data
+                memcpy(l_fragment->data,
+                       a_data + l_fragment->mem_shift - sizeof(dap_stream_ch_pkt_hdr_t),
+                       l_fragment_size);
+            }
             
             debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
                      "Fragment[%zu]: size=%zu, mem_shift=%u, remaining=%zu",
