@@ -72,7 +72,8 @@ static void test_client_server_frame_exchange(void)
     s_mock_esocket_init(&l_es);
 
     dap_h2_connection_t l_conn;
-    assert(dap_h2_connection_init(&l_conn, NULL, &l_es) == 0);
+    int l_rc = dap_h2_connection_init(&l_conn, NULL, &l_es);
+    assert(l_rc == 0);
 
     uint8_t l_pkt[256];
     size_t l_pref_len = sizeof(s_preface) - 1;
@@ -82,7 +83,8 @@ static void test_client_server_frame_exchange(void)
     assert(l_total <= sizeof(l_pkt));
 
     size_t l_cons = 0;
-    assert(dap_h2_connection_input(&l_conn, l_pkt, l_total, &l_cons) == 0);
+    l_rc = dap_h2_connection_input(&l_conn, l_pkt, l_total, &l_cons);
+    assert(l_rc == 0);
     assert(l_cons == l_total);
     assert(l_conn.state == DAP_H2_CONN_ACTIVE);
 
@@ -100,10 +102,12 @@ static void test_headers_frame_decode(void)
     s_mock_esocket_init(&l_es);
 
     dap_h2_connection_t l_conn;
-    assert(dap_h2_connection_init(&l_conn, NULL, &l_es) == 0);
+    int l_rc = dap_h2_connection_init(&l_conn, NULL, &l_es);
+    assert(l_rc == 0);
 
     dap_hpack_context_t l_enc;
-    assert(dap_hpack_context_init(&l_enc, DAP_H2_DEFAULT_HEADER_TABLE_SIZE) == 0);
+    l_rc = dap_hpack_context_init(&l_enc, DAP_H2_DEFAULT_HEADER_TABLE_SIZE);
+    assert(l_rc == 0);
 
     dap_hpack_header_t l_hdrs[2];
     l_hdrs[0].name = (char *)":method";
@@ -117,7 +121,8 @@ static void test_headers_frame_decode(void)
 
     uint8_t l_hpack[256];
     size_t l_hpack_len = 0;
-    assert(dap_hpack_encode(&l_enc, l_hdrs, 2, l_hpack, sizeof(l_hpack), &l_hpack_len) == 0);
+    l_rc = dap_hpack_encode(&l_enc, l_hdrs, 2, l_hpack, sizeof(l_hpack), &l_hpack_len);
+    assert(l_rc == 0);
     dap_hpack_context_deinit(&l_enc);
 
     uint8_t l_headers_frm[DAP_H2_FRAME_HEADER_SIZE + sizeof(l_hpack)];
@@ -136,7 +141,8 @@ static void test_headers_frame_decode(void)
     l_pos += l_hf;
 
     size_t l_cons = 0;
-    assert(dap_h2_connection_input(&l_conn, l_pkt, l_pos, &l_cons) == 0);
+    l_rc = dap_h2_connection_input(&l_conn, l_pkt, l_pos, &l_cons);
+    assert(l_rc == 0);
     assert(l_cons == l_pos);
     assert(l_conn.state == DAP_H2_CONN_ACTIVE);
 
