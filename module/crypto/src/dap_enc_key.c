@@ -1532,13 +1532,17 @@ const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type)
     return a_key_type >= DAP_ENC_KEY_TYPE_NULL && a_key_type <= DAP_ENC_KEY_TYPE_LAST &&
            s_callbacks[a_key_type].name && *s_callbacks[a_key_type].name
                ? s_callbacks[a_key_type].name
-               : ( log_it(L_WARNING, "Name was not set for key type %d", a_key_type), "undefined");
+               : "undefined";
 }
 
 dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name){ // TODO: use uthash
     for(dap_enc_key_type_t i = 0; i <= DAP_ENC_KEY_TYPE_LAST; i++){
-        const char * l_current_key_name = dap_enc_get_type_name(i);
-        if(l_current_key_name && !strcmp(a_name, l_current_key_name))
+        /* Skip unregistered types silently — the name lookup is supposed
+         * to scan the whole table, so logging a warning for each empty
+         * slot would flood the console on every call. */
+        if (!s_callbacks[i].name || !*s_callbacks[i].name)
+            continue;
+        if (!strcmp(a_name, s_callbacks[i].name))
             return i;
     }
     log_it(L_WARNING, "No key type with name %s", a_name);
