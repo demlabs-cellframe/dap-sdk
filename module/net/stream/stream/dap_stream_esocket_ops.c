@@ -11,7 +11,6 @@
 
 #define LOG_TAG "dap_stream_esocket_ops"
 
-extern void dap_stream_delete_from_list(dap_stream_t *a_stream);
 
 /**
  * @brief dap_stream_states_update

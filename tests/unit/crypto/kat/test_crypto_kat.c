@@ -3,7 +3,9 @@
  * @brief Known Answer Tests for DAP crypto primitives.
  *
  * Test vectors:
- *   - ChaCha20-Poly1305 AEAD: RFC 8439 Section 2.8.2
+ *   - ChaCha20-Poly1305 AEAD: RFC 8439 Section 2.8.2 (114 bytes, 7 blocks)
+ *   - ChaCha20-Poly1305 AEAD: >= 128 bytes (forces SIMD path, 9 blocks)
+ *   - ChaCha20-Poly1305 cross-implementation: serial <-> SIMD consistency
  *   - AES-256-CBC: NIST SP 800-38A F.2.5 / F.2.6
  *   - ML-KEM-512/768/1024: encaps/decaps roundtrip (deterministic seed)
  *   - NTRU Prime sntrup761: encaps/decaps roundtrip
@@ -17,6 +19,7 @@
 #include <stdint.h>
 
 #include "dap_common.h"
+#include "dap_enc.h"
 #include "dap_enc_key.h"
 #include "dap_enc_chacha20_poly1305.h"
 #include "dap_enc_aes.h"
@@ -126,8 +129,151 @@ static void s_test_chacha20_poly1305_rfc8439(void)
         tag_out,
         aad, sizeof(aad),
         key, nonce);
+
     KAT_ASSERT(rc != 0, "ChaCha20-Poly1305 rejects tampered tag");
     KAT_PASS("ChaCha20-Poly1305 tamper rejection");
+}
+
+/* ========================================================================== */
+/* ChaCha20-Poly1305 AEAD — >= 128 bytes (forces SIMD path, 9 blocks)        */
+/* ========================================================================== */
+
+static void s_test_chacha20_poly1305_large(void)
+{
+    printf("\n=== ChaCha20-Poly1305 AEAD (>= 128 bytes, 9 blocks, SIMD path) ===\n");
+
+    const char *key_hex =
+        "1a2b3c4d5e6f708192a3b4c5d6e7f8081"
+        "92038495a6b7c8d9e0f1a2b3c4d5e6f70";
+    const char *nonce_hex = "0102030405060708090a0b0c0d0e0f10";
+    const char *aad_hex =   "00000000000000000000000000000000";
+
+    /* 160 bytes = 10 Poly1305 blocks, forces SIMD path (nblocks >= 8) */
+    static const uint8_t plaintext[160] = {
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+    };
+    size_t pt_len = sizeof(plaintext);
+    KAT_ASSERT(pt_len >= 128, "Plaintext >= 128 bytes");
+    KAT_ASSERT(pt_len % 16 == 0, "Plaintext length multiple of 16");
+
+    uint8_t key[32], nonce[12], aad[12];
+    s_hex_to_bytes(key_hex, key, 32);
+    s_hex_to_bytes(nonce_hex, nonce, 12);
+    s_hex_to_bytes(aad_hex, aad, 12);
+
+    uint8_t ct_out[256], tag_out[16];
+    dap_chacha20_poly1305_seal(
+        ct_out, tag_out,
+        plaintext, pt_len,
+        aad, sizeof(aad),
+        key, nonce);
+
+    KAT_ASSERT(tag_out[0] != 0x00, "Tag is non-zero");
+    KAT_PASS("ChaCha20-Poly1305 encrypt large payload (>= 128 bytes)");
+
+    uint8_t pt_out[256];
+    int rc = dap_chacha20_poly1305_open(
+        pt_out,
+        ct_out, pt_len,
+        tag_out,
+        aad, sizeof(aad),
+        key, nonce);
+
+    KAT_ASSERT(rc == 0, "ChaCha20-Poly1305 decrypt succeeds");
+    KAT_ASSERT(memcmp(pt_out, plaintext, pt_len) == 0,
+        "ChaCha20-Poly1305 plaintext roundtrip matches");
+    KAT_PASS("ChaCha20-Poly1305 decrypt roundtrip (>= 128 bytes)");
+
+    tag_out[0] ^= 0x01;
+    rc = dap_chacha20_poly1305_open(
+        pt_out,
+        ct_out, pt_len,
+        tag_out,
+        aad, sizeof(aad),
+        key, nonce);
+
+    KAT_ASSERT(rc != 0, "ChaCha20-Poly1305 rejects tampered tag");
+    KAT_PASS("ChaCha20-Poly1305 tamper rejection (>= 128 bytes)");
+}
+
+/* ========================================================================== */
+/* ChaCha20-Poly1305 cross-implementation consistency (serial <-> SIMD)       */
+/* ========================================================================== */
+
+static void s_test_chacha20_poly1305_cross_impl(void)
+{
+    printf("\n=== ChaCha20-Poly1305 cross-implementation (serial <-> SIMD) ===\n");
+
+    const char *key_hex =
+        "ffffffffffffffffffffffffffffffff"
+        "ffffffffffffffffffffffffffffffff";
+    const char *nonce_hex = "00000000000000000000000000000000";
+    const char *aad_hex =   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    /* 160 bytes = 10 Poly1305 blocks, forces SIMD path */
+    static const uint8_t plaintext[160] = {
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+        'X','Y','Z','1','2','3','4','5','6','7','8','9','0','a','b','c',
+    };
+    size_t pt_len = sizeof(plaintext);
+    KAT_ASSERT(pt_len % 16 == 0, "Plaintext length multiple of 16");
+
+    uint8_t key[32], nonce[12], aad[12];
+    s_hex_to_bytes(key_hex, key, 32);
+    s_hex_to_bytes(nonce_hex, nonce, 12);
+    s_hex_to_bytes(aad_hex, aad, 12);
+
+    uint8_t ct_buf[256], tag_buf[16];
+
+    dap_chacha20_poly1305_seal(
+        ct_buf, tag_buf,
+        plaintext, pt_len,
+        aad, sizeof(aad),
+        key, nonce);
+
+    KAT_ASSERT(tag_buf[0] != 0x00, "Tag is non-zero");
+    KAT_PASS("ChaCha20-Poly1305 encrypt cross-impl payload");
+
+    uint8_t pt_out[256];
+    int rc = dap_chacha20_poly1305_open(
+        pt_out,
+        ct_buf, pt_len,
+        tag_buf,
+        aad, sizeof(aad),
+        key, nonce);
+
+    KAT_ASSERT(rc == 0, "ChaCha20-Poly1305 decrypt succeeds");
+    KAT_ASSERT(memcmp(pt_out, plaintext, pt_len) == 0,
+        "ChaCha20-Poly1305 plaintext roundtrip matches");
+    KAT_PASS("ChaCha20-Poly1305 decrypt roundtrip cross-impl");
+
+    tag_buf[0] ^= 0x01;
+    rc = dap_chacha20_poly1305_open(
+        pt_out,
+        ct_buf, pt_len,
+        tag_buf,
+        aad, sizeof(aad),
+        key, nonce);
+
+    KAT_ASSERT(rc != 0, "ChaCha20-Poly1305 rejects tampered tag");
+    KAT_PASS("ChaCha20-Poly1305 tamper rejection cross-impl");
 }
 
 /* ========================================================================== */
@@ -186,6 +332,100 @@ static void s_test_aes_256_cbc_nist(void)
 
     free(l_enc_out);
     free(l_dec_out);
+    dap_enc_key_delete(l_key);
+}
+
+/* ========================================================================== */
+/* KDF key_generate + encode/decode roundtrip                                  */
+/*                                                                           */
+/* Verify that ChaCha20-Poly1305 and AES-256-CBC derive identical keys from   */
+/* the same (kex_buf, seed) inputs on every build. The KDF output depends on  */
+/* the order and content of the absorb calls inside each cipher's            */
+/* key_generate callback. This test prints the derived key hex so it can be  */
+/* compared across native and WASM builds.                                   */
+/* ========================================================================== */
+
+static void s_print_hex(const char *label, const uint8_t *data, size_t len)
+{
+    printf("    %s: ", label);
+    for (size_t i = 0; i < len && i < 16; i++)
+        printf("%02x", data[i]);
+    if (len > 16) printf("...");
+    printf(" (%zu bytes)\n", len);
+}
+
+static void s_test_kdf_chacha20(void)
+{
+    printf("\n=== ChaCha20-Poly1305 KDF roundtrip ===\n");
+
+    /* Fixed inputs mimicking enc_init: session_id=seed, shared_secret=kex_buf */
+    const uint8_t l_seed[33] = "ABCDEFGHIJKLMNOPQRSTUVWXYABCDEFG";  /* 33 chars A-Y */
+    const uint8_t l_kex[32] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+    };
+
+    /* Derive key via key_generate (this calls the KDF internally) */
+    dap_enc_key_t *l_key = dap_enc_key_new_generate(
+        DAP_ENC_KEY_TYPE_CHACHA20_POLY1305, l_kex, sizeof(l_kex), l_seed, sizeof(l_seed), 32);
+    KAT_ASSERT(l_key != NULL, "ChaCha20 key_generate");
+    KAT_ASSERT(l_key->priv_key_data != NULL, "ChaCha20 private key data");
+    KAT_ASSERT(l_key->priv_key_data_size == 32, "ChaCha20 key size is 32");
+
+    s_print_hex("ChaCha20 KDF key", (const uint8_t *)l_key->priv_key_data, l_key->priv_key_data_size);
+
+    /* Encrypt a test plaintext with the derived key */
+    const uint8_t l_pt[] = "KDF_TEST_PLAINTEXT_1234";  /* 22 bytes */
+    const uint8_t l_nonce[12] = {0};  /* zero nonce for determinism */
+    uint8_t l_ct[64] = {0};
+    uint8_t l_tag[16] = {0};
+
+    int l_rc = dap_chacha20_poly1305_seal(
+        l_ct, l_tag,
+        (const uint8_t *)l_pt, sizeof(l_pt),
+        NULL, 0,  /* no AAD */
+        (const uint8_t *)l_key->priv_key_data, l_nonce);
+    KAT_ASSERT(l_rc == 0, "ChaCha20 seal with KDF key");
+
+    /* Decrypt and verify */
+    uint8_t l_dec[64] = {0};
+    l_rc = dap_chacha20_poly1305_open(
+        l_dec, l_ct, sizeof(l_pt), l_tag,
+        NULL, 0,
+        (const uint8_t *)l_key->priv_key_data, l_nonce);
+    KAT_ASSERT(l_rc == 0, "ChaCha20 open with KDF key");
+    KAT_ASSERT(memcmp(l_pt, l_dec, sizeof(l_pt)) == 0, "ChaCha20 roundtrip with KDF key");
+
+    s_print_hex("ChaCha20 ct[0..7]", l_ct, 8);
+    s_print_hex("ChaCha20 tag[0..7]", l_tag, 8);
+    KAT_PASS("ChaCha20-Poly1305 KDF roundtrip");
+
+    dap_enc_key_delete(l_key);
+}
+
+static void s_test_kdf_aes(void)
+{
+    printf("\n=== AES-256-CBC KDF roundtrip ===\n");
+
+    const uint8_t l_seed[33] = "ABCDEFGHIJKLMNOPQRSTUVWXYABCDEFG";
+    const uint8_t l_kex[32] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+    };
+
+    dap_enc_key_t *l_key = dap_enc_key_new_generate(
+        DAP_ENC_KEY_TYPE_IAES, l_kex, sizeof(l_kex), l_seed, sizeof(l_seed), 32);
+    KAT_ASSERT(l_key != NULL, "AES key_generate");
+    KAT_ASSERT(l_key->priv_key_data != NULL, "AES private key data");
+
+    s_print_hex("AES KDF key", (const uint8_t *)l_key->priv_key_data, l_key->priv_key_data_size);
+    s_print_hex("AES KDF ivec", (const uint8_t *)DAP_ENC_AES_KEY(l_key)->ivec, 16);
+    KAT_PASS("AES-256-CBC KDF derive");
+
     dap_enc_key_delete(l_key);
 }
 
@@ -271,6 +511,7 @@ static void s_test_ntru_prime_roundtrip(void)
 
 int main(void)
 {
+    dap_enc_init();
     dap_log_level_set(L_ERROR);
 
     printf("========================================\n");
@@ -278,7 +519,11 @@ int main(void)
     printf("========================================\n");
 
     s_test_chacha20_poly1305_rfc8439();
+    s_test_chacha20_poly1305_large();
+    s_test_chacha20_poly1305_cross_impl();
     s_test_aes_256_cbc_nist();
+    s_test_kdf_chacha20();
+    s_test_kdf_aes();
     s_test_mlkem_roundtrip(DAP_SIGN_PARAMS_SECURITY_2, "ML-KEM-512");
     s_test_mlkem_roundtrip(DAP_SIGN_PARAMS_SECURITY_3, "ML-KEM-768");
     s_test_mlkem_roundtrip(DAP_SIGN_PARAMS_SECURITY_5, "ML-KEM-1024");

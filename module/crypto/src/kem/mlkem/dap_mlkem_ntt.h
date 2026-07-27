@@ -18,3 +18,8 @@ void MLKEM_NAMESPACE(_basemul)(int16_t a_r[2], const int16_t a_a[2],
 
 void MLKEM_NAMESPACE(_nttpack)(int16_t a_coeffs[MLKEM_N]);
 void MLKEM_NAMESPACE(_nttunpack)(int16_t a_coeffs[MLKEM_N]);
+
+void MLKEM_NAMESPACE(_ntt_dispatch_init)(void);
+void MLKEM_NAMESPACE(_poly_dispatch_init)(void);
+void MLKEM_NAMESPACE(_polyvec_dispatch_init)(void);
+void MLKEM_NAMESPACE(_rej_uniform_dispatch_init)(void);

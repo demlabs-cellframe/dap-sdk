@@ -75,6 +75,17 @@ int chipmunk_mring_derive_vcom_generators(chipmunk_mring_vcom_gens_t *a_out,
             return rc;
         }
     }
+
+    /* Phase 9.15: Pre-NTT generators for hot-path reuse. */
+    a_out->a_ntt = a_out->a;
+    rc = chipmunk_poly_ntt(&a_out->a_ntt);
+    if (rc != 0) return rc;
+    for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
+        a_out->H_prime_ntt[j] = a_out->H_prime[j];
+        rc = chipmunk_poly_ntt(&a_out->H_prime_ntt[j]);
+        if (rc != 0) return rc;
+    }
+
     return 0;
 }
 
@@ -108,7 +119,8 @@ int chipmunk_mring_vcom_pack_b(chipmunk_poly_t *a_b_poly,
 int chipmunk_mring_vcom_commit(chipmunk_poly_t *a_Cb,
                                const chipmunk_mring_vcom_gens_t *a_gens,
                                const chipmunk_poly_t *a_b_poly,
-                               const chipmunk_poly_t a_r_b[CHIPMUNK_MRING_K_PK])
+                               const chipmunk_poly_t a_r_b[CHIPMUNK_MRING_K_PK],
+                               uint64_t q)
 {
     if (!a_Cb || !a_gens || !a_b_poly || !a_r_b) {
         return -EINVAL;
@@ -117,40 +129,25 @@ int chipmunk_mring_vcom_commit(chipmunk_poly_t *a_Cb,
     /*
      * We compute  C_b = a · b + Σ_j H'_j · r_b[j]   in R_q.
      *
-     * Strategy: take working copies of each operand, NTT them, multiply
-     * pointwise inside the NTT domain, accumulate, then invNTT once.
-     * This costs (1 + K_pk) NTT + (1 + K_pk) pointwise multiplications +
-     * K_pk additions + 1 invNTT — minimal for this many summands.
+     * Phase 9.15: Use pre-NTT'd generators (a_ntt, H_prime_ntt).
+     * Only b and r_b need NTT per call (they change each commit).
      */
 
-    chipmunk_poly_t a_ntt   = a_gens->a;
     chipmunk_poly_t b_ntt   = *a_b_poly;
     chipmunk_poly_t acc_ntt;
     chipmunk_poly_t tmp_ntt;
 
-    int rc = chipmunk_poly_ntt(&a_ntt);
-    if (rc != 0) {
-        log_it(L_ERROR, "MRNG vcom: NTT(a) failed (rc=%d)", rc);
-        return rc;
-    }
-    rc = chipmunk_poly_ntt(&b_ntt);
+    int rc = chipmunk_poly_ntt(&b_ntt);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG vcom: NTT(b) failed (rc=%d)", rc);
         return rc;
     }
 
-    chipmunk_poly_mul_ntt(&acc_ntt, &a_ntt, &b_ntt);
+    chipmunk_poly_mul_ntt_q(&acc_ntt, &a_gens->a_ntt, &b_ntt, q);
 
     for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
-        chipmunk_poly_t hp_ntt = a_gens->H_prime[j];
         chipmunk_poly_t rb_ntt = a_r_b[j];
 
-        rc = chipmunk_poly_ntt(&hp_ntt);
-        if (rc != 0) {
-            log_it(L_ERROR, "MRNG vcom: NTT(H'_%u) failed (rc=%d)",
-                   (unsigned)j, rc);
-            return rc;
-        }
         rc = chipmunk_poly_ntt(&rb_ntt);
         if (rc != 0) {
             log_it(L_ERROR, "MRNG vcom: NTT(r_b[%u]) failed (rc=%d)",
@@ -158,8 +155,8 @@ int chipmunk_mring_vcom_commit(chipmunk_poly_t *a_Cb,
             return rc;
         }
 
-        chipmunk_poly_mul_ntt(&tmp_ntt, &hp_ntt, &rb_ntt);
-        chipmunk_poly_add_ntt(&acc_ntt, &acc_ntt, &tmp_ntt);
+        chipmunk_poly_mul_ntt_q(&tmp_ntt, &a_gens->H_prime_ntt[j], &rb_ntt, q);
+        chipmunk_poly_add_ntt_q(&acc_ntt, &acc_ntt, &tmp_ntt, q);
     }
 
     *a_Cb = acc_ntt;
@@ -174,7 +171,8 @@ int chipmunk_mring_vcom_commit(chipmunk_poly_t *a_Cb,
 int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
                              const chipmunk_poly_t *a_C,
                              const chipmunk_mring_vcom_gens_t *a_gens,
-                             const chipmunk_poly_t a_r[CHIPMUNK_MRING_K_PK])
+                             const chipmunk_poly_t a_r[CHIPMUNK_MRING_K_PK],
+                             uint64_t q)
 {
     if (!a_v_out || !a_C || !a_gens || !a_r) {
         return -EINVAL;
@@ -183,24 +181,20 @@ int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
     chipmunk_poly_t h_part;
     memset(&h_part, 0, sizeof(h_part));
 
+    /* Phase 9.15: Use pre-NTT'd H_prime_ntt. Only r[j] needs NTT per call. */
     for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
-        chipmunk_poly_t hp_ntt = a_gens->H_prime[j];
         chipmunk_poly_t rb_ntt = a_r[j];
         chipmunk_poly_t prod_ntt;
 
-        int rc = chipmunk_poly_ntt(&hp_ntt);
+        int rc = chipmunk_poly_ntt(&rb_ntt);
         if (rc != 0) {
             return rc;
         }
-        rc = chipmunk_poly_ntt(&rb_ntt);
-        if (rc != 0) {
-            return rc;
-        }
-        chipmunk_poly_mul_ntt(&prod_ntt, &hp_ntt, &rb_ntt);
+        chipmunk_poly_mul_ntt_q(&prod_ntt, &a_gens->H_prime_ntt[j], &rb_ntt, q);
         if (j == 0u) {
             h_part = prod_ntt;
         } else {
-            chipmunk_poly_add_ntt(&h_part, &h_part, &prod_ntt);
+            chipmunk_poly_add_ntt_q(&h_part, &h_part, &prod_ntt, q);
         }
     }
 
@@ -210,13 +204,13 @@ int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
     }
 
     chipmunk_poly_t residual;
-    rc = chipmunk_poly_sub(&residual, a_C, &h_part);
+    rc = chipmunk_poly_sub_q(&residual, a_C, &h_part, q);
     if (rc != 0) {
         return rc;
     }
 
     chipmunk_poly_t a_inv;
-    rc = chipmunk_mring_poly_invert(&a_inv, &a_gens->a);
+    rc = chipmunk_mring_poly_invert_q(&a_inv, &a_gens->a, q);
     if (rc != 0) {
         return rc;
     }
@@ -230,11 +224,12 @@ int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
     if (rc != 0) {
         return rc;
     }
-    chipmunk_poly_mul_ntt(a_v_out, &a_inv, &res_ntt);
+    chipmunk_poly_mul_ntt_q(a_v_out, &a_inv, &res_ntt, q);
     return chipmunk_poly_invntt(a_v_out);
 }
 
-int chipmunk_mring_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound)
+int chipmunk_mring_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound,
+                           uint64_t q)
 {
     if (!a_poly || a_bound < 0) {
         return -EINVAL;
@@ -244,7 +239,7 @@ int chipmunk_mring_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound)
      * (0 = within bound, 1 = bound violation).  Translate to a POSIX-style
      * error so the MRNG layer can return -ERANGE consistently.
      */
-    if (chipmunk_lrs_poly_chknorm_centered(a_poly, a_bound) != 0) {
+    if (chipmunk_lrs_poly_chknorm_centered(a_poly, a_bound, q) != 0) {
         return -ERANGE;
     }
     return 0;
@@ -302,9 +297,10 @@ int chipmunk_mring_augment_witness(chipmunk_mring_polyvec_t *a_b_tilde,
     }
 
     /* First N slots: b_i as a degree-0 polynomial.
-     * Second N slots: b_i (b_i − 1) = 0 for b_i ∈ {0,1}.
-     * Slots are already zeroed by polyvec_alloc; we only need to set
-     * coeffs[0] for the lower half. */
+     * Second N slots: b_i(b_i − 1) as a degree-0 polynomial.
+     * For honest b_i ∈ {0,1}, b_i(b_i−1) = 0.  For dishonest b_i ∉ {0,1},
+     * the non-zero value is caught algebraically by the fold verifier's
+     * inner-product check against c²·(b_i²−b_i). */
     for (uint32_t i = 0u; i < a_n_ring; ++i) {
         const uint8_t b_i = a_b_indicator[i];
         if (b_i > 1u) {
@@ -315,10 +311,9 @@ int chipmunk_mring_augment_witness(chipmunk_mring_polyvec_t *a_b_tilde,
         }
         memset(&a_b_tilde->slots[i], 0, sizeof(chipmunk_poly_t));
         a_b_tilde->slots[i].coeffs[0] = (int32_t)b_i;
-        /* Second half slot must be zero (memset above already handles it
-         * if the buffer started zero; we re-zero defensively to make
-         * re-use of an existing polyvec safe). */
         memset(&a_b_tilde->slots[a_n_ring + i], 0, sizeof(chipmunk_poly_t));
+        a_b_tilde->slots[a_n_ring + i].coeffs[0] =
+            (int32_t)b_i * ((int32_t)b_i - 1);
     }
     return 0;
 }
@@ -329,7 +324,8 @@ int chipmunk_mring_augment_witness(chipmunk_mring_polyvec_t *a_b_tilde,
  */
 static int s_poly_mul_time(chipmunk_poly_t *a_out,
                            const chipmunk_poly_t *a_left,
-                           const chipmunk_poly_t *a_right)
+                           const chipmunk_poly_t *a_right,
+                           uint64_t q)
 {
     chipmunk_poly_t l = *a_left;
     chipmunk_poly_t r = *a_right;
@@ -337,14 +333,30 @@ static int s_poly_mul_time(chipmunk_poly_t *a_out,
     if (rc != 0) return rc;
     rc = chipmunk_poly_ntt(&r);
     if (rc != 0) return rc;
-    chipmunk_poly_mul_ntt(a_out, &l, &r);
+    chipmunk_poly_mul_ntt_q(a_out, &l, &r, q);
+    return chipmunk_poly_invntt(a_out);
+}
+
+/* NTT-native variant: left operand already in NTT domain, right operand is
+ * forward-NTT'd internally. Output is in time domain (invNTT applied).
+ * Saves one forward NTT of the reused left operand per call. */
+static int s_poly_mul_ntt_lhs(chipmunk_poly_t *a_out,
+                              const chipmunk_poly_t *a_left_ntt,
+                              const chipmunk_poly_t *a_right,
+                              uint64_t q)
+{
+    chipmunk_poly_t r = *a_right;
+    int rc = chipmunk_poly_ntt(&r);
+    if (rc != 0) return rc;
+    chipmunk_poly_mul_ntt_q(a_out, a_left_ntt, &r, q);
     return chipmunk_poly_invntt(a_out);
 }
 
 int chipmunk_mring_eval_public_P(chipmunk_mring_polyvec_t *a_P_tilde,
                                  const chipmunk_poly_t *a_c,
                                  const chipmunk_poly_t *a_pks,
-                                 uint32_t a_n_ring)
+                                 uint32_t a_n_ring,
+                                 uint64_t q)
 {
     if (!a_P_tilde || !a_c || !a_pks || !a_P_tilde->slots) {
         return -EINVAL;
@@ -356,28 +368,33 @@ int chipmunk_mring_eval_public_P(chipmunk_mring_polyvec_t *a_P_tilde,
 
     /* Pre-compute c² and c³ once. */
     chipmunk_poly_t c2, c3;
-    int rc = s_poly_mul_time(&c2, a_c, a_c);
+    int rc = s_poly_mul_time(&c2, a_c, a_c, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG eval_P: c² compute failed (rc=%d)", rc);
         return rc;
     }
-    rc = s_poly_mul_time(&c3, &c2, a_c);
+    rc = s_poly_mul_time(&c3, &c2, a_c, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG eval_P: c³ compute failed (rc=%d)", rc);
         return rc;
     }
 
+    /* Pre-NTT c³ for reuse across all ring members. */
+    chipmunk_poly_t c3_ntt = c3;
+    rc = chipmunk_poly_ntt(&c3_ntt);
+    if (rc != 0) return rc;
+
     /* Lower half: P̃[i] = c + c³ · pk_i. */
     for (uint32_t i = 0u; i < a_n_ring; ++i) {
         chipmunk_poly_t tmp;
-        rc = s_poly_mul_time(&tmp, &c3, &a_pks[i]);
+        rc = s_poly_mul_ntt_lhs(&tmp, &c3_ntt, &a_pks[i], q);
         if (rc != 0) {
             log_it(L_ERROR,
                    "MRNG eval_P: c³·pk[%u] compute failed (rc=%d)",
                    (unsigned)i, rc);
             return rc;
         }
-        rc = chipmunk_poly_add(&a_P_tilde->slots[i], a_c, &tmp);
+        rc = chipmunk_poly_add_q(&a_P_tilde->slots[i], a_c, &tmp, q);
         if (rc != 0) {
             log_it(L_ERROR,
                    "MRNG eval_P: P̃[%u] add failed (rc=%d)",
@@ -392,10 +409,11 @@ int chipmunk_mring_eval_public_P(chipmunk_mring_polyvec_t *a_P_tilde,
     return 0;
 }
 
-int chipmunk_mring_eval_public_rho(chipmunk_poly_t *a_rho,
-                                   const chipmunk_poly_t *a_c,
-                                   uint32_t a_t,
-                                   const chipmunk_poly_t *a_Y_pk)
+int chipmunk_mring_eval_public_rho_q(chipmunk_poly_t *a_rho,
+                                     const chipmunk_poly_t *a_c,
+                                     uint32_t a_t,
+                                     const chipmunk_poly_t *a_Y_pk,
+                                     uint64_t q)
 {
     if (!a_rho || !a_c || !a_Y_pk) {
         return -EINVAL;
@@ -412,28 +430,29 @@ int chipmunk_mring_eval_public_rho(chipmunk_poly_t *a_rho,
          * NTT layer expects coefficients in (−q, q); we centre into
          * [−q/2, q/2] for canonical form. */
         const int64_t l_prod = (int64_t)a_c->coeffs[k] * (int64_t)a_t;
-        int64_t l_red = l_prod % (int64_t)CHIPMUNK_Q;
-        if (l_red >  (int64_t)(CHIPMUNK_Q / 2)) l_red -= (int64_t)CHIPMUNK_Q;
-        if (l_red <= -(int64_t)(CHIPMUNK_Q / 2)) l_red += (int64_t)CHIPMUNK_Q;
+        int64_t l_red = l_prod % (int64_t)q;
+        if (l_red >  (int64_t)(q / 2)) l_red -= (int64_t)q;
+        if (l_red <= -(int64_t)(q / 2)) l_red += (int64_t)q;
         term1.coeffs[k] = (int32_t)l_red;
     }
 
     /* term2 = c³ · Y_pk */
     chipmunk_poly_t c2, c3, term2;
-    int rc = s_poly_mul_time(&c2, a_c, a_c);
+    int rc = s_poly_mul_time(&c2, a_c, a_c, q);
     if (rc != 0) return rc;
-    rc = s_poly_mul_time(&c3, &c2, a_c);
+    rc = s_poly_mul_time(&c3, &c2, a_c, q);
     if (rc != 0) return rc;
-    rc = s_poly_mul_time(&term2, &c3, a_Y_pk);
+    rc = s_poly_mul_time(&term2, &c3, a_Y_pk, q);
     if (rc != 0) return rc;
 
-    return chipmunk_poly_add(a_rho, &term1, &term2);
+    return chipmunk_poly_add_q(a_rho, &term1, &term2, q);
 }
 
 int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
                                const uint8_t *a_b_indicator,
                                const chipmunk_poly_t *a_x_flat,
-                               uint32_t a_n_ring)
+                               uint32_t a_n_ring,
+                               uint64_t q)
 {
     if (!a_X_out || !a_b_indicator || !a_x_flat) {
         return -EINVAL;
@@ -470,7 +489,7 @@ int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
             for (size_t k = 0u; k < CHIPMUNK_N; ++k) {
                 l_tmp.coeffs[k] = (int32_t)((uint32_t)l_src->coeffs[k] & l_mask);
             }
-            const int rc = chipmunk_poly_add(&a_X_out[j], &a_X_out[j], &l_tmp);
+            const int rc = chipmunk_poly_add_q(&a_X_out[j], &a_X_out[j], &l_tmp, q);
             if (rc != 0) {
                 log_it(L_ERROR,
                        "MRNG aggregate_X: poly_add (i=%u, j=%u) failed (rc=%d)",
@@ -493,13 +512,13 @@ int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
  * a ≠ 0, but checked anyway).  Not constant-time: only used on PUBLIC
  * Fiat-Shamir challenges.
  */
-static int32_t s_modinv_q(int32_t a_val)
+static int32_t s_modinv_q(int32_t a_val, uint64_t q)
 {
     if (a_val <= 0) {
         return -1;
     }
     int64_t l_t = 0, l_newt = 1;
-    int64_t l_r = (int64_t)CHIPMUNK_Q, l_newr = (int64_t)a_val;
+    int64_t l_r = (int64_t)q, l_newr = (int64_t)a_val;
     while (l_newr != 0) {
         int64_t l_quot = l_r / l_newr;
         int64_t l_tmp = l_t - l_quot * l_newt;
@@ -513,13 +532,14 @@ static int32_t s_modinv_q(int32_t a_val)
         return -1; /* not invertible */
     }
     if (l_t < 0) {
-        l_t += (int64_t)CHIPMUNK_Q;
+        l_t += (int64_t)q;
     }
     return (int32_t)l_t;
 }
 
-int chipmunk_mring_poly_invert(chipmunk_poly_t *a_inv_out,
-                               const chipmunk_poly_t *a_x)
+int chipmunk_mring_poly_invert_q(chipmunk_poly_t *a_inv_out,
+                                 const chipmunk_poly_t *a_x,
+                                 uint64_t q)
 {
     if (!a_inv_out || !a_x) {
         return -EINVAL;
@@ -531,11 +551,11 @@ int chipmunk_mring_poly_invert(chipmunk_poly_t *a_inv_out,
     }
     chipmunk_poly_t l_invn;
     for (int i = 0; i < CHIPMUNK_N; ++i) {
-        int32_t l_v = l_xn.coeffs[i] % (int32_t)CHIPMUNK_Q;
+        int32_t l_v = l_xn.coeffs[i] % (int32_t)q;
         if (l_v < 0) {
-            l_v += (int32_t)CHIPMUNK_Q;
+            l_v += (int32_t)q;
         }
-        const int32_t l_iv = s_modinv_q(l_v);
+        const int32_t l_iv = s_modinv_q(l_v, q);
         if (l_iv < 0) {
             /* Some NTT coordinate is zero ⇒ x is not invertible in R_q. */
             return -EDOM;
@@ -630,7 +650,8 @@ int chipmunk_mring_bind_mask_sample(chipmunk_poly_t a_rho_x_out[CHIPMUNK_MRING_K
 int chipmunk_mring_bind_prove_z_x(chipmunk_poly_t a_z_x_out[CHIPMUNK_MRING_K_PK],
                                   const chipmunk_poly_t a_rho_x[CHIPMUNK_MRING_K_PK],
                                   const chipmunk_poly_t *a_c_star,
-                                  const chipmunk_poly_t a_X[CHIPMUNK_MRING_K_PK])
+                                  const chipmunk_poly_t a_X[CHIPMUNK_MRING_K_PK],
+                                  uint64_t q)
 {
     if (!a_z_x_out || !a_rho_x || !a_c_star || !a_X) {
         return -EINVAL;
@@ -644,14 +665,14 @@ int chipmunk_mring_bind_prove_z_x(chipmunk_poly_t a_z_x_out[CHIPMUNK_MRING_K_PK]
      */
     for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
         chipmunk_poly_t l_prod;
-        const int rc_mul = s_poly_mul_time(&l_prod, a_c_star, &a_X[j]);
+        const int rc_mul = s_poly_mul_time(&l_prod, a_c_star, &a_X[j], q);
         if (rc_mul != 0) {
             log_it(L_ERROR,
                    "MRNG bind_prove: c*·X[%u] failed (rc=%d)",
                    (unsigned)j, rc_mul);
             return rc_mul;
         }
-        const int rc_add = chipmunk_poly_add(&a_z_x_out[j], &a_rho_x[j], &l_prod);
+        const int rc_add = chipmunk_poly_add_q(&a_z_x_out[j], &a_rho_x[j], &l_prod, q);
         if (rc_add != 0) {
             log_it(L_ERROR,
                    "MRNG bind_prove: z_x[%u] add failed (rc=%d)",
@@ -664,7 +685,7 @@ int chipmunk_mring_bind_prove_z_x(chipmunk_poly_t a_z_x_out[CHIPMUNK_MRING_K_PK]
          * uniform abort statistical-distance proof transfers verbatim.
          */
         if (chipmunk_lrs_poly_chknorm_centered(
-                &a_z_x_out[j], CHIPMUNK_MRING_RESPONSE_BOUND) != 0) {
+                &a_z_x_out[j], CHIPMUNK_MRING_RESPONSE_BOUND, q) != 0) {
             return -EAGAIN;
         }
     }
@@ -678,7 +699,8 @@ int chipmunk_mring_bind_verify_reconstruct(chipmunk_poly_t *a_M_pk_out,
                                            const chipmunk_poly_t a_z_x[CHIPMUNK_MRING_K_PK],
                                            const chipmunk_poly_t *a_c_star,
                                            const chipmunk_poly_t *a_Y_pk,
-                                           const chipmunk_poly_t *a_T)
+                                           const chipmunk_poly_t *a_T,
+                                           uint64_t q)
 {
     if (!a_M_pk_out || !a_M_T_out || !a_A_pk || !a_A_T || !a_z_x ||
         !a_c_star || !a_Y_pk || !a_T) {
@@ -688,7 +710,7 @@ int chipmunk_mring_bind_verify_reconstruct(chipmunk_poly_t *a_M_pk_out,
     /* G2 v2 §A6: verifier recomputes Π_norm from unpacked z_x. */
     for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
         if (chipmunk_lrs_poly_chknorm_centered(
-                &a_z_x[j], CHIPMUNK_MRING_RESPONSE_BOUND) != 0) {
+                &a_z_x[j], CHIPMUNK_MRING_RESPONSE_BOUND, q) != 0) {
             log_it(L_ERROR,
                    "MRNG bind_verify: ‖z_x[%u]‖∞ exceeds RESPONSE_BOUND",
                    (unsigned)j);
@@ -698,17 +720,17 @@ int chipmunk_mring_bind_verify_reconstruct(chipmunk_poly_t *a_M_pk_out,
 
     /* M_pk := A_pk · z_x − c*·Y_pk. */
     chipmunk_poly_t l_lhs_pk, l_rhs_pk;
-    int rc = chipmunk_lrs_relation_eval(&l_lhs_pk, a_A_pk, a_z_x);
+    int rc = chipmunk_lrs_relation_eval(&l_lhs_pk, a_A_pk, a_z_x, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG bind_verify: relation_eval(A_pk, z_x) failed (rc=%d)", rc);
         return rc;
     }
-    rc = s_poly_mul_time(&l_rhs_pk, a_c_star, a_Y_pk);
+    rc = s_poly_mul_time(&l_rhs_pk, a_c_star, a_Y_pk, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG bind_verify: c*·Y_pk failed (rc=%d)", rc);
         return rc;
     }
-    rc = chipmunk_poly_sub(a_M_pk_out, &l_lhs_pk, &l_rhs_pk);
+    rc = chipmunk_poly_sub_q(a_M_pk_out, &l_lhs_pk, &l_rhs_pk, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG bind_verify: M_pk reconstruct sub failed (rc=%d)", rc);
         return rc;
@@ -716,17 +738,17 @@ int chipmunk_mring_bind_verify_reconstruct(chipmunk_poly_t *a_M_pk_out,
 
     /* M_T := A_T · z_x − c*·T. */
     chipmunk_poly_t l_lhs_T, l_rhs_T;
-    rc = chipmunk_lrs_relation_eval(&l_lhs_T, a_A_T, a_z_x);
+    rc = chipmunk_lrs_relation_eval(&l_lhs_T, a_A_T, a_z_x, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG bind_verify: relation_eval(A_T, z_x) failed (rc=%d)", rc);
         return rc;
     }
-    rc = s_poly_mul_time(&l_rhs_T, a_c_star, a_T);
+    rc = s_poly_mul_time(&l_rhs_T, a_c_star, a_T, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG bind_verify: c*·T failed (rc=%d)", rc);
         return rc;
     }
-    rc = chipmunk_poly_sub(a_M_T_out, &l_lhs_T, &l_rhs_T);
+    rc = chipmunk_poly_sub_q(a_M_T_out, &l_lhs_T, &l_rhs_T, q);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG bind_verify: M_T reconstruct sub failed (rc=%d)", rc);
         return rc;
@@ -736,7 +758,8 @@ int chipmunk_mring_bind_verify_reconstruct(chipmunk_poly_t *a_M_pk_out,
 
 int chipmunk_mring_inner_product(chipmunk_poly_t *a_out,
                                  const chipmunk_mring_polyvec_t *a_b_tilde,
-                                 const chipmunk_mring_polyvec_t *a_P_tilde)
+                                 const chipmunk_mring_polyvec_t *a_P_tilde,
+                                 uint64_t q)
 {
     if (!a_out || !a_b_tilde || !a_P_tilde) {
         return -EINVAL;
@@ -753,14 +776,14 @@ int chipmunk_mring_inner_product(chipmunk_poly_t *a_out,
         chipmunk_poly_t term;
         const int rc = s_poly_mul_time(&term,
                                        &a_b_tilde->slots[k],
-                                       &a_P_tilde->slots[k]);
+                                       &a_P_tilde->slots[k], q);
         if (rc != 0) {
             log_it(L_ERROR,
                    "MRNG inner_product: term[%u] mul failed (rc=%d)",
                    (unsigned)k, rc);
             return rc;
         }
-        const int rc_add = chipmunk_poly_add(a_out, a_out, &term);
+        const int rc_add = chipmunk_poly_add_q(a_out, a_out, &term, q);
         if (rc_add != 0) {
             log_it(L_ERROR,
                    "MRNG inner_product: term[%u] add failed (rc=%d)",

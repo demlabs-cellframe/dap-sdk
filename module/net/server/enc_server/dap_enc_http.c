@@ -210,9 +210,30 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                l_pkey_exchange_key->shared_key_size,
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE,
                                                l_block_key_size);
-        
+
+        /* Cross-platform diagnostic: log the KEM shared secret and derived
+         * symmetric key. Compare these bytes with the client-side values
+         * (from s_enc_init_response in dap_client_esocket.c) to confirm or
+         * deny Kyber/ML-KEM shared secret divergence between WASM and native.
+         * Level DEBUG so production logs are not affected. */
+        {
+            const uint8_t *l_ss = (const uint8_t *)l_pkey_exchange_key->shared_key;
+            const uint8_t *l_dk = l_enc_key_ks->key && l_enc_key_ks->key->priv_key_data
+                ? (const uint8_t *)l_enc_key_ks->key->priv_key_data : NULL;
+            log_it(L_DEBUG, "enc_init: id='%s' enc_type=%d kex_type=%d kex_ss_size=%zu",
+                   l_enc_key_ks->id, l_enc_block_type, l_pkey_exchange_type,
+                   l_pkey_exchange_key->shared_key_size);
+            if (l_ss && l_pkey_exchange_key->shared_key_size >= 8)
+                log_it(L_DEBUG, "enc_init: kem_shared[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x",
+                       l_ss[0], l_ss[1], l_ss[2], l_ss[3], l_ss[4], l_ss[5], l_ss[6], l_ss[7]);
+            if (l_dk && l_enc_key_ks->key->priv_key_data_size >= 8)
+                log_it(L_DEBUG, "enc_init: derived_key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x",
+                       l_dk[0], l_dk[1], l_dk[2], l_dk[3], l_dk[4], l_dk[5], l_dk[6], l_dk[7]);
+        }
+
         dap_enc_ks_save_in_storage(l_enc_key_ks);
-        int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), 
+
+        int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE,
                                                       encrypt_id, DAP_ENC_DATA_TYPE_B64),
             l_node_msg_len = 0;
 
@@ -221,7 +242,15 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         if (l_protocol_version && l_sign_count) {
             l_enc_key_ks->node_addr = dap_cluster_node_addr_from_sign(l_sign);
 
-            dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+            dap_cert_t *l_node_cert = dap_cert_ensure_node_addr(DAP_STREAM_NODE_ADDR_CERT_NAME,
+                                                                DAP_STREAM_NODE_ADDR_CERT_TYPE);
+            if (!l_node_cert || !l_node_cert->enc_key) {
+                log_it(L_ERROR, "enc_init: node-addr certificate unavailable");
+                dap_enc_key_delete(l_pkey_exchange_key);
+                DAP_DELETE(encrypt_msg);
+                *return_code = DAP_HTTP_STATUS_INTERNAL_SERVER_ERROR;
+                return;
+            }
             dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size);
             if (!l_node_sign) {
                 dap_enc_key_delete(l_pkey_exchange_key);
@@ -279,6 +308,14 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
 
     dap_enc_key_t * l_key= dap_enc_ks_find_http(a_http_simple->http_client);
     if(l_key){
+        /* Cross-platform diagnostic: log the key used for decryption. */
+        const uint8_t *l_dk = l_key->priv_key_data
+            ? (const uint8_t *)l_key->priv_key_data : NULL;
+        if (l_dk && l_key->priv_key_data_size >= 8)
+            log_it(L_DEBUG, "enc_decode: key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x type=%d",
+                   l_dk[0], l_dk[1], l_dk[2], l_dk[3],
+                   l_dk[4], l_dk[5], l_dk[6], l_dk[7], l_key->type);
+
         enc_http_delegate_t * dg = DAP_NEW_Z_RET_VAL_IF_FAIL(enc_http_delegate_t, NULL);
         dg->key=l_key;
         dg->http=a_http_simple->http_client;
@@ -322,7 +359,11 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
             }
             dg->url_path_size=dap_enc_decode(l_key, a_http_simple->http_client->url_path,l_url_path_size_max,dg->url_path, l_url_path_size_max, l_enc_type);
             dg->url_path[dg->url_path_size] = 0;
-            log_it(L_DEBUG,"URL path after decode '%s'",dg->url_path );
+            if(!dg->url_path_size)
+                log_it(L_WARNING, "URL path decryption failed (key_type=%d enc_type=%d url='%s' url_size=%zu)",
+                       l_key->type, l_enc_type, a_http_simple->http_client->url_path, l_url_path_size_max);
+            else
+                log_it(L_DEBUG,"URL path after decode '%s'",dg->url_path );
             // log_it(L_DEBUG,"URL path before decode: '%s' after decode '%s'",cl_st->http->url_path,dg->url_path );
         }
 
@@ -378,9 +419,9 @@ void enc_http_reply_encode(struct dap_http_simple *a_http_simple,enc_http_delega
 
     a_http_simple->reply = DAP_NEW_SIZE(void,l_reply_size_max);
     a_http_simple->reply_size = dap_enc_code( a_http_delegate->key,
-                                              a_http_delegate->response, a_http_delegate->response_size,
-                                              a_http_simple->reply, l_reply_size_max,
-                                              DAP_ENC_DATA_TYPE_RAW);
+                                               a_http_delegate->response, a_http_delegate->response_size,
+                                               a_http_simple->reply, l_reply_size_max,
+                                               DAP_ENC_DATA_TYPE_RAW);
 }
 
 void enc_http_delegate_delete(enc_http_delegate_t * dg)

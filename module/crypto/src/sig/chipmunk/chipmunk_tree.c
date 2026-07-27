@@ -71,6 +71,7 @@
 #include "chipmunk_tree.h"
 #include "chipmunk.h"
 #include "chipmunk_hash.h"
+#include "chipmunk_poly.h"
 #include "dap_common.h"
 #include "dap_hash_shake128.h"
 #include <string.h>
@@ -780,8 +781,9 @@ bool chipmunk_path_verify(const chipmunk_path_t *a_path,
 // to endianness of the coefficient field; we pin the endianness explicitly
 // here to avoid relying on host-byte-order assumptions in the rest of the
 // codebase.
-int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
-                                  chipmunk_hvc_poly_t *a_hvc_poly)
+int chipmunk_hots_pk_to_hvc_poly_q(const chipmunk_public_key_t *a_hots_pk,
+                                    chipmunk_hvc_poly_t *a_hvc_poly,
+                                    uint64_t q)
 {
     if (!a_hots_pk || !a_hvc_poly) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_pk_to_hvc_poly");
@@ -800,8 +802,7 @@ int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
     uint8_t *l_p = l_body + 32;
     for (int i = 0; i < CHIPMUNK_N; ++i) {
         int32_t l_c = a_hots_pk->v0.coeffs[i];
-        int32_t l_r = l_c % CHIPMUNK_Q;
-        if (l_r < 0) l_r += CHIPMUNK_Q;
+        int32_t l_r = chipmunk_mod_q_q((int64_t)l_c, q);
         l_p[0] = (uint8_t)(l_r      );
         l_p[1] = (uint8_t)(l_r >>  8);
         l_p[2] = (uint8_t)(l_r >> 16);
@@ -810,8 +811,7 @@ int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
     }
     for (int i = 0; i < CHIPMUNK_N; ++i) {
         int32_t l_c = a_hots_pk->v1.coeffs[i];
-        int32_t l_r = l_c % CHIPMUNK_Q;
-        if (l_r < 0) l_r += CHIPMUNK_Q;
+        int32_t l_r = chipmunk_mod_q_q((int64_t)l_c, q);
         l_p[0] = (uint8_t)(l_r      );
         l_p[1] = (uint8_t)(l_r >>  8);
         l_p[2] = (uint8_t)(l_r >> 16);
@@ -872,6 +872,12 @@ int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
     memset(l_state, 0, sizeof(l_state));
     memset(l_block, 0, sizeof(l_block));
     return CHIPMUNK_ERROR_SUCCESS;
+}
+
+int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
+                                  chipmunk_hvc_poly_t *a_hvc_poly)
+{
+    return chipmunk_hots_pk_to_hvc_poly_q(a_hots_pk, a_hvc_poly, (uint64_t)CHIPMUNK_Q);
 }
 
 // ============================================================================

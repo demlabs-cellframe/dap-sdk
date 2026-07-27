@@ -38,68 +38,73 @@
 #include "dap_enc.h"
 #include "include/dap_enc_ks.h"
 #include "dap_enc_key.h"
+#include "dap_rand.h"
 
 #define LOG_TAG "dap_enc_ks"
 
 static dap_enc_ks_key_t * _ks = NULL;
 static bool s_memcache_enable = false;
 static time_t s_memcache_expiration_key = 0;
+/* Guards all access to the shared _ks hash table (add/find/del/foreach).
+ * Per-key mutexes protect individual keys but NOT the table itself, so without
+ * this a concurrent enc_ks_find during enc_ks_add/enc_ks_delete corrupts uthash. */
+static pthread_mutex_t s_ks_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void s_enc_key_free(dap_enc_ks_key_t **ptr);
 
 void dap_enc_ks_deinit()
 {
+    pthread_mutex_lock(&s_ks_lock);
     if (_ks) {
         dap_enc_ks_key_t *cur_item, *tmp;
         dap_ht_foreach(_ks, cur_item, tmp) {
-            // Clang bug at this, cur_item should change at every loop cycle
+            /* dap_ht_foreach captures el->hh.next before the body, so deleting
+             * the current element here is safe (no iterator invalidation). */
             dap_ht_del(_ks, cur_item);
             s_enc_key_free(&cur_item);
         }
     }
+    pthread_mutex_unlock(&s_ks_lock);
 }
 
-inline static void s_gen_session_id(char a_id_buf[DAP_ENC_KS_KEY_ID_SIZE])
+inline static void s_gen_session_id(char a_id_buf[DAP_ENC_KS_KEY_ID_SIZE + 1])
 {
-    for(short i = 0; i < DAP_ENC_KS_KEY_ID_SIZE; i++)
-        a_id_buf[i] = 65 + rand() % 25;
+    /* Crypto-secure KeyID over the 'A'..'Y' alphabet (25 values), matching the
+     * legacy range for compatibility with existing KeyID parsers. The buffer is
+     * KEY_ID_SIZE+1 wide; we write exactly KEY_ID_SIZE chars and NUL-terminate
+     * so strlen-based hash lookups are deterministic regardless of struct
+     * layout. */
+    uint8_t l_rand[DAP_ENC_KS_KEY_ID_SIZE];
+    randombytes(l_rand, sizeof(l_rand));
+    for (short i = 0; i < DAP_ENC_KS_KEY_ID_SIZE; i++)
+        a_id_buf[i] = 'A' + (l_rand[i] % 25);
+    a_id_buf[DAP_ENC_KS_KEY_ID_SIZE] = '\0';
 }
 
-void s_save_key_in_storge(dap_enc_ks_key_t *a_key)
+/* Internal add — caller must hold s_ks_lock. */
+static void s_save_key_in_storge(dap_enc_ks_key_t *a_key)
 {
     dap_ht_add_str(_ks, id, a_key);
     if(s_memcache_enable) {
         uint8_t* l_serialize_key = dap_enc_key_serialize(a_key->key, NULL);
         //dap_memcache_put(a_key->id, l_serialize_key, sizeof (dap_enc_key_serialize_t), s_memcache_expiration_key);
-        free(l_serialize_key);
+        DAP_DELETE(l_serialize_key);
     }
 }
 
-
-dap_enc_ks_key_t * dap_enc_ks_find(const char * v_id)
+/* Internal find — caller must hold s_ks_lock. */
+static dap_enc_ks_key_t * s_ks_find_locked(const char * v_id)
 {
     dap_enc_ks_key_t * ret = NULL;
     dap_ht_find_str(_ks, v_id, ret);
-    if(ret == NULL) {
-        if(s_memcache_enable) {
-            /*void* l_key_buf;
-            size_t l_val_length;
-            bool find = dap_memcache_get(v_id, &l_val_length, (void**)&l_key_buf);
-            if(find) {
-                if(l_val_length != sizeof (dap_enc_key_serialize_t)) {
-                    log_it(L_WARNING, "Data can be broken");
-                }
-                dap_enc_key_t* key = dap_enc_key_deserialize(l_key_buf, l_val_length);
-                ret = DAP_NEW_Z(dap_enc_ks_key_t);
-                strncpy(ret->id, v_id, DAP_ENC_KS_KEY_ID_SIZE);
-                pthread_mutex_init(&ret->mutex,NULL);
-                ret->key = key;
-                dap_ht_add_str(_ks, id, ret);
-                free(l_key_buf);
-                return ret;
-            }*/
-        }
-    }
+    return ret;
+}
+
+dap_enc_ks_key_t * dap_enc_ks_find(const char * v_id)
+{
+    pthread_mutex_lock(&s_ks_lock);
+    dap_enc_ks_key_t * ret = s_ks_find_locked(v_id);
+    pthread_mutex_unlock(&s_ks_lock);
     return ret;
 }
 
@@ -108,12 +113,13 @@ dap_enc_key_t * dap_enc_ks_find_http(struct dap_http_client * a_http_client)
     dap_http_header_t * hdr_key_id=dap_http_header_find(a_http_client->in_headers,"KeyID");
 
     if(hdr_key_id){
-        
         dap_enc_ks_key_t * ks_key=dap_enc_ks_find(hdr_key_id->value);
-        if(ks_key)
+        if(ks_key) {
+            log_it(L_DEBUG, "enc_ks_find_http: found key id='%s' type=%d", hdr_key_id->value,
+                   ks_key->key ? ks_key->key->type : -1);
             return ks_key->key;
-        else{
-            log_it(L_WARNING, "Not found keyID %s in storage", hdr_key_id->value);
+        } else {
+            log_it(L_WARNING, "Not found keyID '%s' in storage", hdr_key_id->value);
             return NULL;
         }
     }else{
@@ -136,11 +142,16 @@ dap_enc_ks_key_t * dap_enc_ks_new()
 
 bool dap_enc_ks_save_in_storage(dap_enc_ks_key_t* key)
 {
-    if(dap_enc_ks_find(key->id) != NULL) {
-        log_it(L_WARNING, "key is already saved in storage");
-        return false;
+    pthread_mutex_lock(&s_ks_lock);
+    dap_enc_ks_key_t *l_existing = s_ks_find_locked(key->id);
+    if (l_existing) {
+        log_it(L_WARNING, "key is already saved in storage, replacing session key");
+        dap_ht_del(_ks, l_existing);
+        pthread_mutex_destroy(&l_existing->mutex);
+        s_enc_key_free(&l_existing);
     }
     s_save_key_in_storge(key);
+    pthread_mutex_unlock(&s_ks_lock);
     return true;
 }
 
@@ -160,13 +171,16 @@ dap_enc_ks_key_t * dap_enc_ks_add(struct dap_enc_key * key)
 
 void dap_enc_ks_delete(const char *id)
 {
-    dap_enc_ks_key_t *delItem = dap_enc_ks_find(id);
+    pthread_mutex_lock(&s_ks_lock);
+    dap_enc_ks_key_t *delItem = s_ks_find_locked(id);
     if (delItem) {
         dap_ht_del(_ks, delItem);
         pthread_mutex_destroy(&delItem->mutex);
         s_enc_key_free(&delItem);
+        pthread_mutex_unlock(&s_ks_lock);
         return;
     }
+    pthread_mutex_unlock(&s_ks_lock);
     log_it(L_WARNING, "Can't delete key by id: %s. Key not found", id);
 }
 

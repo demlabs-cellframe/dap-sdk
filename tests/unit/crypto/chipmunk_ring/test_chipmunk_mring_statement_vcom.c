@@ -18,6 +18,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 
 #include <errno.h>
@@ -211,19 +212,19 @@ static bool s_test_vcom_homomorphism(void)
     s_random_short_r_b(rb1, seed1);
     s_random_short_r_b(rb2, seed2);
     for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
-        dap_assert(chipmunk_poly_add(&rbSum[j], &rb1[j], &rb2[j]) == 0,
+        dap_assert(chipmunk_poly_add_q(&rbSum[j], &rb1[j], &rb2[j], (uint64_t)CHIPMUNK_Q) == 0,
                    "rbSum poly_add must succeed");
     }
 
     chipmunk_poly_t C1, C2, CSum, CExpected;
-    dap_assert(chipmunk_mring_vcom_commit(&C1,        &gens, &bp1, rb1)    == 0,
-               "vcom_commit(b1,rb1)");
-    dap_assert(chipmunk_mring_vcom_commit(&C2,        &gens, &bp2, rb2)    == 0,
-               "vcom_commit(b2,rb2)");
-    dap_assert(chipmunk_mring_vcom_commit(&CSum,      &gens, &bpSum, rbSum) == 0,
-               "vcom_commit(b1+b2, rb1+rb2)");
-    dap_assert(chipmunk_poly_add(&CExpected, &C1, &C2) == 0,
-               "C1+C2 add");
+    dap_assert(chipmunk_mring_vcom_commit(&C1,        &gens, &bp1, rb1, (uint64_t)CHIPMUNK_Q) == 0,
+               "vcom_commit(b1,rb1)");;
+    dap_assert(chipmunk_mring_vcom_commit(&C2,        &gens, &bp2, rb2, (uint64_t)CHIPMUNK_Q) == 0,
+               "vcom_commit(b2,rb2)");;
+    dap_assert(chipmunk_mring_vcom_commit(&CSum,      &gens, &bpSum, rbSum, (uint64_t)CHIPMUNK_Q) == 0,
+               "vcom_commit(b1+b2, rb1+rb2)");;
+    dap_assert(chipmunk_poly_add_q(&CExpected, &C1, &C2, (uint64_t)CHIPMUNK_Q) == 0,
+               "C1+C2 add");;
 
     dap_assert(s_polys_equal(&CSum, &CExpected),
                "vcom must be homomorphic: C(b1+b2, rb1+rb2) == C(b1,rb1)+C(b2,rb2)");
@@ -258,9 +259,9 @@ static bool s_test_vcom_bit_flip(void)
     s_random_short_r_b(rb, seed);
 
     chipmunk_poly_t C, C_flipped;
-    dap_assert(chipmunk_mring_vcom_commit(&C,         &gens, &bp,         rb) == 0,
+    dap_assert(chipmunk_mring_vcom_commit(&C,         &gens, &bp,         rb, (uint64_t)CHIPMUNK_Q) == 0,
                "vcom_commit(b)");
-    dap_assert(chipmunk_mring_vcom_commit(&C_flipped, &gens, &bp_flipped, rb) == 0,
+    dap_assert(chipmunk_mring_vcom_commit(&C_flipped, &gens, &bp_flipped, rb, (uint64_t)CHIPMUNK_Q) == 0,
                "vcom_commit(b')");
 
     dap_assert(!s_polys_equal(&C, &C_flipped),
@@ -280,21 +281,21 @@ static bool s_test_chknorm(void)
     p.coeffs[5] = -13;
     p.coeffs[42] = 7;
 
-    dap_assert(chipmunk_mring_chknorm(&p, 13) == 0,
+    dap_assert(chipmunk_mring_chknorm(&p, 13, (uint64_t)CHIPMUNK_Q) == 0,
                "chknorm accepts |coeff| ≤ bound");
-    dap_assert(chipmunk_mring_chknorm(&p, 12) == -ERANGE,
+    dap_assert(chipmunk_mring_chknorm(&p, 12, (uint64_t)CHIPMUNK_Q) == -ERANGE,
                "chknorm rejects |coeff| > bound with -ERANGE");
 
     /* Boundary: coeff == -bound should be accepted (centered interval). */
     chipmunk_poly_t p_lo;
     memset(&p_lo, 0, sizeof(p_lo));
     p_lo.coeffs[0] = -13;
-    dap_assert(chipmunk_mring_chknorm(&p_lo, 13) == 0,
+    dap_assert(chipmunk_mring_chknorm(&p_lo, 13, (uint64_t)CHIPMUNK_Q) == 0,
                "chknorm accepts coeff == -bound (centered interval)");
 
-    dap_assert(chipmunk_mring_chknorm(NULL, 13) == -EINVAL,
+    dap_assert(chipmunk_mring_chknorm(NULL, 13, (uint64_t)CHIPMUNK_Q) == -EINVAL,
                "chknorm rejects NULL with -EINVAL");
-    dap_assert(chipmunk_mring_chknorm(&p, -1) == -EINVAL,
+    dap_assert(chipmunk_mring_chknorm(&p, -1, (uint64_t)CHIPMUNK_Q) == -EINVAL,
                "chknorm rejects negative bound with -EINVAL");
     return true;
 }
@@ -303,6 +304,8 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_mring_statement_vcom");
     dap_common_init("test_chipmunk_mring_statement_vcom", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     int rc = 0;
     if (!s_test_generators_determinism_and_independence()) rc = 1;

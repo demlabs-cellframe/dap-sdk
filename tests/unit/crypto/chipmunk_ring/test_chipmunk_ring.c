@@ -5,6 +5,7 @@
  */
 
 #include <dap_common.h>
+#include <dap_enc.h>
 #include <dap_test.h>
 
 #include <errno.h>
@@ -40,18 +41,23 @@ static void test_keygen(void)
 static void test_sign_verify(void)
 {
     const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
-    chipmunk_ring_keypair_t l_kp = {0};
-    uint8_t l_seed[32];
-    for (int i = 0; i < 32; ++i) l_seed[i] = 0x42 + i;
-    int l_rc = chipmunk_ring_keygen(&l_kp, l_par, l_seed);
-    dap_assert(l_rc == 0, "keygen OK");
+    const uint32_t N = 8;  /* CHIPMUNK_RING_N_MIN = 8 */
+    chipmunk_ring_keypair_t l_kps[8];
+    memset(l_kps, 0, sizeof(l_kps));
+    for (uint32_t s = 0; s < N; ++s) {
+        uint8_t l_seed[32];
+        for (int i = 0; i < 32; ++i) l_seed[i] = (uint8_t)(0x42 + s * 16 + i);
+        chipmunk_ring_keygen(&l_kps[s], l_par, l_seed);
+    }
 
     chipmunk_ring_table_t l_ring = {0};
-    l_ring.N = 1;
-    l_ring.pks = DAP_NEW_Z_COUNT(chipmunk_ring_pk_t, 1);
-    l_ring.pks[0].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
-    for (uint32_t i = 0u; i < l_par->k; ++i) {
-        lotrs_poly_copy(l_ring.pks[0].a_hat.polys[i], l_kp.pk.a_hat.polys[i], l_par);
+    l_ring.N = N;
+    l_ring.pks = DAP_NEW_Z_COUNT(chipmunk_ring_pk_t, N);
+    for (uint32_t s = 0; s < N; ++s) {
+        l_ring.pks[s].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
+        for (uint32_t i = 0u; i < l_par->k; ++i) {
+            lotrs_poly_copy(l_ring.pks[s].a_hat.polys[i], l_kps[s].pk.a_hat.polys[i], l_par);
+        }
     }
 
     const uint8_t l_msg[] = "chipmunk-ring-v2-test";
@@ -59,11 +65,11 @@ static void test_sign_verify(void)
     uint8_t l_sign_seed[32];
     for (int i = 0; i < 32; ++i) l_sign_seed[i] = 0xBB + i;
 
-    l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0,
-                                 l_msg, sizeof(l_msg) - 1, l_sign_seed);
+    int l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_kps[0].sk, 0,
+                                     l_msg, sizeof(l_msg) - 1, l_sign_seed);
     if (l_rc == -2) {
         l_sign_seed[0] ^= 0xFF;
-        l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0,
+        l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_kps[0].sk, 0,
                                      l_msg, sizeof(l_msg) - 1, l_sign_seed);
     }
     dap_assert(l_rc == 0, "sign OK");
@@ -78,7 +84,7 @@ static void test_sign_verify(void)
 
     chipmunk_ring_sig_free(&l_sig);
     chipmunk_ring_table_free(&l_ring);
-    chipmunk_ring_keypair_free(&l_kp);
+    for (uint32_t s = 0; s < N; ++s) chipmunk_ring_keypair_free(&l_kps[s]);
 }
 
 static void test_determinism(void)
@@ -105,61 +111,58 @@ static void test_determinism(void)
     chipmunk_ring_keypair_free(&l_kp2);
 }
 
-static void test_ring_n2(void)
+static void test_ring_n8(void)
 {
     const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
-    chipmunk_ring_keypair_t l_kp0 = {0}, l_kp1 = {0};
-    uint8_t l_seed0[32], l_seed1[32];
-    for (int i = 0; i < 32; ++i) { l_seed0[i] = 0x42 + i; l_seed1[i] = 0x99 + i; }
-
-    int l_rc = chipmunk_ring_keygen(&l_kp0, l_par, l_seed0);
-    dap_assert(l_rc == 0, "keygen0 OK");
-    l_rc = chipmunk_ring_keygen(&l_kp1, l_par, l_seed1);
-    dap_assert(l_rc == 0, "keygen1 OK");
-
-    chipmunk_ring_table_t l_ring = {0};
-    l_ring.N = 2;
-    l_ring.pks = DAP_NEW_Z_COUNT(chipmunk_ring_pk_t, 2);
-    l_ring.pks[0].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
-    l_ring.pks[1].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
-    for (uint32_t i = 0u; i < l_par->k; ++i) {
-        lotrs_poly_copy(l_ring.pks[0].a_hat.polys[i], l_kp0.pk.a_hat.polys[i], l_par);
-        lotrs_poly_copy(l_ring.pks[1].a_hat.polys[i], l_kp1.pk.a_hat.polys[i], l_par);
+    const uint32_t N = 8;
+    chipmunk_ring_keypair_t l_kps[8];
+    memset(l_kps, 0, sizeof(l_kps));
+    for (uint32_t s = 0; s < N; ++s) {
+        uint8_t l_seed[32];
+        for (int i = 0; i < 32; ++i) l_seed[i] = (uint8_t)(0x42 + s * 16 + i);
+        chipmunk_ring_keygen(&l_kps[s], l_par, l_seed);
     }
 
-    const uint8_t l_msg[] = "ring-n2-test";
+    chipmunk_ring_table_t l_ring = {0};
+    l_ring.N = N;
+    l_ring.pks = DAP_NEW_Z_COUNT(chipmunk_ring_pk_t, N);
+    for (uint32_t s = 0; s < N; ++s) {
+        l_ring.pks[s].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
+        for (uint32_t i = 0u; i < l_par->k; ++i) {
+            lotrs_poly_copy(l_ring.pks[s].a_hat.polys[i], l_kps[s].pk.a_hat.polys[i], l_par);
+        }
+    }
+
+    const uint8_t l_msg[] = "ring-n8-test";
     chipmunk_ring_sig_t l_sig = {0};
     uint8_t l_sign_seed[32];
     for (int i = 0; i < 32; ++i) l_sign_seed[i] = 0xCC + i;
 
-    /* Sign as member 0. */
-    l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_kp0.sk, 0,
-                                 l_msg, sizeof(l_msg) - 1, l_sign_seed);
+    int l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_kps[0].sk, 0,
+                                     l_msg, sizeof(l_msg) - 1, l_sign_seed);
     if (l_rc == -EAGAIN) {
         l_sign_seed[0] ^= 0xFF;
-        l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_kp0.sk, 0,
+        l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_kps[0].sk, 0,
                                      l_msg, sizeof(l_msg) - 1, l_sign_seed);
     }
-    dap_assert(l_rc == 0, "sign N=2 OK");
+    dap_assert(l_rc == 0, "sign N=8 OK");
 
     l_rc = chipmunk_ring_verify(&l_sig, l_par, &l_ring, l_msg, sizeof(l_msg) - 1);
-    dap_assert(l_rc == 0, "verify N=2 OK");
+    dap_assert(l_rc == 0, "verify N=8 OK");
 
-    /* Wrong message. */
     const uint8_t l_bad[] = "wrong";
     l_rc = chipmunk_ring_verify(&l_sig, l_par, &l_ring, l_bad, sizeof(l_bad) - 1);
-    dap_assert(l_rc != 0, "wrong msg fails N=2");
+    dap_assert(l_rc != 0, "wrong msg fails N=8");
 
     chipmunk_ring_sig_free(&l_sig);
     chipmunk_ring_table_free(&l_ring);
-    chipmunk_ring_keypair_free(&l_kp0);
-    chipmunk_ring_keypair_free(&l_kp1);
+    for (uint32_t s = 0; s < N; ++s) chipmunk_ring_keypair_free(&l_kps[s]);
 }
 
 static void test_wire_size(void)
 {
     const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
-    for (uint32_t N = 1u; N <= 4u; ++N) {
+    for (uint32_t N = 2u; N <= 8u; ++N) {
         size_t l_sz = chipmunk_ring_sig_bytes_max(l_par, N);
         dap_assert(l_sz > 0, "wire size > 0");
         size_t l_expected = chipmunk_ring_header_bytes()
@@ -174,12 +177,14 @@ int main(void)
 {
     dap_set_appname("test_chipmunk_ring");
     dap_common_init("test_chipmunk_ring", NULL);
+    /* Initialise crypto subsystem (SIMD dispatch, chipmunk, etc.) */
+    dap_enc_init();
 
     test_keygen();
     test_wire_size();
     test_sign_verify();
     test_determinism();
-    test_ring_n2();
+    test_ring_n8();
 
     log_it(L_INFO, "=== ALL Chipmunk Ring tests PASSED ===");
     dap_common_deinit();

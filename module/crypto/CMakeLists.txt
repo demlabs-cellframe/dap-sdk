@@ -128,6 +128,7 @@ file( GLOB CRYPTO_SRCS
       src/kem/kyber/dap_enc_kyber.c
       src/kem/mlkem/dap_enc_mlkem.c
       src/kem/mlkem/dap_mlkem_batch.c
+      src/kem/mlkem/dap_mlkem_dispatch.c
       src/kem/ntru_prime/*.c
       # --- sphincsplus ---
       src/sig/sphincsplus/dap_enc_sphincsplus.c

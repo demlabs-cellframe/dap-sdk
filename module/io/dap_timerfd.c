@@ -520,7 +520,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     /* WASM MT: no pipe or real fd. Ticks are delivered via the SAB event
      * channel bound to the owning worker's context wake counter (bound in
      * dap_context_add). The user callback runs in the worker thread. */
-    l_events_socket->sab_channel = dap_wasm_sab_channel_new(8, NULL);
+    l_events_socket->sab_channel = dap_wasm_sab_channel_new(128, NULL);
     if (!l_events_socket->sab_channel) {
         DAP_DELETE(l_timerfd);
         DAP_DELETE(l_events_socket);

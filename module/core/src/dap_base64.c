@@ -48,6 +48,46 @@ static const char *s_b64_get_table(dap_data_type_t a_type)
     }
 }
 
+static inline int s_hex_val(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
+/**
+ * @brief Decode percent-encoded URL string
+ * @param a_in Input URL-encoded string
+ * @param a_in_size Input string size
+ * @param a_out Output buffer
+ * @param a_out_size_max Maximum output buffer size
+ * @return Output size, or 0 on error
+ */
+size_t dap_url_decode(const char *a_in, size_t a_in_size, void *a_out, size_t a_out_size_max)
+{
+    uint8_t *l_out_bytes = (uint8_t*)a_out;
+    size_t l_out_size = 0;
+
+    if (!a_out || !a_in || a_out_size_max == 0)
+        return 0;
+
+    for (size_t i = 0; i < a_in_size && l_out_size < a_out_size_max; i++) {
+        char c = a_in[i];
+        if (c == '%' && i + 2 < a_in_size) {
+            int hi = s_hex_val(a_in[i + 1]);
+            int lo = s_hex_val(a_in[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                l_out_bytes[l_out_size++] = (hi << 4) | lo;
+                i += 2;
+                continue;
+            }
+        }
+        l_out_bytes[l_out_size++] = (uint8_t)c;
+    }
+    return l_out_size;
+}
+
 size_t dap_base64_decode(const char *a_in, size_t a_in_size, void *a_out, dap_data_type_t a_type)
 {
     uint8_t *l_out_bytes = (uint8_t*)a_out;
@@ -57,6 +97,21 @@ size_t dap_base64_decode(const char *a_in, size_t a_in_size, void *a_out, dap_da
     unsigned char buf[3] = {0};
     unsigned char tmp[4] = {0};
     const char *l_b64_table = s_b64_get_table(a_type);
+
+    if (!a_out)
+        return 0;
+
+    /* For URL-safe base64, first decode percent-encoded characters */
+    char *l_decoded_in = NULL;
+    size_t l_decoded_size = 0;
+    if (a_type == DAP_DATA_TYPE_B64_URLSAFE) {
+        l_decoded_in = DAP_NEW_Z_SIZE(char, a_in_size + 1);
+        if (!l_decoded_in)
+            return 0;
+        l_decoded_size = dap_url_decode(a_in, a_in_size, l_decoded_in, a_in_size);
+        a_in = l_decoded_in;
+        a_in_size = l_decoded_size;
+    }
 
     if (!a_out)
         return 0;
@@ -111,6 +166,9 @@ size_t dap_base64_decode(const char *a_in, size_t a_in_size, void *a_out, dap_da
         for (j = 0; j < i - 1; ++j)
             l_out_bytes[l_size++] = buf[j];
     }
+
+    if (l_decoded_in)
+        DAP_DELETE(l_decoded_in);
 
     return l_size;
 }

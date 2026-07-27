@@ -33,6 +33,11 @@
 #include "dap_common.h"
 #include "dap_config.h"
 
+/* Forward declaration — dap_context_queue_create_worker defined in module/io/flow/ */
+struct dap_context_queue;
+struct dap_context_queue *dap_context_queue_create_worker(struct dap_worker *a_worker, size_t a_capacity, void (*a_callback)(void *));
+bool dap_context_queue_push(struct dap_context_queue *a_queue, void *a_item);
+
 #if defined (DAP_OS_LINUX)
 #include <sys/epoll.h>
 #include <sys/types.h>
@@ -84,12 +89,12 @@ static dap_time_t s_connection_timeout = 60;    // seconds
 
 static bool s_socket_all_check_activity( void * a_arg);
 #ifndef DAP_EVENTS_CAPS_IOCP
-static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg);
-static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg);
-static void s_queue_es_reassign_callback( dap_events_socket_t * a_es, void * a_arg);
-static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg);
+static void s_queue_add_es_callback( void * a_arg);
+static void s_queue_delete_es_callback( void * a_arg);
+static void s_queue_es_reassign_callback( void * a_arg);
+static void s_queue_es_io_callback( void * a_arg);
 #endif
-static void s_queue_callback_callback( dap_events_socket_t * a_es, void * a_arg);
+static void s_queue_callback_callback( void * a_arg);
 
 dap_worker_t *dap_worker_get_current() {
     return s_worker;
@@ -173,12 +178,12 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
 #error "Unimplemented dap_context_init for this platform"
 #endif
 #ifndef DAP_EVENTS_CAPS_IOCP
-    l_worker->queue_es_new      = dap_context_create_queue(a_context, s_queue_add_es_callback);
-    l_worker->queue_es_delete   = dap_context_create_queue(a_context, s_queue_delete_es_callback);
-    l_worker->queue_es_io       = dap_context_create_queue(a_context, s_queue_es_io_callback);
-    l_worker->queue_es_reassign = dap_context_create_queue(a_context, s_queue_es_reassign_callback );
+    l_worker->queue_es_new      = dap_context_queue_create_worker(l_worker, 0, s_queue_add_es_callback);
+    l_worker->queue_es_delete   = dap_context_queue_create_worker(l_worker, 0, s_queue_delete_es_callback);
+    l_worker->queue_es_io       = dap_context_queue_create_worker(l_worker, 0, s_queue_es_io_callback);
+    l_worker->queue_es_reassign = dap_context_queue_create_worker(l_worker, 0, s_queue_es_reassign_callback);
 #endif
-    l_worker->queue_callback    = dap_context_create_queue(a_context, s_queue_callback_callback);
+    l_worker->queue_callback    = dap_context_queue_create_worker(l_worker, 0, s_queue_callback_callback);
 
     l_worker->timer_check_activity = dap_timerfd_create (s_connection_timeout * 1000 / 2,
                                                         s_socket_all_check_activity, l_worker);
@@ -233,16 +238,15 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
  * @param a_arg
  */
 
-static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
+static int s_queue_es_add(void *a_arg)
 {
-    assert(a_es);
-    dap_context_t * l_context = a_es->context;
-    assert(l_context);
-    dap_worker_t * l_worker = a_es->worker;
+    dap_worker_t *l_worker = s_worker;
     assert(l_worker);
+    dap_context_t *l_context = l_worker->context;
+    assert(l_context);
     if (!a_arg)
         return log_it(L_ERROR,"NULL esocket accepted to add on worker #%u", l_worker->id), -1;
-    dap_events_socket_t * l_es_new =(dap_events_socket_t *) a_arg;
+    dap_events_socket_t *l_es_new = (dap_events_socket_t *)a_arg;
 
     debug_if(g_debug_reactor, L_DEBUG, "Added es %p \"%s\" [%s] to worker #%d",
              l_es_new, dap_events_socket_get_type_str(l_es_new),
@@ -280,27 +284,30 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
     return 0;
 }
 
-DAP_STATIC_INLINE void s_queue_add_es_callback(dap_events_socket_t *a_es, void * a_arg) { s_queue_es_add(a_es, a_arg); }
+DAP_STATIC_INLINE void s_queue_add_es_callback(void *a_arg) { s_queue_es_add(a_arg); }
 
 /**
  * @brief s_delete_es_callback
- * @param a_es
- * @param a_arg
+ * @param a_arg — pointer to heap-allocated dap_events_socket_uuid_t
+ *
+ * Callback runs on the owning worker's thread.
  */
-static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg)
+static void s_queue_delete_es_callback(void *a_arg)
 {
     assert(a_arg);
-    dap_events_socket_uuid_t * l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
+    dap_worker_t *l_worker = s_worker;
+    assert(l_worker);
+    dap_context_t *l_ctx = l_worker->context;
 
-    dap_context_t *l_ctx = a_es ? a_es->context : NULL;
+    dap_events_socket_uuid_t *l_es_uuid_ptr = (dap_events_socket_uuid_t *)a_arg;
+
     if (!l_ctx || l_ctx->signal_exit || !l_ctx->esockets) {
         debug_if(g_debug_reactor, L_INFO, "Skip delete for es %"DAP_UINT64_FORMAT_U" because context is gone", *l_es_uuid_ptr);
         DAP_DELETE(l_es_uuid_ptr);
         return;
     }
-    dap_events_socket_t * l_es = dap_context_find(l_ctx, *l_es_uuid_ptr);
+    dap_events_socket_t *l_es = dap_context_find(l_ctx, *l_es_uuid_ptr);
     if (l_es && l_es->context == l_ctx){
-        //l_es->flags |= DAP_SOCK_SIGNAL_CLOSE; // Send signal to socket to kill
         dap_events_socket_remove_and_delete_unsafe(l_es, false);
     }else
         debug_if(g_debug_reactor, L_INFO, "While we were sending the delete() message, esocket %"DAP_UINT64_FORMAT_U" has been disconnected ", *l_es_uuid_ptr);
@@ -309,15 +316,17 @@ static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg
 
 /**
  * @brief s_reassign_es_callback
- * @param a_es
- * @param a_arg
+ * @param a_arg — pointer to dap_worker_msg_reassign_t
+ *
+ * Callback runs on the owning worker's thread.
  */
-static void s_queue_es_reassign_callback( dap_events_socket_t * a_es, void * a_arg)
+static void s_queue_es_reassign_callback(void *a_arg)
 {
-    assert(a_es);
-    dap_context_t * l_context = a_es->context;
+    dap_worker_t *l_worker = s_worker;
+    assert(l_worker);
+    dap_context_t *l_context = l_worker->context;
     assert(l_context);
-    dap_worker_msg_reassign_t * l_msg = (dap_worker_msg_reassign_t*) a_arg;
+    dap_worker_msg_reassign_t *l_msg = (dap_worker_msg_reassign_t *)a_arg;
     assert(l_msg);
     dap_events_socket_t * l_es_reassign;
     if ( ( l_es_reassign = dap_context_find(l_context, l_msg->esocket_uuid))!= NULL ){
@@ -335,22 +344,24 @@ static void s_queue_es_reassign_callback( dap_events_socket_t * a_es, void * a_a
 }
 
 /**
- * @brief s_pipe_data_out_read_callback
- * @param a_es
- * @param a_arg
+ * @brief s_queue_es_io_callback
+ * @param a_arg — pointer to dap_worker_msg_io_t
+ *
+ * Callback runs on the owning worker's thread.
  */
-static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
+static void s_queue_es_io_callback(void *a_arg)
 {
-    assert(a_es);
-    dap_context_t * l_context = a_es->context;
+    dap_worker_t *l_worker = s_worker;
+    assert(l_worker);
+    dap_context_t *l_context = l_worker->context;
     assert(l_context);
-    dap_worker_msg_io_t * l_msg = a_arg;
+    dap_worker_msg_io_t *l_msg = (dap_worker_msg_io_t *)a_arg;
     assert(l_msg);
     // Check if it was removed from the list
     dap_events_socket_t *l_msg_es = dap_context_find(l_context, l_msg->esocket_uuid);
     if ( !l_msg_es ) {
         log_it(L_ERROR, "Es %"DAP_UINT64_FORMAT_U" not found on worker %d. Lost %zu bytes",
-                         l_msg->esocket_uuid, a_es->worker->id, l_msg->data_size);
+                         l_msg->esocket_uuid, l_worker->id, l_msg->data_size);
         return DAP_DEL_MULTY(l_msg->data, l_msg);
     }
 
@@ -422,9 +433,9 @@ void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
  * @param a_es
  * @param a_arg
  */
-static void s_queue_callback_callback(dap_events_socket_t UNUSED_ARG *a_es, void *a_arg)
+static void s_queue_callback_callback(void *a_arg)
 {
-    dap_worker_msg_callback_t * l_msg = (dap_worker_msg_callback_t *) a_arg;
+    dap_worker_msg_callback_t *l_msg = (dap_worker_msg_callback_t *)a_arg;
     assert(l_msg);
     assert(l_msg->callback);
     l_msg->callback(l_msg->arg);
@@ -499,8 +510,8 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
     }
 #else
     l_ret = dap_worker_get_current() == a_worker
-        ? s_queue_es_add(a_worker->queue_es_new, a_events_socket)
-        : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
+        ? s_queue_es_add(a_events_socket)
+        : (dap_context_queue_push(a_worker->queue_es_new, a_events_socket) ? 0 : -1);
 #endif
     if (l_ret)
         log_it(L_ERROR, "Can't %s es \"%s\" [%s], uuid "DAP_FORMAT_ESOCKET_UUID" to worker #%d, error %d: \"%s\"",
@@ -525,9 +536,11 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
         return;
     }
     *l_msg = (dap_worker_msg_callback_t) { .callback = a_callback, .arg = a_arg };
-    if ( dap_events_socket_queue_ptr_send( a_worker->queue_callback, l_msg ) )
-        log_it(L_ERROR, "Cant send pointer to queue input: \"%s\"(code %d)",
+    if (!dap_context_queue_push(a_worker->queue_callback, l_msg)) {
+        log_it(L_ERROR, "Can't push callback to worker queue: \"%s\"(code %d)",
                         dap_strerror(errno), errno);
+        DAP_DELETE(l_msg);
+    }
 }
 
 typedef struct {
@@ -1563,10 +1576,17 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 l_bytes_sent = -1;
                                 l_errno = (l_rc == -ENOSPC) ? EAGAIN : -l_rc;
                             }
-#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
                             l_bytes_sent = write(l_cur->fd, l_cur->buf_out, /* sizeof(void *) */ l_cur->buf_out_size);
                             l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
                             debug_if(l_errno, L_ERROR, "Writing to pipe %zu bytes failed, sent %zd only...", l_cur->buf_out_size, l_bytes_sent);
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
+                            // ST WASM: flush backlog into the pipe write end (fd2). Non-blocking;
+                            // EAGAIN keeps the buffer for the next writable cycle.
+                            l_bytes_sent = write(l_cur->fd2, l_cur->buf_out, l_cur->buf_out_size);
+                            l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
+                            debug_if(l_errno && l_errno != EAGAIN && l_errno != EWOULDBLOCK, L_ERROR,
+                                     "Writing to queue pipe %zu bytes failed, sent %zd only...", l_cur->buf_out_size, l_bytes_sent);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
                             l_bytes_sent = mq_send(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)

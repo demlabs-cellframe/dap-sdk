@@ -45,6 +45,7 @@ typedef struct dap_context_queue {
     dap_events_socket_t *event_socket;  ///< Event socket for reactor integration
     void (*callback)(void *);           ///< Callback function for processing popped items
     dap_context_t *context;             ///< Associated context (worker or proc_thread)
+    struct dap_worker *worker;          ///< Owning worker (NULL if not worker-owned)
 } dap_context_queue_t;
 
 /**
@@ -55,6 +56,15 @@ typedef struct dap_context_queue {
  * @return Queue instance or NULL on error
  */
 dap_context_queue_t *dap_context_queue_create(dap_context_t *a_context, size_t a_capacity, void (*a_callback)(void *));
+
+/**
+ * @brief Create context queue associated with a worker
+ * @param a_worker Owning worker (stores reference for callback access)
+ * @param a_capacity Ring buffer capacity (0 = default)
+ * @param a_callback Callback function for processing items
+ * @return Queue instance or NULL on error
+ */
+dap_context_queue_t *dap_context_queue_create_worker(struct dap_worker *a_worker, size_t a_capacity, void (*a_callback)(void *));
 
 /**
  * @brief Delete context queue

@@ -578,7 +578,6 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
         return STAGE1_ERROR_INVALID_INPUT;
     }
     
-    // Get current architecture (respects manual override if set)
     dap_cpu_arch_t arch = dap_cpu_arch_get();
     
     int result;
@@ -613,7 +612,6 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
             break;
     }
     
-    // ⚡ Phase 2.3: Build jump pointers for tape format (all architectures)
     if (result == STAGE1_SUCCESS) {
         result = dap_json_stage1_build_jump_pointers(a_stage1);
     }

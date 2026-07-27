@@ -59,7 +59,7 @@ DAP_STATIC_INLINE int dap_multi_sign_meta_unpack(const uint8_t *a_wire, size_t a
                                                  dap_multi_sign_meta_mem_t *a_mem)
 {
     if (a_wire_size < DAP_SIGN_HDR_WIRE_SIZE) return -1;
-    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw_zero(
         &g_dap_multi_sign_meta_schema, a_wire, a_wire_size, a_mem, NULL);
     return r.error_code;
 }
@@ -111,7 +111,7 @@ DAP_STATIC_INLINE int dap_multisign_pub_key_hdr_unpack(const uint8_t *a_wire, si
                                                        dap_multisign_pub_key_hdr_mem_t *a_mem)
 {
     if (a_wire_size < DAP_MULTISIGN_PUB_KEY_HDR_WIRE_SIZE) return -1;
-    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw_zero(
         &g_dap_multisign_pub_key_hdr_schema, a_wire, a_wire_size, a_mem, NULL);
     return r.error_code;
 }

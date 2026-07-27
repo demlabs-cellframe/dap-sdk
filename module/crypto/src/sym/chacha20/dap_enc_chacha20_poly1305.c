@@ -9,20 +9,21 @@
 #include "dap_common.h"
 #include "dap_memwipe.h"
 #include "dap_rand.h"
+#include "dap_hash_keccak.h"
 
 #define LOG_TAG "dap_enc_chacha20_poly1305"
 
 void dap_enc_chacha20_poly1305_key_new(dap_enc_key_t *a_key)
 {
     a_key->type = DAP_ENC_KEY_TYPE_CHACHA20_POLY1305;
-    a_key->enc = dap_enc_chacha20_poly1305_encrypt;
-    a_key->dec = dap_enc_chacha20_poly1305_decrypt;
-    a_key->enc_na = NULL;
-    a_key->dec_na = NULL;
+    a_key->enc    = dap_enc_chacha20_poly1305_encrypt;
+    a_key->dec    = dap_enc_chacha20_poly1305_decrypt;
+    a_key->enc_na = dap_enc_chacha20_poly1305_encrypt_fast;
+    a_key->dec_na = dap_enc_chacha20_poly1305_decrypt_fast;
 }
 
 void dap_enc_chacha20_poly1305_key_generate(dap_enc_key_t *a_key,
-        UNUSED_ARG const void *kex_buf, UNUSED_ARG size_t kex_size,
+        const void *kex_buf, size_t kex_size,
         const void *seed, size_t seed_size, UNUSED_ARG size_t key_size)
 {
     dap_return_if_pass(!a_key);
@@ -35,11 +36,22 @@ void dap_enc_chacha20_poly1305_key_generate(dap_enc_key_t *a_key,
         return;
     }
 
-    if (seed && seed_size >= DAP_CHACHA20_KEY_SIZE) {
-        memcpy(a_key->priv_key_data, seed, DAP_CHACHA20_KEY_SIZE);
+    if ((kex_buf && kex_size) || (seed && seed_size)) {
+        dap_hash_keccak_ctx_t l_ctx;
+        dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHA3_256_RATE, DAP_KECCAK_SHA3_SUFFIX);
+        if (kex_buf && kex_size)
+            dap_hash_keccak_sponge_absorb(&l_ctx, kex_buf, kex_size);
+        if (seed && seed_size)
+            dap_hash_keccak_sponge_absorb(&l_ctx, seed, seed_size);
+        dap_hash_keccak_sponge_squeeze(&l_ctx, a_key->priv_key_data, DAP_CHACHA20_KEY_SIZE);
     } else {
         dap_random_bytes(a_key->priv_key_data, DAP_CHACHA20_KEY_SIZE);
     }
+    const uint8_t *l_key_bytes = (const uint8_t *)a_key->priv_key_data;
+    log_it(L_NOTICE, "ChaCha20 key[0..7]: %02x%02x%02x%02x %02x%02x%02x%02x (kex=%zu seed=%zu)",
+           l_key_bytes[0], l_key_bytes[1], l_key_bytes[2], l_key_bytes[3],
+           l_key_bytes[4], l_key_bytes[5], l_key_bytes[6], l_key_bytes[7],
+           kex_size, seed_size);
 }
 
 void dap_enc_chacha20_poly1305_key_delete(dap_enc_key_t *a_key)
@@ -61,6 +73,40 @@ size_t dap_enc_chacha20_poly1305_calc_decode_size(size_t a_size)
     return a_size - DAP_CHACHA20_NONCE_SIZE - DAP_CHACHA20_POLY1305_TAG_SIZE;
 }
 
+size_t dap_enc_chacha20_poly1305_encrypt_fast(dap_enc_key_t *a_key, const void *a_in,
+        size_t a_in_size, void *a_out, size_t a_out_size_max)
+{
+    // Allow a_in == NULL when a_in_size == 0 (e.g. keepalive packets that carry
+    // only AEAD overhead: nonce + tag, no plaintext).
+    dap_return_val_if_pass(!a_key || !a_key->priv_key_data || (!a_in && a_in_size) || !a_out, 0);
+
+    size_t l_out_size = dap_enc_chacha20_poly1305_calc_encode_size(a_in_size);
+    if (l_out_size > a_out_size_max) {
+        log_it(L_ERROR, "ChaCha20-Poly1305: output buffer too small (%zu < %zu)",
+               a_out_size_max, l_out_size);
+        return 0;
+    }
+
+    uint8_t *l_buf   = (uint8_t *)a_out;
+    uint8_t *l_nonce = l_buf;
+    uint8_t *l_ct    = l_buf + DAP_CHACHA20_NONCE_SIZE;
+    uint8_t *l_tag   = l_ct + a_in_size;
+
+    dap_random_bytes(l_nonce, DAP_CHACHA20_NONCE_SIZE);
+
+    // a_in may be NULL when a_in_size == 0; pass a non-NULL placeholder to
+    // avoid technically-undefined NULL dereference in seal's poly1305 update.
+    uint8_t l_zero = 0;
+    const uint8_t *l_pt = a_in ? (const uint8_t *)a_in : &l_zero;
+    if (dap_chacha20_poly1305_seal(l_ct, l_tag,
+            l_pt, a_in_size,
+            NULL, 0,
+            (const uint8_t *)a_key->priv_key_data, l_nonce) != 0)
+        return 0;
+
+    return l_out_size;
+}
+
 size_t dap_enc_chacha20_poly1305_encrypt(dap_enc_key_t *a_key, const void *a_in,
         size_t a_in_size, void **a_out)
 {
@@ -71,21 +117,39 @@ size_t dap_enc_chacha20_poly1305_encrypt(dap_enc_key_t *a_key, const void *a_in,
     if (!*a_out)
         return 0;
 
-    uint8_t *l_buf = (uint8_t *)*a_out;
-    uint8_t *l_nonce = l_buf;
-    uint8_t *l_ct = l_buf + DAP_CHACHA20_NONCE_SIZE;
-    uint8_t *l_tag = l_ct + a_in_size;
-
-    dap_random_bytes(l_nonce, DAP_CHACHA20_NONCE_SIZE);
-
-    if (dap_chacha20_poly1305_seal(l_ct, l_tag,
-            (const uint8_t *)a_in, a_in_size,
-            NULL, 0,
-            (const uint8_t *)a_key->priv_key_data, l_nonce) != 0) {
+    size_t l_written = dap_enc_chacha20_poly1305_encrypt_fast(a_key, a_in, a_in_size,
+                                                               *a_out, l_out_size);
+    if (!l_written)
         DAP_DEL_Z(*a_out);
+    return l_written;
+}
+
+size_t dap_enc_chacha20_poly1305_decrypt_fast(dap_enc_key_t *a_key, const void *a_in,
+        size_t a_in_size, void *a_out, size_t a_out_size_max)
+{
+    dap_return_val_if_pass(!a_key || !a_key->priv_key_data || !a_in || !a_out, 0);
+
+    size_t l_pt_size = dap_enc_chacha20_poly1305_calc_decode_size(a_in_size);
+    if (!l_pt_size)
+        return 0;
+    if (l_pt_size > a_out_size_max) {
+        log_it(L_ERROR, "ChaCha20-Poly1305: decrypt output buffer too small (%zu < %zu)",
+               a_out_size_max, l_pt_size);
         return 0;
     }
-    return l_out_size;
+
+    const uint8_t *l_buf   = (const uint8_t *)a_in;
+    const uint8_t *l_nonce = l_buf;
+    const uint8_t *l_ct    = l_buf + DAP_CHACHA20_NONCE_SIZE;
+    const uint8_t *l_tag   = l_ct + l_pt_size;
+
+    if (dap_chacha20_poly1305_open((uint8_t *)a_out,
+            l_ct, l_pt_size, l_tag,
+            NULL, 0,
+            (const uint8_t *)a_key->priv_key_data, l_nonce) != 0)
+        return 0;
+
+    return l_pt_size;
 }
 
 size_t dap_enc_chacha20_poly1305_decrypt(dap_enc_key_t *a_key, const void *a_in,
@@ -97,21 +161,13 @@ size_t dap_enc_chacha20_poly1305_decrypt(dap_enc_key_t *a_key, const void *a_in,
     if (!l_pt_size)
         return 0;
 
-    const uint8_t *l_buf = (const uint8_t *)a_in;
-    const uint8_t *l_nonce = l_buf;
-    const uint8_t *l_ct = l_buf + DAP_CHACHA20_NONCE_SIZE;
-    const uint8_t *l_tag = l_ct + l_pt_size;
-
     *a_out = DAP_NEW_Z_SIZE(uint8_t, l_pt_size);
     if (!*a_out)
         return 0;
 
-    if (dap_chacha20_poly1305_open((uint8_t *)*a_out,
-            l_ct, l_pt_size, l_tag,
-            NULL, 0,
-            (const uint8_t *)a_key->priv_key_data, l_nonce) != 0) {
+    size_t l_written = dap_enc_chacha20_poly1305_decrypt_fast(a_key, a_in, a_in_size,
+                                                               *a_out, l_pt_size);
+    if (!l_written)
         DAP_DEL_Z(*a_out);
-        return 0;
-    }
-    return l_pt_size;
+    return l_written;
 }

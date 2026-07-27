@@ -11,5 +11,5 @@ typedef enum dap_net_trans_type {
     DAP_NET_TRANS_DNS_TUNNEL     = 0x07,
     DAP_NET_TRANS_WEBSOCKET_SYSTEM = 0x08,
     DAP_NET_TRANS_WEBRTC           = 0x09,
-    DAP_NET_TRANS_MAX              = 0x09
+    DAP_NET_TRANS_MAX            = 0x09
 } dap_net_trans_type_t;

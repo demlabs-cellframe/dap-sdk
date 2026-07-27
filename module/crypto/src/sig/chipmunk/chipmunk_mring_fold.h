@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 #include "chipmunk.h"
-#include "chipmunk_mring_ext.h"
+#include "chipmunk_fq6_ext.h"
 #include "chipmunk_mring_params.h"
 
 #ifdef __cplusplus
@@ -21,15 +21,15 @@ extern "C" {
 #endif
 
 typedef struct chipmunk_mring_fold_round {
-    chipmunk_mring_ext_t C_L; /* VCom commitment to cross-term L_r */
-    chipmunk_mring_ext_t C_R; /* VCom commitment to cross-term R_r */
+    chipmunk_fq6_ext_t C_L; /* VCom commitment to cross-term L_r */
+    chipmunk_fq6_ext_t C_R; /* VCom commitment to cross-term R_r */
 } chipmunk_mring_fold_round_t;
 
 typedef struct chipmunk_mring_fold_proof {
     uint32_t fold_depth;
     chipmunk_mring_fold_round_t *rounds; /* [fold_depth], heap */
-    chipmunk_mring_ext_t a_star;           /* final P̃ scalar */
-    chipmunk_mring_ext_t b_star;           /* final b̃ scalar (β = b̃+ω on wire) */
+    chipmunk_fq6_ext_t a_star;           /* final P̃ scalar */
+    chipmunk_fq6_ext_t b_star;           /* final b̃ scalar (β = b̃+ω on wire) */
     int64_t *leaf_mask;                    /* ω ∈ R_q, [N] heap (M4.3) */
     uint8_t fold_opening_seed[CHIPMUNK_MRING_FOLD_OPENING_BYTES];
 } chipmunk_mring_fold_proof_t;
@@ -86,7 +86,8 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
                               const uint8_t a_ring_hash[CHIPMUNK_MRING_HASH_BYTES],
                               const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES],
                               const uint8_t a_fold_opening_seed
-                                  [CHIPMUNK_MRING_FOLD_OPENING_BYTES]);
+                                  [CHIPMUNK_MRING_FOLD_OPENING_BYTES],
+                              uint64_t q);
 
 /*
  *  Verifier: open C_L/C_R via seed-derived openings, re-derive challenges,
@@ -99,7 +100,8 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
                                uint32_t a_t,
                                const chipmunk_poly_t *a_Y_pk,
                                const uint8_t a_ring_hash[CHIPMUNK_MRING_HASH_BYTES],
-                               const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES]);
+                               const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES],
+                               uint64_t q);
 
 /* ------------------------------------------------------------------------ *
  *  M4.1 wire pack/unpack (G3.1 §8 / M4.2 VCom commitments / M4.3 leaf-mask).
@@ -110,11 +112,12 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
  *  Leaf mask ω at chipmunk_mring_section_off_leaf_mask().
  * ------------------------------------------------------------------------ */
 
-int chipmunk_mring_ext_qpack(uint8_t *a_out, size_t a_out_size,
-                             const chipmunk_mring_ext_t *a_x);
+int chipmunk_fq6_ext_qpack(uint8_t *a_out, size_t a_out_size,
+                             const chipmunk_fq6_ext_t *a_x);
 
-int chipmunk_mring_ext_qunpack(chipmunk_mring_ext_t *a_out,
-                               const uint8_t *a_in, size_t a_in_size);
+int chipmunk_fq6_ext_qunpack(chipmunk_fq6_ext_t *a_out,
+                               const uint8_t *a_in, size_t a_in_size,
+                               uint64_t q);
 
 int chipmunk_mring_fold_write(uint8_t *a_buf, size_t a_buf_size,
                               uint32_t a_fold_depth,
@@ -122,7 +125,8 @@ int chipmunk_mring_fold_write(uint8_t *a_buf, size_t a_buf_size,
 
 int chipmunk_mring_fold_read(chipmunk_mring_fold_proof_t *a_proof,
                              uint32_t a_fold_depth,
-                             const uint8_t *a_buf, size_t a_buf_size);
+                             const uint8_t *a_buf, size_t a_buf_size,
+                             uint64_t q);
 
 #ifdef __cplusplus
 }

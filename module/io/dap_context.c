@@ -874,7 +874,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 
     l_es->callbacks.queue_ptr_callback = a_callback; // Arm event callback
 
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     pthread_rwlock_init(&l_es->buf_out_lock, NULL);
 #endif
 
@@ -939,13 +939,13 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     if (l_es->fd > 0 && l_es->fd2 > 0 ) {
     int l_flags = fcntl(l_es->fd, F_GETFL, 0);
     if (l_flags != -1){
-        l_flags |= O_NONBLOCK);
-        fcntl(l_es->fd, F_SETFL, l_flags) == 0);
+        l_flags |= O_NONBLOCK;
+        fcntl(l_es->fd, F_SETFL, l_flags);
     }
     l_flags = fcntl(l_es->fd2, F_GETFL, 0);
     if (l_flags != -1){
-        l_flags |= O_NONBLOCK);
-        fcntl(l_es->fd2, F_SETFL, l_flags) == 0);
+        l_flags |= O_NONBLOCK;
+        fcntl(l_es->fd2, F_SETFL, l_flags);
     }
     }
 #endif
@@ -1059,7 +1059,7 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
     l_es->callbacks.event_callback = a_callback; // Arm event callback
 #if defined(DAP_EVENTS_CAPS_EVENT_WASM_SAB)
     /* WASM MT path: SAB channel. No fd / pipe. */
-    l_es->sab_channel = dap_wasm_sab_channel_new(16,
+    l_es->sab_channel = dap_wasm_sab_channel_new(256,
         a_context ? &a_context->wasm_wake_counter : NULL);
     if (!l_es->sab_channel) {
         DAP_DELETE(l_es->buf_out);

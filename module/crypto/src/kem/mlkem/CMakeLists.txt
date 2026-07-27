@@ -123,11 +123,11 @@ set(MLKEM_COMMON_SOURCES
 set(MLKEM_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${MLKEM_SIMD_GEN_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../math/bignum/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../hash/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../math/bignum/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../hash/include
 )
 
 set(MLKEM_LINK_LIBS dap_core dap_math dap_hash dap_math_bignum)

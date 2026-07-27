@@ -251,10 +251,10 @@ endif()
 # arithmetic R_q^(e)=R_q[Y]/Φ₉ (e=6).  Ring axioms, x·x⁻¹=1 in F_{q⁶}
 # (scalar) and per-slot (general), embed∘project=id, is_in_base, and a
 # CI Rabin re-check that Φ₉ is irreducible over F_q.
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_ext.c)
-    add_dap_test(test_unit_crypto_chipmunk_mring_ext
-                 unit/crypto/chipmunk_ring/test_chipmunk_mring_ext.c)
-    register_dap_test(test_unit_crypto_chipmunk_mring_ext
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fq6_ext.c)
+    add_dap_test(test_unit_crypto_chipmunk_fq6_ext
+                 unit/crypto/chipmunk_ring/test_chipmunk_fq6_ext.c)
+    register_dap_test(test_unit_crypto_chipmunk_fq6_ext
                       "unit;crypto;ring;mring;ext")
 endif()
 
@@ -283,6 +283,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mr
                  unit/crypto/chipmunk_ring/test_chipmunk_mring_transcript.c)
     register_dap_test(test_unit_crypto_chipmunk_mring_transcript
                       "unit;crypto;ring;mring;transcript")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_ntt_multiply_debug.c)
+    add_dap_test(test_unit_ntt_multiply_debug
+                 unit/crypto/chipmunk_ring/test_ntt_multiply_debug.c)
+    register_dap_test(test_unit_ntt_multiply_debug
+                      "unit;crypto;ntt;debug")
 endif()
 
 # CR-11.G Phase 7.7 / M6 (task_ac273cea): MRNG end-to-end sign/verify.
@@ -382,7 +389,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_sn
     add_dap_test(test_unit_chipmunk_snark
                  unit/crypto/chipmunk_ring/test_chipmunk_snark.c)
     register_dap_test(test_unit_chipmunk_snark
-                      "unit;crypto;snark;lattice")
+                      "unit;crypto;snark;lattice;fri")
 endif()
 
 # Pedersen: lattice-based commitments
@@ -417,7 +424,97 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_ledger_anon
                       "unit;ledger;anonymous;integration")
 endif()
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
+# ============================================================
+# Phase 9: FRI-DEEP polynomial commitment scheme
+# ============================================================
+
+# 9.1: Field arithmetic (modinv, powmod, primitive root)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_field.c)
+    add_dap_test(test_unit_chipmunk_field
+                 unit/crypto/chipmunk_ring/test_chipmunk_field.c)
+    register_dap_test(test_unit_chipmunk_field
+                      "unit;crypto;field;fri")
+endif()
+
+	# 9.2: 2048-point NTT (FRI evaluation domain)
+	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri_ntt.c)
+	    add_dap_test(test_unit_chipmunk_fri_ntt
+	                 unit/crypto/chipmunk_ring/test_chipmunk_fri_ntt.c)
+	    register_dap_test(test_unit_chipmunk_fri_ntt
+	                      "unit;crypto;ntt;fri")
+	endif()
+
+	# 9.3: Poseidon hash over F_q (t=3, R_F=8, R_P=22, x^5 S-box)
+	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_poseidon.c)
+	    add_dap_test(test_unit_chipmunk_poseidon
+	                 unit/crypto/chipmunk_ring/test_chipmunk_poseidon.c)
+	    register_dap_test(test_unit_chipmunk_poseidon
+	                      "unit;crypto;poseidon;fri")
+	endif()
+
+		# 9.4: Merkle tree with cap (FRI PCS)
+		if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_merkle_pcs.c)
+		    add_dap_test(test_unit_chipmunk_merkle_pcs
+		                 unit/crypto/chipmunk_ring/test_chipmunk_merkle_pcs.c)
+		    register_dap_test(test_unit_chipmunk_merkle_pcs
+		                      "unit;crypto;merkle;fri")
+		endif()
+
+			# 9.5: Reed-Solomon encoding via coset NTT
+			if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_rs.c)
+			    add_dap_test(test_unit_chipmunk_rs
+			                 unit/crypto/chipmunk_ring/test_chipmunk_rs.c)
+			    register_dap_test(test_unit_chipmunk_rs
+			                      "unit;crypto;rs;fri")
+			endif()
+
+				# 9.6: FRI commit phase (7 rounds folding + Merkle caps)
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri.c)
+				    add_dap_test(test_unit_chipmunk_fri
+				                 unit/crypto/chipmunk_ring/test_chipmunk_fri.c)
+				    register_dap_test(test_unit_chipmunk_fri
+				                      "unit;crypto;fri;commit")
+				endif()
+
+				# Phase 9.12: E2E test with non-default q (Montgomery NTT)
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ntt_q.c)
+				    add_dap_test(test_unit_chipmunk_ntt_q
+				                 unit/crypto/chipmunk_ring/test_chipmunk_ntt_q.c)
+				    register_dap_test(test_unit_chipmunk_ntt_q
+				                      "unit;crypto;ntt;q;montgomery;e2e")
+				endif()
+
+				# NTT ring homomorphism verification
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_ntt_ring_hom.c)
+				    add_dap_test(test_unit_ntt_ring_hom
+				                 unit/crypto/chipmunk_ring/test_ntt_ring_hom.c)
+				    register_dap_test(test_unit_ntt_ring_hom
+				                      "unit;crypto;ntt;ring;homomorphism")
+				endif()
+
+				# 9.8: DEEP composition polynomial
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_deep.c)
+				    add_dap_test(test_unit_chipmunk_deep
+				                 unit/crypto/chipmunk_ring/test_chipmunk_deep.c)
+				    register_dap_test(test_unit_chipmunk_deep
+				                      "unit;crypto;deep;composition")
+				endif()
+
+				# 9.9: Fiat-Shamir transcript + grinding PoW
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri_transcript.c)
+					    add_dap_test(test_unit_chipmunk_fri_transcript
+					                 unit/crypto/chipmunk_ring/test_chipmunk_fri_transcript.c)
+					    register_dap_test(test_unit_chipmunk_fri_transcript
+					                      "unit;crypto;transcript;grinding")
+					endif()
+						if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_fri_verify.c)
+						    add_dap_test(test_unit_chipmunk_fri_verify
+						                 unit/crypto/chipmunk_ring/test_chipmunk_fri_verify.c)
+						    register_dap_test(test_unit_chipmunk_fri_verify
+						                      "unit;crypto;fri;verify")
+						endif()
+
+				if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
 endif()

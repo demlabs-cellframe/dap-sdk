@@ -111,10 +111,12 @@ _Static_assert(CHIPMUNK_LRS_SIG_PER_MEMBER_BYTES == 8448u,
                "CLRS per-member response size drift");
 
 int chipmunk_lrs_poly_qpack(uint8_t a_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
-                            const chipmunk_poly_t *a_poly);
+                            const chipmunk_poly_t *a_poly,
+                            uint64_t q);
 
 int chipmunk_lrs_poly_qunpack(chipmunk_poly_t *a_poly,
-                              const uint8_t a_in[CHIPMUNK_LRS_POLY_QPACK_BYTES]);
+                              const uint8_t a_in[CHIPMUNK_LRS_POLY_QPACK_BYTES],
+                              uint64_t q);
 
 /*
  * z-pack / z-unpack: 20-bit biased encoding for response polynomials.
@@ -134,14 +136,16 @@ int chipmunk_lrs_poly_zunpack(chipmunk_poly_t *a_poly,
                                const uint8_t a_in[CHIPMUNK_LRS_POLY_ZPACK_BYTES]);
 
 int chipmunk_lrs_poly_chknorm_centered(const chipmunk_poly_t *a_poly,
-                                       int32_t a_bound);
+                                       int32_t a_bound,
+                                       uint64_t q);
 
 int chipmunk_lrs_h_to_poly_q(chipmunk_poly_t *a_poly,
                              const char *a_domain,
                              uint32_t a_params_id,
                              const uint8_t *a_seed_material,
                              size_t a_seed_material_size,
-                             uint32_t a_index);
+                             uint32_t a_index,
+                             uint64_t q);
 
 int chipmunk_lrs_h_to_short_poly(chipmunk_poly_t *a_poly,
                                  const char *a_domain,
@@ -185,7 +189,8 @@ int chipmunk_lrs_derive_A_I(chipmunk_poly_t a_A_I[CHIPMUNK_LRS_K],
 
 int chipmunk_lrs_relation_eval(chipmunk_poly_t *a_out,
                                const chipmunk_poly_t a_A[CHIPMUNK_LRS_K],
-                               const chipmunk_poly_t a_x[CHIPMUNK_LRS_K]);
+                               const chipmunk_poly_t a_x[CHIPMUNK_LRS_K],
+                               uint64_t q);
 
 int chipmunk_lrs_keypair_from_seeds(chipmunk_lrs_public_key_t *a_pk,
                                     chipmunk_lrs_secret_key_t *a_sk,
@@ -217,11 +222,13 @@ int chipmunk_lrs_ring_hash(uint8_t a_out[32],
 int chipmunk_lrs_pop_create(uint8_t *a_pop,
                             size_t a_pop_size,
                             const chipmunk_lrs_secret_key_t *a_sk,
-                            const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES]);
+                            const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES],
+                            uint64_t q);
 
 int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
                             size_t a_pop_size,
-                            const chipmunk_lrs_public_key_t *a_pk);
+                            const chipmunk_lrs_public_key_t *a_pk,
+                            uint64_t q);
 
 /*
  * Canonical CLRS signature size for a given ring size.  Returns 0 if the
@@ -244,7 +251,8 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
                       size_t a_ring_size,
                       const uint8_t *a_message,
                       size_t a_message_size,
-                      const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES]);
+                      const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES],
+                      uint64_t q);
 
 /*
  * Verify a_sig over a_message against the candidate ring.  Wire and
@@ -257,7 +265,8 @@ int chipmunk_lrs_verify(const uint8_t *a_sig,
                         const chipmunk_lrs_public_key_t *a_ring,
                         size_t a_ring_size,
                         const uint8_t *a_message,
-                        size_t a_message_size);
+                        size_t a_message_size,
+                        uint64_t q);
 
 #ifdef __cplusplus
 }

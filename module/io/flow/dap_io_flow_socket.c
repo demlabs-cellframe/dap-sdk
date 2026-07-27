@@ -22,6 +22,8 @@
  */
 
 #include <string.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <errno.h>
 #include "dap_common.h"
@@ -632,13 +634,14 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         // MUST be set BEFORE bind() for maximum effectiveness
         if (a_socket_type == SOCK_DGRAM) {
             int l_buffer_size = 64 * 1024 * 1024;  // 64 MB
-            if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+            if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
                 log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes for listener %u: %s",
                        l_buffer_size, i, strerror(errno));
             } else {
+                // Check actual size set by kernel (may be limited by rmem_max)
                 int l_actual_size = 0;
                 socklen_t l_optlen = sizeof(l_actual_size);
-                if (getsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, (char *)&l_actual_size, &l_optlen) == 0) {
+                if (getsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_actual_size, &l_optlen) == 0) {
                     log_it(L_INFO, "Set SO_RCVBUF for UDP listener %u: requested=%d, actual=%d",
                            i, l_buffer_size, l_actual_size);
                 } else {
@@ -646,13 +649,13 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
                 }
             }
             
-            if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+            if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
                 log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes for listener %u: %s",
                        l_buffer_size, i, strerror(errno));
             } else {
                 int l_actual_size = 0;
                 socklen_t l_optlen = sizeof(l_actual_size);
-                if (getsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, (char *)&l_actual_size, &l_optlen) == 0) {
+                if (getsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_actual_size, &l_optlen) == 0) {
                     log_it(L_INFO, "Set SO_SNDBUF for UDP listener %u: requested=%d, actual=%d",
                            i, l_buffer_size, l_actual_size);
                 } else {
@@ -663,7 +666,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         
         // Set SO_REUSEADDR
         int l_opt = 1;
-        if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&l_opt, sizeof(l_opt)) < 0) {
+        if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEADDR, &l_opt, sizeof(l_opt)) < 0) {
             log_it(L_WARNING, "Failed to set SO_REUSEADDR");
         }
         
@@ -673,12 +676,12 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             l_opt = 1;
             if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, &l_opt, sizeof(l_opt)) < 0) {
                 log_it(L_ERROR, "SO_REUSEPORT failed: %s", strerror(errno));
-                closesocket(l_socket);
+                close(l_socket);
                 return -6;
             }
 #else
             log_it(L_ERROR, "SO_REUSEPORT not supported on this platform");
-            closesocket(l_socket);
+            close(l_socket);
             return -7;
 #endif
         }
@@ -695,7 +698,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             int config_ret = dap_io_flow_bsd_lb_enable(l_socket);
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "BSD SO_REUSEPORT_LB failed before bind");
-                closesocket(l_socket);
+                close(l_socket);
                 return -98;
             }
             log_it(L_NOTICE, "✅ BSD SO_REUSEPORT_LB enabled BEFORE bind");
@@ -705,7 +708,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             int config_ret = dap_io_flow_darwin_gcd_configure(l_socket);
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "macOS GCD configuration failed");
-                closesocket(l_socket);
+                close(l_socket);
                 return -98;
             }
             log_it(L_NOTICE, "✅ macOS GCD configured (SO_REUSEPORT + SO_REUSEADDR)");
@@ -715,7 +718,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             int config_ret = dap_io_flow_win_rio_configure(l_socket);
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "Windows RIO configuration failed");
-                closesocket(l_socket);
+                close(l_socket);
                 return -98;
             }
             log_it(L_NOTICE, "✅ Windows RIO configured (SO_REUSEADDR)");
@@ -754,7 +757,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         
         if (bind(l_socket, (struct sockaddr*)&l_bind_addr, l_addr_len) < 0) {
             log_it(L_ERROR, "Failed to bind socket for worker %u: %s", i, strerror(errno));
-            closesocket(l_socket);
+            close(l_socket);
             return -4;
         }
         
@@ -779,7 +782,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_socket, a_callbacks);
         if (!l_es) {
             log_it(L_ERROR, "Failed to wrap socket for worker %u", i);
-            closesocket(l_socket);
+            close(l_socket);
             return -5;
         }
         
