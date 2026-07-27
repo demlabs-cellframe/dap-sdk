@@ -564,6 +564,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_invntt_
     register_dap_test(test_unit_crypto_chipmunk_invntt_fix "unit;crypto;chipmunk")
 endif()
 
+# BDLOP lattice commitment + approximate shortness opening proof + range proof
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_bdlop.c)
+    add_dap_test(test_unit_crypto_chipmunk_bdlop unit/crypto/chipmunk/test_chipmunk_bdlop.c)
+    register_dap_test(test_unit_crypto_chipmunk_bdlop "unit;crypto;chipmunk;bdlop;range")
+endif()
+
 # CR-D5 regression: chipmunk_hots_setup determinism against uninitialised-stack UB
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_hots_setup_determinism.c)
     add_dap_test(test_unit_crypto_chipmunk_hots_setup_determinism
