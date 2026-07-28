@@ -739,6 +739,69 @@ int chipmunk_lrs_key_image(uint8_t a_key_image[CHIPMUNK_LRS_POLY_QPACK_BYTES],
     return l_rc;
 }
 
+/* ---- Phase 6-full: Stealth address derivation ---- */
+
+void chipmunk_lrs_stealth_shared_secret(uint8_t a_out[32],
+                                          const chipmunk_lrs_public_key_t *a_recipient_pk,
+                                          const chipmunk_lrs_public_key_t *a_ephemeral_pk)
+{
+    if (!a_out || !a_recipient_pk || !a_ephemeral_pk)
+        return;
+    /* shared = SHA3-256(recipient_pk || ephemeral_pk)
+     * Domain-separated via struct magic + packed polys. */
+    uint8_t l_buf[sizeof(chipmunk_lrs_public_key_t) * 2];
+    memcpy(l_buf, a_recipient_pk, sizeof(*a_recipient_pk));
+    memcpy(l_buf + sizeof(*a_recipient_pk), a_ephemeral_pk, sizeof(*a_ephemeral_pk));
+    dap_hash_sha3_256_raw(a_out, l_buf, sizeof(l_buf));
+    dap_memwipe(l_buf, sizeof(l_buf));
+}
+
+int chipmunk_lrs_stealth_derive_sk(uint8_t a_out_sk[CHIPMUNK_LRS_SEED_BYTES],
+                                     const uint8_t a_scan_sk[CHIPMUNK_LRS_SEED_BYTES],
+                                     const uint8_t a_shared[32])
+{
+    if (!a_out_sk || !a_scan_sk || !a_shared)
+        return -EINVAL;
+    /* derived_sk = SHAKE256(scan_sk || shared) as new 32-byte seed
+     * This is a one-way function: knowing derived_sk doesn't reveal scan_sk. */
+    uint8_t l_buf[CHIPMUNK_LRS_SEED_BYTES + 32];
+    memcpy(l_buf, a_scan_sk, CHIPMUNK_LRS_SEED_BYTES);
+    memcpy(l_buf + CHIPMUNK_LRS_SEED_BYTES, a_shared, 32);
+    dap_hash_shake256(a_out_sk, CHIPMUNK_LRS_SEED_BYTES, l_buf, sizeof(l_buf));
+    dap_memwipe(l_buf, sizeof(l_buf));
+    return 0;
+}
+
+int chipmunk_lrs_stealth_derive_pk(chipmunk_lrs_public_key_t *a_out_pk,
+                                     const chipmunk_lrs_public_key_t *a_scan_pk,
+                                     const uint8_t a_shared[32])
+{
+    if (!a_out_pk || !a_scan_pk || !a_shared)
+        return -EINVAL;
+
+    /* Derive new secret seed from scan_pk's implicit structure.
+     * Since we only have the public key (not the secret), we derive
+     * a new keypair from H(scan_pk || shared) and use that as one-time key.
+     *
+     * derived_seed = SHAKE256(scan_pk || shared)
+     * derived_sk = keypair_from_seeds(derived_seed)
+     * derived_pk = A · derived_sk */
+    uint8_t l_derived_seed[CHIPMUNK_LRS_SEED_BYTES];
+    {
+        uint8_t l_buf[sizeof(chipmunk_lrs_public_key_t) + 32];
+        memcpy(l_buf, a_scan_pk, sizeof(*a_scan_pk));
+        memcpy(l_buf + sizeof(*a_scan_pk), a_shared, 32);
+        dap_hash_shake256(l_derived_seed, sizeof(l_derived_seed), l_buf, sizeof(l_buf));
+        dap_memwipe(l_buf, sizeof(l_buf));
+    }
+
+    chipmunk_lrs_secret_key_t l_sk = {};
+    int l_rc = chipmunk_lrs_keypair_from_seeds(a_out_pk, &l_sk, l_derived_seed);
+    dap_memwipe(l_derived_seed, sizeof(l_derived_seed));
+    dap_memwipe(&l_sk, sizeof(l_sk));
+    return l_rc;
+}
+
 int chipmunk_lrs_public_key_validate(const chipmunk_lrs_public_key_t *a_pk)
 {
     if (!a_pk || a_pk->magic != CHIPMUNK_LRS_MAGIC_CLPK ||

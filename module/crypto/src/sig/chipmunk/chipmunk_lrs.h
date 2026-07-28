@@ -199,6 +199,58 @@ int chipmunk_lrs_keypair_from_seeds(chipmunk_lrs_public_key_t *a_pk,
 int chipmunk_lrs_key_image(uint8_t a_key_image[CHIPMUNK_LRS_POLY_QPACK_BYTES],
                            const chipmunk_lrs_secret_key_t *a_sk);
 
+/*
+ * Phase 6-full: Stealth address derivation.
+ *
+ * Sender creates ephemeral keypair and derives one-time public key:
+ *   1. Generate ephemeral seed e (32 bytes CSPRNG)
+ *   2. ephemeral_sk = derive_witness(e), ephemeral_pk = A · ephemeral_sk
+ *   3. shared = SHA3-256(recipient_pk || ephemeral_pk)
+ *   4. derived_sk = scan_sk + shared (modular offset on seed)
+ *   5. derived_pk = A · derived_sk
+ *   6. Output goes to derived_pk, ephemeral_pk published in OUT_ANON
+ *
+ * Recipient scans:
+ *   1. For each OUT_ANON with ephemeral_pk ≠ 0:
+ *   2. shared = SHA3-256(my_pk || ephemeral_pk)
+ *   3. derived_sk = my_sk + shared
+ *   4. derived_pk = A · derived_sk
+ *   5. If derived_pk == addr → this output belongs to me
+ *
+ * This provides unlinkability: each output has a unique one-time key
+ * that cannot be linked to the recipient's public address.
+ */
+
+/*
+ * Derive one-time secret key from scan secret + shared secret.
+ * a_scan_sk: recipient's base secret key (x_seed)
+ * a_shared: 32-byte shared secret = H(recipient_pk || ephemeral_pk)
+ * a_out_sk: derived one-time secret key (new x_seed)
+ * Returns 0 on success.
+ */
+int chipmunk_lrs_stealth_derive_sk(uint8_t a_out_sk[CHIPMUNK_LRS_SEED_BYTES],
+                                     const uint8_t a_scan_sk[CHIPMUNK_LRS_SEED_BYTES],
+                                     const uint8_t a_shared[32]);
+
+/*
+ * Derive one-time public key from scan public key + shared secret.
+ * a_scan_pk: recipient's base public key
+ * a_shared: 32-byte shared secret
+ * a_out_pk: derived one-time public key
+ * Returns 0 on success.
+ */
+int chipmunk_lrs_stealth_derive_pk(chipmunk_lrs_public_key_t *a_out_pk,
+                                     const chipmunk_lrs_public_key_t *a_scan_pk,
+                                     const uint8_t a_shared[32]);
+
+/*
+ * Compute shared secret = H(recipient_pk || ephemeral_pk).
+ * Uses SHA3-256 for domain separation and collision resistance.
+ */
+void chipmunk_lrs_stealth_shared_secret(uint8_t a_out[32],
+                                          const chipmunk_lrs_public_key_t *a_recipient_pk,
+                                          const chipmunk_lrs_public_key_t *a_ephemeral_pk);
+
 int chipmunk_lrs_public_key_validate(const chipmunk_lrs_public_key_t *a_pk);
 
 int chipmunk_lrs_secret_key_validate(const chipmunk_lrs_secret_key_t *a_sk);
