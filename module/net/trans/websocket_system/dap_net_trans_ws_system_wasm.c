@@ -53,6 +53,7 @@
 #include "dap_http_client_simple.h"
 #include "dap_stream.h"
 #include "dap_stream_session.h"
+#include "dap_client.h"
 #include "dap_stream_pkt.h"
 
 #define LOG_TAG "ws_system_wasm"
@@ -382,6 +383,15 @@ void _ws_on_close(int a_handle, int a_code)
     l_conn->state = DAP_WS_SYSTEM_STATE_CLOSED;
     log_it(L_INFO, "WebSocket closed (handle=%d, code=%d)", a_handle, a_code);
 
+    /* Propagate the disconnect to the owning dap_client so the avrs FSM
+     * transitions to ERROR — without this the avrs client stays ACTIVE
+     * forever, media keeps publishing into a dead queue, and the worker
+     * eventually crashes from state corruption.  (false = non-final:
+     * allow the FSM reconnect logic to retry.) */
+    dap_client_t *l_dc = (dap_client_t *)l_conn->client_ctx;
+    if (l_dc && l_dc->stage_status_error_callback)
+        l_dc->stage_status_error_callback(l_dc, (void*)(intptr_t)false);
+
 #ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
 #else
@@ -399,6 +409,10 @@ void _ws_on_error(int a_handle)
     if (!l_conn) return;
     log_it(L_ERROR, "WebSocket error (handle=%d)", a_handle);
     l_conn->state = DAP_WS_SYSTEM_STATE_CLOSED;
+
+    dap_client_t *l_dc = (dap_client_t *)l_conn->client_ctx;
+    if (l_dc && l_dc->stage_status_error_callback)
+        l_dc->stage_status_error_callback(l_dc, (void*)(intptr_t)false);
 
 #ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
