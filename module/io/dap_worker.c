@@ -568,6 +568,13 @@ void dap_worker_exec_callback_on_sync(dap_worker_t *a_worker, dap_worker_callbac
         a_callback(a_arg);
         return;
     }
+#ifdef DAP_OS_WASM_ST
+    /* In WASM single-threaded mode there is only one thread — blocking on
+     * pthread_cond_wait would deadlock because no worker thread exists to
+     * process the queued callback.  Execute inline instead. */
+    a_callback(a_arg);
+    return;
+#endif
     dap_worker_sync_msg_t l_msg = { .callback = a_callback, .arg = a_arg, .done = false };
     pthread_mutex_init(&l_msg.mutex, NULL);
     pthread_cond_init(&l_msg.cond, NULL);
