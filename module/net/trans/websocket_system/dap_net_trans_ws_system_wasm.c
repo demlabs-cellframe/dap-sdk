@@ -100,13 +100,13 @@ typedef struct ws_system_conn {
     dap_cbuf_t              recv_buf;
 
     dap_stream_t           *stream;
-    void                   *client_ctx;
+    void                   *client_ctx;  /* Borrowed dap_client*, NULL after close */
 
     char                   *host;
     uint16_t                port;
     bool                    use_tls;
     uint32_t                session_id;
-    
+
     long                    keepalive_timer_id;
 
 #ifdef DAP_OS_WASM_MT
@@ -387,10 +387,17 @@ void _ws_on_close(int a_handle, int a_code)
      * transitions to ERROR — without this the avrs client stays ACTIVE
      * forever, media keeps publishing into a dead queue, and the worker
      * eventually crashes from state corruption.  (false = non-final:
-     * allow the FSM reconnect logic to retry.) */
-    dap_client_t *l_dc = (dap_client_t *)l_conn->client_ctx;
-    if (l_dc && l_dc->stage_status_error_callback)
-        l_dc->stage_status_error_callback(l_dc, (void*)(intptr_t)false);
+     * allow the FSM reconnect logic to retry.)
+     *
+     * client_ctx is a borrowed pointer to the dap_client.  It is set to
+     * NULL by s_ws_system_close() before the dap_client is freed, so a
+     * NULL check is sufficient to avoid use-after-free on the expected
+     * disconnect path. */
+    if (l_conn->client_ctx) {
+        dap_client_t *l_dc = (dap_client_t *)l_conn->client_ctx;
+        if (l_dc && l_dc->stage_status_error_callback)
+            l_dc->stage_status_error_callback(l_dc, (void*)(intptr_t)false);
+    }
 
 #ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
@@ -410,9 +417,11 @@ void _ws_on_error(int a_handle)
     log_it(L_ERROR, "WebSocket error (handle=%d)", a_handle);
     l_conn->state = DAP_WS_SYSTEM_STATE_CLOSED;
 
-    dap_client_t *l_dc = (dap_client_t *)l_conn->client_ctx;
-    if (l_dc && l_dc->stage_status_error_callback)
-        l_dc->stage_status_error_callback(l_dc, (void*)(intptr_t)false);
+    if (l_conn->client_ctx) {
+        dap_client_t *l_dc = (dap_client_t *)l_conn->client_ctx;
+        if (l_dc && l_dc->stage_status_error_callback)
+            l_dc->stage_status_error_callback(l_dc, (void*)(intptr_t)false);
+    }
 
 #ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
@@ -1011,6 +1020,12 @@ static void s_ws_system_close(dap_stream_t *a_stream)
     ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
 
     s_stop_keepalive_timer(l_conn);
+
+    /* Clear the borrowed dap_client pointer BEFORE closing the WebSocket.
+     * avrs_client_disconnect() destroys the dap_client before this
+     * transport close runs, so the _ws_on_close callback would touch
+     * freed memory if we left client_ctx non-NULL. */
+    l_conn->client_ctx = NULL;
 
 #ifdef DAP_OS_WASM_MT
     if (l_conn->recv_running) {
