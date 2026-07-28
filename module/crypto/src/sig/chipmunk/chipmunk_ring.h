@@ -63,7 +63,7 @@ typedef struct chipmunk_ring_header {
 
 #define CHIPMUNK_RING_MAGIC    0x4352494Eu  /* 'CRIN' LE */
 #define CHIPMUNK_RING_VERSION  2u
-#define CHIPMUNK_RING_N_MIN    8u           /* Hard minimum ring size for anonymity */
+#define CHIPMUNK_RING_N_MIN    16u          /* Hard minimum ring size for anonymity */
 
 /* Header schema for dap_serialize. */
 extern const dap_serialize_schema_t s_chipmunk_ring_header_schema;
