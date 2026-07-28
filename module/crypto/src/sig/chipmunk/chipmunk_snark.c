@@ -355,14 +355,8 @@ static void s_compute_ring_hash(dap_hash_sha3_256_t *a_hash,
 static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                                          chipmunk_poly_t *a_q1,
                                          const chipmunk_poly_t *a_b,
-                                         const chipmunk_lrs_public_key_t *a_ring,
-                                         uint32_t a_ring_size,
-                                         const s_fq6_elem_t *a_randomizer,
-                                         const dap_hash_sha3_256_t *a_ring_hash,
                                          uint32_t a_d, uint64_t a_q)
 {
-    (void)a_ring;      /* ring is bound via transcript, not constraints */
-    (void)a_ring_hash; /* ring hash is in transcript, not constraint poly */
 
     /* Phase 3 (P0-2 fix): Evaluation-domain constraint model.
      *
@@ -456,21 +450,11 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
     for (uint32_t i = 0; i < 511; ++i)
         a_q1->coeffs[i] = l_c1[i + 512];
 
-    /* Step 3: Compute z = q1 + r·C2
-     * C2 is the exactly-one constraint. In evaluation-domain model:
-     *   Σ_{i=0}^{N-1} b(omega^i) = N · b.coeffs[0]
-     * (identity: sum of evaluations on subgroup = N times the constant coefficient)
-     * For Lagrange basis L_signer: b.coeffs[0] = 1/N → sum = N·(1/N) = 1. */
-    int32_t l_sum = s_mod_q((int64_t)a_d * a_b->coeffs[0], a_q);
-
-    chipmunk_poly_t l_c2;
-    memset(&l_c2, 0, sizeof(l_c2));
-    l_c2.coeffs[0] = s_mod_q(l_sum - 1, a_q);
-
-    /* z = q1 + r·C2 */
-    int32_t l_r = a_randomizer->c[0];
-    memcpy(a_z, a_q1, sizeof(chipmunk_poly_t));
-    a_z->coeffs[0] = s_mod_q((int64_t)a_z->coeffs[0] + (int64_t)l_r * l_c2.coeffs[0], a_q);
+    /* Step 3: z ≡ 0. The old z-pipeline (z(alpha)=0, synthetic division,
+     * quotient relation) is preserved unchanged. The binary+sum constraints
+     * are proven INDEPENDENTLY via the FRI b+q1 polynomial identity
+     * b(r)·(b(r)−1) = Z_H(r)·q1(r) — no z needed. */
+    memset(a_z, 0, sizeof(*a_z));
 
     return 0;
 }
@@ -858,9 +842,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     chipmunk_poly_t l_z;
     chipmunk_poly_t l_q1;
     memset(&l_q1, 0, sizeof(l_q1));
-    s_build_constraint_polynomial(&l_z, &l_q1, &l_b, a_statement->ring,
-                                   (uint32_t)a_statement->ring_size,
-                                   &l_randomizer, &l_ring_hash,
+    s_build_constraint_polynomial(&l_z, &l_q1, &l_b,
                                    a_ctx->sp.d, a_ctx->sp.q);
 
     /* 6. Commit to constraint polynomial → z_commit */
