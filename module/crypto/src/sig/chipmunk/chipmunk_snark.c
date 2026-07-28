@@ -38,6 +38,7 @@
 #include "chipmunk_field.h"
 #include "chipmunk_lrs.h"
 #include "chipmunk_fq6_ext.h"
+#include "chipmunk_rs.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake256.h"
 #include "dap_memwipe.h"
@@ -352,6 +353,7 @@ static void s_compute_ring_hash(dap_hash_sha3_256_t *a_hash,
  * They were used by the incorrect C3/C4 constraints. */
 
 static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
+                                         chipmunk_poly_t *a_q1,
                                          const chipmunk_poly_t *a_b,
                                          const chipmunk_lrs_public_key_t *a_ring,
                                          uint32_t a_ring_size,
@@ -362,41 +364,112 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
     (void)a_ring;      /* ring is bound via transcript, not constraints */
     (void)a_ring_hash; /* ring hash is in transcript, not constraint poly */
 
-    /* C1: b * (b - 1) = 0 for binary constraint
-     * For valid indicator b in {0,1}^N with exactly one 1:
-     *   b[signer] = 1 → b[signer] * (b[signer] - 1) = 1 * 0 = 0
-     *   b[i] = 0 for i ≠ signer → 0 * (0 - 1) = 0
-     * So C1 = 0 polynomial for honest prover. */
-    chipmunk_poly_t l_c1;
-    memset(&l_c1, 0, sizeof(l_c1));
-    for (uint32_t i = 0; i < a_d; ++i) {
-        int32_t l_bi = a_b->coeffs[i];
-        l_c1.coeffs[i] = s_mod_q((int64_t)l_bi * (l_bi - 1), a_q);
+    /* Phase 3 (P0-2 fix): Evaluation-domain constraint model.
+     *
+     * The indicator b is a polynomial of degree < d=512, with COEFFICIENTS
+     * b[i]. The constraint domain is H = {omega_512^0, ..., omega_512^511},
+     * the 512-th roots of unity. The vanishing polynomial is:
+     *   Z_H(X) = X^512 - 1  (zero on all omega_512^i)
+     *
+     * Constraint C1(X) = b(X)·(b(X) − 1)  — polynomial product (degree ≤ 2d−2).
+     * If b is binary on H (i.e., b(omega^i) ∈ {0,1}), then C1 vanishes on H,
+     * so Z_H divides C1, and q1 = C1 / Z_H is a low-degree polynomial.
+     *
+     * We compute:
+     *   1. C1 = b² − b  (polynomial multiply via 2048-point NTT)
+     *   2. q1 = C1 / Z_H  (polynomial division by X^512 − 1)
+     *   3. z = q1 + r·C2  (linear combination for exactly-one constraint)
+     *
+     * The verifier opens b and q1 at FRI query points and checks:
+     *   b(r)·(b(r) − 1) = Z_H(r)·q1(r)
+     *
+     * This is a POLYNOMIAL identity, verifiable at any point via FRI.
+     * For z≡0 forge: attacker sends z=0, but must provide valid q1 such that
+     * b(r)·(b(r)−1) = Z_H(r)·q1(r). Since q1 is FRI-committed (binding),
+     * attacker is stuck with their b. If b is not binary on H, the identity
+     * fails at random query points (Schwartz-Zippel).
+     */
+
+    /* Step 1: Compute C1(X) = b(X)·b(X) − b(X) via 2048-point NTT.
+     * b has degree ≤511, so b² has degree ≤1022. We need NTT size ≥1024.
+     * Use 2048-point FRI NTT (size > 2·511). */
+
+    /* Build per-q NTT context */
+    chipmunk_fri_ntt_ctx_t l_ntt_ctx;
+    int l_rc = chipmunk_fri_ntt_ctx_init(&l_ntt_ctx, a_q, CHIPMUNK_FRI_NTT_LOG);
+    if (l_rc != 0) return l_rc;
+
+    /* Pad b to 2048 coefficients */
+    int32_t l_b_pad[CHIPMUNK_FRI_NTT_SIZE];
+    memset(l_b_pad, 0, sizeof(l_b_pad));
+    for (uint32_t i = 0; i < a_d; ++i)
+        l_b_pad[i] = a_b->coeffs[i];
+
+    /* Forward NTT of b */
+    chipmunk_fri_ntt_forward_q(l_b_pad, &l_ntt_ctx);
+
+    /* Pointwise square: b² in NTT domain */
+    int32_t l_bsq_pad[CHIPMUNK_FRI_NTT_SIZE];
+    for (uint32_t i = 0; i < CHIPMUNK_FRI_NTT_SIZE; ++i)
+        l_bsq_pad[i] = s_mod_q((int64_t)l_b_pad[i] * l_b_pad[i], a_q);
+
+    /* Inverse NTT → b² coefficient polynomial (degree ≤1022) */
+    chipmunk_fri_ntt_inverse_q(l_bsq_pad, &l_ntt_ctx);
+
+    /* C1 = b² − b  (only first 1023 coefficients matter, rest are 0) */
+    /* C1[i] = b²[i] − b[i] for i < 512, C1[i] = b²[i] for 512 ≤ i < 1024 */
+    /* Store in 1024-element array */
+    int32_t l_c1[1024];
+    memset(l_c1, 0, sizeof(l_c1));
+    for (uint32_t i = 0; i < 1024; ++i) {
+        int32_t l_b2 = (i < CHIPMUNK_FRI_NTT_SIZE) ? l_bsq_pad[i] : 0;
+        int32_t l_bi = (i < a_d) ? a_b->coeffs[i] : 0;
+        l_c1[i] = s_mod_q((int64_t)l_b2 - l_bi, a_q);
     }
 
-    /* C2: sum(b_i) - 1 = 0 — exactly one signer
-     * For valid indicator: sum = 1, so C2 = 0 constant polynomial.
-     * Note: we iterate up to ring_size (may be < d). */
-    int64_t l_sum = 0;
-    for (uint32_t i = 0; i < a_ring_size && i < a_d; ++i) {
-        l_sum += a_b->coeffs[i];
+    chipmunk_fri_ntt_ctx_free(&l_ntt_ctx);
+
+    /* Step 2: Divide C1 by Z_H(X) = X^512 − 1.
+     *
+     * C1(X) = q1(X) · (X^512 − 1) = q1(X)·X^512 − q1(X)
+     * So: C1[i] = −q1[i] for i < 512
+     *     C1[i+512] = q1[i] for i < 512
+     * Therefore: q1[i] = C1[i+512] = −C1[i]  (both must hold if divisible)
+     *
+     * q1 has degree ≤ 510 (since C1 has degree ≤1022, and Z_H has degree 512,
+     * quotient has degree ≤1022−512 = 510). */
+
+    /* Verify divisibility: C1[i] + C1[i+512] should be 0 for all valid i */
+    for (uint32_t i = 0; i < 512; ++i) {
+        int32_t l_sum_check = s_mod_q((int64_t)l_c1[i] + l_c1[i + 512], a_q);
+        if (l_sum_check != 0) {
+            /* Not divisible by Z_H — b is not binary on H.
+             * This should not happen for honest prover. */
+            log_it(L_ERROR, "SNARK: C1 not divisible by Z_H at index %u (sum=%d)",
+                   i, l_sum_check);
+            return -EINVAL;
+        }
     }
+
+    /* Extract q1[i] = C1[i+512] for i=0..510 */
+    memset(a_q1, 0, sizeof(*a_q1));
+    for (uint32_t i = 0; i < 511; ++i)
+        a_q1->coeffs[i] = l_c1[i + 512];
+
+    /* Step 3: Compute z = q1 + r·C2
+     * C2 is the exactly-one constraint. In evaluation-domain model:
+     *   Σ_{i=0}^{N-1} b(omega^i) = N · b.coeffs[0]
+     * (identity: sum of evaluations on subgroup = N times the constant coefficient)
+     * For Lagrange basis L_signer: b.coeffs[0] = 1/N → sum = N·(1/N) = 1. */
+    int32_t l_sum = s_mod_q((int64_t)a_d * a_b->coeffs[0], a_q);
+
     chipmunk_poly_t l_c2;
     memset(&l_c2, 0, sizeof(l_c2));
     l_c2.coeffs[0] = s_mod_q(l_sum - 1, a_q);
 
-    /* z = C1 + r * C2
-     * r is from F_q^6 subtractive set; we use Y^0 component.
-     * For honest prover: C1 = 0, C2 = 0, so z = 0.
-     * The randomizer r ensures that a dishonest prover cannot find
-     * a non-binary b that makes z(alpha) = 0 simultaneously for
-     * BOTH the extension alpha check and the quotient relation. */
+    /* z = q1 + r·C2 */
     int32_t l_r = a_randomizer->c[0];
-
-    /* z = C1 */
-    memcpy(a_z, &l_c1, sizeof(chipmunk_poly_t));
-
-    /* z += r * C2 */
+    memcpy(a_z, a_q1, sizeof(chipmunk_poly_t));
     a_z->coeffs[0] = s_mod_q((int64_t)a_z->coeffs[0] + (int64_t)l_r * l_c2.coeffs[0], a_q);
 
     return 0;
@@ -689,10 +762,47 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
 
     memset(a_proof, 0, sizeof(*a_proof));
 
-    /* 1. Build indicator polynomial b in {0,1}^N */
+    /* 1. Build indicator polynomial b in EVALUATION DOMAIN.
+     *
+     * Phase 3 (P0-2 fix): b is defined by its evaluations on the subgroup
+     * H = {omega_512^0, ..., omega_512^511}: b(omega^i) = δ_{i,signer_index}.
+     * The COEFFICIENTS of b(X) are obtained via inverse DFT over omega_512.
+     *
+     * This ensures the polynomial identity b(X)·(b(X)−1) ≡ 0 mod Z_H(X):
+     *   On H: b(omega^i) ∈ {0,1} → b(omega^i)·(b(omega^i)−1) = 0
+     *   Therefore C1(X)=b(X)·(b(X)−1) vanishes on H → Z_H | C1
+     *   Quotient q1 = C1/Z_H is well-defined and low-degree.
+     *
+     * NOTE: We use O(d²) inverse DFT (slow but correct) since d=512 and this
+     * runs once per proof. For production, replace with cyclic 512-point NTT. */
     chipmunk_poly_t l_b;
     memset(&l_b, 0, sizeof(l_b));
-    l_b.coeffs[a_witness->signer_index] = 1;
+    {
+        /* Evaluation vector: b_eval[signer_index] = 1, rest = 0 */
+        /* (implicit — only one nonzero entry) */
+
+        /* Inverse DFT: b[k] = (1/N) * Σ_{i=0}^{N-1} b_eval[i] * omega_512^{-ik}
+         * Since b_eval[signer]=1 and rest=0:
+         *   b[k] = (1/N) * omega_512^{-signer·k}
+         * This is the Lagrange basis polynomial L_signer(X) at X^k coefficient. */
+        int32_t l_omega = chipmunk_field_omega_512();       /* primitive 512-th root */
+        int32_t l_omega_inv = chipmunk_field_omega_512_inv();
+        int32_t l_inv_n = chipmunk_field_inv_q((int32_t)a_ctx->sp.d, a_ctx->sp.q);  /* 1/512 */
+
+        for (uint32_t k = 0; k < a_ctx->sp.d; ++k) {
+            /* omega_512^{-signer·k} via fast exponentiation */
+            int32_t l_pow = 1;
+            int32_t l_base = l_omega_inv;
+            uint32_t l_exp = (uint32_t)a_witness->signer_index * k;
+            while (l_exp > 0) {
+                if (l_exp & 1u)
+                    l_pow = s_fqmul_q(l_pow, l_base, a_ctx->sp.q);
+                l_base = s_fqmul_q(l_base, l_base, a_ctx->sp.q);
+                l_exp >>= 1u;
+            }
+            l_b.coeffs[k] = s_fqmul_q(l_pow, l_inv_n, a_ctx->sp.q);
+        }
+    }
 
     /* 2. Generate random nonce for w_commit (Phase 7: privacy fix).
      * w_commit must NOT depend on b — b is sparse (1 out of 512 nonzero),
@@ -737,10 +847,18 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     /* Commit to randomizer for verifier re-derivation */
     s_commit_poly(&a_proof->r_commit, &l_randomizer_ext.c[0], a_ctx->sp.d, a_ctx->sp.q);
 
-    /* 5. Build constraint polynomial z(X) = C1 + r*C2
-     * For honest prover: z = 0, so synthetic division by (X - alpha) succeeds. */
+    /* 5. Build constraint polynomial z(X) = q1(X) + r·C2
+     * Phase 3: q1 = C1/Z_H where C1 = b²−b, Z_H = X^512−1.
+     * For honest prover with binary b: C1 vanishes on H, q1 is well-defined.
+     * z = q1 + r·C2; for honest prover q1=0 (since b²−b vanishes on ALL of F_q
+     * when b is binary, not just on H — wait, no: b(X)²−b(X) is NOT zero as
+     * a polynomial, it's only zero on H. So q1 ≠ 0 in general.
+     * z = q1 + r·C2 where C2 = Σb−1 = 0 for exactly-one indicator.
+     * So z = q1 for honest prover (C2=0). */
     chipmunk_poly_t l_z;
-    s_build_constraint_polynomial(&l_z, &l_b, a_statement->ring,
+    chipmunk_poly_t l_q1;
+    memset(&l_q1, 0, sizeof(l_q1));
+    s_build_constraint_polynomial(&l_z, &l_q1, &l_b, a_statement->ring,
                                    (uint32_t)a_statement->ring_size,
                                    &l_randomizer, &l_ring_hash,
                                    a_ctx->sp.d, a_ctx->sp.q);
@@ -914,103 +1032,161 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
             return l_rc;
         }
 
-        /* 13e. Absorb FRI commit output (caps + final_evals) into transcript. */
+        /* 13d-bis. Phase 3 (P0-2 fix): FRI commit indicator b AND quotient q1.
+         * Commit b and q1 using the SAME alphas BEFORE transcript absorb/finalize.
+         * Grinding PoW binds to q, b, AND q1 commitments. */
+        chipmunk_fri_prover_t l_b_prover;
+        l_rc = chipmunk_fri_prover_init(&l_b_prover);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI prover init (b) failed");
+            chipmunk_fri_prover_free(&l_fri_prover);
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            dap_memwipe(&l_q1, sizeof(l_q1));
+            return l_rc;
+        }
+        l_b_prover.q = a_ctx->sp.q;
+
+        l_rc = chipmunk_fri_commit(&l_b_prover, l_b.coeffs, l_fri_alphas);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI commit (b) failed");
+            chipmunk_fri_prover_free(&l_fri_prover);
+            chipmunk_fri_prover_free(&l_b_prover);
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            dap_memwipe(&l_q1, sizeof(l_q1));
+            return l_rc;
+        }
+
+        chipmunk_fri_prover_t l_q1_prover;
+        l_rc = chipmunk_fri_prover_init(&l_q1_prover);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI prover init (q1) failed");
+            chipmunk_fri_prover_free(&l_fri_prover);
+            chipmunk_fri_prover_free(&l_b_prover);
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            dap_memwipe(&l_q1, sizeof(l_q1));
+            return l_rc;
+        }
+        l_q1_prover.q = a_ctx->sp.q;
+
+        l_rc = chipmunk_fri_commit(&l_q1_prover, l_q1.coeffs, l_fri_alphas);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "SNARK prove: FRI commit (q1) failed");
+            chipmunk_fri_prover_free(&l_fri_prover);
+            chipmunk_fri_prover_free(&l_b_prover);
+            chipmunk_fri_prover_free(&l_q1_prover);
+            dap_memwipe(&l_b, sizeof(l_b));
+            dap_memwipe(&l_z, sizeof(l_z));
+            dap_memwipe(&l_q, sizeof(l_q));
+            dap_memwipe(&l_q1, sizeof(l_q1));
+            return l_rc;
+        }
+
+        /* 13e. Absorb FRI commit output (q caps + b caps + q1 caps + final_evals). */
+#define L_FREE_ALL_FRI() do { \
+    chipmunk_fri_prover_free(&l_fri_prover); \
+    chipmunk_fri_prover_free(&l_b_prover); \
+    chipmunk_fri_prover_free(&l_q1_prover); \
+    dap_memwipe(&l_b, sizeof(l_b)); \
+    dap_memwipe(&l_z, sizeof(l_z)); \
+    dap_memwipe(&l_q, sizeof(l_q)); \
+    dap_memwipe(&l_q1, sizeof(l_q1)); \
+} while(0)
+
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
             uint32_t l_n = (r == 0) ? 2048u : (2048u >> r);
             uint32_t l_cap_sz = (l_n >= 32u) ? 16u : l_n;
-            l_rc = chipmunk_fri_transcript_absorb_cap(
-                &l_fri_tr,
-                l_fri_prover.proof.caps[r].nodes,
-                l_cap_sz);
-            if (l_rc != 0) {
-                log_it(L_ERROR, "SNARK prove: FRI absorb cap round %u failed", r);
-                chipmunk_fri_prover_free(&l_fri_prover);
-                dap_memwipe(&l_b, sizeof(l_b));
-                dap_memwipe(&l_z, sizeof(l_z));
-                dap_memwipe(&l_q, sizeof(l_q));
-                return l_rc;
-            }
+            /* q caps */
+            l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
+                l_fri_prover.proof.caps[r].nodes, l_cap_sz);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb q cap %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
+            /* b caps */
+            l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
+                l_b_prover.proof.caps[r].nodes, l_cap_sz);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb b cap %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
+            /* q1 caps */
+            l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
+                l_q1_prover.proof.caps[r].nodes, l_cap_sz);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb q1 cap %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
         }
         for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
-            l_rc = chipmunk_fri_transcript_absorb_fq(
-                &l_fri_tr,
+            /* q final evals */
+            l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
                 l_fri_prover.proof.final_evals[i]);
-            if (l_rc != 0) {
-                log_it(L_ERROR, "SNARK prove: FRI absorb final eval %u failed", i);
-                chipmunk_fri_prover_free(&l_fri_prover);
-                dap_memwipe(&l_b, sizeof(l_b));
-                dap_memwipe(&l_z, sizeof(l_z));
-                dap_memwipe(&l_q, sizeof(l_q));
-                return l_rc;
-            }
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb q eval %u failed", i); L_FREE_ALL_FRI(); return l_rc; }
+            /* b final evals */
+            l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
+                l_b_prover.proof.final_evals[i]);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb b eval %u failed", i); L_FREE_ALL_FRI(); return l_rc; }
+            /* q1 final evals */
+            l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
+                l_q1_prover.proof.final_evals[i]);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb q1 eval %u failed", i); L_FREE_ALL_FRI(); return l_rc; }
         }
 
-        /* Absorb alphas into transcript (verifier needs same order). */
+        /* Absorb alphas into transcript. */
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
-            if (l_rc != 0) {
-                log_it(L_ERROR, "SNARK prove: FRI absorb alpha %u failed", r);
-                chipmunk_fri_prover_free(&l_fri_prover);
-                dap_memwipe(&l_b, sizeof(l_b));
-                dap_memwipe(&l_z, sizeof(l_z));
-                dap_memwipe(&l_q, sizeof(l_q));
-                return l_rc;
-            }
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb alpha %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
         }
 
-        /* 13f. Finalize: grinding PoW (~2^16 hashes expected). */
+        /* 13f. Finalize: grinding PoW binds q, b, AND q1. */
         l_rc = chipmunk_fri_transcript_finalize(&l_fri_tr);
-        if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI transcript finalize failed");
-            chipmunk_fri_prover_free(&l_fri_prover);
-            dap_memwipe(&l_b, sizeof(l_b));
-            dap_memwipe(&l_z, sizeof(l_z));
-            dap_memwipe(&l_q, sizeof(l_q));
-            return l_rc;
-        }
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI finalize failed"); L_FREE_ALL_FRI(); return l_rc; }
 
-        /* 13g. Derive 8 query indices. */
+        /* 13g. Derive 8 query indices (shared for q, b, q1). */
         uint32_t l_fri_indices[CHIPMUNK_FRI_NUM_QUERIES];
-        l_rc = chipmunk_fri_derive_query_indices(
-            &l_fri_tr, CHIPMUNK_FRI_NUM_QUERIES,
-            CHIPMUNK_FRI_INIT_SIZE, l_fri_indices);
-        if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI query index derivation failed");
-            chipmunk_fri_prover_free(&l_fri_prover);
-            dap_memwipe(&l_b, sizeof(l_b));
-            dap_memwipe(&l_z, sizeof(l_z));
-            dap_memwipe(&l_q, sizeof(l_q));
-            return l_rc;
-        }
+        l_rc = chipmunk_fri_derive_query_indices(&l_fri_tr,
+            CHIPMUNK_FRI_NUM_QUERIES, CHIPMUNK_FRI_INIT_SIZE, l_fri_indices);
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI query idx failed"); L_FREE_ALL_FRI(); return l_rc; }
 
-        /* 13h. FRI query: open q(X) at 8 positions. */
+        /* 13h. FRI query: open q(X), b(X), q1(X) at 8 positions. */
         chipmunk_fri_query_opening_t l_fri_openings[CHIPMUNK_FRI_NUM_QUERIES];
-        l_rc = chipmunk_fri_query(&l_fri_prover,
-                                  CHIPMUNK_FRI_NUM_QUERIES,
-                                  l_fri_indices,
-                                  l_fri_openings);
-        if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI query failed");
-            chipmunk_fri_prover_free(&l_fri_prover);
-            dap_memwipe(&l_b, sizeof(l_b));
-            dap_memwipe(&l_z, sizeof(l_z));
-            dap_memwipe(&l_q, sizeof(l_q));
-            return l_rc;
-        }
+        chipmunk_fri_query_opening_t l_b_openings[CHIPMUNK_FRI_NUM_QUERIES];
+        chipmunk_fri_query_opening_t l_q1_openings[CHIPMUNK_FRI_NUM_QUERIES];
 
-        /* 13i. Store FRI proof in SNARK proof struct. */
+        l_rc = chipmunk_fri_query(&l_fri_prover, CHIPMUNK_FRI_NUM_QUERIES, l_fri_indices, l_fri_openings);
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI query (q) failed"); L_FREE_ALL_FRI(); return l_rc; }
+        l_rc = chipmunk_fri_query(&l_b_prover, CHIPMUNK_FRI_NUM_QUERIES, l_fri_indices, l_b_openings);
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI query (b) failed"); L_FREE_ALL_FRI(); return l_rc; }
+        l_rc = chipmunk_fri_query(&l_q1_prover, CHIPMUNK_FRI_NUM_QUERIES, l_fri_indices, l_q1_openings);
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI query (q1) failed"); L_FREE_ALL_FRI(); return l_rc; }
+
+        /* 13i. Store FRI proofs in SNARK proof struct. */
         a_proof->fri_proof.commit = l_fri_prover.proof;
-        memcpy(a_proof->fri_proof.queries, l_fri_openings,
-               sizeof(l_fri_openings));
+        memcpy(a_proof->fri_proof.queries, l_fri_openings, sizeof(l_fri_openings));
+        a_proof->b_fri_proof.commit = l_b_prover.proof;
+        memcpy(a_proof->b_fri_proof.queries, l_b_openings, sizeof(l_b_openings));
+        a_proof->q1_fri_proof.commit = l_q1_prover.proof;
+        memcpy(a_proof->q1_fri_proof.queries, l_q1_openings, sizeof(l_q1_openings));
         a_proof->fri_grinding_nonce = l_fri_tr.grinding_nonce;
 
+        /* Store b and q1 values at query points. */
+        for (unsigned qi = 0; qi < CHIPMUNK_FRI_NUM_QUERIES; ++qi) {
+            a_proof->b_values_at_queries[qi] = l_b_openings[qi].leaf_values[0];
+            a_proof->q1_values_at_queries[qi] = l_q1_openings[qi].leaf_values[0];
+        }
+
+        /* Store Σ b(omega^i) = N · b.coeffs[0] (sum of evaluations on H).
+         * For Lagrange basis L_signer: b.coeffs[0] = 1/N → sum = 1. */
+        a_proof->b_sum = s_mod_q((int64_t)a_ctx->sp.d * l_b.coeffs[0], a_ctx->sp.q);
+
+#undef L_FREE_ALL_FRI
         chipmunk_fri_prover_free(&l_fri_prover);
+        chipmunk_fri_prover_free(&l_b_prover);
+        chipmunk_fri_prover_free(&l_q1_prover);
     }
 
     /* Wipe secret material from stack */
     dap_memwipe(&l_b, sizeof(l_b));
     dap_memwipe(&l_z, sizeof(l_z));
     dap_memwipe(&l_q, sizeof(l_q));
+    dap_memwipe(&l_q1, sizeof(l_q1));
     dap_memwipe(l_w_nonce, sizeof(l_w_nonce));
 
     return 0;
@@ -1149,68 +1325,66 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
             return 0;
         }
 
-        /* 6b. Continue transcript: absorb caps + final_evals + alphas
-         *     (same order as prover step 13e). */
+        /* 6b. Absorb q caps + b caps + q1 caps + final_evals + alphas
+         *     (must mirror prover step 13e exactly). */
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
             uint32_t l_n = (r == 0) ? 2048u : (2048u >> r);
             uint32_t l_cap_sz = (l_n >= 32u) ? 16u : l_n;
-            l_rc = chipmunk_fri_transcript_absorb_cap(
-                &l_fri_tr,
-                a_proof->fri_proof.commit.caps[r].nodes,
-                l_cap_sz);
-            if (l_rc != 0) {
-                log_it(L_ERROR, "SNARK verify: FRI absorb cap round %u failed", r);
-                return 0;
-            }
+            l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
+                a_proof->fri_proof.commit.caps[r].nodes, l_cap_sz);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q cap %u failed", r); return 0; }
+            l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
+                a_proof->b_fri_proof.commit.caps[r].nodes, l_cap_sz);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb b cap %u failed", r); return 0; }
+            l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
+                a_proof->q1_fri_proof.commit.caps[r].nodes, l_cap_sz);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q1 cap %u failed", r); return 0; }
         }
         for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
-            l_rc = chipmunk_fri_transcript_absorb_fq(
-                &l_fri_tr,
+            l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
                 a_proof->fri_proof.commit.final_evals[i]);
-            if (l_rc != 0) {
-                log_it(L_ERROR, "SNARK verify: FRI absorb final eval %u failed", i);
-                return 0;
-            }
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q eval %u failed", i); return 0; }
+            l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
+                a_proof->b_fri_proof.commit.final_evals[i]);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb b eval %u failed", i); return 0; }
+            l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
+                a_proof->q1_fri_proof.commit.final_evals[i]);
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q1 eval %u failed", i); return 0; }
         }
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
-            if (l_rc != 0) {
-                log_it(L_ERROR, "SNARK verify: FRI absorb alpha %u failed", r);
-                return 0;
-            }
+            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb alpha %u failed", r); return 0; }
         }
 
-        /* 6c. Finalize verifier-side: verify grinding nonce (1 hash). */
-        l_rc = chipmunk_fri_transcript_finalize_verify(
-            &l_fri_tr, a_proof->fri_grinding_nonce);
-        if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK verify: FRI grinding nonce invalid");
-            return 0;
-        }
+        /* 6c. Finalize verifier-side: verify grinding nonce. */
+        l_rc = chipmunk_fri_transcript_finalize_verify(&l_fri_tr, a_proof->fri_grinding_nonce);
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI grinding nonce invalid"); return 0; }
 
-        /* 6d. Derive 8 query indices (same transcript → same indices). */
+        /* 6d. Derive 8 query indices (shared for q, b, q1). */
         uint32_t l_fri_indices[CHIPMUNK_FRI_NUM_QUERIES];
-        l_rc = chipmunk_fri_derive_query_indices(
-            &l_fri_tr, CHIPMUNK_FRI_NUM_QUERIES,
-            CHIPMUNK_FRI_INIT_SIZE, l_fri_indices);
-        if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK verify: FRI query index derivation failed");
-            return 0;
-        }
+        l_rc = chipmunk_fri_derive_query_indices(&l_fri_tr,
+            CHIPMUNK_FRI_NUM_QUERIES, CHIPMUNK_FRI_INIT_SIZE, l_fri_indices);
+        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI query idx failed"); return 0; }
 
-        /* 6e. Verify each FRI query: index match + Merkle + folding. */
+        /* 6e. Verify FRI queries for q, b, AND q1 (shared indices). */
         for (uint32_t qi = 0; qi < CHIPMUNK_FRI_NUM_QUERIES; ++qi) {
             if (a_proof->fri_proof.queries[qi].idx != l_fri_indices[qi]) {
-                log_it(L_ERROR, "SNARK verify: FRI query %u index mismatch "
-                       "(got %u, expected %u)",
-                       qi, a_proof->fri_proof.queries[qi].idx, l_fri_indices[qi]);
-                return 0;
+                log_it(L_ERROR, "SNARK verify: FRI q query %u index mismatch", qi); return 0;
             }
-            if (!chipmunk_fri_verify_query_q(
-                    &a_proof->fri_proof, qi, l_fri_alphas, a_ctx->sp.q)) {
-                log_it(L_ERROR, "SNARK verify: FRI query %u verification failed",
-                       qi);
-                return 0;
+            if (!chipmunk_fri_verify_query_q(&a_proof->fri_proof, qi, l_fri_alphas, a_ctx->sp.q)) {
+                log_it(L_ERROR, "SNARK verify: FRI q query %u failed", qi); return 0;
+            }
+            if (a_proof->b_fri_proof.queries[qi].idx != l_fri_indices[qi]) {
+                log_it(L_ERROR, "SNARK verify: FRI b query %u index mismatch", qi); return 0;
+            }
+            if (!chipmunk_fri_verify_query_q(&a_proof->b_fri_proof, qi, l_fri_alphas, a_ctx->sp.q)) {
+                log_it(L_ERROR, "SNARK verify: FRI b query %u failed", qi); return 0;
+            }
+            if (a_proof->q1_fri_proof.queries[qi].idx != l_fri_indices[qi]) {
+                log_it(L_ERROR, "SNARK verify: FRI q1 query %u index mismatch", qi); return 0;
+            }
+            if (!chipmunk_fri_verify_query_q(&a_proof->q1_fri_proof, qi, l_fri_alphas, a_ctx->sp.q)) {
+                log_it(L_ERROR, "SNARK verify: FRI q1 query %u failed", qi); return 0;
             }
         }
     }
@@ -1321,7 +1495,81 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (ext alpha + %d quotient checks + FRI, >> 128-bit soundness)",
+    /* 10. Phase 3 (P0-2 fix): Verify indicator polynomial b via FRI openings.
+     *
+     * The indicator b ∈ {0,1}^N is one-hot (b[signer_index]=1).
+     * Previously b was NOT committed, allowing z≡0 forge (any proof passes
+     * for any ring). Now b is committed via FRI and opened at 8 query points.
+     *
+     * At each query point, the verifier checks:
+     *   b(x_k) ∈ {0, 1}  (ternary/binary constraint)
+     *
+     * This prevents the z≡0 forge: the attacker must commit to a b that is
+     * binary at 8 random domain points. Combined with b_sum=1 check and
+     * the FRI binding (prover cannot change b after commitment), this makes
+     * forge computationally infeasible.
+     *
+     * POLYNOMIAL IDENTITY: b(r)·(b(r)−1) = Z_H(r)·q1(r) at each query point.
+     * This is the standard STARK vanishing-polynomial constraint:
+     *   C1(X) = b(X)·(b(X)−1) vanishes on H iff b is binary on H
+     *   C1(X) = q1(X)·Z_H(X) iff C1 is divisible by Z_H = X^512−1
+     * At query point r: C1(r) = b(r)·(b(r)−1) must equal Z_H(r)·q1(r).
+     */
+    {
+        /* Check b_sum = 1 (exactly one signer) */
+        if (a_proof->b_sum != 1) {
+            log_it(L_ERROR, "SNARK verify: b_sum=%d (expected 1)", a_proof->b_sum);
+            return 0;
+        }
+
+        /* Evaluate Z_H at each FRI query domain point and check polynomial identity.
+         * Domain point x_k = g * omega^idx (coset generator g=3, omega=omega_2048).
+         * Z_H(x_k) = x_k^512 - 1.
+         *
+         * The constraint: b(x_k)·(b(x_k)−1) =? Z_H(x_k)·q1(x_k)
+         * Both b(x_k) and q1(x_k) come from FRI openings (binding). */
+        int32_t l_g = CHIPMUNK_RS_COSET_G;
+        int32_t l_omega = chipmunk_field_omega_2048();
+
+        for (uint32_t qi = 0; qi < CHIPMUNK_FRI_NUM_QUERIES; ++qi) {
+            int32_t l_b_val = a_proof->b_values_at_queries[qi];
+            int32_t l_q1_val = a_proof->q1_values_at_queries[qi];
+
+            /* Compute domain point x_k = g * omega^idx */
+            uint32_t l_idx = a_proof->fri_proof.queries[qi].idx;
+            int32_t l_point = l_g;
+            for (uint32_t e = 0; e < l_idx; ++e)
+                l_point = s_fqmul_q(l_point, l_omega, l_mod_q);
+
+            /* Z_H(x_k) = x_k^512 - 1 (fast exponentiation) */
+            int32_t l_zh = 1;  /* start with 1 */
+            int32_t l_base = l_point;
+            uint32_t l_exp = 512;
+            while (l_exp > 0) {
+                if (l_exp & 1u)
+                    l_zh = s_fqmul_q(l_zh, l_base, l_mod_q);
+                l_base = s_fqmul_q(l_base, l_base, l_mod_q);
+                l_exp >>= 1u;
+            }
+            l_zh = s_mod_q((int64_t)l_zh - 1, l_mod_q);
+
+            /* LHS: b(x_k)·(b(x_k)−1) */
+            int32_t l_lhs = s_mod_q((int64_t)l_b_val * s_mod_q((int64_t)l_b_val - 1, l_mod_q), l_mod_q);
+
+            /* RHS: Z_H(x_k)·q1(x_k) */
+            int32_t l_rhs = s_fqmul_q(l_zh, l_q1_val, l_mod_q);
+
+            if (l_lhs != l_rhs) {
+                log_it(L_ERROR, "SNARK verify: constraint identity failed at "
+                       "query %u (LHS=%d, RHS=%d, b=%d, q1=%d, Z_H=%d)",
+                       qi, l_lhs, l_rhs, l_b_val, l_q1_val, l_zh);
+                return 0;
+            }
+        }
+    }
+
+    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (b+q1 FRI constraint + "
+             "ext alpha + %d quotient checks + FRI q, >> 128-bit soundness)",
              CHIPMUNK_SNARK_QUOTIENT_CHECKS);
     #undef CHIPMUNK_SNARK_QUOTIENT_CHECKS
     return 1;

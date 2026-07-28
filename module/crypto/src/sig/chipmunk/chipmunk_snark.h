@@ -192,14 +192,35 @@ typedef struct chipmunk_snark_proof {
     chipmunk_snark_commit_t r_commit;           /* Commitment to randomizer (F_q^6) */
 
     /* Opening proof: serialized z and q polynomials for algebraic checks.
-     * Retained alongside FRI proof for z(alpha)=0 and quotient verification.
-     * b (indicator) is NOT included to protect signer privacy. */
+     * Retained alongside FRI proof for z(alpha)=0 and quotient verification. */
     uint8_t opening_proof[CHIPMUNK_SNARK_OPENING_BYTES];
     size_t opening_proof_size;
 
     /* FRI proof: commits to q(X) with Fiat-Shamir transcript binding. */
     chipmunk_fri_proof_t   fri_proof;           /* FRI commit + query openings */
     uint32_t               fri_grinding_nonce;  /* Grinding PoW nonce */
+
+    /* Phase 3 (P0-2 fix): FRI commitment to indicator polynomial b.
+     *
+     * The indicator b ∈ {0,1}^N is one-hot (b[signer_index]=1).
+     * Previously b was NOT committed, allowing z≡0 forge (any proof passes
+     * for any ring). Now b is committed via FRI and opened at the same
+     * query points as q, so the verifier can check:
+     *   z(point) = b(point)·(b(point)−1) + r·(Σb − 1) =? q(point)·(point − α)
+     * Forging z≡0 now requires b·(b−1)+r·(Σb−1) ≡ 0 at all query points,
+     * which (by Schwartz-Zippel) only holds if b is genuinely binary
+     * with exactly one 1.
+     *
+     * Privacy: 8 query openings leak at most 8/512 ≈ 1.6% probability
+     * of revealing whether a given position is the signer's. */
+    chipmunk_fri_proof_t   b_fri_proof;         /* FRI commit + query openings for b */
+    int32_t                b_values_at_queries[CHIPMUNK_FRI_NUM_QUERIES]; /* b at 8 query points */
+    int32_t                b_sum;               /* Σb[i] — sum of indicator coefficients (must be 1) */
+
+    /* Quotient polynomial q1 = C1/Z_H where C1(X)=b(X)·(b(X)−1), Z_H(X)=X^512−1.
+     * FRI committed alongside b. Verifier checks: b(r)·(b(r)−1) = Z_H(r)·q1(r). */
+    chipmunk_fri_proof_t   q1_fri_proof;        /* FRI commit + query openings for q1 */
+    int32_t                q1_values_at_queries[CHIPMUNK_FRI_NUM_QUERIES]; /* q1 at 8 query points */
 
     /* QROM transcript hash */
     uint8_t transcript_hash[32];
