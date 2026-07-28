@@ -31,17 +31,15 @@ int get_cur_time_msec();
 void test_encypt_decrypt(int count_steps, const dap_enc_key_type_t key_type, const int cipher_key_size)
 {
     dap_print_module_name(dap_enc_get_type_name(key_type));
-    const int max_source_size = 10000;
+    enum { max_source_size = 10000, seed_size = 16, kex_size = 32 };
     int time_beg = get_cur_time_msec();
 
 
 
     for(int i = 0; i < count_steps; i++) {
         size_t source_size = 0;
-        const size_t seed_size = 16;
         uint8_t seed[seed_size];
 
-        const size_t kex_size = 32;
         uint8_t kex[kex_size];
         randombytes(seed, seed_size);
         randombytes(kex, kex_size);
@@ -76,17 +74,15 @@ void test_encypt_decrypt(int count_steps, const dap_enc_key_type_t key_type, con
 
 void test_encypt_decrypt_fast(int count_steps, const dap_enc_key_type_t key_type, const int cipher_key_size)
 {
-    const int max_source_size = 10000;
+    enum { max_source_size = 10000, seed_size = 16, kex_size = 32 };
     dap_print_module_name(dap_enc_get_type_name(key_type));
     char buf_encrypt_out[max_source_size+128];
     char buf_decrypt_out[max_source_size+32];
     int time_beg = get_cur_time_msec();
 
 
-    size_t seed_size = 16;
     uint8_t seed[seed_size];
 
-    size_t kex_size = 32;
     uint8_t kex[kex_size];
 
     randombytes(seed, seed_size);
@@ -130,7 +126,7 @@ static void _encrypt_decrypt(enum dap_enc_key_type key_type,
                              size_t count_steps)
 {
     size_t source_size = 1;
-    const int MAX_SEED_SIZE = 100;
+    enum { MAX_SEED_SIZE = 100 };
     uint8_t seed[MAX_SEED_SIZE];
     for (size_t i = 0; i < count_steps; i++) {
         source_size = 1 + random_uint32_t(2000);
