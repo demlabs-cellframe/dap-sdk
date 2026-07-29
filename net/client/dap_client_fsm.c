@@ -1286,7 +1286,7 @@ static void s_worker_execute_enc_init_io(void *a_arg)
         .host = l_client->link_info.uplink_addr,
         .port = l_client->link_info.uplink_port,
         .node_addr = &l_client->link_info.node_addr,
-        .authorized = false,
+        .authorized = true,
         .callbacks = &l_handshake_callbacks,
         .client_ctx = l_client,
         .worker = l_worker

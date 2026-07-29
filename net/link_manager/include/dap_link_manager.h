@@ -82,6 +82,8 @@ typedef struct dap_link {
         dap_time_t sync_session_start;   // when current sync session started
         uint32_t sync_failures;          // count of failed/stalled sync sessions
         uint32_t avg_blocks_per_sec;     // rolling average blocks/sec (last 5 sessions)
+        uint32_t rtt_ms;                 // last measured RTT in milliseconds (TCP connect time)
+        dap_time_t last_rtt_measure;     // when RTT was last measured
     } uplink;
     dap_list_t *static_clusters;
     dap_link_manager_t *link_manager;

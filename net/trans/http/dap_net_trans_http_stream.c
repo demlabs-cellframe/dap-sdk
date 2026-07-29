@@ -1182,10 +1182,22 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
 
     dap_events_socket_t *l_es = a_stream->esocket;
 
-    /* If there's pending data in buf_out (e.g., HTTP GET from session_start),
-     * flush it directly before appending new data. Otherwise the GET request
-     * and stream data get concatenated in buf_out and the server can't parse them. */
-    if (l_es->buf_out_size > 0) {
+    /* Do NOT call send() here.  The event loop owns buf_out flushing via
+     * its EPOLLOUT handler (dap_context.c: send() path after write_callback).
+     * Calling send() here creates a race with the event loop: both paths
+     * attempt to drain buf_out simultaneously, and when send() succeeds
+     * (flushing buf_out to 0) the event loop disables EPOLLOUT — but then
+     * dap_events_socket_write_unsafe below re-arms EPOLLOUT.  If the peer's
+     * TCP window is full (EAGAIN), EPOLLOUT stays armed but send() keeps
+     * returning EAGAIN, causing a worker busy-spin.
+     *
+     * The only exception is the initial HTTP GET from session_start: it's
+     * placed in buf_out before the stream esocket is registered for EPOLLOUT.
+     * Without a manual flush, it sits there indefinitely.  But that GET is
+     * always <4KB, so we only flush when buf_out is tiny AND there's no
+     * pending stream data flowing yet.  Once sync starts, buf_out is managed
+     * exclusively by the event loop. */
+    if (l_es->buf_out_size > 0 && l_es->buf_out_size <= 256) {
         ssize_t l_flushed = send(l_es->socket, l_es->buf_out, l_es->buf_out_size, MSG_NOSIGNAL);
         if (l_flushed > 0) {
             if ((size_t)l_flushed < l_es->buf_out_size) {

@@ -59,10 +59,10 @@ int dap_stream_worker_init()
         l_stream_worker->worker = l_worker;
         pthread_rwlock_init( &l_stream_worker->channels_rwlock, NULL);
 
-        l_stream_worker->queue_ch_io = dap_context_queue_create(l_worker->context, 4096, s_ch_io_callback);
+        l_stream_worker->queue_ch_io = dap_context_queue_create(l_worker->context, 65536, s_ch_io_callback);
         if(! l_stream_worker->queue_ch_io)
             return -6;
-        l_stream_worker->queue_ch_send = dap_context_queue_create(l_worker->context, 4096, s_ch_send_callback);
+        l_stream_worker->queue_ch_send = dap_context_queue_create(l_worker->context, 65536, s_ch_send_callback);
         if (!l_stream_worker->queue_ch_send)
             return -7;
     }
