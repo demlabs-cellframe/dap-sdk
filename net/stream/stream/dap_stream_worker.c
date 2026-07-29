@@ -152,6 +152,18 @@ static void s_ch_send_callback(void *a_msg)
         log_it(L_WARNING, "Stream found, but channel '%c' isn't set", l_msg->ch_id);
         goto ret_n_clear;
     }
+    /* Transport backpressure: if the stream esocket's buf_out is already large,
+     * drop this message to let the event loop drain the existing buffer first.
+     * Without this check, the cross-thread queue consumer (s_ch_send_callback)
+     * keeps appending data to buf_out faster than the event loop can flush it
+     * (send() returning EAGAIN when the peer's TCP window is full), causing
+     * worker busy-loop warnings and stalling all I/O on this worker thread.
+     * The peer will timeout and resend — matching master's pipe2 backpressure. */
+    if (l_es->buf_out_size > 65536) {
+        debug_if(s_debug_more, L_DEBUG, "Backpressure: dropping %zu bytes (buf_out=%zu for es " DAP_FORMAT_ESOCKET_UUID ")",
+                 l_msg->data_size, l_es->buf_out_size, l_es->uuid);
+        goto ret_n_clear;
+    }
     dap_stream_ch_pkt_write_unsafe(l_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
     DAP_DEL_Z(l_msg->data);
 ret_n_clear:
