@@ -1918,7 +1918,13 @@ static inline void s_events_socket_finalize_write(dap_events_socket_t *a_es, siz
     a_es->buf_out_size += a_bytes_written;
     debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
              a_bytes_written, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
-    dap_events_socket_set_writable_unsafe(a_es, true);
+    /* Do NOT re-arm EPOLLOUT if the socket is write-congested (last send()
+     * returned EAGAIN).  The event loop will clear the congestion flag when
+     * a future send() succeeds, at which point EPOLLOUT is re-armed naturally.
+     * Without this guard, every cross-thread queue push re-arms EPOLLOUT
+     * on a congested socket, causing a tight busy-loop (10001 iters). */
+    if (!(a_es->flags & DAP_SOCK_WRITE_CONGESTED))
+        dap_events_socket_set_writable_unsafe(a_es, true);
 }
 
 /**
@@ -1943,6 +1949,18 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     if (a_es->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
         log_it(L_CRITICAL, "ARCHITECTURE VIOLATION: dap_events_socket_write_unsafe() called on UDP socket! "
                "UDP requires explicit destination address per packet. Use dap_events_socket_sendto_unsafe() instead!");
+        return 0;
+    }
+
+    /* Congestion backpressure: if the socket is write-congested (last send()
+     * returned EAGAIN), drop the write.  The data is lost — callers (ACK
+     * senders, sync callbacks) must handle this gracefully.  Without this
+     * guard, data accumulates in buf_out indefinitely, eventually filling
+     * both buf_out and the kernel TCP send buffer, causing 19MB+ backlogs
+     * and stalling sync for all peers on this worker thread. */
+    if (a_es->flags & DAP_SOCK_WRITE_CONGESTED) {
+        debug_if(g_debug_reactor, L_DEBUG, "Write dropped (congested): socket %" DAP_FORMAT_SOCKET " buf_out=%zu",
+                 a_es->fd, a_es->buf_out_size);
         return 0;
     }
 

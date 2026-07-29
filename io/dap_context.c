@@ -1459,6 +1459,14 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             l_bytes_sent = 0;
             bool l_write_repeat = false;
             if (l_flag_write && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) && !(l_cur->flags & DAP_SOCK_CONNECTING) && !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)) {
+                /* Congestion skip: if a previous send() returned EAGAIN, skip
+                 * the write path for N iterations to avoid busy-spinning on
+                 * a full kernel TCP buffer.  The counter is decremented each
+                 * iteration; when it reaches 0, send() is retried. */
+                if (l_cur->write_congestion_skip > 0) {
+                    l_cur->write_congestion_skip--;
+                    l_flag_write = false;
+                } else {
                 if (l_cur->callbacks.write_callback)
                     l_write_repeat = l_cur->callbacks.write_callback(l_cur, l_cur->callbacks.arg);  /* Call callback to process write event */
                 debug_if(g_debug_reactor, L_DEBUG, "Main loop output: %zu bytes to send, repeat next time: %s",
@@ -1608,8 +1616,21 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+                                /* TCP socket congested: kernel send buffer is full.
+                                 * Set congestion skip counter — the EPOLLOUT handler
+                                 * (line 1461) checks this and skips the send() call
+                                 * for the next N event-loop iterations, giving the
+                                 * kernel time to drain the TCP buffer.  This avoids
+                                 * both busy-spin (keep EPOLLOUT armed and spin) and
+                                 * permanent stall (disarm EPOLLOUT and never re-arm).
+                                 * The skip counter is decremented each iteration; when
+                                 * it reaches 0, send() is retried. */
+                                l_cur->flags |= DAP_SOCK_WRITE_CONGESTED;
+                                l_cur->write_congestion_skip = 100;  /* ~100 iterations ≈ a few ms */
+                                break;
                             case DESCRIPTOR_TYPE_PIPE:
-                                /* FILE (TUN) handled above — keeps EPOLLOUT armed */
+                                /* PIPE: drop buf_out and disarm to avoid busy loop */
+                                l_cur->buf_out_size = 0;
                                 dap_events_socket_set_writable_unsafe(l_cur, false);
                                 break;
                             default:
@@ -1629,6 +1650,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     } else if (l_bytes_sent) {
                         debug_if(g_debug_reactor, L_DEBUG, "Output: %zu from %zu bytes are sent", l_bytes_sent, l_cur->buf_out_size);
+                        /* Clear congestion flag only when buf_out is fully
+                         * drained.  A partial send means the kernel TCP buffer
+                         * is still near-full — re-enabling writes immediately
+                         * causes buf_out to refill and trigger another EAGAIN
+                         * on the next iteration, creating an oscillation that
+                         * grows the kernel send queue to 14+ MB. */
                         if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP)
                             l_cur->last_time_active = l_cur_time;
                         if (l_bytes_sent <= (ssize_t) l_cur->buf_out_size) {
@@ -1643,7 +1670,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         }
                     }
                 }
+                } /* end else (not congestion-skipped) */
                 if (!l_cur->buf_out_size) {
+                    /* buf_out fully drained — socket is no longer congested. */
+                    l_cur->flags &= ~DAP_SOCK_WRITE_CONGESTED;
                     if (l_cur->type != DESCRIPTOR_TYPE_SOCKET_UDP || !l_cur->packet_queue || !l_cur->packet_queue->count)
                         dap_events_socket_set_writable_unsafe(l_cur, false);
                 }
