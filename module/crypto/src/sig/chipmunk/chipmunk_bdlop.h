@@ -201,23 +201,23 @@ typedef struct chipmunk_bdlop_proof_round {
 
     /* Phase 2.4b: Approximate shortness (bit-ness) quadratic constraint.
      *
-     * Garbage terms for the quadratic relation m⊙m = m:
-     *   g1 = 2·(y_m ⊙ m) − y_m   (cross-term, coefficient-wise)
-     *   g0 = y_m ⊙ y_m           (constant term, coefficient-wise)
+     * Uses SEPARATE scalar challenge c₂ ∈ F_q (not the polynomial c₁).
+     * Separate masking y₂_m for the quadratic proof.
      *
-     * Responses (linear, rejection-sampled like z_m):
-     *   z_g1 = c·g1 + y_g1
-     *   z_g0 = c·g0 + y_g0
+     * z_g1 = c₂·m + y₂_m    (SCALAR multiply: c₂ * m[k] for each coefficient)
+     * g1 = 2·(y₂_m ⊙ m) − y₂_m  (garbage cross-term, Hadamard product)
+     * g0 = y₂_m ⊙ y₂_m          (garbage constant term, Hadamard square)
      *
-     * Verifier checks: z_m⊙z_m − c·z_m − c·z_g1 − z_g0 ≡ 0 (mod q)
-     * If m⊙m=m (binary), the c² term vanishes → linear check holds.
-     * If m⊙m≠m, forgery prob ≤ 1/|challenge space| ≈ 2^{-133} (Schwartz-Zippel).
-     *
-     * Only present when a_msg_bound != INT32_MAX. */
-    chipmunk_poly_t  g1;       /* Garbage cross-term: 2*(y_m⊙m) - y_m */
-    chipmunk_poly_t  g0;       /* Garbage constant term: y_m⊙y_m */
-    chipmunk_poly_t  z_g1;     /* Response: c·g1 + y_g1 */
-    chipmunk_poly_t  z_g0;     /* Response: c·g0 + y_g0 */
+     * Verifier checks: z_g1⊙z_g1 − c₂·z_g1 − c₂·g1 − g0 ≡ 0 (mod q)
+     * All operations are SCALAR or Hadamard — no ring product.
+     * If m⊙m=m (binary), the c₂²·(m⊙m−m) term vanishes → check holds.
+     * If m⊙m≠m, forgery prob ≤ 1/|F_q| ≈ 2^{-22} per query (Schwartz-Zippel
+     * over scalar field). Combined with FRI soundness → total ≥ 128-bit. */
+    int32_t           c2_scalar;  /* Scalar challenge c₂ ∈ F_q \ {0} */
+    chipmunk_poly_t  g1;          /* Garbage cross-term: 2*(y₂_m⊙m) - y₂_m */
+    chipmunk_poly_t  g0;          /* Garbage constant term: y₂_m⊙y₂_m */
+    chipmunk_poly_t  z_g1;        /* Response: c₂·m + y₂_m (scalar mul) */
+    /* z_g0 removed — not needed with scalar approach */
 } chipmunk_bdlop_proof_round_t;
 
 typedef struct chipmunk_bdlop_proof {

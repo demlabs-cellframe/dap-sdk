@@ -256,7 +256,7 @@ static int s_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound, uint64
 #define CHIPMUNK_BDLOP_PROOF_VERSION 4
 #define CHIPMUNK_BDLOP_PROOF_NPOLYS_BASE  \
     (CHIPMUNK_BDLOP_K + 1 + CHIPMUNK_BDLOP_MSG_POLYS + CHIPMUNK_BDLOP_L)
-#define CHIPMUNK_BDLOP_PROOF_NPOLYS_SHORTNESS  4  /* g1, g0, z_g1, z_g0 */
+#define CHIPMUNK_BDLOP_PROOF_NPOLYS_SHORTNESS  3  /* g1, g0, z_g1 (c2_scalar stored separately) */
 #define CHIPMUNK_BDLOP_PROOF_NPOLYS_PER_ROUND  \
     (CHIPMUNK_BDLOP_PROOF_NPOLYS_BASE + CHIPMUNK_BDLOP_PROOF_NPOLYS_SHORTNESS)
 #define CHIPMUNK_BDLOP_COEFF_PACKED_BYTES  3
@@ -333,7 +333,8 @@ int chipmunk_bdlop_proof_serialize(uint8_t *a_out, size_t a_out_size,
         s_serialize_poly_packed(&l_p, &l_rd->g1);
         s_serialize_poly_packed(&l_p, &l_rd->g0);
         s_serialize_poly_packed(&l_p, &l_rd->z_g1);
-        s_serialize_poly_packed(&l_p, &l_rd->z_g0);
+        /* c2_scalar packed as 4 bytes after polys */
+        memcpy(l_p, &l_rd->c2_scalar, sizeof(int32_t)); l_p += sizeof(int32_t);
     }
 
     return (int)CHIPMUNK_BDLOP_PROOF_WIRE_SIZE;
@@ -378,7 +379,7 @@ int chipmunk_bdlop_proof_deserialize(chipmunk_bdlop_proof_t *a_proof,
         s_deserialize_poly_packed(&l_rd->g1, &l_p);
         s_deserialize_poly_packed(&l_rd->g0, &l_p);
         s_deserialize_poly_packed(&l_rd->z_g1, &l_p);
-        s_deserialize_poly_packed(&l_rd->z_g0, &l_p);
+        memcpy(&l_rd->c2_scalar, l_p, sizeof(int32_t)); l_p += sizeof(int32_t);
     }
 
     return 0;
@@ -504,30 +505,50 @@ static int s_prove_one_round(chipmunk_bdlop_proof_round_t *a_rd,
         /* === Step 2: Compute W === */
         s_compute_W(a_rd->W, a_params, &l_y_m, l_y_r, l_q);
 
-        /* === Step 2b: Compute garbage terms for quadratic shortness constraint ===
+        /* === Step 2b: Sample SEPARATE masking y₂_m for quadratic shortness proof ===
          *
-         * For bit-ness (m⊙m = m), the quadratic expansion of the response equation
-         * z_m⊙z_m − c·z_m = c²·(m⊙m − m) + c·g1 + g0 produces cross-terms:
-         *   g1 = 2·(y_m ⊙ m) − y_m   (coefficient-wise/Hadamard operations)
-         *   g0 = y_m ⊙ y_m
-         *
-         * These are committed (absorbed into FS transcript) BEFORE the challenge.
-         * The verifier checks: z_m⊙z_m − c·z_m − c·z_g1 − z_g0 ≡ 0.
-         * If m⊙m≠m, this fails with probability ≥ 1 − 1/|challenge space|. */
+         * The quadratic proof uses its OWN masking y₂_m (independent from y_m
+         * used in the linear proof). This ensures:
+         * 1. z_g1 = c₂·m + y₂_m uses SCALAR multiply (not ring product)
+         * 2. Hadamard square of z_g1 factorizes cleanly:
+         *    z_g1⊙z_g1 = c₂²·(m⊙m) + 2c₂·(y₂_m⊙m) + (y₂_m⊙y₂_m)
+         * 3. Garbage terms: g1 = 2(y₂_m⊙m) − y₂_m, g0 = y₂_m⊙y₂_m
+         */
+        chipmunk_poly_t l_y2_m;
         {
-            chipmunk_poly_t l_tmp;
-            /* tmp = y_m ⊙ m (Hadamard product) */
-            chipmunk_poly_pointwise_mul_q(&l_tmp, &l_y_m, a_message, l_q);
-            /* g1 = 2·tmp − y_m */
-            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                a_rd->g1.coeffs[k] = chipmunk_mod_q_q(
-                    (int64_t)2 * l_tmp.coeffs[k] - l_y_m.coeffs[k], l_q);
-            }
-            /* g0 = y_m ⊙ y_m (Hadamard square) */
-            chipmunk_poly_pointwise_mul_q(&a_rd->g0, &l_y_m, &l_y_m, l_q);
+            uint64_t l_gshake[25];
+            memset(l_gshake, 0, sizeof(l_gshake));
+            size_t l_domlen = 32 + 15 + 4 + 4;
+            uint8_t *l_dom = DAP_NEW_Z_SIZE(uint8_t, l_domlen);
+            if (!l_dom) return -ENOMEM;
+            memcpy(l_dom, a_seed, 32);
+            memcpy(l_dom + 32, "BDLOP-y2mask-v1", 15);
+            memcpy(l_dom + 32 + 15, &a_proto_round, 4);
+            memcpy(l_dom + 32 + 15 + 4, &l_rej, 4);
+            dap_hash_shake256_absorb(l_gshake, l_dom, l_domlen);
+            DAP_DELETE(l_dom);
+            s_sample_short_poly(&l_y2_m, l_gshake, CHIPMUNK_BDLOP_SAMP_M);
         }
 
-        /* === Step 3: Fiat-Shamir challenge (absorbs g1, g0 too) === */
+        /* Compute garbage terms from y₂_m (NOT y_m) */
+        {
+            chipmunk_poly_t l_tmp;
+            chipmunk_poly_pointwise_mul_q(&l_tmp, &l_y2_m, a_message, l_q);
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                a_rd->g1.coeffs[k] = chipmunk_mod_q_q(
+                    (int64_t)2 * l_tmp.coeffs[k] - l_y2_m.coeffs[k], l_q);
+            }
+            chipmunk_poly_pointwise_mul_q(&a_rd->g0, &l_y2_m, &l_y2_m, l_q);
+        }
+
+        /* === Step 3: Fiat-Shamir challenges (polynomial c₁ + scalar c₂) ===
+         *
+         * c₁: sparse ternary polynomial (weight τ=19) — for linear ABDLOP opening
+         * c₂: scalar in F_q — for quadratic bit-ness constraint
+         *
+         * Both derived from the SAME FS transcript, but c₂ is sampled differently
+         * (single F_q element instead of sparse ternary polynomial). */
+        int32_t l_c2_scalar = 0;  /* scalar challenge for quadratic constraint */
         {
             uint64_t l_shake[25];
             memset(l_shake, 0, sizeof(l_shake));
@@ -552,11 +573,26 @@ static int s_prove_one_round(chipmunk_bdlop_proof_round_t *a_rd,
                 dap_hash_shake256_absorb(l_shake, (const uint8_t *)l_prev->challenge.coeffs, l_pb);
             }
 
+            /* Sample polynomial challenge c₁ */
             s_sample_challenge(&a_rd->challenge, l_shake);
-        }
 
-        /* === Step 4: Compute responses (including g1/g0 responses) === */
+            /* Sample scalar challenge c₂ ∈ F_q \ {0} */
+            {
+                uint8_t l_buf4[4];
+                dap_hash_shake256_squeezeblocks(l_buf4, 1, l_shake);
+                uint32_t l_tmp;
+                memcpy(&l_tmp, l_buf4, 4);
+                l_c2_scalar = (int32_t)(l_tmp % (uint32_t)l_q);
+                if (l_c2_scalar == 0) l_c2_scalar = 1;  /* c₂ ≠ 0 */
+            }
+        }
+        /* Store c₂ in g0.coeffs[0] — g0 is no longer used as garbage term,
+         * we store the scalar challenge there for serialization. */
+        a_rd->c2_scalar = l_c2_scalar;
+
+        /* === Step 4: Compute responses === */
         {
+            /* Linear responses: z_m = c₁·m + y_m, z_r = c₁·r + y_r (ring product) */
             s_poly_mul(&a_rd->z_m[0], &a_rd->challenge, a_message, l_q);
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
                 int64_t l_s = (int64_t)a_rd->z_m[0].coeffs[k] + l_y_m.coeffs[k];
@@ -571,39 +607,14 @@ static int s_prove_one_round(chipmunk_bdlop_proof_round_t *a_rd,
                 }
             }
 
-            /* Shortness responses: z_g1 = c·g1 + y_g1, z_g0 = c·g0 + y_g0 */
-            /* Sample masking for g1, g0 from the same SHAKE stream */
-            {
-                /* Re-derive SHAKE state for g-masking (deterministic from seed+round+rej) */
-                uint64_t l_gshake[25];
-                memset(l_gshake, 0, sizeof(l_gshake));
-                size_t l_domlen = 32 + 14 + 4 + 4;  /* seed + "BDLOP-gmask-v1" + proto_round + rej */
-                uint8_t *l_dom = DAP_NEW_Z_SIZE(uint8_t, l_domlen);
-                if (!l_dom) return -ENOMEM;
-                memcpy(l_dom, a_seed, 32);
-                memcpy(l_dom + 32, "BDLOP-gmask-v1", 14);
-                memcpy(l_dom + 32 + 14, &a_proto_round, 4);
-                memcpy(l_dom + 32 + 14 + 4, &l_rej, 4);
-                dap_hash_shake256_absorb(l_gshake, l_dom, l_domlen);
-                DAP_DELETE(l_dom);
-
-                chipmunk_poly_t l_y_g1, l_y_g0;
-                s_sample_short_poly(&l_y_g1, l_gshake, CHIPMUNK_BDLOP_SAMP_M);
-                s_sample_short_poly(&l_y_g0, l_gshake, CHIPMUNK_BDLOP_SAMP_M);
-
-                s_poly_mul(&a_rd->z_g1, &a_rd->challenge, &a_rd->g1, l_q);
-                for (uint32_t k = 0; k < CHIPMUNK_N; ++k)
-                    a_rd->z_g1.coeffs[k] = chipmunk_mod_q_q(
-                        (int64_t)a_rd->z_g1.coeffs[k] + l_y_g1.coeffs[k], l_q);
-
-                s_poly_mul(&a_rd->z_g0, &a_rd->challenge, &a_rd->g0, l_q);
-                for (uint32_t k = 0; k < CHIPMUNK_N; ++k)
-                    a_rd->z_g0.coeffs[k] = chipmunk_mod_q_q(
-                        (int64_t)a_rd->z_g0.coeffs[k] + l_y_g0.coeffs[k], l_q);
-
-                dap_memwipe(&l_y_g1, sizeof(l_y_g1));
-                dap_memwipe(&l_y_g0, sizeof(l_y_g0));
-            }
+            /* Quadratic response: z_g1 = c₂·m + y₂_m (SCALAR multiply)
+             *
+             * z_g1[k] = c₂ · m[k] + y₂_m[k]  (mod q)
+             * This is Hadamard-friendly: z_g1⊙z_g1 = c₂²·(m⊙m) + 2c₂·(y₂_m⊙m) + (y₂_m⊙y₂_m)
+             * Verifier checks: z_g1⊙z_g1 − c₂·z_g1 − c₂·g1 − g0 ≡ 0 */
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k)
+                a_rd->z_g1.coeffs[k] = chipmunk_mod_q_q(
+                    (int64_t)l_c2_scalar * a_message->coeffs[k] + l_y2_m.coeffs[k], l_q);
         }
 
         /* === Step 5: Rejection sampling (z_m and z_r only) ===
@@ -627,6 +638,7 @@ static int s_prove_one_round(chipmunk_bdlop_proof_round_t *a_rd,
         /* Wipe masking regardless of result */
         dap_memwipe(&l_y_m, sizeof(l_y_m));
         dap_memwipe(l_y_r, sizeof(l_y_r));
+        dap_memwipe(&l_y2_m, sizeof(l_y2_m));
 
         if (l_accept)
             return 0;
@@ -762,7 +774,7 @@ int chipmunk_bdlop_opening_verify(const chipmunk_bdlop_proof_t *a_proof,
         }
 
         /* Check 4: Linear equations
-         *   A[i]·z_r + (i==0 ? z_m : 0) - c·C[i]  =?  W[i] */
+         *   A[i]·z_r + (i==0 ? z_m : 0) - c₁·C[i]  =?  W[i] */
         {
             chipmunk_poly_t l_cC[CHIPMUNK_BDLOP_K];
             for (uint32_t i = 0; i < CHIPMUNK_BDLOP_K; ++i)
@@ -785,31 +797,54 @@ int chipmunk_bdlop_opening_verify(const chipmunk_bdlop_proof_t *a_proof,
 
         /* Check 5: Quadratic bit-ness constraint (approximate shortness).
          *
-         * z_m⊙z_m − c·z_m − c·z_g1 − z_g0 ≡ 0 (mod q)
+         * Uses SCALAR challenge c₂ (from l_rd->c2_scalar field).
          *
-         * If m⊙m=m (binary coefficients): the c²·(m⊙m−m) term vanishes,
-         * and the remaining linear-in-c equation holds exactly.
-         * If m⊙m≠m: forgery probability ≈ 1/|challenge space| (Schwartz-Zippel).
+         * z_g1 = c₂·m + y₂_m  (scalar multiply, all SCALAR/Hadamard ops)
+         * g1 = 2·(y₂_m ⊙ m) − y₂_m
+         * g0 = y₂_m ⊙ y₂_m
          *
-         * ⊙ is coefficient-wise (Hadamard) product, c· is ring multiplication. */
+         * Expansion: z_g1⊙z_g1 = c₂²·(m⊙m) + 2c₂·(y₂_m⊙m) + (y₂_m⊙y₂_m)
+         *            c₂·z_g1   = c₂²·m + c₂·y₂_m
+         *            c₂·g1     = 2c₂·(y₂_m⊙m) − c₂·y₂_m
+         *
+         * z_g1⊙z_g1 − c₂·z_g1 − c₂·g1 − g0
+         *   = c₂²·(m⊙m) + 2c₂·(y₂_m⊙m) + (y₂_m⊙y₂_m)
+         *     − c₂²·m − c₂·y₂_m
+         *     − 2c₂·(y₂_m⊙m) + c₂·y₂_m
+         *     − (y₂_m⊙y₂_m)
+         *   = c₂²·(m⊙m − m)
+         *
+         * If m⊙m=m (binary): result = 0 ✓
+         * If m⊙m≠m: result = c₂²·(m⊙m−m) ≠ 0 for random c₂ (Schwartz-Zippel). */
         {
-            chipmunk_poly_t l_t, l_u, l_v_tmp, l_v, l_diff;
+            int32_t l_c2 = l_rd->c2_scalar;
 
-            /* t = z_m ⊙ z_m (Hadamard square) */
-            chipmunk_poly_pointwise_mul_q(&l_t, &l_rd->z_m[0], &l_rd->z_m[0], l_q);
+            /* t = z_g1 ⊙ z_g1 (Hadamard square) */
+            chipmunk_poly_t l_t;
+            chipmunk_poly_pointwise_mul_q(&l_t, &l_rd->z_g1, &l_rd->z_g1, l_q);
 
-            /* u = c · z_m (ring product) */
-            s_poly_mul(&l_u, &l_rd->challenge, &l_rd->z_m[0], l_q);
+            /* u = c₂ · z_g1 (scalar multiply) */
+            chipmunk_poly_t l_u;
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k)
+                l_u.coeffs[k] = chipmunk_mod_q_q(
+                    (int64_t)l_c2 * l_rd->z_g1.coeffs[k], l_q);
 
-            /* v = c·z_g1 + z_g0 */
-            s_poly_mul(&l_v_tmp, &l_rd->challenge, &l_rd->z_g1, l_q);
-            chipmunk_poly_add_q(&l_v, &l_v_tmp, &l_rd->z_g0, l_q);
+            /* v_tmp = c₂ · g1 (scalar multiply) */
+            chipmunk_poly_t l_v_tmp;
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k)
+                l_v_tmp.coeffs[k] = chipmunk_mod_q_q(
+                    (int64_t)l_c2 * l_rd->g1.coeffs[k], l_q);
 
-            /* diff = t - u - v */
+            /* v = c₂·g1 + g0 */
+            chipmunk_poly_t l_v;
+            chipmunk_poly_add_q(&l_v, &l_v_tmp, &l_rd->g0, l_q);
+
+            /* diff = t − u − v */
+            chipmunk_poly_t l_diff;
             chipmunk_poly_sub_q(&l_diff, &l_t, &l_u, l_q);
             chipmunk_poly_sub_q(&l_diff, &l_diff, &l_v, l_q);
 
-            /* Check diff == 0 in R_q (all coefficients zero mod q) */
+            /* Check diff == 0 in R_q */
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
                 int32_t c = l_diff.coeffs[k];
                 if (c >= (int32_t)(l_q / 2)) c -= (int32_t)l_q;
