@@ -110,7 +110,7 @@ dap_context_queue_t *dap_context_queue_create(dap_context_t *a_context, size_t a
     // Store queue pointer in event socket's _inheritor for callback
     l_queue->event_socket->_inheritor = l_queue;
     
-    log_it(L_INFO, "Created context queue: context=%p, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
+    log_it(L_DEBUG, "Created context queue: context=%p, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
            a_context, l_capacity, l_queue->event_socket->fd);
     
     return l_queue;
