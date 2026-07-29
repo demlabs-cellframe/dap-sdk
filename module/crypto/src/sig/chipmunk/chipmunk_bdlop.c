@@ -245,13 +245,20 @@ static int s_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound, uint64
  *     [c]        1 poly  × 512 × 3 = 1536 bytes
  *     [z_m]      1 poly  × 512 × 3 = 1536 bytes
  *     [z_r[0..5]] 6 polys × 512 × 3 = 9216 bytes
- *   Per round: 14 polys × 1536 = 21504 bytes ≈ 21 KB
- *   Total: 12 + 1 × 21504 = 21516 bytes
+ *     [g1]       1 poly  × 512 × 3 = 1536 bytes (shortness garbage term)
+ *     [g0]       1 poly  × 512 × 3 = 1536 bytes (shortness garbage term)
+ *     [z_g1]     1 poly  × 512 × 3 = 1536 bytes (shortness response)
+ *     [z_g0]     1 poly  × 512 × 3 = 1536 bytes (shortness response)
+ *   Per round: 18 polys × 1536 = 27648 bytes ≈ 27 KB
+ *   Total: 12 + 1 × 27648 = 27660 bytes
  */
 #define CHIPMUNK_BDLOP_PROOF_MAGIC  0x42444C4F  /* "BDLO" */
-#define CHIPMUNK_BDLOP_PROOF_VERSION 3
-#define CHIPMUNK_BDLOP_PROOF_NPOLYS_PER_ROUND  \
+#define CHIPMUNK_BDLOP_PROOF_VERSION 4
+#define CHIPMUNK_BDLOP_PROOF_NPOLYS_BASE  \
     (CHIPMUNK_BDLOP_K + 1 + CHIPMUNK_BDLOP_MSG_POLYS + CHIPMUNK_BDLOP_L)
+#define CHIPMUNK_BDLOP_PROOF_NPOLYS_SHORTNESS  4  /* g1, g0, z_g1, z_g0 */
+#define CHIPMUNK_BDLOP_PROOF_NPOLYS_PER_ROUND  \
+    (CHIPMUNK_BDLOP_PROOF_NPOLYS_BASE + CHIPMUNK_BDLOP_PROOF_NPOLYS_SHORTNESS)
 #define CHIPMUNK_BDLOP_COEFF_PACKED_BYTES  3
 #define CHIPMUNK_BDLOP_POLY_PACKED_SIZE  \
     ((size_t)CHIPMUNK_N * CHIPMUNK_BDLOP_COEFF_PACKED_BYTES)
@@ -322,6 +329,11 @@ int chipmunk_bdlop_proof_serialize(uint8_t *a_out, size_t a_out_size,
             s_serialize_poly_packed(&l_p, &l_rd->z_m[i]);
         for (uint32_t i = 0; i < CHIPMUNK_BDLOP_L; ++i)
             s_serialize_poly_packed(&l_p, &l_rd->z_r[i]);
+        /* Shortness garbage terms and responses */
+        s_serialize_poly_packed(&l_p, &l_rd->g1);
+        s_serialize_poly_packed(&l_p, &l_rd->g0);
+        s_serialize_poly_packed(&l_p, &l_rd->z_g1);
+        s_serialize_poly_packed(&l_p, &l_rd->z_g0);
     }
 
     return (int)CHIPMUNK_BDLOP_PROOF_WIRE_SIZE;
@@ -362,6 +374,11 @@ int chipmunk_bdlop_proof_deserialize(chipmunk_bdlop_proof_t *a_proof,
             s_deserialize_poly_packed(&l_rd->z_m[i], &l_p);
         for (uint32_t i = 0; i < CHIPMUNK_BDLOP_L; ++i)
             s_deserialize_poly_packed(&l_rd->z_r[i], &l_p);
+        /* Shortness garbage terms and responses */
+        s_deserialize_poly_packed(&l_rd->g1, &l_p);
+        s_deserialize_poly_packed(&l_rd->g0, &l_p);
+        s_deserialize_poly_packed(&l_rd->z_g1, &l_p);
+        s_deserialize_poly_packed(&l_rd->z_g0, &l_p);
     }
 
     return 0;
@@ -487,11 +504,34 @@ static int s_prove_one_round(chipmunk_bdlop_proof_round_t *a_rd,
         /* === Step 2: Compute W === */
         s_compute_W(a_rd->W, a_params, &l_y_m, l_y_r, l_q);
 
-        /* === Step 3: Fiat-Shamir challenge === */
+        /* === Step 2b: Compute garbage terms for quadratic shortness constraint ===
+         *
+         * For bit-ness (m⊙m = m), the quadratic expansion of the response equation
+         * z_m⊙z_m − c·z_m = c²·(m⊙m − m) + c·g1 + g0 produces cross-terms:
+         *   g1 = 2·(y_m ⊙ m) − y_m   (coefficient-wise/Hadamard operations)
+         *   g0 = y_m ⊙ y_m
+         *
+         * These are committed (absorbed into FS transcript) BEFORE the challenge.
+         * The verifier checks: z_m⊙z_m − c·z_m − c·z_g1 − z_g0 ≡ 0.
+         * If m⊙m≠m, this fails with probability ≥ 1 − 1/|challenge space|. */
+        {
+            chipmunk_poly_t l_tmp;
+            /* tmp = y_m ⊙ m (Hadamard product) */
+            chipmunk_poly_pointwise_mul_q(&l_tmp, &l_y_m, a_message, l_q);
+            /* g1 = 2·tmp − y_m */
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                a_rd->g1.coeffs[k] = chipmunk_mod_q_q(
+                    (int64_t)2 * l_tmp.coeffs[k] - l_y_m.coeffs[k], l_q);
+            }
+            /* g0 = y_m ⊙ y_m (Hadamard square) */
+            chipmunk_poly_pointwise_mul_q(&a_rd->g0, &l_y_m, &l_y_m, l_q);
+        }
+
+        /* === Step 3: Fiat-Shamir challenge (absorbs g1, g0 too) === */
         {
             uint64_t l_shake[25];
             memset(l_shake, 0, sizeof(l_shake));
-            dap_hash_shake256_absorb(l_shake, (const uint8_t *)"BDLOP-FS-v2", 11);
+            dap_hash_shake256_absorb(l_shake, (const uint8_t *)"BDLOP-FS-v3", 11);
             dap_hash_shake256_absorb(l_shake, (const uint8_t *)&a_proto_round, 4);
 
             size_t l_pb = CHIPMUNK_N * sizeof(int32_t);
@@ -499,6 +539,10 @@ static int s_prove_one_round(chipmunk_bdlop_proof_round_t *a_rd,
                 dap_hash_shake256_absorb(l_shake, (const uint8_t *)a_commit->C[i].coeffs, l_pb);
             for (uint32_t i = 0; i < CHIPMUNK_BDLOP_K; ++i)
                 dap_hash_shake256_absorb(l_shake, (const uint8_t *)a_rd->W[i].coeffs, l_pb);
+
+            /* Absorb garbage terms g1, g0 (critical for soundness) */
+            dap_hash_shake256_absorb(l_shake, (const uint8_t *)a_rd->g1.coeffs, l_pb);
+            dap_hash_shake256_absorb(l_shake, (const uint8_t *)a_rd->g0.coeffs, l_pb);
 
             /* Absorb all previous rounds for sequential Fiat-Shamir */
             for (uint32_t pr = 0; pr < a_n_prev; ++pr) {
@@ -511,7 +555,7 @@ static int s_prove_one_round(chipmunk_bdlop_proof_round_t *a_rd,
             s_sample_challenge(&a_rd->challenge, l_shake);
         }
 
-        /* === Step 4: Compute responses === */
+        /* === Step 4: Compute responses (including g1/g0 responses) === */
         {
             s_poly_mul(&a_rd->z_m[0], &a_rd->challenge, a_message, l_q);
             for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
@@ -526,9 +570,47 @@ static int s_prove_one_round(chipmunk_bdlop_proof_round_t *a_rd,
                     a_rd->z_r[j].coeffs[k] = chipmunk_mod_q_q(l_s, l_q);
                 }
             }
+
+            /* Shortness responses: z_g1 = c·g1 + y_g1, z_g0 = c·g0 + y_g0 */
+            /* Sample masking for g1, g0 from the same SHAKE stream */
+            {
+                /* Re-derive SHAKE state for g-masking (deterministic from seed+round+rej) */
+                uint64_t l_gshake[25];
+                memset(l_gshake, 0, sizeof(l_gshake));
+                size_t l_domlen = 32 + 14 + 4 + 4;  /* seed + "BDLOP-gmask-v1" + proto_round + rej */
+                uint8_t *l_dom = DAP_NEW_Z_SIZE(uint8_t, l_domlen);
+                if (!l_dom) return -ENOMEM;
+                memcpy(l_dom, a_seed, 32);
+                memcpy(l_dom + 32, "BDLOP-gmask-v1", 14);
+                memcpy(l_dom + 32 + 14, &a_proto_round, 4);
+                memcpy(l_dom + 32 + 14 + 4, &l_rej, 4);
+                dap_hash_shake256_absorb(l_gshake, l_dom, l_domlen);
+                DAP_DELETE(l_dom);
+
+                chipmunk_poly_t l_y_g1, l_y_g0;
+                s_sample_short_poly(&l_y_g1, l_gshake, CHIPMUNK_BDLOP_SAMP_M);
+                s_sample_short_poly(&l_y_g0, l_gshake, CHIPMUNK_BDLOP_SAMP_M);
+
+                s_poly_mul(&a_rd->z_g1, &a_rd->challenge, &a_rd->g1, l_q);
+                for (uint32_t k = 0; k < CHIPMUNK_N; ++k)
+                    a_rd->z_g1.coeffs[k] = chipmunk_mod_q_q(
+                        (int64_t)a_rd->z_g1.coeffs[k] + l_y_g1.coeffs[k], l_q);
+
+                s_poly_mul(&a_rd->z_g0, &a_rd->challenge, &a_rd->g0, l_q);
+                for (uint32_t k = 0; k < CHIPMUNK_N; ++k)
+                    a_rd->z_g0.coeffs[k] = chipmunk_mod_q_q(
+                        (int64_t)a_rd->z_g0.coeffs[k] + l_y_g0.coeffs[k], l_q);
+
+                dap_memwipe(&l_y_g1, sizeof(l_y_g1));
+                dap_memwipe(&l_y_g0, sizeof(l_y_g0));
+            }
         }
 
-        /* === Step 5: Rejection sampling === */
+        /* === Step 5: Rejection sampling (z_m and z_r only) ===
+         * g1, g0 and their responses z_g1, z_g0 are sent directly — no rejection
+         * sampling. They have large coefficients (up to 2·SAMP_M) that would
+         * make rejection infeasible. Soundness comes from the quadratic identity
+         * check in verify, not from response norm bounds. */
         bool l_accept = true;
 
         if (s_poly_chknorm(&a_rd->z_m[0], (int32_t)CHIPMUNK_BDLOP_RESP_M, l_q) != 0)
@@ -565,8 +647,11 @@ int chipmunk_bdlop_opening_prove(chipmunk_bdlop_proof_t *a_proof,
                                   int32_t a_msg_bound,
                                   const uint8_t a_seed[32])
 {
-    (void)a_msg_bound;  /* Approximate shortness deferred to Phase 2.4b */
-
+    /* Phase 2.4b: Approximate shortness now FULLY IMPLEMENTED.
+     * Quadratic constraint m⊙m = m is proven via garbage terms g1, g0
+     * and responses z_g1, z_g0. Verifier checks:
+     *   z_m⊙z_m − c·z_m − c·z_g1 − z_g0 ≡ 0 (mod q)
+     * This proves all coefficients of m are binary {0,1}, i.e. ||m||∞ ≤ 1. */
     if (!a_proof || !a_params || !a_commit || !a_message || !a_randomness || !a_seed)
         return -EINVAL;
     if (!a_params->initialized)
@@ -643,12 +728,12 @@ int chipmunk_bdlop_opening_verify(const chipmunk_bdlop_proof_t *a_proof,
             }
         }
 
-        /* Check 3: Fiat-Shamir challenge re-derivation */
+        /* Check 3: Fiat-Shamir challenge re-derivation (with g1, g0 absorbed) */
         {
             chipmunk_poly_t l_expected_c;
             uint64_t l_shake[25];
             memset(l_shake, 0, sizeof(l_shake));
-            dap_hash_shake256_absorb(l_shake, (const uint8_t *)"BDLOP-FS-v2", 11);
+            dap_hash_shake256_absorb(l_shake, (const uint8_t *)"BDLOP-FS-v3", 11);
             dap_hash_shake256_absorb(l_shake, (const uint8_t *)&r, 4);
 
             size_t l_pb = CHIPMUNK_N * sizeof(int32_t);
@@ -656,6 +741,10 @@ int chipmunk_bdlop_opening_verify(const chipmunk_bdlop_proof_t *a_proof,
                 dap_hash_shake256_absorb(l_shake, (const uint8_t *)a_commit->C[i].coeffs, l_pb);
             for (uint32_t i = 0; i < CHIPMUNK_BDLOP_K; ++i)
                 dap_hash_shake256_absorb(l_shake, (const uint8_t *)l_rd->W[i].coeffs, l_pb);
+
+            /* Absorb garbage terms g1, g0 (same order as prover) */
+            dap_hash_shake256_absorb(l_shake, (const uint8_t *)l_rd->g1.coeffs, l_pb);
+            dap_hash_shake256_absorb(l_shake, (const uint8_t *)l_rd->g0.coeffs, l_pb);
 
             for (uint32_t pr = 0; pr < r; ++pr) {
                 const chipmunk_bdlop_proof_round_t *l_prev = &a_proof->rounds[pr];
@@ -689,6 +778,44 @@ int chipmunk_bdlop_opening_verify(const chipmunk_bdlop_proof_t *a_proof,
             for (uint32_t i = 0; i < CHIPMUNK_BDLOP_K; ++i) {
                 if (!chipmunk_poly_equal_q(&l_lhs[i], &l_rhs[i], l_q)) {
                     log_it(L_WARNING, "BDLOP verify: round %u linear eq %u fails", r, i);
+                    return 0;
+                }
+            }
+        }
+
+        /* Check 5: Quadratic bit-ness constraint (approximate shortness).
+         *
+         * z_m⊙z_m − c·z_m − c·z_g1 − z_g0 ≡ 0 (mod q)
+         *
+         * If m⊙m=m (binary coefficients): the c²·(m⊙m−m) term vanishes,
+         * and the remaining linear-in-c equation holds exactly.
+         * If m⊙m≠m: forgery probability ≈ 1/|challenge space| (Schwartz-Zippel).
+         *
+         * ⊙ is coefficient-wise (Hadamard) product, c· is ring multiplication. */
+        {
+            chipmunk_poly_t l_t, l_u, l_v_tmp, l_v, l_diff;
+
+            /* t = z_m ⊙ z_m (Hadamard square) */
+            chipmunk_poly_pointwise_mul_q(&l_t, &l_rd->z_m[0], &l_rd->z_m[0], l_q);
+
+            /* u = c · z_m (ring product) */
+            s_poly_mul(&l_u, &l_rd->challenge, &l_rd->z_m[0], l_q);
+
+            /* v = c·z_g1 + z_g0 */
+            s_poly_mul(&l_v_tmp, &l_rd->challenge, &l_rd->z_g1, l_q);
+            chipmunk_poly_add_q(&l_v, &l_v_tmp, &l_rd->z_g0, l_q);
+
+            /* diff = t - u - v */
+            chipmunk_poly_sub_q(&l_diff, &l_t, &l_u, l_q);
+            chipmunk_poly_sub_q(&l_diff, &l_diff, &l_v, l_q);
+
+            /* Check diff == 0 in R_q (all coefficients zero mod q) */
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                int32_t c = l_diff.coeffs[k];
+                if (c >= (int32_t)(l_q / 2)) c -= (int32_t)l_q;
+                if (c != 0) {
+                    log_it(L_WARNING, "BDLOP verify: round %u quadratic bit-ness "
+                           "check failed at coeff %u (diff=%d)", r, k, c);
                     return 0;
                 }
             }

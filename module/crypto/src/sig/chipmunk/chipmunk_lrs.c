@@ -762,13 +762,37 @@ int chipmunk_lrs_stealth_derive_sk(uint8_t a_out_sk[CHIPMUNK_LRS_SEED_BYTES],
 {
     if (!a_out_sk || !a_scan_sk || !a_shared)
         return -EINVAL;
-    /* derived_sk = SHAKE256(scan_sk || shared) as new 32-byte seed
-     * This is a one-way function: knowing derived_sk doesn't reveal scan_sk. */
-    uint8_t l_buf[CHIPMUNK_LRS_SEED_BYTES + 32];
-    memcpy(l_buf, a_scan_sk, CHIPMUNK_LRS_SEED_BYTES);
-    memcpy(l_buf + CHIPMUNK_LRS_SEED_BYTES, a_shared, 32);
-    dap_hash_shake256(a_out_sk, CHIPMUNK_LRS_SEED_BYTES, l_buf, sizeof(l_buf));
-    dap_memwipe(l_buf, sizeof(l_buf));
+
+    /* CRITICAL FIX: derive_sk and derive_pk MUST use the same seed input.
+     *
+     * derive_pk uses H(scan_pk || shared) — the public key.
+     * derive_sk must also use H(scan_pk || shared), NOT H(scan_sk || shared).
+     *
+     * Since the recipient has scan_sk (the secret), they compute scan_pk
+     * from it via keypair_from_seeds, then derive the same seed as the sender:
+     *   derived_seed = H(scan_pk || shared)
+     *   derived_sk = x(derived_seed)  (from keypair_from_seeds)
+     *
+     * This ensures derive_pk and derive_sk produce matching keypairs. */
+    chipmunk_lrs_public_key_t l_scan_pk = {};
+    chipmunk_lrs_secret_key_t l_scan_sk_obj = {};
+    int l_rc = chipmunk_lrs_keypair_from_seeds(&l_scan_pk, &l_scan_sk_obj, a_scan_sk);
+    if (l_rc != 0) return l_rc;
+
+    /* derived_seed = SHAKE256(scan_pk || shared) — same as derive_pk */
+    uint8_t l_derived_seed[CHIPMUNK_LRS_SEED_BYTES];
+    {
+        uint8_t l_buf[sizeof(chipmunk_lrs_public_key_t) + 32];
+        memcpy(l_buf, &l_scan_pk, sizeof(l_scan_pk));
+        memcpy(l_buf + sizeof(l_scan_pk), a_shared, 32);
+        dap_hash_shake256(l_derived_seed, sizeof(l_derived_seed), l_buf, sizeof(l_buf));
+        dap_memwipe(l_buf, sizeof(l_buf));
+    }
+
+    memcpy(a_out_sk, l_derived_seed, CHIPMUNK_LRS_SEED_BYTES);
+    dap_memwipe(l_derived_seed, sizeof(l_derived_seed));
+    dap_memwipe(&l_scan_pk, sizeof(l_scan_pk));
+    dap_memwipe(&l_scan_sk_obj, sizeof(l_scan_sk_obj));
     return 0;
 }
 

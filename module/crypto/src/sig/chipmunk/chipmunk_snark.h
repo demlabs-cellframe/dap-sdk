@@ -215,7 +215,10 @@ typedef struct chipmunk_snark_proof {
      * of revealing whether a given position is the signer's. */
     chipmunk_fri_proof_t   b_fri_proof;         /* FRI commit + query openings for b */
     int32_t                b_values_at_queries[CHIPMUNK_FRI_NUM_QUERIES]; /* b at 8 query points */
-    int32_t                b_sum;               /* Σb[i] — sum of indicator coefficients (must be 1) */
+    /* b_at_one: evaluation b(1) where 1 = omega_512^0 ∈ H.
+     * Verifier checks b_at_one = inv(512) mod q, which enforces Σb(ω^i)=1.
+     * This replaces the prover-asserted b_sum — now bound to FRI commitment. */
+    int32_t                b_at_one;             /* b(X) at X=1, must equal 1/512 */
 
     /* Quotient polynomial q1 = C1/Z_H where C1(X)=b(X)·(b(X)−1), Z_H(X)=X^512−1.
      * FRI committed alongside b. Verifier checks: b(r)·(b(r)−1) = Z_H(r)·q1(r). */

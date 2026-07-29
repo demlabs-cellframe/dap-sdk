@@ -175,6 +175,20 @@ void chipmunk_poly_sub_ntt_q(chipmunk_poly_t *r, const chipmunk_poly_t *a,
 bool chipmunk_poly_equal_q(const chipmunk_poly_t *a, const chipmunk_poly_t *b,
                             uint64_t q);
 
+/**
+ * @brief Coefficient-wise (Hadamard) product: r[i] = a[i]*b[i] mod q.
+ * This is NOT ring multiplication (negacyclic convolution).
+ * Used for BDLOP approximate Shortness quadratic constraints (m⊙m = m).
+ */
+static inline void chipmunk_poly_pointwise_mul_q(chipmunk_poly_t *r,
+                                                  const chipmunk_poly_t *a,
+                                                  const chipmunk_poly_t *b,
+                                                  uint64_t q)
+{
+    for (uint32_t k = 0; k < CHIPMUNK_N; ++k)
+        r->coeffs[k] = chipmunk_mod_q_q((int64_t)a->coeffs[k] * b->coeffs[k], q);
+}
+
 #ifdef __cplusplus
 }
 #endif

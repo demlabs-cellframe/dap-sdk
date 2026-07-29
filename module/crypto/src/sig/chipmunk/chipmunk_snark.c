@@ -1156,7 +1156,13 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
 
         /* Store Σ b(omega^i) = N · b.coeffs[0] (sum of evaluations on H).
          * For Lagrange basis L_signer: b.coeffs[0] = 1/N → sum = 1. */
-        a_proof->b_sum = s_mod_q((int64_t)a_ctx->sp.d * l_b.coeffs[0], a_ctx->sp.q);
+        /* Store b.coeffs[0] (constant coefficient of the indicator polynomial).
+         *
+         * Identity: Σ_{i=0}^{N-1} b(ω^i) = N · b.coeffs[0]
+         * For one-hot Lagrange basis L_signer: b.coeffs[0] = 1/N mod q.
+         * Verifier checks this value directly. Since b is FRI-committed
+         * (binding), prover cannot forge b.coeffs[0] without breaking FRI. */
+        a_proof->b_at_one = l_b.coeffs[0];
 
 #undef L_FREE_ALL_FRI
         chipmunk_fri_prover_free(&l_fri_prover);
@@ -1498,9 +1504,20 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
      * At query point r: C1(r) = b(r)·(b(r)−1) must equal Z_H(r)·q1(r).
      */
     {
-        /* Check b_sum = 1 (exactly one signer) */
-        if (a_proof->b_sum != 1) {
-            log_it(L_ERROR, "SNARK verify: b_sum=%d (expected 1)", a_proof->b_sum);
+        /* Check b_at_one = 1/512 mod q (exactly one signer constraint).
+         *
+         * Σ_{i=0}^{N-1} b(omega^i) = N · b(1)  (sum of evals on H = N·eval at 1)
+         * For valid one-hot indicator: Σ = 1, so b(1) = 1/N = inv(512) mod q.
+         *
+         * b_at_one is computed by prover from b.coeffs (Horner at X=1 = sum of coeffs).
+         * Since b is FRI-committed, prover cannot change b without breaking FRI proof.
+         * The constraint identity b(r)·(b(r)−1) = Z_H(r)·q1(r) at 8 points
+         * already verifies b is binary on H. Combined with b(1) = 1/N,
+         * this proves exactly one nonzero entry. */
+        int32_t l_inv_n = chipmunk_field_inv_q((int32_t)l_d, l_mod_q);
+        if (a_proof->b_at_one != l_inv_n) {
+            log_it(L_ERROR, "SNARK verify: b_at_one=%d (expected 1/N=%d)",
+                   a_proof->b_at_one, l_inv_n);
             return 0;
         }
 

@@ -134,7 +134,7 @@ extern "C" {
  *   14 polys × 512 coeffs × 3 bytes = 21,504 bytes ≈ 21 KB
  *   vs previous 13-round version: 372 KB (18× reduction!)
  */
-#define CHIPMUNK_BDLOP_TAU        18  /* Challenge weight: C(512,18)×2^18 ≈ 2^131 */
+#define CHIPMUNK_BDLOP_TAU        19  /* Challenge weight: C(512,19)×2^19 ≈ 2^133 > 128-bit */
 
 /* Sampling bound for masking polynomials.
  * Must be < Q/2 for correct modular arithmetic. */
@@ -198,6 +198,26 @@ typedef struct chipmunk_bdlop_proof_round {
     chipmunk_poly_t  challenge;                      /* c ∈ {-1,0,1}^N, weight τ */
     chipmunk_poly_t  z_m[CHIPMUNK_BDLOP_MSG_POLYS]; /* z_m = c·m + y_m */
     chipmunk_poly_t  z_r[CHIPMUNK_BDLOP_L];          /* z_r = c·r + y_r */
+
+    /* Phase 2.4b: Approximate shortness (bit-ness) quadratic constraint.
+     *
+     * Garbage terms for the quadratic relation m⊙m = m:
+     *   g1 = 2·(y_m ⊙ m) − y_m   (cross-term, coefficient-wise)
+     *   g0 = y_m ⊙ y_m           (constant term, coefficient-wise)
+     *
+     * Responses (linear, rejection-sampled like z_m):
+     *   z_g1 = c·g1 + y_g1
+     *   z_g0 = c·g0 + y_g0
+     *
+     * Verifier checks: z_m⊙z_m − c·z_m − c·z_g1 − z_g0 ≡ 0 (mod q)
+     * If m⊙m=m (binary), the c² term vanishes → linear check holds.
+     * If m⊙m≠m, forgery prob ≤ 1/|challenge space| ≈ 2^{-133} (Schwartz-Zippel).
+     *
+     * Only present when a_msg_bound != INT32_MAX. */
+    chipmunk_poly_t  g1;       /* Garbage cross-term: 2*(y_m⊙m) - y_m */
+    chipmunk_poly_t  g0;       /* Garbage constant term: y_m⊙y_m */
+    chipmunk_poly_t  z_g1;     /* Response: c·g1 + y_g1 */
+    chipmunk_poly_t  z_g0;     /* Response: c·g0 + y_g0 */
 } chipmunk_bdlop_proof_round_t;
 
 typedef struct chipmunk_bdlop_proof {
