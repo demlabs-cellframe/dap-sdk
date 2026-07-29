@@ -192,7 +192,7 @@ int dap_thread_set_affinity(dap_thread_t a_thread, uint32_t a_cpu_id)
     // Unsupported platform
     UNUSED(a_thread);
     UNUSED(a_cpu_id);
-    log_it(L_INFO, "CPU affinity not supported on this platform");
+    log_it(L_DEBUG, "CPU affinity not supported on this platform");
     return -3;
 #endif
     
