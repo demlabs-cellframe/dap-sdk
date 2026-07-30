@@ -1460,16 +1460,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             l_bytes_sent = 0;
             bool l_write_repeat = false;
             if (l_flag_write && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) && !(l_cur->flags & DAP_SOCK_CONNECTING) && !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)) {
-                /* When write-congested (previous send() returned EAGAIN):
-                 * Skip write_callback (producer — adds new data to buf_out)
-                 * but STILL call send() (consumer — drains existing buf_out).
-                 * Without draining, the kernel TCP buffer stays full, ACKs
-                 * never reach the peer, and sync stalls permanently. */
-                if (l_cur->write_congestion_skip > 0) {
-                    l_cur->write_congestion_skip--;
-                    /* Don't call write_callback — prevents new data from being
-                     * added to buf_out while the kernel buffer is full. */
-                } else {
+                /* No congestion skip — write_callback and send() always run.
+                 * Master never skips; ACKs must flow to keep the peer's
+                 * sliding window advancing.  Stale connections are killed
+                 * by TIOCOUTQ detection instead of by dropping writes. */
                 if (l_cur->callbacks.write_callback)
                     l_write_repeat = l_cur->callbacks.write_callback(l_cur, l_cur->callbacks.arg);  /* Call callback to process write event */
                 debug_if(g_debug_reactor, L_DEBUG, "Main loop output: %zu bytes to send, repeat next time: %s",
@@ -1641,17 +1635,11 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                                /* TCP socket congested: kernel send buffer is full.
-                                 * Set congestion skip counter — the EPOLLOUT handler
-                                 * (line 1461) checks this and skips the send() call
-                                 * for the next N event-loop iterations, giving the
-                                 * kernel time to drain the TCP buffer.  This avoids
-                                 * both busy-spin (keep EPOLLOUT armed and spin) and
-                                 * permanent stall (disarm EPOLLOUT and never re-arm).
-                                 * The skip counter is decremented each iteration; when
-                                 * it reaches 0, send() is retried. */
-                                l_cur->flags |= DAP_SOCK_WRITE_CONGESTED;
-                                l_cur->write_congestion_skip = 100;  /* ~100 iterations ≈ a few ms */
+                                /* TCP EAGAIN: kernel send buffer full.  Do NOT set
+                                 * congestion flag or skip counter — master never does.
+                                 * EPOLLOUT stays armed, event loop retries send() on
+                                 * next iteration.  Stale connections with persistently
+                                 * full buffers are killed by TIOCOUTQ detection. */
                                 break;
                             case DESCRIPTOR_TYPE_PIPE:
                                 /* PIPE: drop buf_out and disarm to avoid busy loop */
@@ -1684,7 +1672,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
                     }
                 }
-                } /* end else (not congestion-skipped) */
                 if (!l_cur->buf_out_size) {
                     /* buf_out fully drained — socket is no longer congested. */
                     l_cur->flags &= ~DAP_SOCK_WRITE_CONGESTED;

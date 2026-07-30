@@ -1952,19 +1952,12 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
         return 0;
     }
 
-    /* Congestion backpressure: if the socket is write-congested (last send()
-     * returned EAGAIN), drop the write.  The data is lost — callers (ACK
-     * senders, sync callbacks) must handle this gracefully.  Without this
-     * guard, data accumulates in buf_out indefinitely, eventually filling
-     * both buf_out and the kernel TCP send buffer, causing 19MB+ backlogs
-     * and stalling sync for all peers on this worker thread. */
-    if (a_es->flags & DAP_SOCK_WRITE_CONGESTED) {
-        debug_if(g_debug_reactor, L_DEBUG, "Write dropped (congested): socket %" DAP_FORMAT_SOCKET " buf_out=%zu",
-                 a_es->fd, a_es->buf_out_size);
-        return 0;
-    }
-
     // TCP/stream sockets: Use buffered writes
+    /* NOTE: do NOT gate on DAP_SOCK_WRITE_CONGESTED here.  Master never
+     * drops writes — ACKs always reach buf_out, the event loop drains
+     * via EPOLLOUT.  Dropping writes caused ACK loss → peer timeout →
+     * sync stall.  Stale connections (large kernel send queue) are
+     * handled by TIOCOUTQ detection in the event loop instead. */
     byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, a_data_size);
     if (!l_write_pos)
         return 0;
