@@ -1,5 +1,5 @@
 /*
- * chipmunk_snark.c — Lattice-based SNARK (Ligero-style) with R_q^{(e)} extension.
+ * chipmunk_stark.c — Lattice-based STARK (Ligero-style) with R_q^{(e)} extension.
  *
  * Post-quantum succinct argument of knowledge for ring membership.
  * Uses hash-based polynomial commitments over R_q and extension-field
@@ -32,7 +32,7 @@
  *   - Combined: >> 128 bits
  */
 
-#include "chipmunk_snark.h"
+#include "chipmunk_stark.h"
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
 #include "chipmunk_field.h"
@@ -48,7 +48,7 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#define LOG_TAG "chipmunk_snark"
+#define LOG_TAG "chipmunk_stark"
 
 /* Parameterized modular reduction: s_mod_q(val, q) replaces chipmunk_mod_q(val)
  * which uses the global CHIPMUNK_Q.  Used throughout Phase 9.13f to make every
@@ -80,7 +80,7 @@ static inline int32_t s_fqmul_q(int32_t a_a, int32_t a_b, uint64_t q)
 }
 
 /* QROM domain separator */
-static const char *s_domain_init = "snark-init-v1";
+static const char *s_domain_init = "stark-init-v1";
 
 /* -------------------------------------------------------------------------
  * Internal: F_q^6 scalar arithmetic for polynomial evaluation
@@ -109,11 +109,11 @@ static void s_poly_to_bytes(uint8_t *a_out, size_t a_out_size,
     }
 }
 
-static int s_commit_poly(chipmunk_snark_commit_t *a_commit,
+static int s_commit_poly(chipmunk_stark_commit_t *a_commit,
                          const chipmunk_poly_t *a_poly,
                          uint32_t a_d, uint64_t a_q)
 {
-    uint8_t l_buf[CHIPMUNK_SNARK_MAX_D * sizeof(int32_t)];
+    uint8_t l_buf[CHIPMUNK_STARK_MAX_D * sizeof(int32_t)];
     size_t l_bytes = (size_t)a_d * sizeof(int32_t);
     s_poly_to_bytes(l_buf, l_bytes, a_poly, a_d, a_q);
     dap_hash_sha3_256_raw(a_commit->hash, l_buf, l_bytes);
@@ -231,7 +231,7 @@ static int s_synth_div_fq6(chipmunk_poly_t *a_q,
     s_fq6_elem_t l_z_at_alpha;
     s_poly_eval_fq6(&l_z_at_alpha, a_z, a_alpha, a_d, a_q_mod);
     if (!s_fq6_is_zero(&l_z_at_alpha)) {
-        log_it(L_ERROR, "SNARK: z(alpha) != 0 — synthetic division not exact");
+        log_it(L_ERROR, "STARK: z(alpha) != 0 — synthetic division not exact");
         return -EINVAL;
     }
 
@@ -282,7 +282,7 @@ static int s_synth_div_fq6(chipmunk_poly_t *a_q,
             }
             for (int i = 0; i < (int)a_d; ++i) {
                 if (a_q->coeffs[i] != l_q_check.coeffs[i]) {
-                    log_it(L_ERROR, "SNARK: quotient component %d disagrees at index %d", j, i);
+                    log_it(L_ERROR, "STARK: quotient component %d disagrees at index %d", j, i);
                     return -EINVAL;
                 }
             }
@@ -332,7 +332,7 @@ static void s_compute_ring_hash(dap_hash_sha3_256_t *a_hash,
 
     /* Absorb domain separator */
     dap_hash_shake256_absorb(l_state,
-        (const uint8_t *)"snark-ring-hash-v1", 18);
+        (const uint8_t *)"stark-ring-hash-v1", 18);
 
     /* Absorb each public key in full */
     for (uint32_t i = 0; i < a_ring_size; ++i) {
@@ -439,7 +439,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
         if (l_sum_check != 0) {
             /* Not divisible by Z_H — b is not binary on H.
              * This should not happen for honest prover. */
-            log_it(L_ERROR, "SNARK: C1 not divisible by Z_H at index %u (sum=%d)",
+            log_it(L_ERROR, "STARK: C1 not divisible by Z_H at index %u (sum=%d)",
                    i, l_sum_check);
             return -EINVAL;
         }
@@ -460,7 +460,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
 }
 
 /* -------------------------------------------------------------------------
- * Phase 9.13: Universal SNARK Parameter Sets
+ * Phase 9.13: Universal STARK Parameter Sets
  * ---------------------------------------------------------------------- */
 
 /* Helper: compute 2-adicity of n (number of trailing zero bits). */
@@ -495,14 +495,14 @@ static uint32_t s_param_id(uint32_t d, uint64_t q)
     return id;
 }
 
-int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
+int chipmunk_stark_params_init(chipmunk_stark_params_t *a_params,
                                 uint32_t a_d, uint64_t a_q)
 {
     if (!a_params) return -EINVAL;
     memset(a_params, 0, sizeof(*a_params));
 
     /* Validate d: must be power of 2, 32 ≤ d ≤ MAX_D. */
-    if (a_d == 0 || a_d > CHIPMUNK_SNARK_MAX_D) return -EINVAL;
+    if (a_d == 0 || a_d > CHIPMUNK_STARK_MAX_D) return -EINVAL;
     if ((a_d & (a_d - 1)) != 0) return -EINVAL;  /* not power of 2 */
 
     /* Validate q: must be > d and odd. */
@@ -514,7 +514,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
     uint32_t l_log2_4d = 0;
     { uint32_t v = a_d * 4; while (v > 1) { v >>= 1; ++l_log2_4d; } }
     if (l_ad < l_log2_4d) {
-        log_it(L_ERROR, "SNARK params: 2-adicity(q-1)=%u < %u needed for d=%u",
+        log_it(L_ERROR, "STARK params: 2-adicity(q-1)=%u < %u needed for d=%u",
                l_ad, l_log2_4d, a_d);
         return -EINVAL;
     }
@@ -523,7 +523,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
      * The elements of (Z/9Z)* with order 6 are: 2 and 5. */
     uint32_t l_q_mod9 = (uint32_t)(a_q % 9u);
     if (l_q_mod9 != 2 && l_q_mod9 != 5) {
-        log_it(L_ERROR, "SNARK params: q mod 9 = %u (need 2 or 5 for Phi_9 irreducibility)",
+        log_it(L_ERROR, "STARK params: q mod 9 = %u (need 2 or 5 for Phi_9 irreducibility)",
                l_q_mod9);
         return -EINVAL;
     }
@@ -542,7 +542,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
             a_params->fri_total_data += sz;
             sz /= 2;
         }
-        a_params->fri_total_data += CHIPMUNK_SNARK_FRI_FINAL_SIZE;
+        a_params->fri_total_data += CHIPMUNK_STARK_FRI_FINAL_SIZE;
     }
 
     /* Derived RS constants. */
@@ -557,7 +557,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
      * for the ACTIVE q via chipmunk_field_compute_for_q. No global singleton.
      * Also verifies Φ₉ irreducibility for the active q via Rabin's test. */
     if (!chipmunk_fq6_ext_modulus_is_irreducible_q(a_q)) {
-        log_it(L_ERROR, "SNARK params: Φ₉ is NOT irreducible over F_q (q=%lu) — "
+        log_it(L_ERROR, "STARK params: Φ₉ is NOT irreducible over F_q (q=%lu) — "
                "R_q^{(e)} is not a field, extension soundness broken",
                (unsigned long)a_q);
         return -EINVAL;
@@ -566,7 +566,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
         chipmunk_field_consts_t l_fc;
         int l_fc_rc = chipmunk_field_compute_for_q(&l_fc, a_q, l_ad);
         if (l_fc_rc != 0) {
-            log_it(L_ERROR, "SNARK params: per-q field constants computation failed for q=%lu",
+            log_it(L_ERROR, "STARK params: per-q field constants computation failed for q=%lu",
                    (unsigned long)a_q);
             return l_fc_rc;
         }
@@ -586,7 +586,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
         }
     }
     if (a_params->rs_coset_g == 0) {
-        log_it(L_ERROR, "SNARK params: failed to find coset generator for d=%u q=%lu",
+        log_it(L_ERROR, "STARK params: failed to find coset generator for d=%u q=%lu",
                a_d, (unsigned long)a_q);
         return -EINVAL;
     }
@@ -598,7 +598,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
     a_params->zetas = (int32_t *)calloc(a_params->zetas_size, sizeof(int32_t));
     a_params->zetas_inv = (int32_t *)calloc(a_params->zetas_size, sizeof(int32_t));
     if (!a_params->zetas || !a_params->zetas_inv) {
-        chipmunk_snark_params_free(a_params);
+        chipmunk_stark_params_free(a_params);
         return -ENOMEM;
     }
 
@@ -609,7 +609,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
         a_params->zetas_inv[k] = s_fqmul_q(a_params->zetas_inv[k - 1], a_params->omega_inv, a_q);
     }
 
-    log_it(L_INFO, "SNARK params init: d=%u q=%lu 2-ad=%u q%%9=%u coset_g=%d "
+    log_it(L_INFO, "STARK params init: d=%u q=%lu 2-ad=%u q%%9=%u coset_g=%d "
            "fri_rounds=%u fri_total=%u param_id=0x%08x",
            a_d, (unsigned long)a_q, l_ad, l_q_mod9, a_params->rs_coset_g,
            a_params->fri_rounds, a_params->fri_total_data, a_params->param_id);
@@ -617,7 +617,7 @@ int chipmunk_snark_params_init(chipmunk_snark_params_t *a_params,
     return 0;
 }
 
-void chipmunk_snark_params_free(chipmunk_snark_params_t *a_params)
+void chipmunk_stark_params_free(chipmunk_stark_params_t *a_params)
 {
     if (!a_params) return;
     if (a_params->zetas) {
@@ -635,36 +635,36 @@ void chipmunk_snark_params_free(chipmunk_snark_params_t *a_params)
 
 /* Predefined parameter sets (lazy-initialized singletons). */
 
-static chipmunk_snark_params_t s_params_lrs;
-static chipmunk_snark_params_t s_params_ring;
-static chipmunk_snark_params_t s_params_test;
+static chipmunk_stark_params_t s_params_lrs;
+static chipmunk_stark_params_t s_params_ring;
+static chipmunk_stark_params_t s_params_test;
 static bool s_params_lrs_init = false;
 static bool s_params_ring_init = false;
 static bool s_params_test_init = false;
 
-const chipmunk_snark_params_t *chipmunk_snark_params_lrs(void)
+const chipmunk_stark_params_t *chipmunk_stark_params_lrs(void)
 {
     if (!s_params_lrs_init) {
-        if (chipmunk_snark_params_init(&s_params_lrs, 512, 3168257) == 0)
+        if (chipmunk_stark_params_init(&s_params_lrs, 512, 3168257) == 0)
             s_params_lrs_init = true;
     }
     return s_params_lrs_init ? &s_params_lrs : NULL;
 }
 
 /* Available once Phase 9.13h lands per-q field constants. */
-const chipmunk_snark_params_t *chipmunk_snark_params_ring(void)
+const chipmunk_stark_params_t *chipmunk_stark_params_ring(void)
 {
     if (!s_params_ring_init) {
-        if (chipmunk_snark_params_init(&s_params_ring, 128, 4206593) == 0)
+        if (chipmunk_stark_params_init(&s_params_ring, 128, 4206593) == 0)
             s_params_ring_init = true;
     }
     return s_params_ring_init ? &s_params_ring : NULL;
 }
 
-const chipmunk_snark_params_t *chipmunk_snark_params_test(void)
+const chipmunk_stark_params_t *chipmunk_stark_params_test(void)
 {
     if (!s_params_test_init) {
-        if (chipmunk_snark_params_init(&s_params_test, 32, 4206593) == 0)
+        if (chipmunk_stark_params_init(&s_params_test, 32, 4206593) == 0)
             s_params_test_init = true;
     }
     return s_params_test_init ? &s_params_test : NULL;
@@ -674,15 +674,15 @@ const chipmunk_snark_params_t *chipmunk_snark_params_test(void)
  * Public API
  * ---------------------------------------------------------------------- */
 
-int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
+int chipmunk_stark_init(chipmunk_stark_ctx_t *ctx)
 {
     if (!ctx) return -EINVAL;
     memset(ctx, 0, sizeof(*ctx));
 
     /* Initialize runtime params for LRS (d=512, q=3168257). */
-    int l_rc = chipmunk_snark_params_init(&ctx->sp, 512, (uint64_t)CHIPMUNK_Q);
+    int l_rc = chipmunk_stark_params_init(&ctx->sp, 512, (uint64_t)CHIPMUNK_Q);
     if (l_rc != 0) {
-        log_it(L_ERROR, "SNARK init: params_init failed: %d", l_rc);
+        log_it(L_ERROR, "STARK init: params_init failed: %d", l_rc);
         return l_rc;
     }
 
@@ -703,9 +703,9 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
      * Defense-in-depth: params_init already checks this, but init is the
      * last gate before proofs are generated. */
     if (!chipmunk_fq6_ext_modulus_is_irreducible_q(ctx->sp.q)) {
-        log_it(L_ERROR, "SNARK init: Phi_9 is NOT irreducible over F_q (q=%lu) — soundness broken",
+        log_it(L_ERROR, "STARK init: Phi_9 is NOT irreducible over F_q (q=%lu) — soundness broken",
                (unsigned long)ctx->sp.q);
-        chipmunk_snark_params_free(&ctx->sp);
+        chipmunk_stark_params_free(&ctx->sp);
         return -EINVAL;
     }
 
@@ -713,17 +713,17 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx)
     return 0;
 }
 
-int chipmunk_snark_commit(chipmunk_snark_commit_t *a_commit,
+int chipmunk_stark_commit(chipmunk_stark_commit_t *a_commit,
                           const chipmunk_poly_t *a_poly)
 {
     if (!a_commit || !a_poly) return -EINVAL;
     /* Standalone API: LRS default params (d=MAX_D, q=CHIPMUNK_Q).
-     * For non-LRS param sets use chipmunk_snark_commit_ctx(). */
-    return s_commit_poly(a_commit, a_poly, CHIPMUNK_SNARK_MAX_D, (uint64_t)CHIPMUNK_Q);
+     * For non-LRS param sets use chipmunk_stark_commit_ctx(). */
+    return s_commit_poly(a_commit, a_poly, CHIPMUNK_STARK_MAX_D, (uint64_t)CHIPMUNK_Q);
 }
 
-int chipmunk_snark_commit_ctx(chipmunk_snark_commit_t *a_commit,
-                                const chipmunk_snark_ctx_t *a_ctx,
+int chipmunk_stark_commit_ctx(chipmunk_stark_commit_t *a_commit,
+                                const chipmunk_stark_ctx_t *a_ctx,
                                 const chipmunk_poly_t *a_poly)
 {
     if (!a_commit || !a_ctx || !a_poly) return -EINVAL;
@@ -731,10 +731,10 @@ int chipmunk_snark_commit_ctx(chipmunk_snark_commit_t *a_commit,
     return s_commit_poly(a_commit, a_poly, a_ctx->sp.d, a_ctx->sp.q);
 }
 
-int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
-                         const chipmunk_snark_ctx_t *a_ctx,
-                         const chipmunk_snark_statement_t *a_statement,
-                         const chipmunk_snark_witness_t *a_witness)
+int chipmunk_stark_prove(chipmunk_stark_proof_t *a_proof,
+                         const chipmunk_stark_ctx_t *a_ctx,
+                         const chipmunk_stark_statement_t *a_statement,
+                         const chipmunk_stark_witness_t *a_witness)
 {
     if (!a_proof || !a_ctx || !a_statement || !a_witness) return -EINVAL;
     if (!a_ctx->initialized) return -EINVAL;
@@ -886,7 +886,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     chipmunk_poly_t l_q;
     int l_rc = s_synth_div_fq6(&l_q, &l_z, &l_alpha_fq6, a_ctx->sp.d, a_ctx->sp.q);
     if (l_rc != 0) {
-        log_it(L_ERROR, "SNARK prove: quotient division failed (z(alpha) != 0 in F_q^6)");
+        log_it(L_ERROR, "STARK prove: quotient division failed (z(alpha) != 0 in F_q^6)");
         return l_rc;
     }
 
@@ -927,7 +927,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
 
     /* 13. FRI proof for q(X) — Phase 9.11: polynomial commitment scheme.
      *
-     * Builds a Fiat-Shamir transcript binding all SNARK commitments to
+     * Builds a Fiat-Shamir transcript binding all STARK commitments to
      * the FRI proof. The prover:
      *   a) Absorbs all 4 commitments + msg_hash + transcript_hash
      *   b) Derives 7 FRI alphas from transcript
@@ -943,26 +943,26 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
      *   - 16-bit computational soundness (grinding)
      */
     {
-        /* 13a. Initialize FRI transcript with SNARK-FRI domain separator. */
+        /* 13a. Initialize FRI transcript with STARK-FRI domain separator. */
         chipmunk_fri_transcript_t l_fri_tr;
         int l_rc = chipmunk_fri_transcript_init(
             &l_fri_tr,
-            (const uint8_t *)CHIPMUNK_SNARK_FRI_DOMAIN);
+            (const uint8_t *)CHIPMUNK_STARK_FRI_DOMAIN);
         l_fri_tr.q = a_ctx->sp.q;  /* Phase 9.14f: per-q transcript */
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI transcript init failed");
+            log_it(L_ERROR, "STARK prove: FRI transcript init failed");
             dap_memwipe(&l_b, sizeof(l_b));
             dap_memwipe(&l_z, sizeof(l_z));
             dap_memwipe(&l_q, sizeof(l_q));
             return l_rc;
         }
 
-        /* 13b. Absorb all SNARK commitments into FRI transcript. */
+        /* 13b. Absorb all STARK commitments into FRI transcript. */
         {   /* Helper macro: absorb and fail early on error. */
 #define L_ABSORB(data, len) do { \
     l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr, (data), (len)); \
     if (l_rc != 0) { \
-        log_it(L_ERROR, "SNARK prove: FRI absorb failed"); \
+        log_it(L_ERROR, "STARK prove: FRI absorb failed"); \
         dap_memwipe(&l_b, sizeof(l_b)); \
         dap_memwipe(&l_z, sizeof(l_z)); \
         dap_memwipe(&l_q, sizeof(l_q)); \
@@ -983,7 +983,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         l_rc = chipmunk_fri_transcript_squeeze_fq_many(
             &l_fri_tr, l_fri_alphas, CHIPMUNK_FRI_ROUNDS);
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI alpha derivation failed");
+            log_it(L_ERROR, "STARK prove: FRI alpha derivation failed");
             dap_memwipe(&l_b, sizeof(l_b));
             dap_memwipe(&l_z, sizeof(l_z));
             dap_memwipe(&l_q, sizeof(l_q));
@@ -994,7 +994,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         chipmunk_fri_prover_t l_fri_prover;
         l_rc = chipmunk_fri_prover_init(&l_fri_prover);
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI prover init failed");
+            log_it(L_ERROR, "STARK prove: FRI prover init failed");
             dap_memwipe(&l_b, sizeof(l_b));
             dap_memwipe(&l_z, sizeof(l_z));
             dap_memwipe(&l_q, sizeof(l_q));
@@ -1006,7 +1006,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
 
         l_rc = chipmunk_fri_commit(&l_fri_prover, l_q.coeffs, l_fri_alphas);
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI commit failed");
+            log_it(L_ERROR, "STARK prove: FRI commit failed");
             chipmunk_fri_prover_free(&l_fri_prover);
             dap_memwipe(&l_b, sizeof(l_b));
             dap_memwipe(&l_z, sizeof(l_z));
@@ -1020,7 +1020,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         chipmunk_fri_prover_t l_b_prover;
         l_rc = chipmunk_fri_prover_init(&l_b_prover);
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI prover init (b) failed");
+            log_it(L_ERROR, "STARK prove: FRI prover init (b) failed");
             chipmunk_fri_prover_free(&l_fri_prover);
             dap_memwipe(&l_b, sizeof(l_b));
             dap_memwipe(&l_z, sizeof(l_z));
@@ -1032,7 +1032,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
 
         l_rc = chipmunk_fri_commit(&l_b_prover, l_b.coeffs, l_fri_alphas);
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI commit (b) failed");
+            log_it(L_ERROR, "STARK prove: FRI commit (b) failed");
             chipmunk_fri_prover_free(&l_fri_prover);
             chipmunk_fri_prover_free(&l_b_prover);
             dap_memwipe(&l_b, sizeof(l_b));
@@ -1045,7 +1045,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         chipmunk_fri_prover_t l_q1_prover;
         l_rc = chipmunk_fri_prover_init(&l_q1_prover);
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI prover init (q1) failed");
+            log_it(L_ERROR, "STARK prove: FRI prover init (q1) failed");
             chipmunk_fri_prover_free(&l_fri_prover);
             chipmunk_fri_prover_free(&l_b_prover);
             dap_memwipe(&l_b, sizeof(l_b));
@@ -1058,7 +1058,7 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
 
         l_rc = chipmunk_fri_commit(&l_q1_prover, l_q1.coeffs, l_fri_alphas);
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK prove: FRI commit (q1) failed");
+            log_it(L_ERROR, "STARK prove: FRI commit (q1) failed");
             chipmunk_fri_prover_free(&l_fri_prover);
             chipmunk_fri_prover_free(&l_b_prover);
             chipmunk_fri_prover_free(&l_q1_prover);
@@ -1086,46 +1086,46 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
             /* q caps */
             l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
                 l_fri_prover.proof.caps[r].nodes, l_cap_sz);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb q cap %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI absorb q cap %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
             /* b caps */
             l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
                 l_b_prover.proof.caps[r].nodes, l_cap_sz);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb b cap %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI absorb b cap %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
             /* q1 caps */
             l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
                 l_q1_prover.proof.caps[r].nodes, l_cap_sz);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb q1 cap %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI absorb q1 cap %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
         }
         for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
             /* q final evals */
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
                 l_fri_prover.proof.final_evals[i]);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb q eval %u failed", i); L_FREE_ALL_FRI(); return l_rc; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI absorb q eval %u failed", i); L_FREE_ALL_FRI(); return l_rc; }
             /* b final evals */
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
                 l_b_prover.proof.final_evals[i]);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb b eval %u failed", i); L_FREE_ALL_FRI(); return l_rc; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI absorb b eval %u failed", i); L_FREE_ALL_FRI(); return l_rc; }
             /* q1 final evals */
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
                 l_q1_prover.proof.final_evals[i]);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb q1 eval %u failed", i); L_FREE_ALL_FRI(); return l_rc; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI absorb q1 eval %u failed", i); L_FREE_ALL_FRI(); return l_rc; }
         }
 
         /* Absorb alphas into transcript. */
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI absorb alpha %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI absorb alpha %u failed", r); L_FREE_ALL_FRI(); return l_rc; }
         }
 
         /* 13f. Finalize: grinding PoW binds q, b, AND q1. */
         l_rc = chipmunk_fri_transcript_finalize(&l_fri_tr);
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI finalize failed"); L_FREE_ALL_FRI(); return l_rc; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI finalize failed"); L_FREE_ALL_FRI(); return l_rc; }
 
         /* 13g. Derive 8 query indices (shared for q, b, q1). */
         uint32_t l_fri_indices[CHIPMUNK_FRI_NUM_QUERIES];
         l_rc = chipmunk_fri_derive_query_indices(&l_fri_tr,
             CHIPMUNK_FRI_NUM_QUERIES, CHIPMUNK_FRI_INIT_SIZE, l_fri_indices);
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI query idx failed"); L_FREE_ALL_FRI(); return l_rc; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI query idx failed"); L_FREE_ALL_FRI(); return l_rc; }
 
         /* 13h. FRI query: open q(X), b(X), q1(X) at 8 positions. */
         chipmunk_fri_query_opening_t l_fri_openings[CHIPMUNK_FRI_NUM_QUERIES];
@@ -1133,13 +1133,13 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
         chipmunk_fri_query_opening_t l_q1_openings[CHIPMUNK_FRI_NUM_QUERIES];
 
         l_rc = chipmunk_fri_query(&l_fri_prover, CHIPMUNK_FRI_NUM_QUERIES, l_fri_indices, l_fri_openings);
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI query (q) failed"); L_FREE_ALL_FRI(); return l_rc; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI query (q) failed"); L_FREE_ALL_FRI(); return l_rc; }
         l_rc = chipmunk_fri_query(&l_b_prover, CHIPMUNK_FRI_NUM_QUERIES, l_fri_indices, l_b_openings);
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI query (b) failed"); L_FREE_ALL_FRI(); return l_rc; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI query (b) failed"); L_FREE_ALL_FRI(); return l_rc; }
         l_rc = chipmunk_fri_query(&l_q1_prover, CHIPMUNK_FRI_NUM_QUERIES, l_fri_indices, l_q1_openings);
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK prove: FRI query (q1) failed"); L_FREE_ALL_FRI(); return l_rc; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK prove: FRI query (q1) failed"); L_FREE_ALL_FRI(); return l_rc; }
 
-        /* 13i. Store FRI proofs in SNARK proof struct. */
+        /* 13i. Store FRI proofs in STARK proof struct. */
         a_proof->fri_proof.commit = l_fri_prover.proof;
         memcpy(a_proof->fri_proof.queries, l_fri_openings, sizeof(l_fri_openings));
         a_proof->b_fri_proof.commit = l_b_prover.proof;
@@ -1180,9 +1180,9 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     return 0;
 }
 
-int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
-                          const chipmunk_snark_ctx_t *a_ctx,
-                          const chipmunk_snark_statement_t *a_statement)
+int chipmunk_stark_verify(const chipmunk_stark_proof_t *a_proof,
+                          const chipmunk_stark_ctx_t *a_ctx,
+                          const chipmunk_stark_statement_t *a_statement)
 {
     if (!a_proof || !a_ctx || !a_statement) return -EINVAL;
     if (!a_ctx->initialized) return -EINVAL;
@@ -1219,13 +1219,13 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
     /* Verify r_commit matches re-derived randomizer (constant-time). */
     {
-        chipmunk_snark_commit_t l_r_commit;
+        chipmunk_stark_commit_t l_r_commit;
         s_commit_poly(&l_r_commit, &l_randomizer_ext.c[0], a_ctx->sp.d, a_ctx->sp.q);
         uint8_t l_diff = 0;
         for (int i = 0; i < 32; ++i)
             l_diff |= l_r_commit.hash[i] ^ a_proof->r_commit.hash[i];
         if (l_diff != 0) {
-            log_it(L_ERROR, "SNARK verify: r_commit mismatch");
+            log_it(L_ERROR, "STARK verify: r_commit mismatch");
             return 0;
         }
     }
@@ -1266,7 +1266,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
             l_diff |= l_expected_hash[i] ^ a_proof->transcript_hash[i];
         }
         if (l_diff != 0) {
-            log_it(L_ERROR, "SNARK verify: transcript hash mismatch");
+            log_it(L_ERROR, "STARK verify: transcript hash mismatch");
             return 0;
         }
     }
@@ -1277,39 +1277,39 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         chipmunk_fri_transcript_t l_fri_tr;
         int l_rc = chipmunk_fri_transcript_init(
             &l_fri_tr,
-            (const uint8_t *)CHIPMUNK_SNARK_FRI_DOMAIN);
+            (const uint8_t *)CHIPMUNK_STARK_FRI_DOMAIN);
         l_fri_tr.q = a_ctx->sp.q;  /* Phase 9.14f: per-q transcript */
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK verify: FRI transcript init failed");
+            log_it(L_ERROR, "STARK verify: FRI transcript init failed");
             return 0;
         }
 
         /* Absorb same data as prover (steps 13a-13b). */
         l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->w_commit.hash, sizeof(a_proof->w_commit.hash));
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb w_commit failed"); return 0; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb w_commit failed"); return 0; }
         l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->r_commit.hash, sizeof(a_proof->r_commit.hash));
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb r_commit failed"); return 0; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb r_commit failed"); return 0; }
         l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->z_commit.hash, sizeof(a_proof->z_commit.hash));
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb z_commit failed"); return 0; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb z_commit failed"); return 0; }
         l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->q_commit.hash, sizeof(a_proof->q_commit.hash));
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q_commit failed"); return 0; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb q_commit failed"); return 0; }
         l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             l_msg_hash, 32);
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb msg_hash failed"); return 0; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb msg_hash failed"); return 0; }
         l_rc = chipmunk_fri_transcript_absorb(&l_fri_tr,
             a_proof->transcript_hash, 32);
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb transcript_hash failed"); return 0; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb transcript_hash failed"); return 0; }
 
         /* Derive 7 FRI alphas (same order as prover). */
         int32_t l_fri_alphas[CHIPMUNK_FRI_ROUNDS];
         l_rc = chipmunk_fri_transcript_squeeze_fq_many(
             &l_fri_tr, l_fri_alphas, CHIPMUNK_FRI_ROUNDS);
         if (l_rc != 0) {
-            log_it(L_ERROR, "SNARK verify: FRI alpha derivation failed");
+            log_it(L_ERROR, "STARK verify: FRI alpha derivation failed");
             return 0;
         }
 
@@ -1320,59 +1320,59 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
             uint32_t l_cap_sz = (l_n >= 32u) ? 16u : l_n;
             l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
                 a_proof->fri_proof.commit.caps[r].nodes, l_cap_sz);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q cap %u failed", r); return 0; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb q cap %u failed", r); return 0; }
             l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
                 a_proof->b_fri_proof.commit.caps[r].nodes, l_cap_sz);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb b cap %u failed", r); return 0; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb b cap %u failed", r); return 0; }
             l_rc = chipmunk_fri_transcript_absorb_cap(&l_fri_tr,
                 a_proof->q1_fri_proof.commit.caps[r].nodes, l_cap_sz);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q1 cap %u failed", r); return 0; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb q1 cap %u failed", r); return 0; }
         }
         for (unsigned i = 0; i < CHIPMUNK_FRI_FINAL_SIZE; ++i) {
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
                 a_proof->fri_proof.commit.final_evals[i]);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q eval %u failed", i); return 0; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb q eval %u failed", i); return 0; }
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
                 a_proof->b_fri_proof.commit.final_evals[i]);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb b eval %u failed", i); return 0; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb b eval %u failed", i); return 0; }
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr,
                 a_proof->q1_fri_proof.commit.final_evals[i]);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb q1 eval %u failed", i); return 0; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb q1 eval %u failed", i); return 0; }
         }
         for (unsigned r = 0; r < CHIPMUNK_FRI_ROUNDS; ++r) {
             l_rc = chipmunk_fri_transcript_absorb_fq(&l_fri_tr, l_fri_alphas[r]);
-            if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI absorb alpha %u failed", r); return 0; }
+            if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI absorb alpha %u failed", r); return 0; }
         }
 
         /* 6c. Finalize verifier-side: verify grinding nonce. */
         l_rc = chipmunk_fri_transcript_finalize_verify(&l_fri_tr, a_proof->fri_grinding_nonce);
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI grinding nonce invalid"); return 0; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI grinding nonce invalid"); return 0; }
 
         /* 6d. Derive 8 query indices (shared for q, b, q1). */
         uint32_t l_fri_indices[CHIPMUNK_FRI_NUM_QUERIES];
         l_rc = chipmunk_fri_derive_query_indices(&l_fri_tr,
             CHIPMUNK_FRI_NUM_QUERIES, CHIPMUNK_FRI_INIT_SIZE, l_fri_indices);
-        if (l_rc != 0) { log_it(L_ERROR, "SNARK verify: FRI query idx failed"); return 0; }
+        if (l_rc != 0) { log_it(L_ERROR, "STARK verify: FRI query idx failed"); return 0; }
 
         /* 6e. Verify FRI queries for q, b, AND q1 (shared indices). */
         for (uint32_t qi = 0; qi < CHIPMUNK_FRI_NUM_QUERIES; ++qi) {
             if (a_proof->fri_proof.queries[qi].idx != l_fri_indices[qi]) {
-                log_it(L_ERROR, "SNARK verify: FRI q query %u index mismatch", qi); return 0;
+                log_it(L_ERROR, "STARK verify: FRI q query %u index mismatch", qi); return 0;
             }
             if (!chipmunk_fri_verify_query_q(&a_proof->fri_proof, qi, l_fri_alphas, a_ctx->sp.q)) {
-                log_it(L_ERROR, "SNARK verify: FRI q query %u failed", qi); return 0;
+                log_it(L_ERROR, "STARK verify: FRI q query %u failed", qi); return 0;
             }
             if (a_proof->b_fri_proof.queries[qi].idx != l_fri_indices[qi]) {
-                log_it(L_ERROR, "SNARK verify: FRI b query %u index mismatch", qi); return 0;
+                log_it(L_ERROR, "STARK verify: FRI b query %u index mismatch", qi); return 0;
             }
             if (!chipmunk_fri_verify_query_q(&a_proof->b_fri_proof, qi, l_fri_alphas, a_ctx->sp.q)) {
-                log_it(L_ERROR, "SNARK verify: FRI b query %u failed", qi); return 0;
+                log_it(L_ERROR, "STARK verify: FRI b query %u failed", qi); return 0;
             }
             if (a_proof->q1_fri_proof.queries[qi].idx != l_fri_indices[qi]) {
-                log_it(L_ERROR, "SNARK verify: FRI q1 query %u index mismatch", qi); return 0;
+                log_it(L_ERROR, "STARK verify: FRI q1 query %u index mismatch", qi); return 0;
             }
             if (!chipmunk_fri_verify_query_q(&a_proof->q1_fri_proof, qi, l_fri_alphas, a_ctx->sp.q)) {
-                log_it(L_ERROR, "SNARK verify: FRI q1 query %u failed", qi); return 0;
+                log_it(L_ERROR, "STARK verify: FRI q1 query %u failed", qi); return 0;
             }
         }
     }
@@ -1383,7 +1383,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     uint64_t l_mod_q = a_ctx->sp.q;
     size_t l_poly_bytes = (size_t)l_d * sizeof(int32_t);
     if (a_proof->opening_proof_size < l_poly_bytes * 2) {
-        log_it(L_ERROR, "SNARK verify: opening proof too small (%zu < %zu)",
+        log_it(L_ERROR, "STARK verify: opening proof too small (%zu < %zu)",
                a_proof->opening_proof_size, l_poly_bytes * 2);
         return 0;
     }
@@ -1403,7 +1403,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
     /* Verify commitments match (constant-time). */
     {
-        chipmunk_snark_commit_t l_z_commit, l_q_commit;
+        chipmunk_stark_commit_t l_z_commit, l_q_commit;
         s_commit_poly(&l_z_commit, &l_z, a_ctx->sp.d, a_ctx->sp.q);
         s_commit_poly(&l_q_commit, &l_q, a_ctx->sp.d, a_ctx->sp.q);
 
@@ -1413,11 +1413,11 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
             l_diff_q |= l_q_commit.hash[i] ^ a_proof->q_commit.hash[i];
         }
         if (l_diff_z != 0) {
-            log_it(L_ERROR, "SNARK verify: z_commit mismatch");
+            log_it(L_ERROR, "STARK verify: z_commit mismatch");
             return 0;
         }
         if (l_diff_q != 0) {
-            log_it(L_ERROR, "SNARK verify: q_commit mismatch");
+            log_it(L_ERROR, "STARK verify: q_commit mismatch");
             return 0;
         }
     }
@@ -1432,7 +1432,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         s_fq6_elem_t l_z_at_alpha;
         s_poly_eval_fq6(&l_z_at_alpha, &l_z, &l_alpha_fq6, l_d, l_mod_q);
         if (!s_fq6_is_zero(&l_z_at_alpha)) {
-            log_it(L_ERROR, "SNARK verify: z(alpha) != 0 in F_q^6 extension");
+            log_it(L_ERROR, "STARK verify: z(alpha) != 0 in F_q^6 extension");
             return 0;
         }
     }
@@ -1450,7 +1450,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
             dap_hash_shake256_absorb(l_xof_state, l_xof_input, 64);
         }
 
-        for (int l_check = 0; l_check < CHIPMUNK_SNARK_QUOTIENT_CHECKS; ++l_check) {
+        for (int l_check = 0; l_check < CHIPMUNK_STARK_QUOTIENT_CHECKS; ++l_check) {
             int32_t l_test_point = -1;
             for (int l_attempt = 0; l_attempt < 100; ++l_attempt) {
                 uint8_t l_sample_buf[DAP_SHAKE256_RATE];
@@ -1459,7 +1459,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
                 if (l_test_point >= 0) break;
             }
             if (l_test_point < 0) {
-                log_it(L_ERROR, "SNARK verify: test point sampling failed after 100 attempts");
+                log_it(L_ERROR, "STARK verify: test point sampling failed after 100 attempts");
                 return 0;
             }
             if (l_test_point == 0) l_test_point = 1;
@@ -1477,7 +1477,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
             int64_t l_rhs = (int64_t)s_mod_q(l_q_eval * s_mod_q((int64_t)l_test_point - l_alpha_scalar, l_mod_q), l_mod_q);
 
             if (s_mod_q(l_z_eval, l_mod_q) != s_mod_q(l_rhs, l_mod_q)) {
-                log_it(L_ERROR, "SNARK verify: quotient relation FAILED at check %d", l_check);
+                log_it(L_ERROR, "STARK verify: quotient relation FAILED at check %d", l_check);
                 return 0;
             }
         }
@@ -1516,7 +1516,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
          * this proves exactly one nonzero entry. */
         int32_t l_inv_n = chipmunk_field_inv_q((int32_t)l_d, l_mod_q);
         if (a_proof->b_at_one != l_inv_n) {
-            log_it(L_ERROR, "SNARK verify: b_at_one=%d (expected 1/N=%d)",
+            log_it(L_ERROR, "STARK verify: b_at_one=%d (expected 1/N=%d)",
                    a_proof->b_at_one, l_inv_n);
             return 0;
         }
@@ -1559,7 +1559,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
             int32_t l_rhs = s_fqmul_q(l_zh, l_q1_val, l_mod_q);
 
             if (l_lhs != l_rhs) {
-                log_it(L_ERROR, "SNARK verify: constraint identity failed at "
+                log_it(L_ERROR, "STARK verify: constraint identity failed at "
                        "query %u (LHS=%d, RHS=%d, b=%d, q1=%d, Z_H=%d)",
                        qi, l_lhs, l_rhs, l_b_val, l_q1_val, l_zh);
                 return 0;
@@ -1567,14 +1567,14 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (b+q1 FRI constraint + "
+    debug_if(1, L_DEBUG, "STARK verify: all checks passed (b+q1 FRI constraint + "
              "ext alpha + %d quotient checks + FRI q, >> 128-bit soundness)",
-             CHIPMUNK_SNARK_QUOTIENT_CHECKS);
-    #undef CHIPMUNK_SNARK_QUOTIENT_CHECKS
+             CHIPMUNK_STARK_QUOTIENT_CHECKS);
+    #undef CHIPMUNK_STARK_QUOTIENT_CHECKS
     return 1;
 }
 
-void chipmunk_snark_proof_free(chipmunk_snark_proof_t *a_proof)
+void chipmunk_stark_proof_free(chipmunk_stark_proof_t *a_proof)
 {
     if (!a_proof) return;
     /* Clamp wipe size to prevent read-beyond-bounds if size is corrupted. */
@@ -1585,9 +1585,9 @@ void chipmunk_snark_proof_free(chipmunk_snark_proof_t *a_proof)
     memset(a_proof, 0, sizeof(*a_proof));
 }
 
-void chipmunk_snark_ctx_free(chipmunk_snark_ctx_t *a_ctx)
+void chipmunk_stark_ctx_free(chipmunk_stark_ctx_t *a_ctx)
 {
     if (!a_ctx) return;
-    chipmunk_snark_params_free(&a_ctx->sp);
+    chipmunk_stark_params_free(&a_ctx->sp);
     dap_memwipe(a_ctx, sizeof(*a_ctx));
 }

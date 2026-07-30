@@ -1,7 +1,7 @@
 /*
  * bench_anon_crypto.c — Performance benchmarks for anonymous crypto primitives.
  *
- * Measures: SNARK prove/verify, Pedersen commit/verify, range proof,
+ * Measures: STARK prove/verify, Pedersen commit/verify, range proof,
  * key image generation, HOTS sign/verify, aggregation.
  */
 
@@ -12,7 +12,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "sig/chipmunk/chipmunk_snark.h"
+#include "sig/chipmunk/chipmunk_stark.h"
 #include "sig/chipmunk/chipmunk_pedersen.h"
 #include "sig/chipmunk/chipmunk_range_proof.h"
 #include "sig/chipmunk/chipmunk_hots.h"
@@ -28,15 +28,15 @@ static double time_ms(struct timespec *a_start, struct timespec *a_end)
            (double)(a_end->tv_nsec - a_start->tv_nsec) / 1000000.0;
 }
 
-static void bench_snark_prove_verify(void)
+static void bench_stark_prove_verify(void)
 {
-    chipmunk_snark_ctx_t l_ctx;
-    chipmunk_snark_init(&l_ctx);
+    chipmunk_stark_ctx_t l_ctx;
+    chipmunk_stark_init(&l_ctx);
 
     chipmunk_lrs_public_key_t l_ring[8];
     memset(l_ring, 0, sizeof(l_ring));
 
-    chipmunk_snark_statement_t l_stmt;
+    chipmunk_stark_statement_t l_stmt;
     memset(&l_stmt, 0, sizeof(l_stmt));
     l_stmt.ring = l_ring;
     l_stmt.ring_size = 8;
@@ -44,7 +44,7 @@ static void bench_snark_prove_verify(void)
     l_stmt.message = l_msg;
     l_stmt.message_size = 5;
 
-    chipmunk_snark_witness_t l_witness;
+    chipmunk_stark_witness_t l_witness;
     memset(&l_witness, 0, sizeof(l_witness));
     l_witness.signer_index = 3;
     l_witness.indicator.coeffs[3] = 1;
@@ -53,25 +53,25 @@ static void bench_snark_prove_verify(void)
     double l_prove_total = 0, l_verify_total = 0;
 
     for (int i = 0; i < BENCH_ITERS; ++i) {
-        chipmunk_snark_proof_t l_proof;
+        chipmunk_stark_proof_t l_proof;
         memset(&l_proof, 0, sizeof(l_proof));
 
         clock_gettime(CLOCK_MONOTONIC, &l_start);
-        chipmunk_snark_prove(&l_proof, &l_ctx, &l_stmt, &l_witness);
+        chipmunk_stark_prove(&l_proof, &l_ctx, &l_stmt, &l_witness);
         clock_gettime(CLOCK_MONOTONIC, &l_end);
         l_prove_total += time_ms(&l_start, &l_end);
 
         clock_gettime(CLOCK_MONOTONIC, &l_start);
-        chipmunk_snark_verify(&l_proof, &l_ctx, &l_stmt);
+        chipmunk_stark_verify(&l_proof, &l_ctx, &l_stmt);
         clock_gettime(CLOCK_MONOTONIC, &l_end);
         l_verify_total += time_ms(&l_start, &l_end);
 
-        chipmunk_snark_proof_free(&l_proof);
+        chipmunk_stark_proof_free(&l_proof);
     }
 
-    log_it(L_INFO, "SNARK prove:   %.2f ms/iter (N=8)", l_prove_total / BENCH_ITERS);
-    log_it(L_INFO, "SNARK verify:  %.2f ms/iter (N=8)", l_verify_total / BENCH_ITERS);
-    chipmunk_snark_ctx_free(&l_ctx);
+    log_it(L_INFO, "STARK prove:   %.2f ms/iter (N=8)", l_prove_total / BENCH_ITERS);
+    log_it(L_INFO, "STARK verify:  %.2f ms/iter (N=8)", l_verify_total / BENCH_ITERS);
+    chipmunk_stark_ctx_free(&l_ctx);
 }
 
 static void bench_pedersen_commit(void)
@@ -227,7 +227,7 @@ int main(void)
 
     log_it(L_INFO, "=== Anonymous Crypto Benchmarks (%d iterations) ===", BENCH_ITERS);
 
-    bench_snark_prove_verify();
+    bench_stark_prove_verify();
     bench_pedersen_commit();
     bench_range_proof();
     bench_hots_sign_verify();

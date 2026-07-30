@@ -291,7 +291,7 @@ typedef struct chipmunk_fri_verify_result {
  * and the given alphas, verifies the grinding PoW, derives query indices,
  * then verifies all 8 query openings (Merkle auth paths + folding relations).
  *
- * In the full SNARK pipeline (Phase 9.11), alphas are derived from the
+ * In the full STARK pipeline (Phase 9.11), alphas are derived from the
  * DEEP transcript before FRI commit. Here they are provided explicitly.
  *
  * @param proof        Complete FRI proof (commit + queries).

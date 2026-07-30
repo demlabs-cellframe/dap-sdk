@@ -9,7 +9,7 @@
  *   5. Extract key images
  *   6. Detect double-spend (same key image twice)
  *   7. Algorithm adapter selection
- *   8. SNARK prove/verify round-trip with ring
+ *   8. STARK prove/verify round-trip with ring
  *   9. Pedersen commit for confidential amounts
  *  10. Range proof for amount validation
  *  11. Mixnet batch shuffle
@@ -27,7 +27,7 @@
 
 /* Crypto primitives */
 #include "sig/chipmunk/chipmunk_ring.h"
-#include "sig/chipmunk/chipmunk_snark.h"
+#include "sig/chipmunk/chipmunk_stark.h"
 #include "sig/chipmunk/chipmunk_pedersen.h"
 #include "sig/chipmunk/chipmunk_poly.h"
 #include "sig/chipmunk/chipmunk_range_proof.h"
@@ -154,74 +154,74 @@ static void test_ring_keygen_sign_verify(void)
 }
 
 /* ================================================================
- * Test 2: SNARK prove/verify with ring
+ * Test 2: STARK prove/verify with ring
  * ================================================================ */
-static void test_snark_prove_verify(void)
+static void test_stark_prove_verify(void)
 {
-    chipmunk_snark_ctx_t l_ctx;
-    int l_rc = chipmunk_snark_init(&l_ctx);
-    dap_assert(l_rc == 0, "SNARK init OK");
+    chipmunk_stark_ctx_t l_ctx;
+    int l_rc = chipmunk_stark_init(&l_ctx);
+    dap_assert(l_rc == 0, "STARK init OK");
 
     /* Build ring of 4 dummy keys */
     chipmunk_lrs_public_key_t l_ring[4];
     memset(l_ring, 0, sizeof(l_ring));
 
-    chipmunk_snark_statement_t l_stmt;
+    chipmunk_stark_statement_t l_stmt;
     memset(&l_stmt, 0, sizeof(l_stmt));
     l_stmt.ring = l_ring;
     l_stmt.ring_size = 4;
-    const uint8_t l_msg[] = "snark-integration-test";
+    const uint8_t l_msg[] = "stark-integration-test";
     l_stmt.message = l_msg;
     l_stmt.message_size = sizeof(l_msg);
 
     /* Witness: signer at index 2 */
-    chipmunk_snark_witness_t l_witness;
+    chipmunk_stark_witness_t l_witness;
     memset(&l_witness, 0, sizeof(l_witness));
     l_witness.signer_index = 2;
     l_witness.indicator.coeffs[2] = 1;
 
     /* Prove */
-    chipmunk_snark_proof_t l_proof;
+    chipmunk_stark_proof_t l_proof;
     memset(&l_proof, 0, sizeof(l_proof));
-    l_rc = chipmunk_snark_prove(&l_proof, &l_ctx, &l_stmt, &l_witness);
-    dap_assert(l_rc == 0, "SNARK prove OK");
+    l_rc = chipmunk_stark_prove(&l_proof, &l_ctx, &l_stmt, &l_witness);
+    dap_assert(l_rc == 0, "STARK prove OK");
 
     /* Verify */
-    l_rc = chipmunk_snark_verify(&l_proof, &l_ctx, &l_stmt);
-    dap_assert(l_rc == 1, "SNARK verify OK");
+    l_rc = chipmunk_stark_verify(&l_proof, &l_ctx, &l_stmt);
+    dap_assert(l_rc == 1, "STARK verify OK");
 
     /* Wrong message → fail */
-    chipmunk_snark_statement_t l_bad_stmt = l_stmt;
+    chipmunk_stark_statement_t l_bad_stmt = l_stmt;
     const uint8_t l_bad[] = "wrong";
     l_bad_stmt.message = l_bad;
     l_bad_stmt.message_size = 5;
-    l_rc = chipmunk_snark_verify(&l_proof, &l_ctx, &l_bad_stmt);
-    dap_assert(l_rc != 1, "wrong message → SNARK verify fails");
+    l_rc = chipmunk_stark_verify(&l_proof, &l_ctx, &l_bad_stmt);
+    dap_assert(l_rc != 1, "wrong message → STARK verify fails");
 
     /* Wrong ring size → fail */
-    chipmunk_snark_statement_t l_bad_ring_stmt = l_stmt;
+    chipmunk_stark_statement_t l_bad_ring_stmt = l_stmt;
     l_bad_ring_stmt.ring_size = 2; /* Original was 4 */
-    l_rc = chipmunk_snark_verify(&l_proof, &l_ctx, &l_bad_ring_stmt);
-    dap_assert(l_rc != 1, "wrong ring size → SNARK verify fails");
+    l_rc = chipmunk_stark_verify(&l_proof, &l_ctx, &l_bad_ring_stmt);
+    dap_assert(l_rc != 1, "wrong ring size → STARK verify fails");
 
     /* Wrong signer index in witness → verify should fail
      * (proof was created for index 2, but statement context changed) */
-    chipmunk_snark_witness_t l_bad_witness = l_witness;
+    chipmunk_stark_witness_t l_bad_witness = l_witness;
     l_bad_witness.signer_index = 0; /* Different from original */
-    chipmunk_snark_proof_t l_bad_proof;
+    chipmunk_stark_proof_t l_bad_proof;
     memset(&l_bad_proof, 0, sizeof(l_bad_proof));
-    l_rc = chipmunk_snark_prove(&l_bad_proof, &l_ctx, &l_stmt, &l_bad_witness);
+    l_rc = chipmunk_stark_prove(&l_bad_proof, &l_ctx, &l_stmt, &l_bad_witness);
     if (l_rc == 0) {
         /* If prove succeeded with different index, verify with original stmt should fail */
-        l_rc = chipmunk_snark_verify(&l_bad_proof, &l_ctx, &l_stmt);
-        /* This may or may not fail depending on SNARK construction */
+        l_rc = chipmunk_stark_verify(&l_bad_proof, &l_ctx, &l_stmt);
+        /* This may or may not fail depending on STARK construction */
         log_it(L_INFO, "Different signer index verify: %d", l_rc);
     }
-    chipmunk_snark_proof_free(&l_bad_proof);
+    chipmunk_stark_proof_free(&l_bad_proof);
 
-    chipmunk_snark_proof_free(&l_proof);
-    chipmunk_snark_ctx_free(&l_ctx);
-    log_it(L_INFO, "SNARK test cleanup done");
+    chipmunk_stark_proof_free(&l_proof);
+    chipmunk_stark_ctx_free(&l_ctx);
+    log_it(L_INFO, "STARK test cleanup done");
 }
 
 /* ================================================================
@@ -571,7 +571,7 @@ int main(void)
     dap_common_init("test_anon_tx_e2e", NULL);
 
     test_ring_keygen_sign_verify();
-    /* Pedersen BEFORE SNARK to check order dependency */
+    /* Pedersen BEFORE STARK to check order dependency */
     {
         chipmunk_pedersen_params_t *l_params = DAP_NEW_Z(chipmunk_pedersen_params_t);
         dap_assert(l_params != NULL, "Pedersen params alloc OK");
@@ -586,7 +586,7 @@ int main(void)
     }
     test_pedersen_range_proof_pipeline();  /* Phase 2: range proof with digit encoding */
     test_pedersen_conservation();          /* Phase 2: homomorphic conservation check */
-    test_snark_prove_verify();
+    test_stark_prove_verify();
     test_mixnet_batch_integrity();
     test_key_image_linkability();
     test_anon_tx_item_construction();

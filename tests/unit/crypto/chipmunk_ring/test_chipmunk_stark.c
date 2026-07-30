@@ -1,8 +1,8 @@
 /*
- * test_chipmunk_snark.c — SNARK (FRI-PCS integration) tests.
+ * test_chipmunk_stark.c — STARK (FRI-PCS integration) tests.
  *
- * Verifies that the SNARK prover/verifier correctly wires the FRI
- * polynomial commitment scheme into the SNARK proof pipeline.
+ * Verifies that the STARK prover/verifier correctly wires the FRI
+ * polynomial commitment scheme into the STARK proof pipeline.
  *
  * All proofs include:
  *   - FRI proof of q(X) with Fiat-Shamir transcript binding
@@ -28,21 +28,21 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "sig/chipmunk/chipmunk_snark.h"
+#include "sig/chipmunk/chipmunk_stark.h"
 #include "sig/chipmunk/chipmunk_lrs.h"
 #include "sig/chipmunk/chipmunk_fri.h"
 #include "sig/chipmunk/chipmunk_fri_transcript.h"
 
-#define LOG_TAG "test_chipmunk_snark"
+#define LOG_TAG "test_chipmunk_stark"
 
-/* Helper: set up a basic 2-key ring SNARK context + statement + witness. */
-static void s_setup_basic(chipmunk_snark_ctx_t *ctx,
-                          chipmunk_snark_statement_t *stmt,
-                          chipmunk_snark_witness_t *witness,
+/* Helper: set up a basic 2-key ring STARK context + statement + witness. */
+static void s_setup_basic(chipmunk_stark_ctx_t *ctx,
+                          chipmunk_stark_statement_t *stmt,
+                          chipmunk_stark_witness_t *witness,
                           chipmunk_lrs_public_key_t ring[2])
 {
     memset(ring, 0, 2 * sizeof(chipmunk_lrs_public_key_t));
-    chipmunk_snark_init(ctx);
+    chipmunk_stark_init(ctx);
 
     memset(stmt, 0, sizeof(*stmt));
     stmt->ring = ring;
@@ -60,46 +60,46 @@ static void s_setup_basic(chipmunk_snark_ctx_t *ctx,
 }
 
 /* Helper: prove + verify round-trip, return verify result. */
-static int s_prove_verify(chipmunk_snark_proof_t *proof,
-                          chipmunk_snark_ctx_t *ctx,
-                          chipmunk_snark_statement_t *stmt,
-                          chipmunk_snark_witness_t *witness)
+static int s_prove_verify(chipmunk_stark_proof_t *proof,
+                          chipmunk_stark_ctx_t *ctx,
+                          chipmunk_stark_statement_t *stmt,
+                          chipmunk_stark_witness_t *witness)
 {
     memset(proof, 0, sizeof(*proof));
-    int rc = chipmunk_snark_prove(proof, ctx, stmt, witness);
+    int rc = chipmunk_stark_prove(proof, ctx, stmt, witness);
     if (rc != 0) return -1;
-    return chipmunk_snark_verify(proof, ctx, stmt);
+    return chipmunk_stark_verify(proof, ctx, stmt);
 }
 
 /* Test 1: Prove/verify round-trip */
 static void test_prove_verify(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    chipmunk_snark_statement_t stmt;
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_ctx_t ctx;
+    chipmunk_stark_statement_t stmt;
+    chipmunk_stark_witness_t witness;
     chipmunk_lrs_public_key_t ring[2];
     s_setup_basic(&ctx, &stmt, &witness, ring);
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     int rc = s_prove_verify(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 1, "prove/verify round-trip");
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 /* Test 2: FRI fields populated */
 static void test_proof_fields(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    chipmunk_snark_statement_t stmt;
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_ctx_t ctx;
+    chipmunk_stark_statement_t stmt;
+    chipmunk_stark_witness_t witness;
     chipmunk_lrs_public_key_t ring[2];
     s_setup_basic(&ctx, &stmt, &witness, ring);
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     memset(&proof, 0, sizeof(proof));
-    int rc = chipmunk_snark_prove(&proof, &ctx, &stmt, &witness);
+    int rc = chipmunk_stark_prove(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 0, "prove OK");
 
     /* Opening proof must still be populated (bridge phase) */
@@ -113,22 +113,22 @@ static void test_proof_fields(void)
     }
     dap_assert(nonzero, "transcript_hash nonzero");
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 /* Test 3: FRI caps nonzero */
 static void test_fri_nonzero(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    chipmunk_snark_statement_t stmt;
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_ctx_t ctx;
+    chipmunk_stark_statement_t stmt;
+    chipmunk_stark_witness_t witness;
     chipmunk_lrs_public_key_t ring[2];
     s_setup_basic(&ctx, &stmt, &witness, ring);
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     memset(&proof, 0, sizeof(proof));
-    int rc = chipmunk_snark_prove(&proof, &ctx, &stmt, &witness);
+    int rc = chipmunk_stark_prove(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 0, "prove OK");
 
     /* FRI caps should have at least one nonzero value in round 0 */
@@ -150,138 +150,138 @@ static void test_fri_nonzero(void)
                    "query index < 2048");
     }
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 /* Test 4: Wrong message rejection */
 static void test_wrong_message(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    chipmunk_snark_statement_t stmt;
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_ctx_t ctx;
+    chipmunk_stark_statement_t stmt;
+    chipmunk_stark_witness_t witness;
     chipmunk_lrs_public_key_t ring[2];
     s_setup_basic(&ctx, &stmt, &witness, ring);
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     memset(&proof, 0, sizeof(proof));
-    int rc = chipmunk_snark_prove(&proof, &ctx, &stmt, &witness);
+    int rc = chipmunk_stark_prove(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 0, "prove OK");
 
     /* Verify with different message */
-    chipmunk_snark_statement_t stmt_bad = stmt;
+    chipmunk_stark_statement_t stmt_bad = stmt;
     const uint8_t bad_msg[] = "different-message";
     stmt_bad.message = bad_msg;
     stmt_bad.message_size = sizeof(bad_msg);
 
-    rc = chipmunk_snark_verify(&proof, &ctx, &stmt_bad);
+    rc = chipmunk_stark_verify(&proof, &ctx, &stmt_bad);
     dap_assert(rc != 1, "verify rejects different message");
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 /* Test 5: Tampered FRI cap → FRI verify fails */
 static void test_tampered_fri_cap(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    chipmunk_snark_statement_t stmt;
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_ctx_t ctx;
+    chipmunk_stark_statement_t stmt;
+    chipmunk_stark_witness_t witness;
     chipmunk_lrs_public_key_t ring[2];
     s_setup_basic(&ctx, &stmt, &witness, ring);
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     memset(&proof, 0, sizeof(proof));
-    int rc = chipmunk_snark_prove(&proof, &ctx, &stmt, &witness);
+    int rc = chipmunk_stark_prove(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 0, "prove OK");
 
     /* Tamper with a cap value */
     proof.fri_proof.commit.caps[0].nodes[0] ^= 1;
 
-    rc = chipmunk_snark_verify(&proof, &ctx, &stmt);
+    rc = chipmunk_stark_verify(&proof, &ctx, &stmt);
     dap_assert(rc != 1, "verify rejects tampered FRI cap");
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 /* Test 6: Tampered q_commit → FRI verify fails (FRI proof was made for original q) */
 static void test_tampered_q_commit(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    chipmunk_snark_statement_t stmt;
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_ctx_t ctx;
+    chipmunk_stark_statement_t stmt;
+    chipmunk_stark_witness_t witness;
     chipmunk_lrs_public_key_t ring[2];
     s_setup_basic(&ctx, &stmt, &witness, ring);
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     memset(&proof, 0, sizeof(proof));
-    int rc = chipmunk_snark_prove(&proof, &ctx, &stmt, &witness);
+    int rc = chipmunk_stark_prove(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 0, "prove OK");
 
     /* Tamper with q_commit — FRI alphas derived from different transcript */
     proof.q_commit.hash[0] ^= 0x01;
 
-    rc = chipmunk_snark_verify(&proof, &ctx, &stmt);
+    rc = chipmunk_stark_verify(&proof, &ctx, &stmt);
     dap_assert(rc != 1, "verify rejects tampered q_commit");
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 /* Test 7: Tampered opening proof → algebraic check fails */
 static void test_tampered_opening(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    chipmunk_snark_statement_t stmt;
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_ctx_t ctx;
+    chipmunk_stark_statement_t stmt;
+    chipmunk_stark_witness_t witness;
     chipmunk_lrs_public_key_t ring[2];
     s_setup_basic(&ctx, &stmt, &witness, ring);
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     memset(&proof, 0, sizeof(proof));
-    int rc = chipmunk_snark_prove(&proof, &ctx, &stmt, &witness);
+    int rc = chipmunk_stark_prove(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 0, "prove OK");
 
     /* Tamper with opening proof — z_commit mismatch */
     proof.opening_proof[0] ^= 0x01;
 
-    rc = chipmunk_snark_verify(&proof, &ctx, &stmt);
+    rc = chipmunk_stark_verify(&proof, &ctx, &stmt);
     dap_assert(rc != 1, "verify rejects tampered opening proof");
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 /* Test 8: Tampered leaf value → FRI verify fails */
 static void test_tampered_leaf(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    chipmunk_snark_statement_t stmt;
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_ctx_t ctx;
+    chipmunk_stark_statement_t stmt;
+    chipmunk_stark_witness_t witness;
     chipmunk_lrs_public_key_t ring[2];
     s_setup_basic(&ctx, &stmt, &witness, ring);
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     memset(&proof, 0, sizeof(proof));
-    int rc = chipmunk_snark_prove(&proof, &ctx, &stmt, &witness);
+    int rc = chipmunk_stark_prove(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 0, "prove OK");
 
     /* Tamper with a leaf value at round 0 in query 0 */
     proof.fri_proof.queries[0].leaf_values[0] ^= 1;
 
-    rc = chipmunk_snark_verify(&proof, &ctx, &stmt);
+    rc = chipmunk_stark_verify(&proof, &ctx, &stmt);
     dap_assert(rc != 1, "verify rejects tampered FRI leaf value");
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 /* Test 9: Ring of 4, signer at index 2 */
 static void test_ring4(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    int rc = chipmunk_snark_init(&ctx);
+    chipmunk_stark_ctx_t ctx;
+    int rc = chipmunk_stark_init(&ctx);
     dap_assert(rc == 0, "init OK");
 
     chipmunk_lrs_public_key_t ring[4];
@@ -291,7 +291,7 @@ static void test_ring4(void)
     memset(&ring[2], 0xC0, sizeof(chipmunk_lrs_public_key_t));
     memset(&ring[3], 0xD0, sizeof(chipmunk_lrs_public_key_t));
 
-    chipmunk_snark_statement_t stmt;
+    chipmunk_stark_statement_t stmt;
     memset(&stmt, 0, sizeof(stmt));
     stmt.ring = ring;
     stmt.ring_size = 4;
@@ -299,35 +299,35 @@ static void test_ring4(void)
     stmt.message = msg;
     stmt.message_size = sizeof(msg);
 
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_witness_t witness;
     memset(&witness, 0, sizeof(witness));
     witness.signer_index = 2;
     witness.indicator.coeffs[2] = 1;
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     memset(&proof, 0, sizeof(proof));
-    rc = chipmunk_snark_prove(&proof, &ctx, &stmt, &witness);
+    rc = chipmunk_stark_prove(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 0, "prove OK (ring of 4, signer at 2)");
 
-    rc = chipmunk_snark_verify(&proof, &ctx, &stmt);
+    rc = chipmunk_stark_verify(&proof, &ctx, &stmt);
     dap_assert(rc == 1, "verify OK (ring of 4, signer at 2)");
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 /* Test 10: Proof size check */
 static void test_proof_size(void)
 {
-    chipmunk_snark_ctx_t ctx;
-    chipmunk_snark_statement_t stmt;
-    chipmunk_snark_witness_t witness;
+    chipmunk_stark_ctx_t ctx;
+    chipmunk_stark_statement_t stmt;
+    chipmunk_stark_witness_t witness;
     chipmunk_lrs_public_key_t ring[2];
     s_setup_basic(&ctx, &stmt, &witness, ring);
 
-    chipmunk_snark_proof_t proof;
+    chipmunk_stark_proof_t proof;
     memset(&proof, 0, sizeof(proof));
-    int rc = chipmunk_snark_prove(&proof, &ctx, &stmt, &witness);
+    int rc = chipmunk_stark_prove(&proof, &ctx, &stmt, &witness);
     dap_assert(rc == 0, "prove OK");
 
     /* opening_proof must be full size (z+q, 4096 bytes) */
@@ -344,14 +344,14 @@ static void test_proof_size(void)
     dap_assert(proof.fri_grinding_nonce < (1u << 24),
                "grinding nonce < 2^24");
 
-    chipmunk_snark_proof_free(&proof);
-    chipmunk_snark_ctx_free(&ctx);
+    chipmunk_stark_proof_free(&proof);
+    chipmunk_stark_ctx_free(&ctx);
 }
 
 int main(void)
 {
-    dap_set_appname("test_chipmunk_snark");
-    dap_common_init("test_chipmunk_snark", NULL);
+    dap_set_appname("test_chipmunk_stark");
+    dap_common_init("test_chipmunk_stark", NULL);
 
     test_prove_verify();        /* 1 */
     test_proof_fields();        /* 2 */
@@ -364,7 +364,7 @@ int main(void)
     test_ring4();               /* 9 */
     test_proof_size();          /* 10 */
 
-    log_it(L_INFO, "=== ALL Chipmunk SNARK (FRI-PCS) tests PASSED ===");
+    log_it(L_INFO, "=== ALL Chipmunk STARK (FRI-PCS) tests PASSED ===");
     dap_common_deinit();
     return 0;
 }

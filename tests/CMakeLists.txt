@@ -384,12 +384,12 @@ endif()
 # New anonymous crypto tests (task_4fcb8959)
 # ============================================================
 
-# SNARK: lattice-based Ligero-style proof
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_snark.c)
-    add_dap_test(test_unit_chipmunk_snark
-                 unit/crypto/chipmunk_ring/test_chipmunk_snark.c)
-    register_dap_test(test_unit_chipmunk_snark
-                      "unit;crypto;snark;lattice;fri")
+# STARK: lattice-based Ligero-style proof
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_stark.c)
+    add_dap_test(test_unit_chipmunk_stark
+                 unit/crypto/chipmunk_ring/test_chipmunk_stark.c)
+    register_dap_test(test_unit_chipmunk_stark
+                      "unit;crypto;stark;lattice;fri")
 endif()
 
 # Pedersen: lattice-based commitments

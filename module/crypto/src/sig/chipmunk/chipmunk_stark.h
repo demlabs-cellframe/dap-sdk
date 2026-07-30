@@ -1,5 +1,5 @@
 /*
- * chipmunk_snark.h — Lattice-based SNARK (Ligero-style) for ring membership proofs.
+ * chipmunk_stark.h — Lattice-based STARK (Ligero-style) for ring membership proofs.
  *
  * Post-quantum succinct non-interactive argument of knowledge based on:
  * - Hash-based polynomial commitments over R_q^{(e)} (degree-6 extension)
@@ -11,7 +11,7 @@
  * All operations over R_q^{(e)} = R_q[Y]/(Phi_9(Y)) where Phi_9 = Y^6+Y^3+1.
  * R_q = Z_q[X]/(X^d+1), q prime with q mod 9 ∈ {2,5}.
  *
- * Phase 9.13: Universal parameterization via chipmunk_snark_params_t.
+ * Phase 9.13: Universal parameterization via chipmunk_stark_params_t.
  * Supports arbitrary (d, q) with NTT-compatible q. Predefined sets:
  *   LRS:  d=512, q=3168257   (129-bit extension security)
  *   Ring: d=128, q=4206593   (132-bit extension security)
@@ -33,6 +33,8 @@
 #include "chipmunk_lrs.h"
 #include "chipmunk_fq6_ext.h"
 #include "chipmunk_mring_params.h"
+#include "chipmunk_pedersen.h"
+#include "chipmunk_bdlop.h"
 #include "lotrs_params.h"
 #include "chipmunk_fri.h"
 #include "chipmunk_fri_transcript.h"
@@ -46,10 +48,10 @@ extern "C" {
  * ---------------------------------------------------------------------- */
 
 /* Maximum polynomial dimension (struct-embedded arrays sized to this). */
-#define CHIPMUNK_SNARK_MAX_D        512
+#define CHIPMUNK_STARK_MAX_D        512
 
 /* Polynomial commitment */
-#define CHIPMUNK_SNARK_COMMIT_BYTES 32      /* SHA3-256 hash of coefficients */
+#define CHIPMUNK_STARK_COMMIT_BYTES 32      /* SHA3-256 hash of coefficients */
 
 /* Number of random F_q points for quotient relation verification.
  * Each check: z(beta) == q(beta) * (beta - alpha_scalar) where alpha_scalar
@@ -57,42 +59,42 @@ extern "C" {
  * Soundness per check: ~2*Q^{-1} ~ 2^{-21.6} (two evaluation points).
  * With 11 checks: 11 * 21.6 ~ 238 bits >> 128 bits.
  * The extension alpha provides the primary ~129-bit soundness bound. */
-#define CHIPMUNK_SNARK_QUOTIENT_CHECKS  11
+#define CHIPMUNK_STARK_QUOTIENT_CHECKS  11
 
 /* Opening proof: z and q polynomials sent in full (bridge phase).
- * Each polynomial = CHIPMUNK_SNARK_MAX_D * sizeof(int32_t) = 2048 bytes.
+ * Each polynomial = CHIPMUNK_STARK_MAX_D * sizeof(int32_t) = 2048 bytes.
  * Total opening: 4096 bytes. Phase 9.12+ will replace with DEEP composition. */
-#define CHIPMUNK_SNARK_OPENING_POLYS    2   /* z + q */
-#define CHIPMUNK_SNARK_OPENING_BYTES    \
-    (CHIPMUNK_SNARK_OPENING_POLYS * CHIPMUNK_SNARK_MAX_D * (int)sizeof(int32_t))
+#define CHIPMUNK_STARK_OPENING_POLYS    2   /* z + q */
+#define CHIPMUNK_STARK_OPENING_BYTES    \
+    (CHIPMUNK_STARK_OPENING_POLYS * CHIPMUNK_STARK_MAX_D * (int)sizeof(int32_t))
 
-/* FRI domain separator for SNARK integration (exactly 16 bytes, no NUL). */
-#define CHIPMUNK_SNARK_FRI_DOMAIN    "CHIPMUNK-SNARK-F"
+/* FRI domain separator for STARK integration (exactly 16 bytes, no NUL). */
+#define CHIPMUNK_STARK_FRI_DOMAIN    "CHIPMUNK-STARK-F"
 
 /* Maximum proof size. */
-#define CHIPMUNK_SNARK_PROOF_MAX    (sizeof(chipmunk_snark_proof_t))
+#define CHIPMUNK_STARK_PROOF_MAX    (sizeof(chipmunk_stark_proof_t))
 
 /* -------------------------------------------------------------------------
- * SNARK Parameter Set (Phase 9.13 — Universal SNARK)
+ * STARK Parameter Set (Phase 9.13 — Universal STARK)
  *
  * Encapsulates all runtime parameters for a specific (d, q) pair.
- * Each SNARK context owns one params instance. The params struct
+ * Each STARK context owns one params instance. The params struct
  * contains derived constants and per-context NTT twiddle tables.
  *
- * Predefined sets: chipmunk_snark_params_lrs(), _ring(), _test().
- * Custom sets: chipmunk_snark_params_init(&params, d, q).
+ * Predefined sets: chipmunk_stark_params_lrs(), _ring(), _test().
+ * Custom sets: chipmunk_stark_params_init(&params, d, q).
  * ---------------------------------------------------------------------- */
 
 /* FRI security parameters (same for all param sets). */
-#define CHIPMUNK_SNARK_FRI_FINAL_SIZE   16u
-#define CHIPMUNK_SNARK_FRI_NUM_QUERIES  8u
-#define CHIPMUNK_SNARK_FRI_GRINDING     16u
-#define CHIPMUNK_SNARK_FRI_CAP_SIZE     16u
+#define CHIPMUNK_STARK_FRI_FINAL_SIZE   16u
+#define CHIPMUNK_STARK_FRI_NUM_QUERIES  8u
+#define CHIPMUNK_STARK_FRI_GRINDING     16u
+#define CHIPMUNK_STARK_FRI_CAP_SIZE     16u
 
 /* Extension degree for Phi_9 = Y^6+Y^3+1. */
-#define CHIPMUNK_SNARK_EXT_DEG          6
+#define CHIPMUNK_STARK_EXT_DEG          6
 
-typedef struct chipmunk_snark_params {
+typedef struct chipmunk_stark_params {
     /* --- Fundamental parameters --- */
     uint32_t d;             /* Polynomial ring dimension R_q = Z_q[X]/(X^d+1) */
     uint64_t q;             /* Modulus (must be prime, q mod 9 ∈ {2,5}) */
@@ -120,10 +122,10 @@ typedef struct chipmunk_snark_params {
 
     /* --- Parameter identification --- */
     uint32_t param_id;      /* SHA3-256(d||q)[0..3] for context matching */
-} chipmunk_snark_params_t;
+} chipmunk_stark_params_t;
 
 /**
- * Initialize SNARK params for a given (d, q).
+ * Initialize STARK params for a given (d, q).
  * Computes omega, inv_2, inv_d, coset_g, twiddle tables.
  * Validates: q prime, q mod 9 ∈ {2,5}, 2-adicity(q-1) ≥ log2(4d)+1.
  * @param params Output params.
@@ -131,69 +133,69 @@ typedef struct chipmunk_snark_params {
  * @param q      Modulus.
  * @return 0 on success, negative on error.
  */
-int chipmunk_snark_params_init(chipmunk_snark_params_t *params,
+int chipmunk_stark_params_init(chipmunk_stark_params_t *params,
                                 uint32_t d, uint64_t q);
 
 /**
  * Free heap resources in params (twiddle tables).
  * @param params Params to free.
  */
-void chipmunk_snark_params_free(chipmunk_snark_params_t *params);
+void chipmunk_stark_params_free(chipmunk_stark_params_t *params);
 
 /**
  * Predefined LRS param set: d=512, q=3168257.
  * Backward compatible with Phase 9.1-9.12.
  */
-const chipmunk_snark_params_t *chipmunk_snark_params_lrs(void);
+const chipmunk_stark_params_t *chipmunk_stark_params_lrs(void);
 
 /**
  * Predefined Ring param set: d=128, q=4206593.
  * For chipmunk_ring integration (Phase 9.13g).
  */
-const chipmunk_snark_params_t *chipmunk_snark_params_ring(void);
+const chipmunk_stark_params_t *chipmunk_stark_params_ring(void);
 
 /**
  * Predefined Test param set: d=32, q=4206593.
  * For fast unit tests.
  */
-const chipmunk_snark_params_t *chipmunk_snark_params_test(void);
+const chipmunk_stark_params_t *chipmunk_stark_params_test(void);
 
 /* -------------------------------------------------------------------------
  * Types
  * ---------------------------------------------------------------------- */
 
 /* Polynomial commitment: SHA3-256 hash of serialized coefficients */
-typedef struct chipmunk_snark_commit {
-    uint8_t hash[CHIPMUNK_SNARK_COMMIT_BYTES];
-} chipmunk_snark_commit_t;
+typedef struct chipmunk_stark_commit {
+    uint8_t hash[CHIPMUNK_STARK_COMMIT_BYTES];
+} chipmunk_stark_commit_t;
 
 /* Ring membership statement */
-typedef struct chipmunk_snark_statement {
+typedef struct chipmunk_stark_statement {
     const chipmunk_lrs_public_key_t *ring;      /* Ring of public keys */
     size_t ring_size;                           /* N */
     const uint8_t *message;                     /* Message being signed */
     size_t message_size;
-    chipmunk_snark_commit_t ring_commit;        /* Commitment to ring hash */
-} chipmunk_snark_statement_t;
+    chipmunk_stark_commit_t ring_commit;        /* Commitment to ring hash */
+} chipmunk_stark_statement_t;
 
 /* Ring membership witness (private) */
-typedef struct chipmunk_snark_witness {
+typedef struct chipmunk_stark_witness {
     uint32_t signer_index;                      /* Which key signed */
     chipmunk_poly_t secret_key[CHIPMUNK_LRS_K * 2]; /* Secret witness (s0[GAMMA]+s1[GAMMA]) */
     chipmunk_poly_t indicator;                  /* b in {0,1}^N */
-} chipmunk_snark_witness_t;
+} chipmunk_stark_witness_t;
 
-/* Full SNARK proof. */
-typedef struct chipmunk_snark_proof {
+/* Full STARK proof. */
+typedef struct chipmunk_stark_proof {
     /* Commitment phase */
-    chipmunk_snark_commit_t w_commit;           /* Commitment to witness polynomial */
-    chipmunk_snark_commit_t z_commit;           /* Commitment to constraint polynomial */
-    chipmunk_snark_commit_t q_commit;           /* Commitment to quotient polynomial */
-    chipmunk_snark_commit_t r_commit;           /* Commitment to randomizer (F_q^6) */
+    chipmunk_stark_commit_t w_commit;           /* Commitment to witness polynomial */
+    chipmunk_stark_commit_t z_commit;           /* Commitment to constraint polynomial */
+    chipmunk_stark_commit_t q_commit;           /* Commitment to quotient polynomial */
+    chipmunk_stark_commit_t r_commit;           /* Commitment to randomizer (F_q^6) */
 
     /* Opening proof: serialized z and q polynomials for algebraic checks.
      * Retained alongside FRI proof for z(alpha)=0 and quotient verification. */
-    uint8_t opening_proof[CHIPMUNK_SNARK_OPENING_BYTES];
+    uint8_t opening_proof[CHIPMUNK_STARK_OPENING_BYTES];
     size_t opening_proof_size;
 
     /* FRI proof: commits to q(X) with Fiat-Shamir transcript binding. */
@@ -225,91 +227,106 @@ typedef struct chipmunk_snark_proof {
     chipmunk_fri_proof_t   q1_fri_proof;        /* FRI commit + query openings for q1 */
     int32_t                q1_values_at_queries[CHIPMUNK_FRI_NUM_QUERIES]; /* q1 at 8 query points */
 
+    /* Phase 3 FIX 6: Lattice binding via BDLOP opening.
+     *
+     * Prover commits lattice secret x via BDLOP (hiding commitment).
+     * BDLOP opening proves knowledge of x AND linear constraint:
+     *   A_pk · x = Σ_i b(ω^i) · P_i   (Module-LWE ring binding)
+     *
+     * This binds the STARK indicator to actual lattice key ownership
+     * WITHOUT revealing which ring member is the signer (x is hidden
+     * inside BDLOP commitment, only opened through Sigma protocol).
+     *
+     * Uses shared Pedersen params from the anon ledger context. */
+    chipmunk_bdlop_commit_t    lattice_commit;  /* BDLOP commitment to x (K polynomials) */
+    chipmunk_bdlop_proof_t     lattice_proof;   /* BDLOP opening: knowledge of x + A_pk·x=R */
+
     /* QROM transcript hash */
     uint8_t transcript_hash[32];
-} chipmunk_snark_proof_t;
+} chipmunk_stark_proof_t;
 
-/* SNARK context (public parameters) */
-typedef struct chipmunk_snark_ctx {
-    chipmunk_snark_params_t sp;                 /* Runtime parameters (d, q, FRI, NTT) */
+/* STARK context (public parameters) */
+typedef struct chipmunk_stark_ctx {
+    chipmunk_stark_params_t sp;                 /* Runtime parameters (d, q, FRI, NTT) */
     lotrs_params_t params;                      /* LoTRS lattice parameters */
     uint8_t domain_separator[32];               /* QROM domain separator */
+    chipmunk_pedersen_params_t pedersen_params;  /* Phase 3 FIX 6: BDLOP lattice binding */
     bool initialized;
-} chipmunk_snark_ctx_t;
+} chipmunk_stark_ctx_t;
 
 /* -------------------------------------------------------------------------
  * API
  * ---------------------------------------------------------------------- */
 
 /**
- * Initialize SNARK context with public parameters.
+ * Initialize STARK context with public parameters.
  * @param ctx Output context.
  * @return 0 on success, negative on error.
  */
-int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx);
+int chipmunk_stark_init(chipmunk_stark_ctx_t *ctx);
 
 /**
  * Commit to a polynomial: C = H(f_0 || f_1 || ... || f_{N-1}).
- * Uses LRS default parameters (d=CHIPMUNK_SNARK_MAX_D, q=CHIPMUNK_Q).
- * For non-LRS parameter sets, use chipmunk_snark_commit_ctx().
+ * Uses LRS default parameters (d=CHIPMUNK_STARK_MAX_D, q=CHIPMUNK_Q).
+ * For non-LRS parameter sets, use chipmunk_stark_commit_ctx().
  * @param commit Output commitment.
  * @param poly Polynomial to commit.
  * @return 0 on success.
  */
-int chipmunk_snark_commit(chipmunk_snark_commit_t *commit,
+int chipmunk_stark_commit(chipmunk_stark_commit_t *commit,
                           const chipmunk_poly_t *poly);
 
 /**
- * Commit to a polynomial using the (d, q) from a SNARK context.
+ * Commit to a polynomial using the (d, q) from a STARK context.
  * This is the context-aware variant — required for param sets where
- * d != CHIPMUNK_SNARK_MAX_D or q != CHIPMUNK_Q.
+ * d != CHIPMUNK_STARK_MAX_D or q != CHIPMUNK_Q.
  * @param commit Output commitment.
- * @param ctx SNARK context (provides d and q).
+ * @param ctx STARK context (provides d and q).
  * @param poly Polynomial to commit.
  * @return 0 on success, -EINVAL on null args.
  */
-int chipmunk_snark_commit_ctx(chipmunk_snark_commit_t *commit,
-                                const chipmunk_snark_ctx_t *ctx,
+int chipmunk_stark_commit_ctx(chipmunk_stark_commit_t *commit,
+                                const chipmunk_stark_ctx_t *ctx,
                                 const chipmunk_poly_t *poly);
 
 /**
- * Generate a ring membership SNARK proof.
+ * Generate a ring membership STARK proof.
  *
  * Proves: "I know sk_j for pk_j in {pk_0, ..., pk_{N-1}}" without
  * revealing j.
  *
  * @param proof Output proof.
- * @param ctx SNARK context.
+ * @param ctx STARK context.
  * @param statement Public statement (ring, message).
  * @param witness Private witness (secret key, index).
  * @return 0 on success, negative on error.
  */
-int chipmunk_snark_prove(chipmunk_snark_proof_t *proof,
-                         const chipmunk_snark_ctx_t *ctx,
-                         const chipmunk_snark_statement_t *statement,
-                         const chipmunk_snark_witness_t *witness);
+int chipmunk_stark_prove(chipmunk_stark_proof_t *proof,
+                         const chipmunk_stark_ctx_t *ctx,
+                         const chipmunk_stark_statement_t *statement,
+                         const chipmunk_stark_witness_t *witness);
 
 /**
- * Verify a ring membership SNARK proof.
+ * Verify a ring membership STARK proof.
  *
  * @param proof The proof to verify.
- * @param ctx SNARK context.
+ * @param ctx STARK context.
  * @param statement Public statement (ring, message).
  * @return 1 if valid, 0 if invalid, negative on error.
  */
-int chipmunk_snark_verify(const chipmunk_snark_proof_t *proof,
-                          const chipmunk_snark_ctx_t *ctx,
-                          const chipmunk_snark_statement_t *statement);
+int chipmunk_stark_verify(const chipmunk_stark_proof_t *proof,
+                          const chipmunk_stark_ctx_t *ctx,
+                          const chipmunk_stark_statement_t *statement);
 
 /**
- * Free SNARK proof resources.
+ * Free STARK proof resources.
  */
-void chipmunk_snark_proof_free(chipmunk_snark_proof_t *proof);
+void chipmunk_stark_proof_free(chipmunk_stark_proof_t *proof);
 
 /**
- * Free SNARK context resources.
+ * Free STARK context resources.
  */
-void chipmunk_snark_ctx_free(chipmunk_snark_ctx_t *ctx);
+void chipmunk_stark_ctx_free(chipmunk_stark_ctx_t *ctx);
 
 #ifdef __cplusplus
 }

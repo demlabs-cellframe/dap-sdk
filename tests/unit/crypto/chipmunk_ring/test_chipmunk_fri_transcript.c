@@ -273,7 +273,7 @@ static void test_transcript_invalid_args(void)
     rc = chipmunk_fri_transcript_absorb(&tr, NULL, 0);
     dap_assert(rc == 0, "absorb NULL len=0 ok");
 
-    /* Squeeze before finalize is ALLOWED (needed for alpha derivation in SNARK
+    /* Squeeze before finalize is ALLOWED (needed for alpha derivation in STARK
      * before grinding). The old test expected rejection, but the design changed
      * in Phase 9.11 to support pre-finalize challenge derivation. */
     int32_t val;

@@ -2,7 +2,7 @@
  * test_chipmunk_ntt_q.c — E2E test for non-default q NTT operations.
  *
  * Tests that the Montgomery R=2^32 SIMD NTT works correctly with
- * q=4206593 (the SNARK modulus), not just the default CHIPMUNK_Q.
+ * q=4206593 (the STARK modulus), not just the default CHIPMUNK_Q.
  *
  * Phase 9.12 gate test.
  */
@@ -22,7 +22,7 @@
 
 #define LOG_TAG "test_chipmunk_ntt_q"
 
-/* SNARK modulus: q = 4206593, 2-adicity = 12 (supports N=512) */
+/* STARK modulus: q = 4206593, 2-adicity = 12 (supports N=512) */
 #define TEST_Q  ((uint64_t)4206593ULL)
 
 /* Deterministic PRNG for reproducible test data */
