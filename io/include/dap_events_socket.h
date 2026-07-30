@@ -121,7 +121,7 @@ typedef struct queue_entry {
 #define DAP_SOCK_SIGNAL_CLOSE       BIT( 2 )
 #define DAP_SOCK_CONNECTING         BIT( 3 )    // When connection happens this flag is armed for outgoing connections until its establish the connection
 #define DAP_SOCK_REASSIGN_ONCE      BIT( 4 )    // This usable for FlowControl to prevent multiple reassigment
-#define DAP_SOCK_WRITE_CONGESTED    BIT( 5 )    // Send buffer full (EAGAIN) — EPOLLOUT disarmed, do not re-arm until drained
+#define DAP_SOCK_WRITE_EAGAIN       BIT( 5 )    // Last send() returned EAGAIN; skip re-arm EPOLLOUT until successful drain
 #ifdef DAP_EVENTS_CAPS_IOCP
 #define DAP_SOCK_KEEP_INHERITOR     BIT( 6 )
 #define FLAG_KEEP_INHERITOR(f)  (f & DAP_SOCK_KEEP_INHERITOR)
@@ -367,7 +367,6 @@ typedef struct dap_events_socket {
     time_t time_connection;
     time_t last_time_active;
     time_t last_ping_request;
-    uint16_t write_congestion_skip;  // Skip N event-loop iterations after EAGAIN
 
     void *_inheritor; // Inheritor data to specific client type, usualy states for state machine
     void *_pvt; //Private section, different for different types

@@ -152,10 +152,6 @@ static void s_ch_send_callback(void *a_msg)
         log_it(L_WARNING, "Stream found, but channel '%c' isn't set", l_msg->ch_id);
         goto ret_n_clear;
     }
-    /* Always write — no backpressure gate.  Master never drops writes;
-     * ACKs must reach buf_out for the peer's window to advance.  Stale
-     * connections with large kernel send queues are handled by TIOCOUTQ
-     * detection in the event loop, not by dropping writes here. */
     dap_stream_ch_pkt_write_unsafe(l_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
     DAP_DEL_Z(l_msg->data);
 ret_n_clear:

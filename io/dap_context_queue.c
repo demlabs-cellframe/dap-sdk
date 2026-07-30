@@ -47,30 +47,25 @@ static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
         return;
     }
 
-    /* Process ONE bounded batch per eventfd wakeup, then return to the event
-     * loop.  Previously this used a do-while that drained the entire ring
-     * buffer, which caused a worker-thread busy-spin when the producer
-     * (proc thread pushing ACKs) kept the buffer non-empty faster than the
-     * consumer could flush buf_out to the network (send() returning EAGAIN).
+    /* Drain ALL items per eventfd wakeup — matches master's pipe2 behavior
+     * where a single read() drains all available pointers.
      *
-     * If items remain after this batch, re-signal the eventfd so the next
-     * event-loop iteration processes them — but the loop gets a chance to
-     * handle other I/O (peer data, timers) between batches. */
+     * No re-signal: dap_context_queue_push already calls eventfd_write on
+     * every push.  If the producer pushes more items after this drain,
+     * eventfd_write re-arms the level-triggered wakeup naturally.
+     *
+     * Busy-loop protection: when send() in the EPOLLOUT handler returns
+     * EAGAIN, level-triggered epoll does NOT re-notify EPOLLOUT (kernel
+     * buffer is full).  The worker sleeps in epoll_wait until either:
+     *   a) the peer reads → kernel buffer drains → EPOLLOUT fires → drain
+     *   b) a new item is pushed → eventfd_write → EPOLLIN fires → drain
+     * This is exactly how master's level-triggered epoll provides
+     * backpressure without explicit flags or counters. */
     int l_processed = dap_context_queue_process(l_queue);
 
     if (l_processed > 0) {
         debug_if(s_debug_more, L_DEBUG, "Context queue fd=%d: processed %d items (eventfd_value=%"PRIu64")",
                  a_es->fd, l_processed, a_value);
-    } else if (a_value > 0) {
-        debug_if(s_debug_more, L_INFO, "Context queue fd=%d: EMPTY wakeup (eventfd_value=%"PRIu64", rb_size=%zu)",
-               a_es->fd, a_value,
-               l_queue->ring_buffer ? dap_ring_buffer_size(l_queue->ring_buffer) : 0);
-    }
-
-    /* Re-signal if items remain so the next iteration picks them up.
-     * This gives the event loop breathing room between batches. */
-    if (l_queue->ring_buffer && !dap_ring_buffer_is_empty(l_queue->ring_buffer)) {
-        dap_events_socket_event_signal(a_es, 1);
     }
 }
 
@@ -215,17 +210,19 @@ bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item) {
 /**
  * @brief Process items from queue (called by reactor)
  *
- * Drains up to DAP_CONTEXT_QUEUE_BATCH_SIZE items per epoll wakeup to avoid
- * re-signalling eventfd after every 5 items (which caused worker busy-spins).
- * Re-signals only when the batch limit is hit but the queue still has items.
+ * Drains up to DAP_CONTEXT_QUEUE_BATCH_SIZE items per eventfd wakeup.
+ * This matches master's pipe2 behavior where read(fd, buf, PIPE_BUF)
+ * reads up to 4096 bytes = 512 pointers in a single syscall.
+ *
+ * No re-signal: dap_context_queue_push calls eventfd_write on every
+ * push, so new items naturally re-arm the level-triggered wakeup.
+ * If items remain after a batch with no new pushes, they will be
+ * processed on the next push's eventfd_write signal.
  *
  * @return Number of items processed, or -1 on error
  */
-/* Maximum items to process per eventfd wakeup.  Keeps the worker responsive
- * to other I/O (peer data, timers) while still making progress on queued
- * messages.  Chosen large enough to handle normal ACK bursts but small enough
- * to yield the event loop between batches during heavy sync. */
-#define DAP_CONTEXT_QUEUE_BATCH_SIZE 256
+/* Maximum items per wakeup — matches master's PIPE_BUF / sizeof(void*) */
+#define DAP_CONTEXT_QUEUE_BATCH_SIZE 512
 
 int dap_context_queue_process(dap_context_queue_t *a_queue) {
     if (!a_queue || !a_queue->callback) {
@@ -234,10 +231,6 @@ int dap_context_queue_process(dap_context_queue_t *a_queue) {
 
     int l_count = 0;
     void *l_item;
-    /* Process a bounded batch per eventfd wakeup instead of draining the
-     * entire ring buffer.  When the ring buffer is continuously refilled by
-     * another thread (ACKs from proc thread), an unbounded drain busy-loops
-     * and starves all other I/O on this worker thread. */
     while (l_count < DAP_CONTEXT_QUEUE_BATCH_SIZE &&
            (l_item = dap_ring_buffer_pop(a_queue->ring_buffer)) != NULL) {
         a_queue->callback(l_item);

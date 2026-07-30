@@ -1918,12 +1918,12 @@ static inline void s_events_socket_finalize_write(dap_events_socket_t *a_es, siz
     a_es->buf_out_size += a_bytes_written;
     debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
              a_bytes_written, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
-    /* Do NOT re-arm EPOLLOUT if the socket is write-congested (last send()
-     * returned EAGAIN).  The event loop will clear the congestion flag when
-     * a future send() succeeds, at which point EPOLLOUT is re-armed naturally.
-     * Without this guard, every cross-thread queue push re-arms EPOLLOUT
-     * on a congested socket, causing a tight busy-loop (10001 iters). */
-    if (!(a_es->flags & DAP_SOCK_WRITE_CONGESTED))
+    /* Do NOT re-arm EPOLLOUT if send() previously returned EAGAIN on this
+     * socket.  The event loop will clear DAP_SOCK_WRITE_EAGAIN when a
+     * future send() succeeds.  Without this guard, every write to buf_out
+     * re-arms EPOLLOUT, and since the kernel buffer is still full, level-
+     * triggered epoll returns it immediately → busy-spin. */
+    if (!(a_es->flags & DAP_SOCK_WRITE_EAGAIN))
         dap_events_socket_set_writable_unsafe(a_es, true);
 }
 
@@ -1953,11 +1953,6 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     }
 
     // TCP/stream sockets: Use buffered writes
-    /* NOTE: do NOT gate on DAP_SOCK_WRITE_CONGESTED here.  Master never
-     * drops writes — ACKs always reach buf_out, the event loop drains
-     * via EPOLLOUT.  Dropping writes caused ACK loss → peer timeout →
-     * sync stall.  Stale connections (large kernel send queue) are
-     * handled by TIOCOUTQ detection in the event loop instead. */
     byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, a_data_size);
     if (!l_write_pos)
         return 0;

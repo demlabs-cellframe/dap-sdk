@@ -1206,32 +1206,15 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
 
     dap_events_socket_t *l_es = a_stream->esocket;
 
-    /* Do NOT call send() here.  The event loop owns buf_out flushing via
-     * its EPOLLOUT handler (dap_context.c: send() path after write_callback).
-     * Calling send() here creates a race with the event loop: both paths
-     * attempt to drain buf_out simultaneously, and when send() succeeds
-     * (flushing buf_out to 0) the event loop disables EPOLLOUT — but then
-     * dap_events_socket_write_unsafe below re-arms EPOLLOUT.  If the peer's
-     * TCP window is full (EAGAIN), EPOLLOUT stays armed but send() keeps
-     * returning EAGAIN, causing a worker busy-spin.
+    /* No manual send() — the event loop EPOLLOUT handler owns buf_out flushing.
+     * The EPOLLOUT drain loop (dap_context.c ~line 1503) sends with
+     * MSG_DONTWAIT | MSG_NOSIGNAL until EAGAIN or empty.  A manual send() here
+     * would race with that handler, churn EPOLLOUT arming/disarming, and can
+     * block the worker thread (MSG_NOSIGNAL without MSG_DONTWAIT).
      *
-     * The only exception is the initial HTTP GET from session_start: it's
-     * placed in buf_out before the stream esocket is registered for EPOLLOUT.
-     * Without a manual flush, it sits there indefinitely.  But that GET is
-     * always <4KB, so we only flush when buf_out is tiny AND there's no
-     * pending stream data flowing yet.  Once sync starts, buf_out is managed
-     * exclusively by the event loop. */
-    if (l_es->buf_out_size > 0 && l_es->buf_out_size <= 256) {
-        ssize_t l_flushed = send(l_es->socket, l_es->buf_out, l_es->buf_out_size, MSG_NOSIGNAL);
-        if (l_flushed > 0) {
-            if ((size_t)l_flushed < l_es->buf_out_size) {
-                memmove(l_es->buf_out, l_es->buf_out + l_flushed, l_es->buf_out_size - l_flushed);
-                l_es->buf_out_size -= l_flushed;
-            } else {
-                l_es->buf_out_size = 0;
-            }
-        }
-    }
+     * The initial HTTP GET from session_start is placed into buf_out via
+     * dap_events_socket_write_f_unsafe → finalize_write → set_writable(true)
+     * → EPOLLOUT armed.  The event loop flushes it on the next iteration. */
 
     debug_if(s_debug_more, L_DEBUG, "HTTP trans write: size=%zu esocket=%p fd=%d _inheritor=%p buf_out_size=%zu",
              a_size, (void*)l_es, l_es->socket, (void*)l_es->_inheritor, l_es->buf_out_size);
