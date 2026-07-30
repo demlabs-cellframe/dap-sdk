@@ -212,12 +212,16 @@ typedef struct chipmunk_bdlop_proof_round {
      * All operations are SCALAR or Hadamard — no ring product.
      * If m⊙m=m (binary), the c₂²·(m⊙m−m) term vanishes → check holds.
      * If m⊙m≠m, forgery prob ≤ 1/|F_q| ≈ 2^{-22} per query (Schwartz-Zippel
-     * over scalar field). Combined with FRI soundness → total ≥ 128-bit. */
-    int32_t           c2_scalar;  /* Scalar challenge c₂ ∈ F_q \ {0} */
-    chipmunk_poly_t  g1;          /* Garbage cross-term: 2*(y₂_m⊙m) - y₂_m */
-    chipmunk_poly_t  g0;          /* Garbage constant term: y₂_m⊙y₂_m */
-    chipmunk_poly_t  z_g1;        /* Response: c₂·m + y₂_m (scalar mul) */
-    /* z_g0 removed — not needed with scalar approach */
+     * over scalar field).
+     *
+     * For 128-bit approximate shortness: repeat with 6 independent scalar
+     * challenges c₂[0..5], each from separate masking y₂[0..5].
+     * 6 × 22 = 132 bits > 128. */
+#define CHIPMUNK_BDLOP_SHORTNESS_REPS  6
+    int32_t           c2_scalar[CHIPMUNK_BDLOP_SHORTNESS_REPS];  /* 6 independent scalar challenges */
+    chipmunk_poly_t  g1[CHIPMUNK_BDLOP_SHORTNESS_REPS];           /* Garbage cross-term per rep */
+    chipmunk_poly_t  g0[CHIPMUNK_BDLOP_SHORTNESS_REPS];           /* Garbage constant per rep */
+    chipmunk_poly_t  z_g1[CHIPMUNK_BDLOP_SHORTNESS_REPS];         /* Response per rep */
 } chipmunk_bdlop_proof_round_t;
 
 typedef struct chipmunk_bdlop_proof {

@@ -76,8 +76,26 @@ typedef struct chipmunk_fri_commit_proof {
     int32_t           final_evals[CHIPMUNK_FRI_FINAL_SIZE];
 } chipmunk_fri_commit_proof_t;
 
-/* Number of FRI queries (verifier checks). */
-#define CHIPMUNK_FRI_NUM_QUERIES   8u
+/* Number of FRI queries (verifier checks).
+ *
+ * Soundness: each query catches a non-RS codeword with probability
+ * ≈ 1−δ* where δ*=1−√ρ=1−0.5=0.5 (rate ρ=1/4).
+ * Per-query reject probability: 0.5
+ * For 128-bit soundness: need N queries where 0.5^N ≤ 2^-128
+ *   N = 128 queries gives 2^-128 (exactly).
+ * But combined with 16-bit grinding: 0.5^N × 2^-16 ≤ 2^-128
+ *   N = 112 gives 2^-112 × 2^-16 = 2^-128.
+ *
+ * However, for the polynomial identity check (degree ≤1022 over domain 2048),
+ * per-query soundness is 1−1022/2048 ≈ 0.5, so we need the same count.
+ *
+ * 44 queries gives 2^-44 × 2^-16 = 2^-60 — still insufficient.
+ * 128 queries is optimal but proof-heavy. Compromise: 44 queries +
+ * grinding gives ~60-bit FRI + 16-bit grind = 76-bit total.
+ *
+ * For production 128-bit: need DEEP-FRI or batched composition.
+ * Using 44 as pragmatic compromise (current 8 is critically weak). */
+#define CHIPMUNK_FRI_NUM_QUERIES   44u
 
 /**
  * @brief A single query opening: one leaf value + Merkle auth path per round.
