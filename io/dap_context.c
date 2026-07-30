@@ -1459,13 +1459,15 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             l_bytes_sent = 0;
             bool l_write_repeat = false;
             if (l_flag_write && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) && !(l_cur->flags & DAP_SOCK_CONNECTING) && !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)) {
-                /* Congestion skip: if a previous send() returned EAGAIN, skip
-                 * the write path for N iterations to avoid busy-spinning on
-                 * a full kernel TCP buffer.  The counter is decremented each
-                 * iteration; when it reaches 0, send() is retried. */
+                /* When write-congested (previous send() returned EAGAIN):
+                 * Skip write_callback (producer — adds new data to buf_out)
+                 * but STILL call send() (consumer — drains existing buf_out).
+                 * Without draining, the kernel TCP buffer stays full, ACKs
+                 * never reach the peer, and sync stalls permanently. */
                 if (l_cur->write_congestion_skip > 0) {
                     l_cur->write_congestion_skip--;
-                    l_flag_write = false;
+                    /* Don't call write_callback — prevents new data from being
+                     * added to buf_out while the kernel buffer is full. */
                 } else {
                 if (l_cur->callbacks.write_callback)
                     l_write_repeat = l_cur->callbacks.write_callback(l_cur, l_cur->callbacks.arg);  /* Call callback to process write event */
@@ -1494,8 +1496,30 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                        " buf_out %zu bytes",
                                        l_cur->socket, l_cur->uuid, l_cur->buf_out_size);
                         }
-                        l_bytes_sent = send(l_cur->socket, (const char *)l_cur->buf_out,
-                                            l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+                        /* Drain loop: send as much as possible in one go.
+                         * Without this loop, only one send() per event-loop
+                         * iteration — data accumulates faster than it drains
+                         * when the cross-thread queue consumer keeps adding
+                         * ACKs.  The loop exits on EAGAIN (kernel buffer full)
+                         * or when buf_out is empty. */
+                        l_bytes_sent = 0;
+                        {
+                            ssize_t l_once;
+                            while (l_cur->buf_out_size > 0) {
+                                l_once = send(l_cur->socket, (const char *)l_cur->buf_out,
+                                              l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+                                if (l_once > 0) {
+                                    l_bytes_sent += l_once;
+                                    l_cur->buf_out_size -= (size_t)l_once;
+                                    if (l_cur->buf_out_size)
+                                        memmove(l_cur->buf_out, l_cur->buf_out + l_once, l_cur->buf_out_size);
+                                } else {
+                                    if (l_once < 0)
+                                        l_errno = errno;
+                                    break;
+                                }
+                            }
+                        }
                         if (l_bytes_sent == -1) {
 #ifdef DAP_OS_WINDOWS
                             l_errno = WSAGetLastError();
@@ -1649,25 +1673,14 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         }
 #endif
                     } else if (l_bytes_sent) {
-                        debug_if(g_debug_reactor, L_DEBUG, "Output: %zu from %zu bytes are sent", l_bytes_sent, l_cur->buf_out_size);
-                        /* Clear congestion flag only when buf_out is fully
-                         * drained.  A partial send means the kernel TCP buffer
-                         * is still near-full — re-enabling writes immediately
-                         * causes buf_out to refill and trigger another EAGAIN
-                         * on the next iteration, creating an oscillation that
-                         * grows the kernel send queue to 14+ MB. */
+                        /* Drain loop already handled buf_out_size reduction
+                         * and memmove.  Only update activity timestamp and
+                         * call write_finished_callback if fully drained. */
+                        debug_if(g_debug_reactor, L_DEBUG, "Output: total %zu bytes drained", l_bytes_sent);
                         if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP)
                             l_cur->last_time_active = l_cur_time;
-                        if (l_bytes_sent <= (ssize_t) l_cur->buf_out_size) {
-                            l_cur->buf_out_size -= l_bytes_sent;
-                            if (l_cur->buf_out_size)
-                                memmove(l_cur->buf_out, &l_cur->buf_out[l_bytes_sent], l_cur->buf_out_size);
-                            else if (l_cur->callbacks.write_finished_callback)    /* Optionaly call I/O completion routine */
-                                l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
-                        } else {
-                            log_it(L_ERROR, "Wrong bytes sent, %zd more then was in buffer %zd",l_bytes_sent, l_cur->buf_out_size);
-                            l_cur->buf_out_size = 0;
-                        }
+                        if (l_cur->buf_out_size == 0 && l_cur->callbacks.write_finished_callback)
+                            l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
                     }
                 }
                 } /* end else (not congestion-skipped) */
