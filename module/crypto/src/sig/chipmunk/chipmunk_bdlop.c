@@ -263,7 +263,8 @@ static int s_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound, uint64
 #define CHIPMUNK_BDLOP_POLY_PACKED_SIZE  \
     ((size_t)CHIPMUNK_N * CHIPMUNK_BDLOP_COEFF_PACKED_BYTES)
 #define CHIPMUNK_BDLOP_PROOF_ROUND_SIZE  \
-    ((size_t)CHIPMUNK_BDLOP_PROOF_NPOLYS_PER_ROUND * CHIPMUNK_BDLOP_POLY_PACKED_SIZE)
+    ((size_t)CHIPMUNK_BDLOP_PROOF_NPOLYS_PER_ROUND * CHIPMUNK_BDLOP_POLY_PACKED_SIZE \
+     + CHIPMUNK_BDLOP_SHORTNESS_REPS * sizeof(int32_t))  /* c2_scalars */
 #define CHIPMUNK_BDLOP_PROOF_HEADER_SIZE  12  /* magic + version + num_rounds */
 
 #define CHIPMUNK_BDLOP_PROOF_WIRE_SIZE \

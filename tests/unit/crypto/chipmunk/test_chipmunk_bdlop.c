@@ -364,8 +364,10 @@ static int test_range_proof_serialize(void)
     uint8_t l_rp_seed[32];
     memset(l_rp_seed, 0x55, 32);
 
-    chipmunk_range_proof_bdlop_t l_proof;
-    l_rc = chipmunk_range_proof_bdlop_prove(&l_proof, &l_params, l_value, l_rp_seed);
+    /* Heap-allocate proofs — struct is ~80KB each with 6 shortness reps */
+    chipmunk_range_proof_bdlop_t *l_proof = calloc(1, sizeof(*l_proof));
+    TEST_ASSERT(l_proof != NULL, "calloc proof failed");
+    l_rc = chipmunk_range_proof_bdlop_prove(l_proof, &l_params, l_value, l_rp_seed);
     TEST_ASSERT(l_rc == 0, "prove failed");
 
     /* Serialize */
@@ -375,21 +377,24 @@ static int test_range_proof_serialize(void)
     uint8_t *l_buf = malloc(l_ser_size);
     TEST_ASSERT(l_buf != NULL, "malloc failed");
 
-    l_rc = chipmunk_range_proof_bdlop_serialize(l_buf, l_ser_size, &l_proof);
+    l_rc = chipmunk_range_proof_bdlop_serialize(l_buf, l_ser_size, l_proof);
     TEST_ASSERT(l_rc > 0, "serialize failed");
 
     /* Deserialize */
-    chipmunk_range_proof_bdlop_t l_proof2;
-    l_rc = chipmunk_range_proof_bdlop_deserialize(&l_proof2, l_buf, l_ser_size);
+    chipmunk_range_proof_bdlop_t *l_proof2 = calloc(1, sizeof(*l_proof2));
+    TEST_ASSERT(l_proof2 != NULL, "calloc proof2 failed");
+    l_rc = chipmunk_range_proof_bdlop_deserialize(l_proof2, l_buf, l_ser_size);
     TEST_ASSERT(l_rc == 0, "deserialize failed");
 
     /* Verify deserialized proof */
-    int l_valid = chipmunk_range_proof_bdlop_verify(&l_proof2, &l_params);
+    int l_valid = chipmunk_range_proof_bdlop_verify(l_proof2, &l_params);
     TEST_ASSERT(l_valid == 1, "deserialized proof verification failed");
 
     free(l_buf);
-    chipmunk_range_proof_bdlop_wipe(&l_proof);
-    chipmunk_range_proof_bdlop_wipe(&l_proof2);
+    chipmunk_range_proof_bdlop_wipe(l_proof);
+    free(l_proof);
+    chipmunk_range_proof_bdlop_wipe(l_proof2);
+    free(l_proof2);
 
     TEST_END();
     return 0;
