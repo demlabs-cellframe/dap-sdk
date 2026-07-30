@@ -234,12 +234,9 @@ typedef struct chipmunk_stark_proof {
      *   A_pk · x = Σ_i b(ω^i) · P_i   (Module-LWE ring binding)
      *
      * This binds the STARK indicator to actual lattice key ownership
-     * WITHOUT revealing which ring member is the signer (x is hidden
-     * inside BDLOP commitment, only opened through Sigma protocol).
-     *
-     * Uses shared Pedersen params from the anon ledger context. */
-    chipmunk_bdlop_commit_t    lattice_commit;  /* BDLOP commitment to x (K polynomials) */
-    chipmunk_bdlop_proof_t     lattice_proof;   /* BDLOP opening: knowledge of x + A_pk·x=R */
+     * Lattice binding is provided by the LRS signature (chipmunk_lrs_sign/verify)
+     * alongside the STARK proof in the TX verify path. The LRS proves knowledge
+     * of short x with A_pk·x = P_j for some ring member P_j. */
 
     /* QROM transcript hash */
     uint8_t transcript_hash[32];

@@ -380,6 +380,11 @@ int chipmunk_bdlop_proof_deserialize(chipmunk_bdlop_proof_t *a_proof,
         s_deserialize_poly_packed(&l_rd->g0, &l_p);
         s_deserialize_poly_packed(&l_rd->z_g1, &l_p);
         memcpy(&l_rd->c2_scalar, l_p, sizeof(int32_t)); l_p += sizeof(int32_t);
+        /* Range check: c₂ must be in (0, q) — prevents c₂=0 bypass */
+        if (l_rd->c2_scalar <= 0 || (uint32_t)l_rd->c2_scalar >= CHIPMUNK_Q) {
+            memset(a_proof, 0, sizeof(*a_proof));
+            return -EBADMSG;
+        }
     }
 
     return 0;
@@ -769,6 +774,23 @@ int chipmunk_bdlop_opening_verify(const chipmunk_bdlop_proof_t *a_proof,
 
             if (!chipmunk_poly_equal_q(&l_expected_c, &l_rd->challenge, l_q)) {
                 log_it(L_WARNING, "BDLOP verify: round %u challenge mismatch", r);
+                return 0;
+            }
+
+            /* CRITICAL FIX: Re-derive scalar c₂ from the SAME FS transcript.
+             * Without this, attacker can set c₂=0 and bypass bit-ness entirely. */
+            int32_t l_expected_c2;
+            {
+                uint8_t l_buf4[4];
+                dap_hash_shake256_squeezeblocks(l_buf4, 1, l_shake);
+                uint32_t l_tmp;
+                memcpy(&l_tmp, l_buf4, 4);
+                l_expected_c2 = (int32_t)(l_tmp % (uint32_t)l_q);
+                if (l_expected_c2 == 0) l_expected_c2 = 1;
+            }
+            if (l_rd->c2_scalar != l_expected_c2) {
+                log_it(L_WARNING, "BDLOP verify: round %u scalar c₂ mismatch "
+                       "(got=%d, expected=%d)", r, l_rd->c2_scalar, l_expected_c2);
                 return 0;
             }
         }
