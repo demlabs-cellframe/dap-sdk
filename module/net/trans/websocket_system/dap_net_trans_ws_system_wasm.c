@@ -192,6 +192,8 @@ static void s_ws_out_init_once(void)
  * on the slot's own "ready" field makes the writes visible to the
  * consumer which loads that field with acquire ordering.
  */
+static _Atomic int s_ws_out_pending = 0;
+
 static bool s_ws_out_push(int a_handle, const void *a_data, int a_len)
 {
     s_ws_out_init_once();
@@ -218,10 +220,10 @@ static bool s_ws_out_push(int a_handle, const void *a_data, int a_len)
     l_slot->handle = a_handle;
     l_slot->len = (uint32_t)a_len;
     memcpy(l_slot->data, a_data, (size_t)a_len);
-    /* Store the wr index into the slot so the consumer can verify the slot
-     * was fully written before the wr it observed.  This closes the window
-     * between CAS-reserve and data-write completion. */
     atomic_store_explicit(&l_slot->seq, l_wr + 1, memory_order_release);
+
+    /* Signal main thread: new data pending */
+    atomic_store_explicit(&s_ws_out_pending, 1, memory_order_release);
     return true;
 }
 
@@ -230,11 +232,16 @@ void dap_net_trans_ws_system_drain_outbound(void)
     if (!pthread_equal(pthread_self(), emscripten_main_runtime_thread_id()))
         return;
 
+    /* Fast path: skip if no data pending (idle connection = no WASM cost) */
+    if (!atomic_load_explicit(&s_ws_out_pending, memory_order_acquire))
+        return;
+
     s_ws_out_init_once();
     if (!s_ws_out_slots)
         return;
 
     uint32_t l_rd = atomic_load_explicit(&s_ws_out_rd, memory_order_relaxed);
+    bool l_did_work = false;
 
     for (unsigned l_round = 0; l_round < 8u; l_round++) {
         uint32_t l_wr = atomic_load_explicit(&s_ws_out_wr, memory_order_acquire);
@@ -242,11 +249,8 @@ void dap_net_trans_ws_system_drain_outbound(void)
 
         while (l_rd < l_wr && l_batch < WS_OUT_DRAIN_BATCH) {
             ws_out_slot_t *l_slot = &s_ws_out_slots[l_rd % WS_OUT_RING_CAP];
-            /* Seqlock: verify the producer finished writing this slot.
-             * seq must equal l_rd+1 (wr value the producer stored after write). */
             uint32_t l_seq = atomic_load_explicit(&l_slot->seq, memory_order_acquire);
             if (l_seq != l_rd + 1) {
-                /* Producer hasn't finished writing — stop draining this round */
                 atomic_store_explicit(&s_ws_out_rd, l_rd, memory_order_release);
                 goto drain_done;
             }
@@ -257,15 +261,13 @@ void dap_net_trans_ws_system_drain_outbound(void)
                 if (n < 3 || (n % 200) == 0)
                     log_it(L_ERROR, "WS drain send failed handle=%d size=%u ret=%d (count=%" PRIu64 ")",
                            l_slot->handle, l_slot->len, l_ret, n);
-                /* Don't stop the entire drain on one failure — skip and continue.
-                 * Otherwise a single failed fragment drops all subsequent fragments
-                 * of the same frame, breaking multi-fragment packets. */
                 l_rd++;
                 l_batch++;
                 continue;
             }
             l_rd++;
             l_batch++;
+            l_did_work = true;
         }
         atomic_store_explicit(&s_ws_out_rd, l_rd, memory_order_release);
 
@@ -273,7 +275,9 @@ void dap_net_trans_ws_system_drain_outbound(void)
             break;
     }
 drain_done:
-    ;
+    /* Clear pending flag only if we drained everything */
+    if (!l_did_work || l_rd >= atomic_load_explicit(&s_ws_out_wr, memory_order_acquire))
+        atomic_store_explicit(&s_ws_out_pending, 0, memory_order_release);
 }
 
 static void s_proxy_ws_create(void *a_arg)  { ws_create_args_t *l = a_arg; l->result = js_ws_create(l->url); }
