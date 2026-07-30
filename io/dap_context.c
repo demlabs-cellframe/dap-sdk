@@ -35,6 +35,7 @@
 #include <sys/types.h>
 #ifdef DAP_OS_UNIX
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <sys/resource.h>
 #elif defined DAP_OS_WINDOWS
@@ -1692,6 +1693,22 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 }
             } else if (l_flag_write && !(l_cur->flags & (DAP_SOCK_READY_TO_WRITE | DAP_SOCK_CONNECTING | DAP_SOCK_SIGNAL_CLOSE))) {
                 dap_context_poll_update(l_cur);
+            }
+
+            /* Stale connection detection: if the kernel TCP send queue is
+             * backed up (>1MB), the peer is not reading.  Close the
+             * connection to prevent resource exhaustion.  This runs for
+             * ALL sockets (not just EPOLLOUT), so stale connections with
+             * disarmed EPOLLOUT are still detected. */
+            if ((l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT ||
+                 l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT) &&
+                l_cur->socket > 0 && !l_cur->no_close &&
+                !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)) {
+                int l_kpending = 0;
+                if (ioctl(l_cur->socket, TIOCOUTQ, &l_kpending) == 0 && l_kpending > 262144) {
+                    l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                    l_cur->buf_out_size = 0;
+                }
             }
 
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)

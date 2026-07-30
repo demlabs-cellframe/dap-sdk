@@ -25,6 +25,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/socket.h>
+#include <netinet/tcp.h>
 
 
 #include "dap_common.h"
@@ -658,6 +660,28 @@ static void s_http_connect_es_connected(dap_events_socket_t *a_es)
 
     dap_stream_t *l_stream = l_ctx->stream;
     log_it(L_INFO, "HTTP stream esocket connected: fd=%d", a_es->socket);
+
+    /* Enable TCP keepalive to detect dead connections within ~90s
+     * (idle=60s + 3 probes × 10s).  Without this, stale connections
+     * with huge kernel send queues (5MB+) persist for hours, blocking
+     * sync progress and consuming worker thread time. */
+    {
+        int l_ka = 1;
+        setsockopt(a_es->socket, SOL_SOCKET, SO_KEEPALIVE, &l_ka, sizeof(l_ka));
+#ifdef TCP_KEEPIDLE
+        int l_idle = 60;
+        setsockopt(a_es->socket, IPPROTO_TCP, TCP_KEEPIDLE, &l_idle, sizeof(l_idle));
+#endif
+#ifdef TCP_KEEPINTVL
+        int l_intvl = 10;
+        setsockopt(a_es->socket, IPPROTO_TCP, TCP_KEEPINTVL, &l_intvl, sizeof(l_intvl));
+#endif
+#ifdef TCP_KEEPCNT
+        int l_cnt = 3;
+        setsockopt(a_es->socket, IPPROTO_TCP, TCP_KEEPCNT, &l_cnt, sizeof(l_cnt));
+#endif
+    }
+
     dap_net_trans_connect_cb_t l_cb = l_ctx->fsm_callback;
     DAP_DELETE(l_ctx);
     a_es->callbacks.arg = NULL;
