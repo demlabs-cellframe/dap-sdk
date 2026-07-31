@@ -64,7 +64,8 @@ extern int js_http_post_sync(const char *a_url_ptr,
                               const char *a_content_type_ptr,
                               const void *a_body, int a_body_len,
                               const char *a_extra_headers_ptr,
-                              int a_out_ptr_addr, int a_out_len_addr);
+                              int a_out_ptr_addr, int a_out_len_addr,
+                              int a_timeout_ms);
 
 typedef struct s_mt_queue_item {
     s_request_t                *request;
@@ -99,7 +100,7 @@ static void *s_http_worker_thread(void *a_arg)
                                       l_req->body, (int)l_req->body_size,
                                       l_req->extra_headers,
                                       (int)(uintptr_t)&l_resp,
-                                      (int)(uintptr_t)&l_resp_len);
+                                      (int)(uintptr_t)&l_resp_len, 15000);
 
         log_it(L_INFO, "http_post_sync: url=%.80s rc=%d resp=%p resp_len=%d",
                l_req->url ? l_req->url : "(null)", l_rc, l_resp, l_resp_len);

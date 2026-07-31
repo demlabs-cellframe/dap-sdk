@@ -152,7 +152,8 @@ addToLibrary({
 
     js_http_post_sync__deps: ['$UTF8ToString', '$setValue', 'malloc'],
     js_http_post_sync: function(a_url_ptr, a_content_type_ptr, a_body, a_body_len,
-                                a_extra_headers_ptr, a_out_ptr_addr, a_out_len_addr) {
+                                a_extra_headers_ptr, a_out_ptr_addr, a_out_len_addr,
+                                a_timeout_ms) {
         var url = UTF8ToString(a_url_ptr);
         var contentType = a_content_type_ptr ? UTF8ToString(a_content_type_ptr) : null;
         var extraHeaders = a_extra_headers_ptr ? UTF8ToString(a_extra_headers_ptr) : null;
@@ -208,6 +209,9 @@ addToLibrary({
         // Browser path: synchronous XHR.
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, false);
+        // Apply timeout so a half-open TCP connection doesn't block the
+        // worker forever. Sync XHR supports xhr.timeout on Web Workers.
+        xhr.timeout = (a_timeout_ms && a_timeout_ms > 0) ? a_timeout_ms : 15000;
         // Request a binary response. Sync XHR with responseType is supported on
         // Web Workers (where this MT path runs). Guard with try/catch for the
         // legacy main-thread restriction, falling back to binary string decode.
