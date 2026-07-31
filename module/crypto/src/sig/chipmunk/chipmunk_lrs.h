@@ -200,6 +200,46 @@ int chipmunk_lrs_key_image(uint8_t a_key_image[CHIPMUNK_LRS_POLY_QPACK_BYTES],
                            const chipmunk_lrs_secret_key_t *a_sk);
 
 /*
+ * Phase 9D: Extract the link-tag (key image) I poly from a CLRS signature
+ * wire without running the full algebraic verify.
+ *
+ * The key image is stored at a FIXED offset inside the signature header:
+ *   bytes [0..31]   = 8 × le32 header words (magic/params/ring/flags/sizes)
+ *   bytes [32..63]  = canonical ring hash (32 bytes)
+ *   bytes [64..1471]= link tag I, q-packed (CHIPMUNK_LRS_POLY_QPACK_BYTES)
+ *
+ * This function copies exactly CHIPMUNK_LRS_POLY_QPACK_BYTES out of the wire
+ * at offset 64, after validating the size and the header-structure sanity
+ * checks. It performs NO algebraic verification — that stays with
+ * chipmunk_lrs_verify(). The extracted bytes may be compared against the
+ * key_image field embedded in the transaction to ensure the link tag in the
+ * signature matches the one the wallet broadcast as a TX item.
+ *
+ * Returns 0 on success, -EINVAL on bad arguments or truncated wire.
+ */
+int chipmunk_lrs_extract_key_image(
+        uint8_t a_key_image_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
+        const uint8_t *a_sig, size_t a_sig_size);
+
+/*
+ * Phase 9D: Sanity-validate an extracted key image.
+ *
+ *   1. Reject all-zero image (degenerate / never honestly produced).
+ *   2. Reject all-0xFF image (common attacker-supplied sentinel).
+ *   3. Each q-unpacked coefficient must lie in [0, q) (already guaranteed by
+ *      q-unpack but we re-affirm the bound for defense-in-depth).
+ *   4. Norm gate ||I||_∞ ≤ a_norm_bound when a_norm_bound > 0.
+ *
+ * The norm bound for an honestly-produced link tag is the witness bound
+ * CHIPMUNK_LRS_WITNESS_BOUND scaled by the module dimension K. We pass it
+ * explicitly so the caller can pin a stricter policy at the consensus layer.
+ *
+ * Returns 0 on success, -EINVAL on bad arguments, 1 if the norm gate rejects.
+ */
+int chipmunk_lrs_key_image_validate(const uint8_t a_key_image[CHIPMUNK_LRS_POLY_QPACK_BYTES],
+                                    int32_t a_norm_bound, uint64_t q);
+
+/*
  * Phase 6-full: Stealth address derivation.
  *
  * Sender creates ephemeral keypair and derives one-time public key:

@@ -325,7 +325,9 @@ static int test_range_proof_bdlop(void)
             return -1;
         }
 
-        int l_valid = chipmunk_range_proof_bdlop_verify(&l_proof, &l_params);
+        /* 9C API: third arg = external commitment. NULL ⇒ use proof's own
+         * self-contained commit (valid for self-contained unit tests). */
+        int l_valid = chipmunk_range_proof_bdlop_verify(&l_proof, &l_params, NULL);
         if (l_valid != 1) {
             printf("  FAIL: verify failed for value %llu\n",
                    (unsigned long long)l_test_values[t]);
@@ -386,8 +388,8 @@ static int test_range_proof_serialize(void)
     l_rc = chipmunk_range_proof_bdlop_deserialize(l_proof2, l_buf, l_ser_size);
     TEST_ASSERT(l_rc == 0, "deserialize failed");
 
-    /* Verify deserialized proof */
-    int l_valid = chipmunk_range_proof_bdlop_verify(l_proof2, &l_params);
+    /* Verify deserialized proof (NULL ⇒ use proof's own commitment) */
+    int l_valid = chipmunk_range_proof_bdlop_verify(l_proof2, &l_params, NULL);
     TEST_ASSERT(l_valid == 1, "deserialized proof verification failed");
 
     free(l_buf);

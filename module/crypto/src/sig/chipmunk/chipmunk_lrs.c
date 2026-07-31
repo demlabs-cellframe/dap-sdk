@@ -739,6 +739,77 @@ int chipmunk_lrs_key_image(uint8_t a_key_image[CHIPMUNK_LRS_POLY_QPACK_BYTES],
     return l_rc;
 }
 
+/* ---- Phase 9D: key image extraction + sanity validation ---- */
+
+int chipmunk_lrs_extract_key_image(
+        uint8_t a_key_image_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
+        const uint8_t *a_sig, size_t a_sig_size)
+{
+    if (!a_key_image_out || !a_sig)
+        return -EINVAL;
+    /* The sig must be at least: 8×le32 header (32) + ring hash (32) + I poly.
+     * We do NOT enforce the per-member tail here — callers that need full
+     * structural verification should use chipmunk_lrs_verify(). We only
+     * guarantee we can read the fixed I field. */
+    if (a_sig_size < CHIPMUNK_LRS_SIG_HEADER_BYTES)
+        return -EINVAL;
+
+    /* Cheap structural sanity of the header words before trusting the slice.
+     * Magic + params + header-size field must match the canonical layout. */
+    if (s_le32_load(a_sig + 0)  != CHIPMUNK_LRS_MAGIC_CLRS ||
+        s_le32_load(a_sig + 4)  != CHIPMUNK_LRS_PARAMS_C0  ||
+        s_le32_load(a_sig + 16) != CHIPMUNK_LRS_SIG_HEADER_BYTES) {
+        return -EINVAL;
+    }
+
+    /* Fixed offset 64 = 8 words × 4 + 32-byte ring hash. */
+    const size_t I_OFFSET = 8u * 4u + 32u;
+    memcpy(a_key_image_out, a_sig + I_OFFSET, CHIPMUNK_LRS_POLY_QPACK_BYTES);
+    return 0;
+}
+
+int chipmunk_lrs_key_image_validate(const uint8_t a_key_image[CHIPMUNK_LRS_POLY_QPACK_BYTES],
+                                    int32_t a_norm_bound, uint64_t q)
+{
+    if (!a_key_image)
+        return -EINVAL;
+    if (q == 0)
+        return -EINVAL;
+
+    /* Gate 1: reject all-zero (degenerate). Gate 2: reject all-0xFF sentinel. */
+    uint8_t l_acc_or  = 0;
+    uint8_t l_acc_and = 0xFF;
+    for (size_t i = 0; i < CHIPMUNK_LRS_POLY_QPACK_BYTES; ++i) {
+        l_acc_or  |= a_key_image[i];
+        l_acc_and &= a_key_image[i];
+    }
+    if (l_acc_or == 0x00) {
+        /* all zeros */
+        return -EINVAL;
+    }
+    if (l_acc_and == 0xFF) {
+        /* all ones — attacker sentinel */
+        return -EINVAL;
+    }
+
+    /* Norm gate: decode q-packed I and check ||I||_∞. */
+    if (a_norm_bound > 0) {
+        chipmunk_poly_t l_I;
+        int l_rc = chipmunk_lrs_poly_qunpack(&l_I, a_key_image, q);
+        if (l_rc != 0)
+            return l_rc;
+        /* Reuse the centered-norm helper; it rejects malformed residues and
+         * returns 1 when |coeff| exceeds the bound. */
+        l_rc = chipmunk_lrs_poly_chknorm_centered(&l_I, a_norm_bound, q);
+        dap_memwipe(&l_I, sizeof(l_I));
+        if (l_rc != 0) {
+            /* rc == 1 ⇒ norm exceeded; surface as-is so caller can log. */
+            return l_rc;
+        }
+    }
+    return 0;
+}
+
 /* ---- Phase 6-full: Stealth address derivation ---- */
 
 void chipmunk_lrs_stealth_shared_secret(uint8_t a_out[32],
