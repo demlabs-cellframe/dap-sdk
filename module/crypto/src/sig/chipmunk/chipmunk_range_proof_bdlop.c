@@ -219,7 +219,8 @@ int chipmunk_range_proof_bdlop_prove_explicit(chipmunk_range_proof_bdlop_t *a_pr
  * ======================================================================= */
 
 int chipmunk_range_proof_bdlop_verify(const chipmunk_range_proof_bdlop_t *a_proof,
-                                       const chipmunk_pedersen_params_t *a_params)
+                                       const chipmunk_pedersen_params_t *a_params,
+                                       const chipmunk_pedersen_commit_t *a_commitment)
 {
     if (!a_proof || !a_params)
         return -EINVAL;
@@ -228,15 +229,15 @@ int chipmunk_range_proof_bdlop_verify(const chipmunk_range_proof_bdlop_t *a_proo
 
     const uint64_t l_q = a_params->q;
 
-    /* Check 1: BDLOP opening proof validity.
-     * This verifies:
-     *   - Response norm bounds (||z_m||_∞ ≤ σ_M, ||z_r||_∞ ≤ σ_R)
-     *   - Challenge validity (sparse ternary, correct weight)
-     *   - Fiat-Shamir challenge re-derivation
-     *   - Linear equations (A·z_r + z_m - c·C = W)
-     *
-     * If these pass, the prover knows (m, r) with C = Com(m, r). */
-    int l_rc = chipmunk_bdlop_opening_verify(&a_proof->proof, a_params, &a_proof->commit);
+    /* 9C FIX (F1+GAP-2+GAP-6): Use external commitment if provided.
+     * This proves the BDLOP opening is for the ACTUAL OUT_ANON commitment,
+     * not the proof's self-generated internal commit. Closes commitment-swap
+     * attack and links bit-decomposition to the real output value. */
+    const chipmunk_pedersen_commit_t *l_commit_to_verify =
+        a_commitment ? a_commitment : &a_proof->commit;
+
+    /* Check 1: BDLOP opening proof validity on the EXTERNAL commitment. */
+    int l_rc = chipmunk_bdlop_opening_verify(&a_proof->proof, a_params, l_commit_to_verify);
     if (l_rc <= 0) {
         if (l_rc == 0)
             log_it(L_WARNING, "Range proof: BDLOP opening verification failed");

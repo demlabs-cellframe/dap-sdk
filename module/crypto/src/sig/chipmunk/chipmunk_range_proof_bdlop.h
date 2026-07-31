@@ -141,12 +141,18 @@ int chipmunk_range_proof_bdlop_prove_explicit(chipmunk_range_proof_bdlop_t *a_pr
  *   2. ||committed polynomial||_∞ ≤ 1 (bit-ness)
  *   3. Weighted sum of committed bits equals the claimed value
  *
- * \param a_proof   The proof to verify.
- * \param a_params  Pedersen/BDLOP parameters.
+ * \param a_proof       The proof to verify.
+ * \param a_params      Pedersen/BDLOP parameters.
+ * \param a_commitment  The OUT_ANON Pedersen commitment this proof must open.
+ *                      If NULL, falls back to proof's internal commit (legacy).
+ *                      9C FIX: verifier checks BDLOP opening on THIS commitment,
+ *                      not the proof's self-generated one. Closes commitment-swap
+ *                      attack (F1) and links bit-decomposition to output value.
  * \return 1 if valid, 0 if invalid, negative errno on error.
  */
 int chipmunk_range_proof_bdlop_verify(const chipmunk_range_proof_bdlop_t *a_proof,
-                                       const chipmunk_pedersen_params_t *a_params);
+                                       const chipmunk_pedersen_params_t *a_params,
+                                       const chipmunk_pedersen_commit_t *a_commitment);
 
 /*
  * Serialize a range proof to bytes.
