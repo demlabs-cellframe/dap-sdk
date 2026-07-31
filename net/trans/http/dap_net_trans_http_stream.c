@@ -158,19 +158,21 @@ typedef struct {
 
 static void s_http_handshake_on_fsm_thread(dap_client_fsm_t *a_fsm, void *a_arg)
 {
-    log_it(L_INFO, "[HS_DBG] on_fsm_thread fsm=%p arg=%p", (void*)a_fsm, a_arg);
     s_http_handshake_dispatch_t *l_d = (s_http_handshake_dispatch_t *)a_arg;
     if (!l_d || !l_d->ctx)
         goto cleanup;
 
+    /* Guard: if FSM is being removed, don't touch it — trans_ctx,
+     * callback_arg, stream may all be freed/inconsistent. */
+    if (a_fsm->is_removing || !a_fsm->trans_ctx)
+        goto cleanup;
+
     s_http_handshake_ctx_t *l_ctx = l_d->ctx;
 
-    /* Restore the original callback_arg unconditionally — the ctx is consumed. */
+    /* Restore the original callback_arg — the ctx is consumed. */
     a_fsm->callback_arg = l_ctx->old_callback_arg;
 
     if (!l_ctx->stream || !l_ctx->callback) {
-        log_it(L_WARNING, "[HS_DBG] on_fsm_thread: stream=%p callback=%p — aborting",
-               (void*)l_ctx->stream, (void*)(uintptr_t)l_ctx->callback);
         goto cleanup;
     }
 
@@ -219,23 +221,16 @@ static dap_net_trans_t *s_http_trans = NULL;
 static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error)
 {
     (void)a_arg;
-    if (!a_client) {
-        log_it(L_WARNING, "s_http_handshake_error_wrapper: client is NULL, error=%d", a_error);
-        return;
-    }
+    if (!a_client) return;
 
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm || !l_fsm->callback_arg) {
-        log_it(L_WARNING, "s_http_handshake_error_wrapper: no ctx in callback_arg, error=%d"
-               " — FSM should have been notified via esocket delete callback", a_error);
+    if (!l_fsm || l_fsm->is_removing || !l_fsm->callback_arg)
         return;
-    }
 
     s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_fsm->callback_arg;
 
     // Verify that the ctx matches this client
     if (l_ctx->client != a_client || !l_ctx->stream) {
-        log_it(L_WARNING, "s_http_handshake_error_wrapper: ctx invalid or mismatch");
         return;
     }
 
@@ -256,30 +251,19 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
  */
 static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size)
 {
-    log_it(L_INFO, "[HS_DBG] response_wrapper client=%p data=%p size=%zu", (void*)a_client, a_data, a_data_size);
-    if (!a_client) {
-        log_it(L_ERROR, "s_http_handshake_response_wrapper: client is NULL");
-        return;
-    }
+    if (!a_client) return;
 
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm || !l_fsm->callback_arg) {
-        log_it(L_ERROR, "s_http_handshake_response_wrapper: no ctx in callback_arg (fsm=%p arg=%p)",
-               (void*)l_fsm, l_fsm ? l_fsm->callback_arg : NULL);
+    if (!l_fsm || l_fsm->is_removing || !l_fsm->callback_arg)
         return;
-    }
 
     s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_fsm->callback_arg;
 
-    if (l_ctx->client != a_client) {
-        log_it(L_WARNING, "s_http_handshake_response_wrapper: client mismatch");
+    if (l_ctx->client != a_client)
         return;
-    }
 
-    if (!l_ctx->stream) {
-        log_it(L_WARNING, "s_http_handshake_response_wrapper: missing stream ctx");
+    if (!l_ctx->stream)
         return;
-    }
 
     s_http_handshake_dispatch_t *l_d = DAP_NEW_Z(s_http_handshake_dispatch_t);
     if (!l_d) {
@@ -330,33 +314,20 @@ static void s_http_session_response_wrapper_with_ctx(void *a_data, size_t a_data
  */
 static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size)
 {
-    if (!a_client) {
-        log_it(L_ERROR, "s_http_session_response_wrapper: a_client is NULL");
-        return;
-    }
-    
+    if (!a_client) return;
+
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm || !l_fsm->callback_arg) {
-        log_it(L_ERROR, "s_http_session_response_wrapper: no ctx in callback_arg. FSM: %p, Arg: %p",
-               (void *)l_fsm, l_fsm ? l_fsm->callback_arg : NULL);
+    if (!l_fsm || l_fsm->is_removing || !l_fsm->callback_arg)
         return;
-    }
 
     s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_fsm->callback_arg;
-    
-    // Verify that the ctx matches this client (prevent race conditions)
-    if (l_session_ctx->client != a_client) {
-        log_it(L_WARNING, "s_http_session_response_wrapper: client mismatch (expected %p, got %p) - ctx overwritten by another request", 
-               l_session_ctx->client, a_client);
+
+    if (l_session_ctx->client != a_client)
         return;
-    }
-    
-    if (!l_session_ctx->stream || !l_session_ctx->callback) {
-        log_it(L_ERROR, "s_http_session_response_wrapper: invalid ctx (stream=%p, callback=%p)", 
-               l_session_ctx->stream, (void*)l_session_ctx->callback);
+
+    if (!l_session_ctx->stream || !l_session_ctx->callback)
         return;
-    }
-    
+
     debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: received response, data_size=%zu", a_data_size);
     
     dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
@@ -438,15 +409,10 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
  */
 static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error)
 {
-    if (!a_client) {
-        return;
-    }
-    
+    if (!a_client) return;
+
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm || !l_fsm->callback_arg) {
-        log_it(L_WARNING, "s_http_session_error_wrapper: no ctx in callback_arg");
-        return;
-    }
+    if (!l_fsm || l_fsm->is_removing || !l_fsm->callback_arg) return;
 
     s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_fsm->callback_arg;
     
