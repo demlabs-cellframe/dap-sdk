@@ -1616,14 +1616,13 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                                 /* TCP EAGAIN: kernel send buffer full.
-                                 * Do NOT disarm EPOLLOUT — level-triggered epoll
-                                 * will NOT re-report it until the kernel buffer
-                                 * has space.  Backpressure in the queue consumer
-                                 * (s_ch_send_callback) prevents buf_out from
-                                 * growing while the socket is congested.  When
-                                 * the kernel buffer drains, epoll re-fires
-                                 * EPOLLOUT naturally, send() succeeds, and
-                                 * any pending queue items are processed. */
+                                 * Disarm EPOLLOUT to stop the write_callback
+                                 * from adding more data to buf_out.  When the
+                                 * queue consumer adds data (backpressure permits),
+                                 * finalize_write re-arms EPOLLOUT naturally.
+                                 * Between disarm and re-arm, the event loop
+                                 * sleeps — no busy-spin. */
+                                dap_events_socket_set_writable_unsafe(l_cur, false);
                                 break;
                             case DESCRIPTOR_TYPE_PIPE:
                                 /* PIPE: drop buf_out and disarm to avoid busy loop */
