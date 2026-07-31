@@ -235,10 +235,20 @@ addToLibrary({
             }
         }
 
-        if (a_body && a_body_len > 0) {
-            xhr.send(HEAPU8.slice(a_body, a_body + a_body_len));
-        } else {
-            xhr.send();
+        // Wrap send + response read in try/catch: a sync XHR timeout throws
+        // DOMException (NetworkError) instead of returning a non-2xx status.
+        // Without this, the exception traps the wasm instance.
+        try {
+            if (a_body && a_body_len > 0) {
+                xhr.send(HEAPU8.slice(a_body, a_body + a_body_len));
+            } else {
+                xhr.send();
+            }
+        } catch (e) {
+            // Timeout or network error — return -1 so the C caller sees failure
+            setValue(a_out_ptr_addr, 0, '*');
+            setValue(a_out_len_addr, 0, 'i32');
+            return -1;
         }
 
         if (xhr.status >= 200 && xhr.status < 300) {
