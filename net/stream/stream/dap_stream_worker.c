@@ -128,6 +128,12 @@ static void s_ch_io_callback(void * a_msg)
     DAP_DELETE(l_msg);
 }
 
+/* Backpressure threshold: if the stream esocket's buf_out exceeds this,
+ * re-queue the message instead of writing.  This prevents unbounded buf_out
+ * growth when the peer's TCP receive window is full.  The event loop's
+ * EPOLLOUT handler will signal the queue again when buf_out drains. */
+#define DAP_STREAM_CH_SEND_BACKPRESSURE_THRESHOLD (256 * 1024)
+
 static void s_ch_send_callback(void *a_msg)
 {
     dap_stream_worker_msg_send_t *l_msg = (dap_stream_worker_msg_send_t *)a_msg;
@@ -140,6 +146,24 @@ static void s_ch_send_callback(void *a_msg)
     dap_events_socket_t *l_es = dap_context_find(l_context, l_msg->uuid);
     if (!l_es) {
         debug_if(s_debug_more, L_DEBUG, "We got i/o message for client thats now not in list");
+        goto ret_n_clear;
+    }
+    /* Backpressure: if buf_out is already large, re-queue the message
+     * quietly (no eventfd signal) and store the queue on the esocket.
+     * The EPOLLOUT handler will signal the queue when buf_out drains
+     * below threshold.  This prevents both:
+     * - Unbounded buf_out growth (consumer stops adding data)
+     * - Tight re-push loop (no eventfd signal → no immediate re-entry)
+     * - Message loss (items stay in queue, processed after drain) */
+    if (l_es->buf_out_size > DAP_STREAM_CH_SEND_BACKPRESSURE_THRESHOLD) {
+        dap_stream_worker_t *l_sw = DAP_STREAM_WORKER(l_worker);
+        if (l_sw && l_sw->queue_ch_send) {
+            if (dap_context_queue_push_quiet(l_sw->queue_ch_send, l_msg)) {
+                l_es->congestion_queue = l_sw->queue_ch_send;
+                return;
+            }
+        }
+        debug_if(s_debug_more, L_DEBUG, "Backpressure: queue full, dropping %zu bytes", l_msg->data_size);
         goto ret_n_clear;
     }
     dap_stream_t *l_stream = dap_stream_get_from_es(l_es);

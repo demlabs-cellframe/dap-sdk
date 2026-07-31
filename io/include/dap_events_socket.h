@@ -368,6 +368,14 @@ typedef struct dap_events_socket {
     time_t last_time_active;
     time_t last_ping_request;
 
+    /* Backpressure: when a cross-thread queue consumer detects buf_out is
+     * full, it stores the queue here (quiet push, no eventfd signal).
+     * When the EPOLLOUT handler drains buf_out below threshold, it signals
+     * this queue to wake the consumer.  Set by s_ch_send_callback, cleared
+     * when buf_out drains.  Only one queue per esocket (the first one that
+     * congested). */
+    void *congestion_queue;
+
     void *_inheritor; // Inheritor data to specific client type, usualy states for state machine
     void *_pvt; //Private section, different for different types
     UT_hash_handle hh, hh2; // Handle for local CPU storage on worker or proc_thread AND for total amount

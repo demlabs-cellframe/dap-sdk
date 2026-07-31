@@ -1460,21 +1460,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             l_bytes_sent = 0;
             bool l_write_repeat = false;
             if (l_flag_write && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) && !(l_cur->flags & DAP_SOCK_CONNECTING) && !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)) {
-                /* Disarm EPOLLOUT before calling write_callback.  write_callback
-                 * can add data to buf_out via dap_events_socket_write_unsafe,
-                 * which calls finalize_write → set_writable(true).  If EPOLLOUT
-                 * is already disarmed, set_writable(true) is a no-op (flag
-                 * already matches).  This prevents the re-arm race where:
-                 * 1. send() → EAGAIN → set_writable(false) + WRITE_EAGAIN
-                 * 2. write_callback → write_unsafe → finalize_write → set_writable(true)
-                 * 3. epoll immediately fires EPOLLOUT again → busy-spin
-                 *
-                 * For EAGAIN sockets: skip write_callback entirely.  No point
-                 * generating more data when the kernel can't accept what we have. */
-                if (!(l_cur->flags & DAP_SOCK_WRITE_EAGAIN)) {
-                    if (l_cur->callbacks.write_callback)
-                        l_write_repeat = l_cur->callbacks.write_callback(l_cur, l_cur->callbacks.arg);
-                }
+                if (l_cur->callbacks.write_callback)
+                    l_write_repeat = l_cur->callbacks.write_callback(l_cur, l_cur->callbacks.arg);
                 debug_if(g_debug_reactor, L_DEBUG, "Main loop output: %zu bytes to send, repeat next time: %s",
                                                     l_cur->buf_out_size, l_write_repeat ? "true" : "false");
                 /*
@@ -1629,15 +1616,14 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                                 /* TCP EAGAIN: kernel send buffer full.
-                                 * Disarm EPOLLOUT and mark socket as EAGAIN.
-                                 * finalize_write checks DAP_SOCK_WRITE_EAGAIN
-                                 * and skips re-arming EPOLLOUT while the socket
-                                 * is congested.  The flag is cleared on the
-                                 * next successful send().  Without this guard,
-                                 * cross-thread writes keep re-arming EPOLLOUT
-                                 * → busy-spin. */
-                                dap_events_socket_set_writable_unsafe(l_cur, false);
-                                l_cur->flags |= DAP_SOCK_WRITE_EAGAIN;
+                                 * Do NOT disarm EPOLLOUT — level-triggered epoll
+                                 * will NOT re-report it until the kernel buffer
+                                 * has space.  Backpressure in the queue consumer
+                                 * (s_ch_send_callback) prevents buf_out from
+                                 * growing while the socket is congested.  When
+                                 * the kernel buffer drains, epoll re-fires
+                                 * EPOLLOUT naturally, send() succeeds, and
+                                 * any pending queue items are processed. */
                                 break;
                             case DESCRIPTOR_TYPE_PIPE:
                                 /* PIPE: drop buf_out and disarm to avoid busy loop */
@@ -1661,38 +1647,25 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     } else if (l_bytes_sent) {
                         debug_if(g_debug_reactor, L_DEBUG, "Output: %zu from %zu bytes are sent", l_bytes_sent, l_cur->buf_out_size);
-                        /* Successful send — clear EAGAIN flag, kernel buffer has space. */
-                        l_cur->flags &= ~DAP_SOCK_WRITE_EAGAIN;
                         if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP)
                             l_cur->last_time_active = l_cur_time;
+                        /* Signal congestion queue if buf_out drained below
+                         * backpressure threshold.  This wakes the queue consumer
+                         * (s_ch_send_callback) which was blocked by backpressure. */
+                        if (l_cur->buf_out_size <= 262144 && l_cur->congestion_queue) {
+                            dap_context_queue_signal(l_cur->congestion_queue);
+                            l_cur->congestion_queue = NULL;
+                        }
                         if (l_cur->buf_out_size == 0 && l_cur->callbacks.write_finished_callback)
                             l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
                     }
                 }
                 if (!l_cur->buf_out_size && !l_write_repeat) {
-                    l_cur->flags &= ~DAP_SOCK_WRITE_EAGAIN;
                     if (l_cur->type != DESCRIPTOR_TYPE_SOCKET_UDP || !l_cur->packet_queue || !l_cur->packet_queue->count)
                         dap_events_socket_set_writable_unsafe(l_cur, false);
                 }
             } else if (l_flag_write && !(l_cur->flags & DAP_SOCK_READY_TO_WRITE)) {
-                /* EPOLLOUT fires but READY_TO_WRITE not set — poll state mismatch.
-                 * This happens when set_writable(false) was called but epoll
-                 * still has EPOLLOUT registered from a previous MOD.
-                 * dap_context_poll_update would just re-read the flags and skip
-                 * EPOLLOUT (correct), but the kernel already fired it — so we
-                 * need to also consume buf_out if there is any, or the fd will
-                 * keep re-firing with nothing to do.
-                 * Since READY_TO_WRITE is off, we already disarmed via
-                 * set_writable(false).  The real fix is to also call
-                 * poll_update to sync the kernel state.  But poll_update with
-                 * READY_TO_WRITE off removes EPOLLOUT — which is correct.
-                 * The problem is that cross-thread writes set READY_TO_WRITE
-                 * back on via finalize_write, and poll_update re-adds EPOLLOUT.
-                 * So we must check: is the socket EAGAIN? If so, disarm again. */
-                if (l_cur->flags & DAP_SOCK_WRITE_EAGAIN)
-                    dap_events_socket_set_writable_unsafe(l_cur, false);
-                else
-                    dap_context_poll_update(l_cur);
+                dap_context_poll_update(l_cur);
             }
 
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)

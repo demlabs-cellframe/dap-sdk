@@ -71,6 +71,22 @@ void dap_context_queue_delete(dap_context_queue_t *a_queue);
 bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item);
 
 /**
+ * @brief Push item to queue WITHOUT signaling eventfd (thread-safe, lock-free)
+ * Use for backpressure: push an item back without waking the consumer.
+ * Call dap_context_queue_signal() later when the consumer should process it.
+ * @param a_queue Queue
+ * @param a_item Item to push
+ * @return true if successful, false if full
+ */
+bool dap_context_queue_push_quiet(dap_context_queue_t *a_queue, void *a_item);
+
+/**
+ * @brief Signal the queue's eventfd to wake up the consumer
+ * @param a_queue Queue
+ */
+void dap_context_queue_signal(dap_context_queue_t *a_queue);
+
+/**
  * @brief Get number of items in queue
  * @param a_queue Queue
  * @return Number of pending items

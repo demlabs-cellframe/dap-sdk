@@ -207,6 +207,17 @@ bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item) {
     return true;
 }
 
+bool dap_context_queue_push_quiet(dap_context_queue_t *a_queue, void *a_item) {
+    if (!a_queue || !a_item)
+        return false;
+    return dap_ring_buffer_push(a_queue->ring_buffer, a_item);
+}
+
+void dap_context_queue_signal(dap_context_queue_t *a_queue) {
+    if (a_queue && a_queue->event_socket)
+        dap_events_socket_event_signal(a_queue->event_socket, 1);
+}
+
 /**
  * @brief Process items from queue (called by reactor)
  *

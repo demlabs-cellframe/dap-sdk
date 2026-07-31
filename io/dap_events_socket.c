@@ -1918,13 +1918,11 @@ static inline void s_events_socket_finalize_write(dap_events_socket_t *a_es, siz
     a_es->buf_out_size += a_bytes_written;
     debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
              a_bytes_written, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
-    /* Do NOT re-arm EPOLLOUT if send() previously returned EAGAIN on this
-     * socket.  The event loop will clear DAP_SOCK_WRITE_EAGAIN when a
-     * future send() succeeds.  Without this guard, every write to buf_out
-     * re-arms EPOLLOUT, and since the kernel buffer is still full, level-
-     * triggered epoll returns it immediately → busy-spin. */
-    if (!(a_es->flags & DAP_SOCK_WRITE_EAGAIN))
-        dap_events_socket_set_writable_unsafe(a_es, true);
+    /* Arm EPOLLOUT unconditionally — matches master behavior.
+     * Level-triggered epoll provides natural backpressure: when the kernel
+     * TCP send buffer is full, epoll will NOT return EPOLLOUT until space
+     * frees up.  No congestion flag needed. */
+    dap_events_socket_set_writable_unsafe(a_es, true);
 }
 
 /**
