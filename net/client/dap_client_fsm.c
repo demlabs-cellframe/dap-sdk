@@ -57,7 +57,7 @@
 // ===== Module state =====
 
 static dap_client_fsm_t *s_fsm_table = NULL;
-static pthread_rwlock_t s_fsm_table_lock = PTHREAD_RWLOCK_INITIALIZER;
+pthread_rwlock_t s_fsm_table_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 static int s_max_attempts = 3;
 static int s_timeout = 20;

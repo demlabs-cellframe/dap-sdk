@@ -303,44 +303,29 @@ static dap_client_t *s_get_client_from_stream(dap_stream_t *a_stream)
 
 void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, size_t a_data_size, int a_error)
 {
-    debug_if(s_debug_more, L_DEBUG, "Handshake callback: stream=%p, data=%p, size=%zu, error=%d",
-           a_stream, a_data, a_data_size, a_error);
-
-    if (!a_stream) {
-        log_it(L_WARNING, "Handshake callback: stream is NULL, cannot notify FSM");
-        return;
-    }
+    if (!a_stream) return;
 
     dap_client_t *l_client = s_get_client_from_stream(a_stream);
+    if (!l_client) return;
 
-    if (!l_client) {
-        log_it(L_WARNING, "Handshake callback: client not found from stream %p (trans_ctx=%p), "
-               "FSM should have been notified via esocket delete callback",
-               (void*)a_stream, (void*)a_stream->trans_ctx);
+    dap_client_fsm_t *l_fsm;
+    DAP_CLIENT_FSM_SAFE_ENTER(l_client, l_fsm);
+    if (!l_fsm || !l_fsm->client_trans_ctx || !l_fsm->trans_ctx) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
     }
+    dap_client_trans_ctx_t *l_ctx = l_fsm->client_trans_ctx;
+    dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
 
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-    dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
-    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-    if (!l_ctx || !l_fsm || !l_tc) {
-        log_it(L_WARNING, "Handshake callback: FSM context incomplete (fsm=%p ctx=%p tc=%p), "
-               "FSM should have been notified via esocket delete callback",
-               (void*)l_fsm, (void*)l_ctx, (void*)l_tc);
-        return;
-    }
-    
     if (a_error != 0) {
-        log_it(L_WARNING, "Handshake failed with error %d, trying fallback", a_error);
-        // Try fallback via FSM (transport fallback is FSM logic)
+        uint64_t l_uuid = l_ctx->fsm_uuid;
+        uint32_t l_thread = l_ctx->fsm_thread_idx;
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         dap_client_error_t l_err = (a_error == ETIMEDOUT)
             ? ERROR_NETWORK_CONNECTION_TIMEOUT : ERROR_NETWORK_CONNECTION_REFUSE;
-        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                              STAGE_STATUS_ERROR, l_err);
+        dap_client_fsm_notify(l_uuid, l_thread, STAGE_STATUS_ERROR, l_err);
         return;
     }
-    
-    // Process handshake response
     if (a_data && a_data_size > 0) {
         // HTTP-style response with JSON data
         s_enc_init_response(l_client, a_data, a_data_size);
@@ -350,61 +335,69 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
         if (l_tc->stream_key)
             dap_enc_key_delete(l_tc->stream_key);
         l_tc->stream_key = dap_enc_key_dup(a_stream->session->key);
-        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                              STAGE_STATUS_DONE, ERROR_NO_ERROR);
+        uint64_t l_uuid = l_ctx->fsm_uuid;
+        uint32_t l_thread = l_ctx->fsm_thread_idx;
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
+        dap_client_fsm_notify(l_uuid, l_thread, STAGE_STATUS_DONE, ERROR_NO_ERROR);
     } else {
-        log_it(L_WARNING, "Handshake empty response without session key, notify FSM error");
-        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                              STAGE_STATUS_ERROR, ERROR_NETWORK_CONNECTION_REFUSE);
+        uint64_t l_uuid = l_ctx->fsm_uuid;
+        uint32_t l_thread = l_ctx->fsm_thread_idx;
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
+        dap_client_fsm_notify(l_uuid, l_thread, STAGE_STATUS_ERROR, ERROR_NETWORK_CONNECTION_REFUSE);
     }
 }
 
 void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id,
                                         const char *a_response_data, size_t a_response_size, int a_error)
 {
-    if (!a_stream || !a_stream->trans_ctx) {
-        log_it(L_WARNING, "Session create callback: stream=%p trans_ctx=%p invalid",
-               (void*)a_stream, a_stream ? (void*)a_stream->trans_ctx : NULL);
+    if (!a_stream || !a_stream->trans_ctx)
         return;
-    }
-    
-    dap_client_t *l_client = s_get_client_from_stream(a_stream);
 
-    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
-    dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
-    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-    if (!l_ctx || !l_fsm || !l_tc) {
-        log_it(L_WARNING, "Session create callback: FSM context incomplete, "
-               "FSM should have been notified via esocket delete callback");
+    dap_client_t *l_client = s_get_client_from_stream(a_stream);
+    if (!l_client) return;
+
+    dap_client_fsm_t *l_fsm;
+    DAP_CLIENT_FSM_SAFE_ENTER(l_client, l_fsm);
+    if (!l_fsm || !l_fsm->client_trans_ctx || !l_fsm->trans_ctx) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
     }
+    dap_client_trans_ctx_t *l_ctx = l_fsm->client_trans_ctx;
+    dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
 
     if (a_error != 0) {
+        uint64_t l_uuid = l_ctx->fsm_uuid;
+        uint32_t l_thread = l_ctx->fsm_thread_idx;
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         dap_client_error_t l_err = (a_error == ETIMEDOUT)
             ? ERROR_NETWORK_CONNECTION_TIMEOUT : ERROR_STREAM_CTL_ERROR;
-        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                              STAGE_STATUS_ERROR, l_err);
+        dap_client_fsm_notify(l_uuid, l_thread, STAGE_STATUS_ERROR, l_err);
         return;
     }
-    
+
     if (a_session_id != 0 || (a_response_data && a_response_size > 0)) {
         if (a_response_data && a_response_size > 0) {
+            DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
             s_stream_ctl_response(l_client, (void *)a_response_data, a_response_size);
             DAP_DELETE(a_response_data);
         } else {
             bool l_have_key = l_tc->stream_key ||
                               (a_stream->session && a_stream->session->key);
+            uint64_t l_uuid = l_ctx->fsm_uuid;
+            uint32_t l_thread = l_ctx->fsm_thread_idx;
+            DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
             if (l_have_key) {
                 l_tc->stream_id = a_session_id;
-                dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                                      STAGE_STATUS_DONE, ERROR_NO_ERROR);
+                dap_client_fsm_notify(l_uuid, l_thread, STAGE_STATUS_DONE, ERROR_NO_ERROR);
             } else {
-                dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                                      STAGE_STATUS_ERROR, ERROR_ENC_NO_KEY);
+                dap_client_fsm_notify(l_uuid, l_thread, STAGE_STATUS_ERROR, ERROR_ENC_NO_KEY);
             }
         }
     } else {
-        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+        uint64_t l_uuid = l_ctx->fsm_uuid;
+        uint32_t l_thread = l_ctx->fsm_thread_idx;
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
+        dap_client_fsm_notify(l_uuid, l_thread,
                               STAGE_STATUS_ERROR, ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT);
     }
 }
@@ -418,25 +411,28 @@ void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_cod
     }
     
     dap_client_t *l_client = s_get_client_from_stream(a_stream);
-    
-    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
-    dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
-    if (!l_ctx || !l_fsm) {
-        log_it(L_WARNING, "Transport connect callback: FSM context incomplete, "
-               "FSM should have been notified via esocket delete callback");
+    if (!l_client) return;
+
+    dap_client_fsm_t *l_fsm;
+    DAP_CLIENT_FSM_SAFE_ENTER(l_client, l_fsm);
+    if (!l_fsm || !l_fsm->client_trans_ctx) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
     }
-    
+    dap_client_trans_ctx_t *l_ctx = l_fsm->client_trans_ctx;
+
     if (a_error_code != 0) {
-        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                              STAGE_STATUS_ERROR, ERROR_STREAM_CONNECT);
+        uint64_t l_uuid = l_ctx->fsm_uuid;
+        uint32_t l_thread = l_ctx->fsm_thread_idx;
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
+        dap_client_fsm_notify(l_uuid, l_thread, STAGE_STATUS_ERROR, ERROR_STREAM_CONNECT);
         return;
     }
-    
-    debug_if(s_debug_more, L_DEBUG, "Transport connected for streaming on %s:%u",
-             l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
-    dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                          STAGE_STATUS_DONE, ERROR_NO_ERROR);
+
+    uint64_t l_uuid = l_ctx->fsm_uuid;
+    uint32_t l_thread = l_ctx->fsm_thread_idx;
+    DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
+    dap_client_fsm_notify(l_uuid, l_thread, STAGE_STATUS_DONE, ERROR_NO_ERROR);
 }
 
 // ===== ENC response processing (runs on worker) =====

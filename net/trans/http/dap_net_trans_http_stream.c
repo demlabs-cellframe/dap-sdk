@@ -223,25 +223,30 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
     (void)a_arg;
     if (!a_client) return;
 
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm || l_fsm->is_removing || !l_fsm->callback_arg)
+    dap_client_fsm_t *l_fsm;
+    DAP_CLIENT_FSM_SAFE_ENTER(a_client, l_fsm);
+    if (!l_fsm || !l_fsm->callback_arg) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
+    }
 
     s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_fsm->callback_arg;
 
     // Verify that the ctx matches this client
     if (l_ctx->client != a_client || !l_ctx->stream) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
     }
 
     s_http_handshake_dispatch_t *l_d = DAP_NEW_Z(s_http_handshake_dispatch_t);
     if (!l_d) {
-        log_it(L_ERROR, "s_http_handshake_error_wrapper: failed to allocate dispatch ctx");
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
     }
     l_d->ctx = l_ctx;
     l_d->error = a_error;
 
+    DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
     dap_client_fsm_dispatch(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                             s_http_handshake_on_fsm_thread, l_d);
 }
@@ -253,37 +258,38 @@ static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_da
 {
     if (!a_client) return;
 
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm || l_fsm->is_removing || !l_fsm->callback_arg)
+    dap_client_fsm_t *l_fsm;
+    DAP_CLIENT_FSM_SAFE_ENTER(a_client, l_fsm);
+    if (!l_fsm || !l_fsm->callback_arg) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
+    }
 
     s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_fsm->callback_arg;
 
-    if (l_ctx->client != a_client)
+    if (l_ctx->client != a_client || !l_ctx->stream) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
-
-    if (!l_ctx->stream)
-        return;
+    }
 
     s_http_handshake_dispatch_t *l_d = DAP_NEW_Z(s_http_handshake_dispatch_t);
     if (!l_d) {
-        log_it(L_ERROR, "s_http_handshake_response_wrapper: failed to allocate dispatch ctx");
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
     }
     l_d->ctx = l_ctx;
     if (a_data && a_data_size) {
         l_d->data = DAP_NEW_SIZE(void, a_data_size);
         if (!l_d->data) {
-            log_it(L_ERROR, "s_http_handshake_response_wrapper: failed to copy response data");
             DAP_DELETE(l_d);
+            DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
             return;
         }
         memcpy(l_d->data, a_data, a_data_size);
         l_d->data_size = a_data_size;
     }
 
-    log_it(L_INFO, "[HS_DBG] dispatching response to FSM uuid=0x%016" PRIx64 " thread=%u",
-           l_ctx->fsm_uuid, l_ctx->fsm_thread_idx);
+    DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
     dap_client_fsm_dispatch(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                             s_http_handshake_on_fsm_thread, l_d);
 }
@@ -316,20 +322,22 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
 {
     if (!a_client) return;
 
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm || l_fsm->is_removing || !l_fsm->callback_arg)
+    dap_client_fsm_t *l_fsm;
+    DAP_CLIENT_FSM_SAFE_ENTER(a_client, l_fsm);
+    if (!l_fsm || !l_fsm->callback_arg) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
+    }
 
     s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_fsm->callback_arg;
 
-    if (l_session_ctx->client != a_client)
+    if (l_session_ctx->client != a_client || !l_session_ctx->stream || !l_session_ctx->callback) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
-
-    if (!l_session_ctx->stream || !l_session_ctx->callback)
-        return;
+    }
 
     debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: received response, data_size=%zu", a_data_size);
-    
+
     dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
     if (l_tc && l_tc->session_key) {
         debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: using session_key from trans_ctx");
@@ -338,70 +346,39 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
         log_it(L_WARNING, "s_http_session_response_wrapper: no session_key in trans_ctx (trans=%p)",
                (void *)l_trans);
     }
-    
+
     // Parse session response to extract session_id
     uint32_t l_session_id = 0;
     char *l_response_data = NULL;
     size_t l_response_size = 0;
-    
+
     if (a_data && a_data_size > 0) {
-        // Response is already decrypted by s_http_request_response if encryption was enabled
         char *l_response_str = (char*)a_data;
-        
-        // Check if response starts with "ERROR" or looks invalid
-        // But generally we expect "session_id stream_key ..."
-                
-                // Parse response format: "session_id stream_key ..."
         int l_parsed = sscanf(l_response_str, "%u", &l_session_id);
-                debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: parsed session_id=%u (parsed_count=%d)", 
-                       l_session_id, l_parsed);
-                
-                // Allocate and copy full response data for trans callback
-        // Ensure null-termination just in case
-            l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-            if (l_response_data) {
-                memcpy(l_response_data, a_data, a_data_size);
-                l_response_data[a_data_size] = '\0';
-                l_response_size = a_data_size;
-            }
-        
-        if (l_parsed < 1) {
-             log_it(L_WARNING, "s_http_session_response_wrapper: failed to parse session_id from response (len=%zu): %.100s", 
-                   a_data_size, (char*)a_data);
+        l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
+        if (l_response_data) {
+            memcpy(l_response_data, a_data, a_data_size);
+            l_response_data[a_data_size] = '\0';
+            l_response_size = a_data_size;
         }
-    } else {
-        log_it(L_WARNING, "s_http_session_response_wrapper: empty response data");
+        if (l_parsed < 1)
+            log_it(L_WARNING, "s_http_session_response_wrapper: failed to parse session_id");
     }
-    
-    debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: calling callback with session_id=%u, response_size=%zu", 
-           l_session_id, l_response_size);
-    
+
     // Save ctx data before calling callback (callback might free ctx)
     dap_stream_t *l_stream = l_session_ctx->stream;
     dap_net_trans_session_cb_t l_callback = l_session_ctx->callback;
     void *l_old_callback_arg = l_session_ctx->old_callback_arg;
-    
-    // Call trans callback with session_id and full response data
-    if (l_callback) {
-        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: calling callback stream=%p, session_id=%u", 
-               l_stream, l_session_id);
+
+    // Free per-request ctx and restore old callback_arg BEFORE callback
+    DAP_DELETE(l_session_ctx);
+    l_fsm->callback_arg = l_old_callback_arg;
+
+    // Release lock before calling callback (it may trigger FSM deletion)
+    DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
+
+    if (l_callback)
         l_callback(l_stream, l_session_id, l_response_data, l_response_size, 0);
-        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: callback returned");
-    } else {
-        log_it(L_ERROR, "s_http_session_response_wrapper: callback is NULL!");
-    }
-    
-    // Free per-request ctx and restore old callback_arg AFTER callback completes
-    // Note: callback should not use ctx after this point
-    // Note: l_response_data is freed by callback (s_session_create_callback_wrapper), don't free it here
-    if (l_fsm && l_session_ctx) {
-        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: freeing ctx and restoring callback_arg");
-        DAP_DELETE(l_session_ctx);
-        l_fsm->callback_arg = l_old_callback_arg;
-    } else if (l_session_ctx) {
-        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: freeing ctx (no FSM)");
-        DAP_DELETE(l_session_ctx);
-    }
 }
 
 /**
@@ -411,15 +388,17 @@ static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, in
 {
     if (!a_client) return;
 
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm || l_fsm->is_removing || !l_fsm->callback_arg) return;
+    dap_client_fsm_t *l_fsm;
+    DAP_CLIENT_FSM_SAFE_ENTER(a_client, l_fsm);
+    if (!l_fsm || !l_fsm->callback_arg) {
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
+        return;
+    }
 
     s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_fsm->callback_arg;
-    
-    // Verify that the ctx matches this client
+
     if (l_session_ctx->client != a_client || !l_session_ctx->stream || !l_session_ctx->callback) {
-        log_it(L_WARNING, "s_http_session_error_wrapper: ctx invalid or mismatch (stream=%p, callback=%p, client=%p vs %p)", 
-               l_session_ctx->stream, (void*)l_session_ctx->callback, l_session_ctx->client, a_client);
+        DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
         return;
     }
     
@@ -427,15 +406,13 @@ static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, in
     if (l_session_ctx->callback) {
         l_session_ctx->callback(l_session_ctx->stream, 0, NULL, 0, a_error);
     }
-    
+
     // Free per-request ctx and restore old callback_arg
-    if (l_fsm && l_session_ctx) {
-        void *l_old_callback_arg = l_session_ctx->old_callback_arg;
-        DAP_DELETE(l_session_ctx);
-        l_fsm->callback_arg = l_old_callback_arg;
-    } else if (l_session_ctx) {
-        DAP_DELETE(l_session_ctx);
-    }
+    void *l_old_callback_arg = l_session_ctx->old_callback_arg;
+    DAP_DELETE(l_session_ctx);
+    l_fsm->callback_arg = l_old_callback_arg;
+
+    DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
 }
 
 // ============================================================================

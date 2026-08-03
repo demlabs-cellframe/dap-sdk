@@ -1616,13 +1616,14 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                                 /* TCP EAGAIN: kernel send buffer full.
-                                 * Disarm EPOLLOUT to stop the write_callback
-                                 * from adding more data to buf_out.  When the
-                                 * queue consumer adds data (backpressure permits),
-                                 * finalize_write re-arms EPOLLOUT naturally.
-                                 * Between disarm and re-arm, the event loop
-                                 * sleeps — no busy-spin. */
-                                dap_events_socket_set_writable_unsafe(l_cur, false);
+                                 * Do NOT disarm EPOLLOUT — level-triggered
+                                 * epoll will not re-fire until the kernel
+                                 * buffer has space.  Set congestion sentinel
+                                 * so finalize_write stops calling epoll_ctl(MOD)
+                                 * on every cross-thread write (which causes the
+                                 * kernel to re-evaluate and re-report). */
+                                if (!l_cur->congestion_queue)
+                                    l_cur->congestion_queue = (void*)1;
                                 break;
                             case DESCRIPTOR_TYPE_PIPE:
                                 /* PIPE: drop buf_out and disarm to avoid busy loop */
@@ -1648,11 +1649,11 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         debug_if(g_debug_reactor, L_DEBUG, "Output: %zu from %zu bytes are sent", l_bytes_sent, l_cur->buf_out_size);
                         if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP)
                             l_cur->last_time_active = l_cur_time;
-                        /* Signal congestion queue if buf_out drained below
-                         * backpressure threshold.  This wakes the queue consumer
-                         * (s_ch_send_callback) which was blocked by backpressure. */
-                        if (l_cur->buf_out_size <= 262144 && l_cur->congestion_queue) {
-                            dap_context_queue_signal(l_cur->congestion_queue);
+                        /* Clear congestion only when buf_out is fully drained.
+                         * Partial sends mean the kernel buffer is still near-full. */
+                        if (l_cur->buf_out_size == 0 && l_cur->congestion_queue) {
+                            if (l_cur->congestion_queue != (void*)1)
+                                dap_context_queue_signal(l_cur->congestion_queue);
                             l_cur->congestion_queue = NULL;
                         }
                         if (l_cur->buf_out_size == 0 && l_cur->callbacks.write_finished_callback)

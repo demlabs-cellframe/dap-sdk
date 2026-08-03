@@ -118,6 +118,38 @@ typedef struct dap_client_fsm {
  */
 #define DAP_CLIENT_FSM(a) ((a) ? (dap_client_fsm_t *)(a)->_internal : NULL)
 
+/**
+ * @brief Safely access FSM from an HTTP callback that may fire after client deletion.
+ * Holds s_fsm_table_lock for the duration of the block, preventing concurrent
+ * dap_client_fsm_delete_unsafe from freeing the FSM.
+ * Usage:
+ *   DAP_CLIENT_FSM_SAFE_ENTER(a_client, l_fsm) {
+ *       // l_fsm is valid and !is_removing
+ *       ...
+ *   } DAP_CLIENT_FSM_SAFE_EXIT(l_fsm);
+ */
+#define DAP_CLIENT_FSM_SAFE_ENTER(a_client, l_fsm) \
+    do { \
+        l_fsm = NULL; \
+        if (a_client && a_client->_internal) { \
+            extern pthread_rwlock_t s_fsm_table_lock; \
+            pthread_rwlock_rdlock(&s_fsm_table_lock); \
+            dap_client_fsm_t *_fsm = (dap_client_fsm_t *)a_client->_internal; \
+            extern dap_client_fsm_t *dap_client_fsm_find(uint64_t); \
+            l_fsm = dap_client_fsm_find(_fsm->uuid); \
+            if (l_fsm && l_fsm->is_removing) l_fsm = NULL; \
+            if (!l_fsm) pthread_rwlock_unlock(&s_fsm_table_lock); \
+        } \
+    } while (0)
+
+#define DAP_CLIENT_FSM_SAFE_EXIT(l_fsm) \
+    do { \
+        if (l_fsm) { \
+            extern pthread_rwlock_t s_fsm_table_lock; \
+            pthread_rwlock_unlock(&s_fsm_table_lock); \
+        } \
+    } while (0)
+
 // ===== Module lifecycle =====
 
 int dap_client_fsm_init(void);
