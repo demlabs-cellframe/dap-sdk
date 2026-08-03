@@ -209,9 +209,10 @@ addToLibrary({
         // Browser path: synchronous XHR.
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, false);
-        // Apply timeout so a half-open TCP connection doesn't block the
-        // worker forever. Sync XHR supports xhr.timeout on Web Workers.
-        xhr.timeout = (a_timeout_ms && a_timeout_ms > 0) ? a_timeout_ms : 15000;
+        // NOTE: xhr.timeout is NOT supported on synchronous XHR. Setting it
+        // throws InvalidAccessError in Chrome and breaks all RPC calls.
+        // The a_timeout_ms param is honored on the Node.js path (execSync
+        // timeout) but ignored here — sync XHR has no timeout mechanism.
         // Request a binary response. Sync XHR with responseType is supported on
         // Web Workers (where this MT path runs). Guard with try/catch for the
         // legacy main-thread restriction, falling back to binary string decode.
