@@ -195,7 +195,7 @@ static void s_temp_debug_log_link(const char *a_event, dap_link_t *a_link, const
         l_port = a_link->uplink.client->link_info.uplink_port;
     }
     log_it(L_WARNING, "[TEMP_DEBUG] %s " NODE_ADDR_FP_STR
-           " is_uplink=%d lm_state=%s %s:%hu client=%s/%s attempts=%u active_clusters=%zu%s%s",
+           " is_uplink=%d lm_state=%s %s:%hu client=%s/%s attempts=%u active_clusters=%"DAP_UINT64_FORMAT_U"%s%s",
            a_event, NODE_ADDR_FP_ARGS_S(a_link->addr),
            (int)a_link->is_uplink, s_link_state_name(a_link->uplink.state),
            l_host, l_port,

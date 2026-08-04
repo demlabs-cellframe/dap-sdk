@@ -983,14 +983,14 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         a_stream->esocket_uuid = 0;
         a_stream->esocket_worker = NULL;
         /* Clear error_callback to prevent spurious error reports during teardown.
-         * Do NOT clear delete_callback — the esocket delete callback (s_tls_delete
-         * or s_esocket_callback_delete) needs to run to free transport-specific
-         * resources (e.g. tls_conn_ctx_t, mimicry).  The is_deleting guard at the
-         * top of this function prevents the callback from re-entering deletion. */
+         * Do NOT blindly NULL _inheritor — TLS keeps tls_conn_ctx there for its
+         * delete_callback. Clear only when _inheritor is the stream trans_ctx, or
+         * when the stream was already detached (trans_ctx NULL) but the unified
+         * stream delete_callback would still follow a stale _inheritor. */
         l_es->callbacks.error_callback = NULL;
-        /* For non-TLS transports, _inheritor is trans_ctx which we free below.
-         * NULL it here to prevent double-free by the esocket delete callback. */
-        if (l_es->_inheritor == (void*)a_stream->trans_ctx)
+        if (l_es->_inheritor == (void*)a_stream->trans_ctx
+            || (!a_stream->trans_ctx
+                && l_es->callbacks.delete_callback == s_esocket_callback_delete))
             l_es->_inheritor = NULL;
         dap_worker_t *l_current = dap_worker_get_current();
         if (l_current == l_es_worker) {
@@ -1501,7 +1501,7 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     }
 
     debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG,
-             "Processed %lu / %lu bytes", l_processed_size, a_data_size);
+             "Processed %zu / %zu bytes", l_processed_size, a_data_size);
 
     return l_processed_size;
 }
@@ -1548,6 +1548,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: stream=%p, session=%p, key=%p, fragm_dec_size=%zu",
                  a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL, l_fragm_dec_size);
 
+        DAP_DEL_Z(a_stream->pkt_cache);
         a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_fragm_dec_size);
         dap_stream_fragment_pkt_t *l_fragm_pkt = (dap_stream_fragment_pkt_t*)a_stream->pkt_cache;
 
@@ -1555,12 +1556,17 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                  a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
 
         size_t l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
+        if (l_dec_pkt_size > l_fragm_dec_size) {
+            log_it(L_ERROR, "FRAG: dec_na returned %zu > buf %zu — possible heap overrun, dropping", l_dec_pkt_size, l_fragm_dec_size);
+            l_is_clean_fragments = true;
+            break;
+        }
 
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: dap_stream_pkt_read_unsafe returned l_dec_pkt_size=%zu (expected_min=%zu)",
                  l_dec_pkt_size, sizeof(dap_stream_fragment_pkt_t));
 
         if(l_dec_pkt_size == 0) {
-            debug_if(s_dump_packet_headers, L_WARNING, "Input: can't decode packet size = %zu (stream=%p)", a_pkt_size, a_stream);
+            log_it(L_WARNING, "Input: decryption returned 0 for pkt_size=%zu (stream=%p) — padding mismatch or corrupt data?", a_pkt_size, (void*)a_stream);
             l_is_clean_fragments = true;
             break;
         }
@@ -1626,9 +1632,15 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_dec_pkt_size = a_stream->buf_fragments_size_total;
         } else {
             size_t l_pkt_dec_size = dap_enc_decode_out_size(a_stream->session->key, a_pkt->hdr.size, DAP_ENC_DATA_TYPE_RAW);
+            DAP_DEL_Z(a_stream->pkt_cache);
             a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_pkt_dec_size);
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
+            if (l_dec_pkt_size > l_pkt_dec_size) {
+                log_it(L_ERROR, "DATA_PKT: dec_na returned %zu > buf %zu — possible heap overrun, dropping", l_dec_pkt_size, l_pkt_dec_size);
+                l_is_clean_fragments = true;
+                break;
+            }
         }
 
         debug_if(s_debug_more, L_DEBUG, "DATA_PKT: dec=%zu hdr=%zu ch_id=0x%02x data_size=%u",
@@ -1971,29 +1983,59 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     // Client-side streams may never be added if worker_assign didn't fire
     dap_stream_t *l_stream = NULL;
     bool l_in_list = false;
+    /* Bounded iteration to detect corrupted list pointers (heap corruption).
+     * If the list is corrupted, we must NOT follow stale next/prev pointers. */
+    size_t l_iter_limit = 10000;
     DL_FOREACH(s_streams, l_stream) {
+        if (!--l_iter_limit) {
+            log_it(L_ERROR, "s_stream_delete_from_list: iteration limit reached — "
+                   "s_streams list likely corrupted (stream=%p)", (void*)a_stream);
+            pthread_rwlock_unlock(&s_streams_lock);
+            return;
+        }
         if (l_stream == a_stream) {
             l_in_list = true;
             break;
         }
     }
     l_stream = NULL;
-    if (l_in_list)
+    if (l_in_list) {
         DL_DELETE(s_streams, a_stream);
+        /* Clear list pointers after removal so stale references are harmless */
+        a_stream->prev = NULL;
+        a_stream->next = NULL;
+    }
     if (a_stream->authorized) {
-        // It's an authorized stream, try to replace it in hastable
-        if (a_stream->primary)
-            HASH_DEL(s_authorized_streams, a_stream);
-        DL_FOREACH(s_streams, l_stream)
+        /* Only HASH_DEL if this stream is actually the table entry.
+         * HASH_DEL on a non-member (stale primary / already removed) corrupts
+         * uthash and later shows up as free(): corrupted unsorted chunks. */
+        if (a_stream->primary) {
+            dap_stream_t *l_in_hash = NULL;
+            HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_in_hash);
+            if (l_in_hash == a_stream)
+                HASH_DEL(s_authorized_streams, a_stream);
+            a_stream->primary = false;
+        }
+        l_stream = NULL;
+        l_iter_limit = 10000;
+        DL_FOREACH(s_streams, l_stream) {
+            if (!--l_iter_limit) {
+                log_it(L_ERROR, "s_stream_delete_from_list: authorized replace scan limit — "
+                       "s_streams list likely corrupted (stream=%p)", (void*)a_stream);
+                l_stream = NULL;
+                break;
+            }
             if (l_stream->node.uint64 == a_stream->node.uint64)
                 break;
+        }
         if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
             dap_link_manager_stream_replace(&a_stream->node, l_stream->is_client_to_uplink);
-        } else {
+        } else if (!dap_stream_node_addr_is_blank(&a_stream->node)) {
             dap_cluster_member_delete(s_global_links_cluster, &a_stream->node);
             dap_link_manager_stream_delete(&a_stream->node); // Used own rwlock for this cluster members
         }
+        a_stream->authorized = false;
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }

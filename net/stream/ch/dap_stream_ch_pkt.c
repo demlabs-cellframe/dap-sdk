@@ -228,6 +228,8 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
     l_msg->data_size = a_data_size;
 
     if (!dap_context_queue_push(a_worker->queue_ch_io, l_msg)) {
+        log_it(L_ERROR, "[TEST] stream_ch queue_ch_io full: type=0x%02x size=%zu",
+               a_type, a_data_size);
         log_it(L_ERROR, "Can't send pointer to queue (queue full)");
         DAP_DEL_Z(l_msg->data);
         DAP_DELETE(l_msg);
@@ -299,6 +301,8 @@ size_t dap_stream_ch_pkt_write_inter(dap_context_queue_t * a_queue_input, dap_st
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
     if (!dap_context_queue_push(a_queue_input, l_msg)) {
+        log_it(L_ERROR, "[TEST] stream_ch write_inter queue full: type=0x%02x size=%zu",
+               a_type, a_data_size);
         log_it(L_ERROR, "Can't send pointer to queue (queue full)");
         DAP_DEL_Z(l_msg->data);
         DAP_DELETE(l_msg);

@@ -56,7 +56,6 @@
 #include <time.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdatomic.h>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -64,7 +63,7 @@
 #include <sys/socket.h>
 #endif
 #include "uthash.h"
-#include "dap_events_socket.h"
+#include "dap_events_socket.h" /* dap_common.h: C <stdatomic.h> / C++ <atomic> */
 #include "dap_server.h"
 
 #ifdef __cplusplus
@@ -142,7 +141,7 @@ struct dap_io_flow {
     // Flow management
     time_t last_activity;                   ///< Last packet timestamp (for timeout)
     uint32_t owner_worker_id;               ///< Owner worker ID
-    _Atomic size_t remote_access_count;     ///< Cross-worker access counter
+    _Atomic(size_t) remote_access_count;     ///< Cross-worker access counter
     dap_io_flow_server_t *server;           ///< Back-reference to server (for cross-worker forwarding)
     
     // Flow Control (reliable delivery layer)
@@ -364,18 +363,18 @@ struct dap_io_flow_server {
     // Synchronization for graceful cleanup
     pthread_mutex_t cleanup_mutex;          ///< Mutex for cleanup synchronization
     pthread_cond_t cleanup_cond;            ///< Condition variable for cleanup completion
-    _Atomic uint32_t pending_cleanups;      ///< Number of pending cleanup operations (scheduled)
-    _Atomic uint32_t active_callbacks;      ///< Number of callbacks CURRENTLY executing (not yet returned)
+    _Atomic(uint32_t) pending_cleanups;      ///< Number of pending cleanup operations (scheduled)
+    _Atomic(uint32_t) active_callbacks;      ///< Number of callbacks CURRENTLY executing (not yet returned)
     
     // Statistics
-    _Atomic size_t local_hits;              ///< Local flow lookups
-    _Atomic size_t remote_hits;             ///< Remote flow lookups
+    _Atomic(size_t) local_hits;              ///< Local flow lookups
+    _Atomic(size_t) remote_hits;             ///< Remote flow lookups
     
     bool is_running;                        ///< Server is running
-    _Atomic bool is_deleting;               ///< Server is being deleted (invalidate queued packets)
+    _Atomic(bool) is_deleting;               ///< Server is being deleted (invalidate queued packets)
     
     // Cross-worker packet tracking (for natural drain during cleanup)
-    _Atomic uint32_t cross_worker_packets;     ///< Number of packets being forwarded between workers
+    _Atomic(uint32_t) cross_worker_packets;     ///< Number of packets being forwarded between workers
     pthread_mutex_t cross_worker_mutex;        ///< Mutex for cross-worker drain wait
     pthread_cond_t cross_worker_cond;          ///< Condition variable for cross-worker drain
 };

@@ -63,12 +63,20 @@ static void s_stream_tc_cleanup_on_worker(void *a_arg)
 
     if (l_stream) {
         /* Worker context: safe to touch stream fields.  Detach the trans_ctx
-         * before deleting the stream so dap_stream_delete_unsafe() does not
-         * write into the trans_ctx we are about to free. */
-        if (l_stream->trans_ctx == l_tc) {
-            l_stream->trans_ctx = NULL;
-            if (l_stream->client_stream_ref == &l_tc->stream)
-                l_stream->client_stream_ref = NULL;
+         * and client_stream_ref unconditionally before deleting the stream so
+         * dap_stream_delete_unsafe() does not follow stale pointers.
+         * l_tc is intentionally NULL here (trans_ctx stays with FSM), so we
+         * cannot compare — just clear both fields. */
+        l_stream->trans_ctx = NULL;
+        l_stream->client_stream_ref = NULL;
+        /* Break circular reference and suppress re-entrant callbacks:
+         * - _inheritor -> trans_ctx -> stream would re-enter stream deletion
+         * - delete/error callbacks would notify FSM STREAM_ABORTED while we are
+         *   already tearing down for an intentional reconnect/close. */
+        if (l_stream->esocket) {
+            l_stream->esocket->_inheritor = NULL;
+            l_stream->esocket->callbacks.delete_callback = NULL;
+            l_stream->esocket->callbacks.error_callback = NULL;
         }
         dap_stream_delete_unsafe(l_stream);
     }

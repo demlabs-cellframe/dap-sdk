@@ -186,6 +186,8 @@ static int s_packet_queue_push(dap_events_socket_packet_queue_t *a_queue,
     
     // Check capacity limit
     if (a_queue->count >= DAP_PACKET_QUEUE_MAX_CAPACITY) {
+        log_it(L_WARNING, "[TEST] Packet queue full (%zu packets), dropping packet size=%zu",
+               a_queue->count, a_size);
         log_it(L_WARNING, "Packet queue full (%zu packets), dropping packet", a_queue->count);
         return -1;
     }
@@ -1804,6 +1806,25 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
 size_t dap_events_socket_write_inter(dap_worker_t *a_w, dap_events_socket_uuid_t a_es_uuid,
                                      void *a_data, size_t a_data_size)
 {
+#ifdef DAP_EVENTS_CAPS_IOCP
+    dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
+    if (!ol) {
+        DAP_DELETE(a_data);
+        return 0;
+    }
+    *ol = (dap_overlapped_t){ .op = io_write };
+    if (a_data && a_data_size)
+        memcpy(ol->buf, a_data, a_data_size);
+    DAP_DELETE(a_data); /* took ownership from caller */
+    debug_if(g_debug_reactor, L_INFO, "Write inter %zu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]",
+             a_data_size, a_es_uuid, a_w->id);
+    return PostQueuedCompletionStatus(a_w->context->iocp, (DWORD)a_data_size, (ULONG_PTR)a_es_uuid, (OVERLAPPED *)ol)
+               ? a_data_size
+               : (DAP_DELETE(ol),
+                  log_it(L_ERROR, "Can't schedule write_inter to %" DAP_UINT64_FORMAT_U " in context #%d, error %d",
+                         a_es_uuid, a_w->context->id, GetLastError()),
+                  0);
+#else
     dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
     l_msg->esocket_uuid = a_es_uuid;
     l_msg->data = a_data;       /* takes ownership */
@@ -1816,6 +1837,7 @@ size_t dap_events_socket_write_inter(dap_worker_t *a_w, dap_events_socket_uuid_t
         return 0;
     }
     return a_data_size;
+#endif
 }
 
 /**
@@ -1896,6 +1918,8 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
             return NULL;
         }
         a_es->buf_out = l_buf_out;
+        log_it(L_WARNING, "[TEST] buf_out grow: fd=%"DAP_FORMAT_SOCKET" cap=%zu used=%zu need+%zu",
+               a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size, a_required_size);
         debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", 
                  a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + a_required_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
