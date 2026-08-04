@@ -72,8 +72,7 @@ extern void js_rtc_init_callbacks(void);
 extern int js_http_post_sync(const char *a_url_ptr, const char *a_content_type_ptr,
                               const void *a_body, int a_body_len,
                               const char *a_extra_headers_ptr,
-                              int a_out_ptr_addr, int a_out_len_addr,
-                              int a_timeout_ms);
+                              int a_out_ptr_addr, int a_out_len_addr);
 #endif
 
 #define RTC_RECV_BUF_SIZE   (256 * 1024)
@@ -311,7 +310,7 @@ static int s_do_signaling(rtc_conn_t *a_conn)
     int l_rc = js_http_post_sync(l_url, "application/sdp",
                                   l_offer_args.out, (int)strlen(l_offer_args.out),
                                   NULL, (int)(uintptr_t)&l_resp,
-                                  (int)(uintptr_t)&l_resp_len, 15000);
+                                  (int)(uintptr_t)&l_resp_len);
     free(l_offer_args.out);
     if (l_rc != 0 || !l_resp) { log_it(L_ERROR, "SDP offer POST failed: %d", l_rc); return -1; }
 
@@ -332,7 +331,7 @@ static int s_do_signaling(rtc_conn_t *a_conn)
         int l_ice_resp_len = 0;
         js_http_post_sync(l_url, "application/json",
                           l_ice_args.out, (int)strlen(l_ice_args.out),
-                          NULL, (int)(uintptr_t)&l_ice_resp, (int)(uintptr_t)&l_ice_resp_len, 15000);
+                          NULL, (int)(uintptr_t)&l_ice_resp, (int)(uintptr_t)&l_ice_resp_len);
         if (l_ice_resp) free(l_ice_resp);
         }
     }

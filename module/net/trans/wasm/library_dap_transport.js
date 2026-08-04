@@ -152,8 +152,7 @@ addToLibrary({
 
     js_http_post_sync__deps: ['$UTF8ToString', '$setValue', 'malloc'],
     js_http_post_sync: function(a_url_ptr, a_content_type_ptr, a_body, a_body_len,
-                                a_extra_headers_ptr, a_out_ptr_addr, a_out_len_addr,
-                                a_timeout_ms) {
+                                a_extra_headers_ptr, a_out_ptr_addr, a_out_len_addr) {
         var url = UTF8ToString(a_url_ptr);
         var contentType = a_content_type_ptr ? UTF8ToString(a_content_type_ptr) : null;
         var extraHeaders = a_extra_headers_ptr ? UTF8ToString(a_extra_headers_ptr) : null;
@@ -209,10 +208,6 @@ addToLibrary({
         // Browser path: synchronous XHR.
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, false);
-        // NOTE: xhr.timeout is NOT supported on synchronous XHR. Setting it
-        // throws InvalidAccessError in Chrome and breaks all RPC calls.
-        // The a_timeout_ms param is honored on the Node.js path (execSync
-        // timeout) but ignored here — sync XHR has no timeout mechanism.
         // Request a binary response. Sync XHR with responseType is supported on
         // Web Workers (where this MT path runs). Guard with try/catch for the
         // legacy main-thread restriction, falling back to binary string decode.
@@ -236,11 +231,6 @@ addToLibrary({
             }
         }
 
-        // Send synchronously. NOTE: try/catch around sync xhr.send() catches
-        // ALL exceptions including cross-origin/CSP network errors that Chrome
-        // would otherwise surface as a non-zero xhr.status. Catching them
-        // masks real failures (returns -1 instead of the actual error). Let
-        // them propagate — Emscripten handles exceptions in JS library functions.
         if (a_body && a_body_len > 0) {
             xhr.send(HEAPU8.slice(a_body, a_body + a_body_len));
         } else {
