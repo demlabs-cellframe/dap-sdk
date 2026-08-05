@@ -1746,8 +1746,18 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             .type = STREAM_PKT_TYPE_ALIVE
         };
         memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(c_dap_stream_sig));
-        if (a_stream->trans_ctx) {
-            dap_stream_send_unsafe(a_stream, &l_ret_pkt, sizeof(l_ret_pkt));
+        /*
+         * Stock 5.7 sends KEEPALIVE as a raw (unencrypted) stream-pkt header
+         * and expects the ALIVE response the same way — a direct esocket write.
+         * HEAD gated this on trans_ctx, silently dropping the response when
+         * the transport layer was not yet ready.  The 5.7 peer then treated
+         * the connection as dead and closed it within ~30 s.
+         *
+         * Match master behaviour: write ALIVE directly to the esocket so that
+         * it reaches the peer regardless of transport-layer state.
+         */
+        if (a_stream->esocket) {
+            dap_events_socket_write_unsafe(a_stream->esocket, &l_ret_pkt, sizeof(l_ret_pkt));
         }
         // Reset client keepalive timer (UUID lookup — never dereference keepalive_timer)
         s_stream_reset_keepalive_timer_unsafe(a_stream);
@@ -1880,14 +1890,20 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             l_trans = l_stream->trans;
         if (!l_trans || !l_trans->ops || !l_trans->ops->write ||
             !l_stream->session || !l_stream->session->key) {
-            debug_if(s_debug, L_DEBUG, "Keepalive %s sock %"DAP_FORMAT_SOCKET": skipped — trans_ctx=%p trans=%p ops=%p write=%p session=%p key=%p",
+            /*
+             * Transport layer not ready — send KEEPALIVE as a raw (unencrypted)
+             * stream-pkt header directly on the esocket, matching stock 5.7
+             * behaviour.  The 5.7 peer processes these in s_stream_proc_pkt_in
+             * which expects raw packets.
+             */
+            debug_if(s_debug, L_DEBUG, "Keepalive %s sock %"DAP_FORMAT_SOCKET": fallback raw esocket write — trans_ctx=%p trans=%p",
                       a_server_side ? "srv" : "cli", l_es->socket,
-                      (void*)l_stream->trans_ctx,
-                      (void*)l_trans,
-                      l_trans ? (void*)l_trans->ops : NULL,
-                      l_trans && l_trans->ops ? (void*)l_trans->ops->write : NULL,
-                      (void*)l_stream->session,
-                      l_stream->session ? (void*)l_stream->session->key : NULL);
+                      (void*)l_stream->trans_ctx, (void*)l_trans);
+            dap_stream_pkt_hdr_t l_pkt_raw = {};
+            l_pkt_raw.type = STREAM_PKT_TYPE_KEEPALIVE;
+            memcpy(l_pkt_raw.sig, c_dap_stream_sig, sizeof(l_pkt_raw.sig));
+            dap_events_socket_write_unsafe(l_es, &l_pkt_raw, sizeof(l_pkt_raw));
+            l_es->last_time_active = time(NULL);
             return true;
         }
         debug_if(s_debug_more, L_DEBUG,"Keepalive %s sock %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x,
