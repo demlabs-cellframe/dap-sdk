@@ -11,6 +11,14 @@
 
 #include <string.h>
 #include <errno.h>
+#ifdef DAP_OS_WINDOWS
+# include <winsock2.h>
+#else
+# include <sys/socket.h>
+#endif
+#ifndef MSG_NOSIGNAL
+# define MSG_NOSIGNAL 0
+#endif
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -392,7 +400,23 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
         if (l_wrap_rc == 0 && l_wrapped && l_wrapped_sz > 0) {
             dap_events_socket_write_unsafe(a_es, l_wrapped, l_wrapped_sz);
             DAP_DELETE(l_wrapped);
-            log_it(L_NOTICE, "TLS server: response sent (%zu bytes)", l_wrapped_sz);
+            log_it(L_NOTICE, "TLS server: response queued (%zu bytes, buf_out=%zu)",
+                   l_wrapped_sz, a_es->buf_out_size);
+            /* Opportunistic flush: response is queued during EPOLLIN handling,
+             * so EPOLLOUT may not be in the current event. Try send() now; keep
+             * EPOLLOUT armed for any remainder. */
+            if (a_es->buf_out_size > 0) {
+                ssize_t l_flushed = send(a_es->socket, (const char *)a_es->buf_out,
+                                         a_es->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+                if (l_flushed > 0) {
+                    a_es->buf_out_size -= (size_t)l_flushed;
+                    if (a_es->buf_out_size)
+                        memmove(a_es->buf_out, a_es->buf_out + l_flushed, a_es->buf_out_size);
+                    log_it(L_NOTICE, "TLS server: flushed %zd bytes immediately, remaining=%zu",
+                           l_flushed, a_es->buf_out_size);
+                }
+                dap_events_socket_set_writable_unsafe(a_es, a_es->buf_out_size > 0);
+            }
         }
         DAP_DELETE(l_response);
     } else {

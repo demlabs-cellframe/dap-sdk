@@ -1338,14 +1338,18 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         debug_if(s_debug_more, L_DEBUG, "EPOLLIN triggered but nothing to read: buf_in_size=%zu, max=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d",
                                l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur->socket, l_cur->type);
                         if (l_must_read_smth) {
-                            /* DESCRIPTOR_TYPE_FILE (TUN) and DESCRIPTOR_TYPE_SOCKET_UDP
-                             * are excluded: TUN must stay armed for next packets;
-                             * UDP uses a drain loop and never sets l_must_read_smth. */
+                            /* recv()==0 is peer FIN. Mark close; do NOT merely
+                             * drop EPOLLIN — that permanently stalls clients that
+                             * still expect a reply (TLS enc_init, HTTP, etc.). */
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_PIPE:
+                                dap_events_socket_set_readable_unsafe(l_cur, false);
+                                break;
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                                 dap_events_socket_set_readable_unsafe(l_cur, false);
+                                if (!l_cur->no_close)
+                                    l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                                 break;
                             default:
                                 break;
@@ -1632,6 +1636,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+                                /* Keep EPOLLOUT armed. send() EAGAIN means the kernel
+                                 * TX queue is full — we must wait for the next writable
+                                 * event to flush the remainder. Disarming here stalled
+                                 * TLS enc_init replies (~5 KB) on the wire forever. */
+                                l_bytes_sent = 0;
+                                break;
                             case DESCRIPTOR_TYPE_PIPE:
                                 /* FILE (TUN) handled above — keeps EPOLLOUT armed */
                                 dap_events_socket_set_writable_unsafe(l_cur, false);

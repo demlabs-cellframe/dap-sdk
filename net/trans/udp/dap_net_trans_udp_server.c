@@ -742,53 +742,55 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
         }
     }
     
-    // OBFUSCATED HANDSHAKE DETECTION: Size in range [MIN, MAX] AND session not established
-    // CRITICAL: Only try deobfuscation if session_id == 0 (handshake not completed)!
-    // Otherwise FC packets (which may be in same size range) will be incorrectly treated as obfuscated.
-    if (l_session->session_id == 0 && dap_transport_is_obfuscated_handshake_size(a_size)) {
-        // Try to deobfuscate as handshake
+    /* Obfuscated handshake: try deobfuscation for every packet in the
+     * handshake size range — even if session_id is already set.
+     * session_id is assigned on the FIRST successful deobfuscation, before
+     * KEM finishes; client retransmits then hit "Invalid packet type" if we
+     * skip deobfuscation. s_handle_handshake ignores true duplicates. */
+    if (dap_transport_is_obfuscated_handshake_size(a_size)) {
         uint8_t *l_handshake = NULL;
         size_t l_handshake_size = 0;
-        
+
         debug_if(s_debug_more, L_DEBUG,
-                 "SERVER: Attempting to deobfuscate packet (size=%zu)", a_size);
-        
+                 "SERVER: Attempting to deobfuscate packet (size=%zu, session_id=0x%" PRIx64 ")",
+                 a_size, l_session->session_id);
+
         int l_ret = dap_transport_deobfuscate_handshake(a_data, a_size,
                                                         &l_handshake, &l_handshake_size);
-        
+
         debug_if(s_debug_more, L_DEBUG,
                  "SERVER: Deobfuscation result: ret=%d", l_ret);
-        
+
         if (l_ret == 0) {
-            // Successfully deobfuscated as handshake!
             debug_if(s_debug_more, L_DEBUG,
                      "Deobfuscated HANDSHAKE: %zu bytes → %zu bytes",
                      a_size, l_handshake_size);
-            
-            // Initialize session_id
-            randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
-            debug_if(s_debug_more, L_DEBUG,
-                     "HANDSHAKE: generated session_id=0x%" PRIx64 " for session %p",
-                     l_session->session_id, l_session);
-            
-            // Process deobfuscated handshake
+
+            if (l_session->session_id == 0) {
+                randombytes((uint8_t *)&l_session->session_id, sizeof(l_session->session_id));
+                debug_if(s_debug_more, L_DEBUG,
+                         "HANDSHAKE: generated session_id=0x%" PRIx64 " for session %p",
+                         l_session->session_id, l_session);
+            }
+
             int l_result = s_handle_handshake(l_session, l_handshake, l_handshake_size);
             DAP_DELETE(l_handshake);
             return l_result;
         }
-        
-        // Pre-handshake: only obfuscated handshakes are valid. Trying to
-        // decrypt with a leftover/wrong key yields "Invalid packet type" noise.
-        log_it(L_WARNING, "SERVER: Deobfuscation failed (ret=%d) before handshake, dropping %zu bytes",
-               l_ret, a_size);
-        return -1;
-    } else {
-        debug_if(s_debug_more, L_DEBUG,
-                 "SERVER: Packet size %zu not in obfuscated range OR session already established (session_id=0x%" PRIx64 ")",
-                 a_size, l_session->session_id);
-    }
 
-    if (l_session->session_id == 0) {
+        DAP_DELETE(l_handshake);
+        if (l_session->session_id == 0) {
+            /* Pre-handshake: only obfuscated handshakes are valid. */
+            log_it(L_WARNING, "SERVER: Deobfuscation failed (ret=%d) before handshake, dropping %zu bytes",
+                   l_ret, a_size);
+            return -1;
+        }
+        /* Established session: size collided with handshake range — fall through
+         * to encrypted/FC processing. */
+        debug_if(s_debug_more, L_DEBUG,
+                 "SERVER: Deobfuscation failed on established session, trying decrypt (size=%zu)",
+                 a_size);
+    } else if (l_session->session_id == 0) {
         log_it(L_WARNING, "SERVER: dropping %zu-byte packet before handshake (not obfuscated size)",
                a_size);
         return -1;

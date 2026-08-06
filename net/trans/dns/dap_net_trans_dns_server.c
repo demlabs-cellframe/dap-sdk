@@ -500,15 +500,20 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     }
     dap_stream_session_open(l_stream_session);
     l_stream_session->key = dap_enc_key_dup(l_handshake_key);
-    dap_strncpy(l_stream_session->active_channels, "ABC",
+    /* VPN client opens channels R (net_srv) + S (vpn data). "ABC" was a
+     * placeholder and left SERVICE_REQUEST on 'R' as unprocessed. */
+    dap_strncpy(l_stream_session->active_channels, "RS",
                 sizeof(l_stream_session->active_channels) - 1);
     l_stream->session = l_stream_session;
 
-    const char *l_channels = "ABC";
+    const char *l_channels = "RS";
     for (size_t i = 0; i < strlen(l_channels); i++) {
         dap_stream_ch_t *l_ch = dap_stream_ch_new(l_stream, (uint8_t)l_channels[i]);
         if (l_ch) {
             l_ch->ready_to_read = true;
+        } else {
+            log_it(L_ERROR, "DNS server: failed to create channel '%c' (is it registered?)",
+                   l_channels[i]);
         }
     }
 

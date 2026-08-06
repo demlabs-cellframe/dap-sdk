@@ -2449,9 +2449,8 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
             return -1;
         }
 
-        debug_if(s_debug_more, L_DEBUG,
-                 "Obfuscated HANDSHAKE sent: %zu → %zu bytes",
-                 a_size, l_obfuscated_size);
+        log_it(L_NOTICE, "Obfuscated HANDSHAKE sent: %zu → %zu bytes",
+               a_size, l_obfuscated_size);
         return l_sent;
     }
     
