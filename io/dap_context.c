@@ -264,11 +264,16 @@ void dap_context_stop_n_kill(dap_context_t * a_context)
     case DAP_CONTEXT_TYPE_PROC_THREAD: {
         dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
         a_context->signal_exit = true;
+#ifdef DAP_OS_WINDOWS
+        if (l_thread->wakeup_event && !SetEvent(l_thread->wakeup_event))
+            log_it(L_WARNING, "Failed to wakeup proc thread (err=%lu)", (unsigned long)GetLastError());
+#else
         // Wake up proc thread via eventfd (replaces mutex+condvar)
         uint64_t l_one = 1;
         if (l_thread->wakeup_fd >= 0
                 && write(l_thread->wakeup_fd, &l_one, sizeof(l_one)) != sizeof(l_one))
             log_it(L_WARNING, "Failed to wakeup proc thread (errno=%d)", errno);
+#endif
     }
     default:
         break;

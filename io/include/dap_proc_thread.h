@@ -24,7 +24,6 @@
 #pragma once
 
 #include <pthread.h>
-#include <stdatomic.h>
 #include "dap_common.h"
 
 typedef struct dap_proc_thread dap_proc_thread_t;
@@ -57,7 +56,11 @@ typedef struct dap_proc_thread {
      * eventfd for cross-thread wakeup (replaces mutex+condvar). */
     _Atomic(dap_proc_queue_item_t *) queue_head[DAP_QUEUE_MSG_PRIORITY_COUNT];
     atomic_uint proc_queue_size;                                   /* Thread's load factor (atomic for thread-safe reads) */
+#ifdef DAP_OS_WINDOWS
+    HANDLE wakeup_event;                                                    /* auto-reset event for cross-thread wakeup */
+#else
     int wakeup_fd;                                                          /* eventfd for cross-thread wakeup */
+#endif
     dap_context_t *context;
 } dap_proc_thread_t;
 

@@ -78,12 +78,12 @@ static inline dap_http_method_t dap_http_method_from_str(const char *a_method) {
 }
 
 static inline const char * dap_http_method_to_str(dap_http_method_t a_method) {
-    static const char * l_methods[] = {
-        [HTTP_GET] = "GET",
-        [HTTP_POST] = "POST",
-        [HTTP_HEAD] = "HEAD"
-    };
-    return l_methods[a_method < HTTP_INVALID ? a_method : HTTP_INVALID];
+    switch (a_method) {
+    case HTTP_GET:  return "GET";
+    case HTTP_POST: return "POST";
+    case HTTP_HEAD: return "HEAD";
+    default:        return "";
+    }
     // Add more
 }
 
