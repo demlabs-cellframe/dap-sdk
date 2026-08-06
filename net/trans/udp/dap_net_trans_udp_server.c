@@ -777,13 +777,21 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
             return l_result;
         }
         
-        // Deobfuscation failed - might be regular encrypted packet
-        log_it(L_WARNING, "SERVER: Deobfuscation failed (ret=%d), treating as encrypted packet", l_ret);
-        // Continue to try decryption with session key
+        // Pre-handshake: only obfuscated handshakes are valid. Trying to
+        // decrypt with a leftover/wrong key yields "Invalid packet type" noise.
+        log_it(L_WARNING, "SERVER: Deobfuscation failed (ret=%d) before handshake, dropping %zu bytes",
+               l_ret, a_size);
+        return -1;
     } else {
         debug_if(s_debug_more, L_DEBUG,
                  "SERVER: Packet size %zu not in obfuscated range OR session already established (session_id=0x%" PRIx64 ")",
                  a_size, l_session->session_id);
+    }
+
+    if (l_session->session_id == 0) {
+        log_it(L_WARNING, "SERVER: dropping %zu-byte packet before handshake (not obfuscated size)",
+               a_size);
+        return -1;
     }
     
     // ALL OTHER PACKETS: Must be encrypted!

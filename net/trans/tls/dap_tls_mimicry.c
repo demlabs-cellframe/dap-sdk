@@ -554,15 +554,19 @@ int dap_tls_mimicry_process_server_hello(dap_tls_mimicry_t *a_m,
     const uint8_t *d = (const uint8_t *)a_data;
     size_t l_pos = 0;
 
-    /* Consume ServerHello record */
+    /* Consume ServerHello record — require a complete TLS record before advancing */
     if (l_pos + 5 > a_size || d[l_pos] != TLS_CT_HANDSHAKE)
         return -1;
     uint16_t l_sh_rec_len = s_get_u16be(d + l_pos + 3);
+    if (l_pos + 5 + l_sh_rec_len > a_size)
+        return -1; /* incomplete ServerHello — wait for more data */
     l_pos += 5 + l_sh_rec_len;
 
     /* Consume ChangeCipherSpec record (optional but expected) */
     if (l_pos + 5 <= a_size && d[l_pos] == TLS_CT_CHANGE_CIPHER_SPEC) {
         uint16_t l_ccs_len = s_get_u16be(d + l_pos + 3);
+        if (l_pos + 5 + l_ccs_len > a_size)
+            return -1; /* incomplete CCS — wait for more data */
         l_pos += 5 + l_ccs_len;
     }
 

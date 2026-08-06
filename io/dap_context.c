@@ -1316,22 +1316,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         }
 #if !defined(DAP_OS_WINDOWS)
                         else if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
-                            /* EPOLLIN armed but recv/read returned EAGAIN — level-triggered spin.
-                             * NOTE: DESCRIPTOR_TYPE_FILE (TUN) is intentionally excluded — it must
-                             * stay armed so the kernel re-notifies when the next packet arrives.
-                             * EAGAIN on a level-triggered fd means "not readable", so epoll will
-                             * stay silent until data arrives — no busy-spin.
-                             * NOTE: DESCRIPTOR_TYPE_SOCKET_UDP is excluded — it has its own drain
-                             * loop above and never reaches this path (l_must_read_smth=false). */
-                            switch (l_cur->type) {
-                            case DESCRIPTOR_TYPE_PIPE:
-                            case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-                            case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                                dap_events_socket_set_readable_unsafe(l_cur, false);
-                                break;
-                            default:
-                                break;
-                            }
+                            /* Keep EPOLLIN armed. On level-triggered sockets epoll
+                             * stays silent until data arrives again. Permanently
+                             * disarming here caused TLS/HTTP clients to miss the
+                             * next response (e.g. enc_init reply never processed). */
                         }
 #endif
 #ifndef DAP_NET_CLIENT_NO_SSL

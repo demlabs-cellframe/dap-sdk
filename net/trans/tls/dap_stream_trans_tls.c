@@ -549,6 +549,9 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
     if (!l_ctx || !l_ctx->mimicry) {
         /* Expected before handshake_init sets up transport_priv, or on
          * zombie esockets from a previous failed connection. */
+        log_it(L_WARNING, "TLS read: dropping %zu bytes (no mimicry ctx, phase unknown)",
+               a_es->buf_in_size);
+        a_es->buf_in_size = 0;
         return;
     }
 
@@ -574,8 +577,13 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
         a_es->buf_in_size = 0;
 
         log_it(L_NOTICE, "TLS handshake completed — sending enc_init through TLS channel");
-        if (s_tls_send_enc_init(l_stream, l_ctx, a_es) == 0)
+        if (s_tls_send_enc_init(l_stream, l_ctx, a_es) == 0) {
             l_ctx->phase = TLS_PHASE_ENC_INIT_WAIT;
+            /* Ensure EPOLLIN stays armed while we wait for the enc_init reply.
+             * A prior EAGAIN disarm (or writable-only poll update) can leave the
+             * socket unable to notice the server response. */
+            dap_events_socket_set_readable_unsafe(a_es, true);
+        }
 
         /* If the enc_init reply is already in buf_in (CCS+Finished piggybacked
          * or fast RTT), the buf_in_size is 0 here because we cleared it above.
@@ -855,6 +863,8 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
     if (l_ctx) {
         l_ctx->session_create_cb = a_callback;
         l_ctx->phase = TLS_PHASE_STREAM_CTL_WAIT;
+        if (a_stream->esocket)
+            dap_events_socket_set_readable_unsafe(a_stream->esocket, true);
     }
 
     log_it(L_NOTICE, "TLS session_create: stream_ctl sent (%zd bytes), awaiting response", l_sent);
