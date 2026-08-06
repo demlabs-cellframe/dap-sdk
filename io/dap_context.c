@@ -807,7 +807,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     if (l_now != s_last_busy_log) {
                         s_last_busy_log = l_now;
                         dap_events_socket_t *l_es0 = (dap_events_socket_t *)l_epoll_events[0].data.ptr;
-                        log_it(L_WARNING, "[TEST] Worker ctx #%u busy loop (no disarm): %"PRIu64
+                        log_it(L_WARNING, "Worker ctx #%u busy loop (no disarm): %"PRIu64
                                " iters, fd=%d type=%u epoll_ev=0x%x n_events=%d sock_flags=0x%x buf_out=%zu has_write_cb=%d",
                                a_context->id, s_busy_count,
                                l_es0 ? s_es_io_fd(l_es0) : -1,
