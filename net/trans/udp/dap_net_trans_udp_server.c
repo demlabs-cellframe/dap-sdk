@@ -1222,26 +1222,26 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         // Obfuscate handshake (encrypt with size-derived key, add random padding)
         uint8_t *l_obfuscated = NULL;
         size_t l_obfuscated_size = 0;
-        
+
         int l_ret = dap_transport_obfuscate_handshake(a_payload, a_payload_size,
                                                       &l_obfuscated, &l_obfuscated_size);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to obfuscate HANDSHAKE packet");
             return -3;
         }
-        
+
         // Send obfuscated handshake
+        size_t l_obf_size = l_obfuscated_size;
         l_ret = dap_io_flow_datagram_send(&a_session->base, l_obfuscated, l_obfuscated_size);
         DAP_DELETE(l_obfuscated);
-        
+
         if (l_ret < 0) {
-            log_it(L_ERROR, "Failed to send obfuscated HANDSHAKE packet");
+            log_it(L_ERROR, "Failed to send obfuscated HANDSHAKE packet to %s", l_dest_addr);
             return -4;
         }
-        
-        debug_if(s_debug_more, L_DEBUG,
-                 "Obfuscated HANDSHAKE sent: %zu → %zu bytes",
-                 a_payload_size, l_obfuscated_size);
+
+        log_it(L_NOTICE, "Obfuscated HANDSHAKE reply sent: %zu → %zu bytes to %s",
+               a_payload_size, l_obf_size, l_dest_addr);
         return 0;
     }
     
@@ -1657,8 +1657,10 @@ static void s_kem_reactor_callback(void *a_arg)
     
     // Validate session still exists
     if (!l_session || !l_session->base.base.stream_context || !l_session->base.listener_es) {
-        debug_if(s_debug_more, L_DEBUG,
-                 "[KEM Reactor] Session %p invalid or deleted", l_session);
+        log_it(L_WARNING, "[KEM Reactor] Session %p invalid or deleted (stream_ctx=%p listener=%p)",
+               (void *)l_session,
+               l_session ? l_session->base.base.stream_context : NULL,
+               l_session ? (void *)l_session->base.listener_es : NULL);
         goto cleanup_reactor;
     }
     
@@ -1669,11 +1671,10 @@ static void s_kem_reactor_callback(void *a_arg)
     
     // Store handshake key in session (NOW SAFE - in reactor thread!)
     l_session->encryption_key = l_result->handshake_key;
-    
-    debug_if(s_debug_more, L_DEBUG,
-             "[KEM Reactor] Stored encryption_key=%p for session %p (session_id=0x%" PRIx64 ")",
-             l_session->encryption_key, l_session, l_session->session_id);
-    
+
+    log_it(L_NOTICE, "[KEM Reactor] HANDSHAKE ready for session 0x%" PRIx64 " (ciphertext=%zu)",
+           l_session->session_id, l_result->bob_ciphertext_size);
+
     // Build handshake response: Bob's ciphertext + session_id
     size_t l_response_size = l_result->bob_ciphertext_size + sizeof(uint64_t);
     uint64_t l_session_id_be = htobe64(l_result->session_id);
@@ -1685,19 +1686,20 @@ static void s_kem_reactor_callback(void *a_arg)
         log_it(L_ERROR, "[KEM Reactor] Failed to serialize handshake response");
         goto cleanup_reactor;
     }
-    
-    debug_if(s_debug_more, L_DEBUG,
-             "[KEM Reactor] HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%" PRIx64 ")",
-             l_result->bob_ciphertext_size, l_result->session_id);
-    
+
     // Send handshake response (NOW SAFE - in reactor thread!)
     int l_ret = s_send_udp_packet(l_session,
                                   DAP_STREAM_UDP_PKT_HANDSHAKE,
                                   l_response, l_response_size);
-    
+
     DAP_DELETE(l_response);
-    
-    debug_if(s_debug_more, L_DEBUG, "[KEM Reactor] HANDSHAKE response sent (ret=%d)", l_ret);
+
+    if (l_ret != 0)
+        log_it(L_ERROR, "[KEM Reactor] HANDSHAKE response send failed (ret=%d) session=0x%" PRIx64,
+               l_ret, l_session->session_id);
+    else
+        log_it(L_NOTICE, "[KEM Reactor] HANDSHAKE response sent for session 0x%" PRIx64,
+               l_session->session_id);
     
 cleanup_reactor:
     // Reset kem_task_pending flag (allow retries on error)
