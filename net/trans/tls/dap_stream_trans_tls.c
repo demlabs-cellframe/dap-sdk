@@ -35,6 +35,7 @@
 #include "dap_strfuncs.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
+#include "dap_context.h"
 #include "dap_net.h"
 #include "dap_net_trans.h"
 #include "dap_client.h"
