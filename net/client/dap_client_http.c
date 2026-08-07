@@ -1194,7 +1194,11 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
         return;
     }
     *l_es_uuid_ptr = a_esocket->uuid;
-    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, (unsigned long)s_client_timeout_read_after_connect_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr);
+    /* Large bodies (modern Kyber enc_init ~10KB) need more time for upload + server KEM. */
+    uint64_t l_timeout_ms = s_client_timeout_read_after_connect_ms;
+    if (l_client_http->request_size > 4096 && l_timeout_ms < 15000)
+        l_timeout_ms = 15000;
+    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, (unsigned long)l_timeout_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr);
     if (!l_client_http->timer) {
         DAP_DELETE(l_es_uuid_ptr);
         log_it(L_ERROR, "Can't run timerfo after connection check on worker id %u", l_client_http->worker->id);
@@ -1207,6 +1211,8 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 
     // Send HTTP request with properly formatted headers
     s_send_http_request(a_esocket, l_client_http);
+    /* Request queued to buf_out — refresh so write drain does not race the read timeout. */
+    l_client_http->ts_last_read = time(NULL);
 }
 
 /**
@@ -1230,7 +1236,15 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
     if(l_es){
         dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
         assert(l_client_http);
-        if ( time(NULL) - l_client_http->ts_last_read >= (time_t)(s_client_timeout_read_after_connect_ms / 1000)){
+        time_t l_timeout_s = (time_t)(s_client_timeout_read_after_connect_ms / 1000);
+        if (l_client_http->request_size > 4096 && l_timeout_s < 15)
+            l_timeout_s = 15;
+        if ( time(NULL) - l_client_http->ts_last_read >= l_timeout_s){
+            /* Still draining request body — do not treat as uplink timeout. */
+            if (l_es->buf_out_size > 0) {
+                l_client_http->ts_last_read = time(NULL);
+                return true;
+            }
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path ? l_client_http->path : "");
                    

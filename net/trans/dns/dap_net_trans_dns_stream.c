@@ -53,6 +53,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_enc_kdf.h"
 #include "dap_client.h"
 #include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_net_trans_ctx.h"
 #include "rand/dap_rand.h"
 
@@ -636,6 +637,11 @@ static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         log_it(L_INFO, "DNS write: sent %zu of %zu bytes (direct)", l_sent, a_size);
         if(l_sent != a_size)
             log_it(L_WARNING, "DNS write incomplete: %zu of %zu bytes (flags=0x%x)", l_sent, a_size, l_es->flags);
+        if (l_sent > 0) {
+            l_es->last_time_active = time(NULL);
+            if (l_es->_inheritor)
+                dap_client_trans_ctx_touch((dap_client_t *)l_es->_inheritor);
+        }
         return (ssize_t)l_sent;
     }
 
@@ -820,6 +826,8 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         a_es->buf_in_size = 0;
         return;
     }
+    dap_client_trans_ctx_touch(l_client);
+    a_es->last_time_active = time(NULL);
 
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;

@@ -751,6 +751,11 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
         uint8_t *l_handshake = NULL;
         size_t l_handshake_size = 0;
 
+        if (l_session->session_id == 0) {
+            log_it(L_NOTICE, "SERVER: UDP handshake-size packet (%zu bytes) from new session %p",
+                   a_size, (void *)l_session);
+        }
+
         debug_if(s_debug_more, L_DEBUG,
                  "SERVER: Attempting to deobfuscate packet (size=%zu, session_id=0x%" PRIx64 ")",
                  a_size, l_session->session_id);
@@ -762,9 +767,8 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
                  "SERVER: Deobfuscation result: ret=%d", l_ret);
 
         if (l_ret == 0) {
-            debug_if(s_debug_more, L_DEBUG,
-                     "Deobfuscated HANDSHAKE: %zu bytes → %zu bytes",
-                     a_size, l_handshake_size);
+            log_it(L_NOTICE, "SERVER: Deobfuscated HANDSHAKE: %zu → %zu bytes (session_id=0x%" PRIx64 ")",
+                   a_size, l_handshake_size, l_session->session_id);
 
             if (l_session->session_id == 0) {
                 randombytes((uint8_t *)&l_session->session_id, sizeof(l_session->session_id));

@@ -777,6 +777,7 @@ static void s_worker_execute_stage(void *a_arg)
         dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (l_es_uuid_ptr && l_tc->stream->esocket) {
             *l_es_uuid_ptr = l_tc->stream->esocket->uuid;
+            l_io->ts_last_active = dap_time_now();
             if (!dap_timerfd_start_on_worker(l_worker,
                                              s_client_timeout_active_after_connect_seconds * 1024,
                                              s_stream_timer_timeout_after_connected_check, l_es_uuid_ptr)) {
@@ -977,7 +978,15 @@ static bool s_stream_timer_timeout_after_connected_check(void *a_arg)
             return false;
         }
 
-        if (dap_time_now() - l_io->ts_last_active >= (dap_time_t)s_client_timeout_active_after_connect_seconds) {
+        /* UDP/DNS keep transport read_callback and often send via sendto(), so
+         * s_stream_es_callback_read/write never refresh ts_last_active. Honour
+         * esocket->last_time_active (updated by reactor on recvfrom/send). */
+        dap_time_t l_last = l_io->ts_last_active;
+        if ((dap_time_t)l_es->last_time_active > l_last)
+            l_last = (dap_time_t)l_es->last_time_active;
+        if (l_last == 0)
+            l_last = dap_time_now();
+        if (dap_time_now() - l_last >= (dap_time_t)s_client_timeout_active_after_connect_seconds) {
             log_it(L_WARNING, "Activity timeout for streaming uplink %s:%u",
                    l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_fsm->is_closed_by_timeout = true;
