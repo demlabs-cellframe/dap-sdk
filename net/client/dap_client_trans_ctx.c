@@ -188,6 +188,16 @@ void dap_client_trans_ctx_get_stream_callbacks(dap_events_socket_callbacks_t *a_
     a_callbacks->delete_callback = s_stream_es_callback_delete;
 }
 
+void dap_client_trans_ctx_touch(dap_client_t *a_client)
+{
+    if (!a_client)
+        return;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
+    if (l_ctx)
+        l_ctx->ts_last_active = dap_time_now();
+}
+
 // ===== Instance lifecycle =====
 
 void dap_client_trans_ctx_new(dap_client_trans_ctx_t *a_ctx)

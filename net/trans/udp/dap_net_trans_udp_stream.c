@@ -68,6 +68,9 @@
 #include "dap_enc_ks.h"
 #include "dap_enc_base64.h"
 #include "dap_string.h"
+#include "dap_client.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_net_trans_ctx.h"
 #include <json-c/json.h>  // For JSON parsing
 
@@ -888,6 +891,10 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
 
     debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
              a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
+
+    a_es->last_time_active = time(NULL);
+    if (a_es->_inheritor)
+        dap_client_trans_ctx_touch((dap_client_t *)a_es->_inheritor);
 
     // Get trans_ctx from callbacks.arg (NOT _inheritor!)
     // _inheritor may point to client (dap_client_t), not trans_ctx!
@@ -2449,8 +2456,16 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
             return -1;
         }
 
-        log_it(L_NOTICE, "Obfuscated HANDSHAKE sent: %zu → %zu bytes",
-               a_size, l_obfuscated_size);
+        if (l_udp_ctx->remote_addr.ss_family == AF_INET) {
+            struct sockaddr_in *l_sin = (struct sockaddr_in *)&l_udp_ctx->remote_addr;
+            char l_ip[INET_ADDRSTRLEN] = {0};
+            inet_ntop(AF_INET, &l_sin->sin_addr, l_ip, sizeof(l_ip));
+            log_it(L_NOTICE, "Obfuscated HANDSHAKE sent: %zu → %zu bytes to %s:%u (sent=%zd)",
+                   a_size, l_obfuscated_size, l_ip, ntohs(l_sin->sin_port), l_sent);
+        } else {
+            log_it(L_NOTICE, "Obfuscated HANDSHAKE sent: %zu → %zu bytes (sent=%zd)",
+                   a_size, l_obfuscated_size, l_sent);
+        }
         return l_sent;
     }
     
