@@ -505,13 +505,15 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     l_has_cache = l_http_client->proc->cache != NULL;
                     l_hdr_cb = l_http_client->proc->headers_read_callback;
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
-                    log_it(L_INFO, "HTTP headers_read: cache_rwlock released cache=%d cb=%p",
-                           l_has_cache, (void *)l_hdr_cb);
+                    log_it(L_INFO, "HTTP headers_read: cache_rwlock released cache=%d cb=%p server='%s'",
+                           l_has_cache, (void *)l_hdr_cb,
+                           l_http_client->http ? l_http_client->http->server_name : "?");
 
                     if (!l_has_cache && l_hdr_cb) {
-                        log_it(L_INFO, "HTTP calling headers_read cb=%p path='%s' query='%s'",
+                        log_it(L_INFO, "HTTP calling headers_read cb=%p path='%s' query='%s' server='%s'",
                                (void *)l_hdr_cb, l_http_client->url_path,
-                               l_http_client->in_query_string);
+                               l_http_client->in_query_string,
+                               l_http_client->http ? l_http_client->http->server_name : "?");
                         l_hdr_cb(l_http_client, NULL);
                     } else {
                         log_it(L_WARNING, "Skipping headers_read: cache=%d cb=%p path='%s' query='%s'",

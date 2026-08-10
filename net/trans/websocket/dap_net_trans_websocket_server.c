@@ -445,9 +445,14 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
 
     // Check if this is a WebSocket upgrade request
     if (!l_upgrade || !l_connection || !l_ws_key || !l_ws_version) {
-        // Not a WebSocket upgrade request - handle as regular HTTP
-        debug_if(s_debug_more, L_DEBUG, "Not a WebSocket upgrade request");
-        a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
+        /* Non-upgrade GET/POST on WS upgrade url_proc must not silent-drop:
+         * previously left buf_out empty and (with force-reply) became HTTP 500.
+         * /stream is handled by dap_stream; bare "/" gets a proper 404. */
+        log_it(L_WARNING, "WebSocket upgrade handler got non-upgrade request path='%s'",
+               a_http_client->url_path);
+        a_http_client->reply_status_code = Http_Status_NotFound;
+        dap_strncpy(a_http_client->reply_reason_phrase, "Not Found",
+                    sizeof(a_http_client->reply_reason_phrase));
         dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         return;

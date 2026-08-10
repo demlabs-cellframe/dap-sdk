@@ -1919,35 +1919,19 @@ static dap_net_trans_websocket_private_t *s_get_private_from_stream(dap_stream_t
 
 /**
  * @brief Register server-side handlers for WebSocket trans
- * 
- * Registers WebSocket upgrade handler for stream path.
- * Called by dap_net_trans_server_register_handlers().
+ *
+ * Do NOT register an upgrade-only /stream url_proc here. That replaced the
+ * default dap_stream handler and made plain GET /stream/globaldb (no Upgrade
+ * headers) a no-op → HTTP 500. WebSocket upgrades are handled inside
+ * s_http_client_headers_read() via dap_net_trans_websocket_try_upgrade().
+ * Root "/" upgrade stays registered in dap_net_trans_websocket_server_start().
  */
 static int s_ws_register_server_handlers(dap_net_trans_t *a_trans, void *a_trans_ctx)
 {
-    if (!a_trans || !a_trans_ctx) {
-        log_it(L_ERROR, "Invalid parameters for s_ws_register_server_handlers");
-        return -1;
-    }
-
-    // a_trans_ctx is dap_net_trans_server_ctx_t*
-    dap_net_trans_server_ctx_t *l_ctx = (dap_net_trans_server_ctx_t *)a_trans_ctx;
-    
-    if (!l_ctx->trans_specific) {
-        log_it(L_WARNING, "WebSocket server instance not provided in trans ctx");
-        return -2;
-    }
-
-    // Register WebSocket upgrade handler for stream path (with leading slash
-    // to match z_dirname() output for URLs like "/stream/globaldb?session_id=...")
-    int l_ret = dap_net_trans_websocket_server_add_upgrade_handler(
-        (dap_net_trans_websocket_server_t *)l_ctx->trans_specific, "/stream");
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Failed to register WebSocket upgrade handler for stream");
-        return l_ret;
-    }
-
-    log_it(L_DEBUG, "Registered WebSocket upgrade handler for stream path");
+    (void)a_trans;
+    (void)a_trans_ctx;
+    debug_if(s_debug_more, L_DEBUG,
+             "WebSocket: skip /stream upgrade-only proc (use default stream + try_upgrade)");
     return 0;
 }
 
