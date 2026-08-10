@@ -546,10 +546,14 @@ int dap_tls_mimicry_process_client_hello(dap_tls_mimicry_t *a_m,
 
 int dap_tls_mimicry_process_server_hello(dap_tls_mimicry_t *a_m,
                                          const void *a_data, size_t a_size,
-                                         void **a_response, size_t *a_response_size)
+                                         void **a_response, size_t *a_response_size,
+                                         size_t *a_consumed)
 {
     if (!a_m || !a_data || !a_response || !a_response_size || a_m->is_server)
         return -1;
+
+    if (a_consumed)
+        *a_consumed = 0;
 
     const uint8_t *d = (const uint8_t *)a_data;
     size_t l_pos = 0;
@@ -570,11 +574,13 @@ int dap_tls_mimicry_process_server_hello(dap_tls_mimicry_t *a_m,
         l_pos += 5 + l_ccs_len;
     }
 
-    /* Consume fake EncryptedExtensions (Application Data records) */
-    while (l_pos + 5 <= a_size && d[l_pos] == TLS_CT_APPLICATION_DATA) {
+    /* Consume exactly one fake EncryptedExtensions APP_DATA record.
+     * Do NOT loop: a pipelined enc_init reply is also APP_DATA and must
+     * remain for the ENC_INIT_WAIT phase. */
+    if (l_pos + 5 <= a_size && d[l_pos] == TLS_CT_APPLICATION_DATA) {
         uint16_t l_ad_len = s_get_u16be(d + l_pos + 3);
         if (l_pos + 5 + l_ad_len > a_size)
-            break;
+            return -1; /* incomplete fake EE — wait for more data */
         l_pos += 5 + l_ad_len;
     }
 
@@ -602,6 +608,8 @@ int dap_tls_mimicry_process_server_hello(dap_tls_mimicry_t *a_m,
 
     *a_response = l_out;
     *a_response_size = l_total;
+    if (a_consumed)
+        *a_consumed = l_pos;
     a_m->state = DAP_TLS_MIMICRY_STATE_ESTABLISHED;
     return 0;
 }

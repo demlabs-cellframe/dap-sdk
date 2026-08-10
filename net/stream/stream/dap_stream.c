@@ -1140,8 +1140,13 @@ void dap_stream_server_promote_uuid_keepalive(dap_stream_t *a_stream)
  */
 void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_ARG *a_arg)
 {
-    if (dap_net_trans_websocket_try_upgrade(a_http_client) == 0)
+    log_it(L_INFO, "stream headers_read: query='%s' path='%s'",
+           a_http_client && a_http_client->in_query_string[0] ? a_http_client->in_query_string : "(empty)",
+           a_http_client ? a_http_client->url_path : "(null)");
+    if (dap_net_trans_websocket_try_upgrade(a_http_client) == 0) {
+        log_it(L_INFO, "stream headers_read: handled as WebSocket upgrade");
         return;
+    }
 
     unsigned int l_id=0;
     bool l_need_error_reply = false;
