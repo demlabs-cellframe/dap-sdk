@@ -475,6 +475,13 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 }else if ( l_ret == 1 ) {
                     log_it( L_INFO, "Input: HTTP headers are over" );
 
+                    if (!l_http_client->proc) {
+                        log_it(L_ERROR, "HTTP headers over but URL proc is NULL path='%s'",
+                               l_http_client->url_path);
+                        s_report_error_and_restart(a_esocket, l_http_client, Http_Status_InternalServerError);
+                        break;
+                    }
+
                     if ( l_http_client->proc->access_callback )
                     {
                         int isOk = true;
@@ -483,18 +490,33 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         {
                             log_it( L_NOTICE, "Access restricted" );
                             s_report_error_and_restart( a_esocket, l_http_client, Http_Status_Unauthorized );
+                            break;
                         }
                     }
 
+                    /* Copy callback under lock, invoke outside — avoids holding
+                     * cache_rwlock across stream/session work (can stall other
+                     * GET /stream on the same url_proc). */
+                    bool l_has_cache = false;
+                    dap_http_client_callback_t l_hdr_cb = NULL;
+                    log_it(L_INFO, "HTTP headers_read: acquiring cache_rwlock path='%s'",
+                           l_http_client->url_path);
                     pthread_rwlock_rdlock(&l_http_client->proc->cache_rwlock);
+                    l_has_cache = l_http_client->proc->cache != NULL;
+                    l_hdr_cb = l_http_client->proc->headers_read_callback;
+                    pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
+                    log_it(L_INFO, "HTTP headers_read: cache_rwlock released cache=%d cb=%p",
+                           l_has_cache, (void *)l_hdr_cb);
 
-                    if ( l_http_client->proc->cache == NULL &&  l_http_client->proc->headers_read_callback )
-                    {
-                        pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
-                        l_http_client->proc->headers_read_callback( l_http_client, NULL );
-                    }else {
-                        pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
-                        debug_if (s_debug_http, L_DEBUG, "Cache is present, don't call underlying callbacks");
+                    if (!l_has_cache && l_hdr_cb) {
+                        log_it(L_INFO, "HTTP calling headers_read cb=%p path='%s' query='%s'",
+                               (void *)l_hdr_cb, l_http_client->url_path,
+                               l_http_client->in_query_string);
+                        l_hdr_cb(l_http_client, NULL);
+                    } else {
+                        log_it(L_WARNING, "Skipping headers_read: cache=%d cb=%p path='%s' query='%s'",
+                               l_has_cache, (void *)l_hdr_cb, l_http_client->url_path,
+                               l_http_client->in_query_string);
                     }
 
                     if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_DATA) {
@@ -502,12 +524,18 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     } else if( l_http_client->in_content_length ) {
                         debug_if (s_debug_http, L_DEBUG, "headers -> DAP_HTTP_CLIENT_STATE_DATA" );
                         l_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
-                    } else if (l_http_client->proc->cache)
-                        // No data, its over
+                    } else if (l_http_client->proc->cache) {
                         dap_http_client_write(l_http_client);
-                    else {
-                        a_esocket->buf_in_size = 0;
-                        break;
+                    } else if (a_esocket->buf_out_size == 0) {
+                        /* Bodyless request produced no reply (headers_read skipped
+                         * or returned without write). Never silent-drop: GET /stream
+                         * then hung until client timeout (~half of sessions on busy
+                         * nodes showed headers over without stream headers_read). */
+                        if (!l_http_client->reply_status_code)
+                            l_http_client->reply_status_code = Http_Status_InternalServerError;
+                        log_it(L_WARNING, "HTTP bodyless request without DATA/cache — forcing reply status=%u path='%s'",
+                               l_http_client->reply_status_code, l_http_client->url_path);
+                        dap_http_client_write(l_http_client);
                     }
                 }
                 dap_events_socket_shrink_buf_in(a_esocket, l_len);         /* Shrink input buffer over whole HTTP header */
