@@ -450,7 +450,7 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
          * /stream is handled by dap_stream; bare "/" gets a proper 404. */
         log_it(L_WARNING, "WebSocket upgrade handler got non-upgrade request path='%s'",
                a_http_client->url_path);
-        a_http_client->reply_status_code = Http_Status_NotFound;
+        a_http_client->reply_status_code = 404; // Not Found
         dap_strncpy(a_http_client->reply_reason_phrase, "Not Found",
                     sizeof(a_http_client->reply_reason_phrase));
         dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
