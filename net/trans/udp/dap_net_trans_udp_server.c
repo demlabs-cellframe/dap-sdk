@@ -946,6 +946,14 @@ static int s_udp_protocol_finalize_cb(dap_io_flow_datagram_t *a_flow)
     
     // Now we can set stream_worker using listener_es->worker
     l_session->stream->stream_worker = DAP_STREAM_WORKER(a_flow->listener_es->worker);
+
+    /* VPN TUN→client path validates stream->esocket via dap_context_find.
+     * Without this, IP_ASSIGNED stores nil and every VPN_RECV is dropped
+     * ("Wrong esocket (nil)"). Shared listener is correct for datagram UDP
+     * (same pattern as DNS server); actual peer addr comes from flow. */
+    l_session->stream->esocket = a_flow->listener_es;
+    l_session->stream->esocket_uuid = a_flow->listener_es->uuid;
+    l_session->stream->esocket_worker = a_flow->listener_es->worker;
     
     // CRITICAL: Set callback for getting remote address (resolves circular dependencies)
     a_flow->get_remote_addr_cb = s_get_remote_addr_cb;
@@ -955,9 +963,10 @@ static int s_udp_protocol_finalize_cb(dap_io_flow_datagram_t *a_flow)
     l_session->stream->flow = &l_session->base;
     
     debug_if(s_debug_more, L_DEBUG,
-             "Finalized stream_udp_session_t %p (stream=%p, worker=%u)",
+             "Finalized stream_udp_session_t %p (stream=%p, worker=%u, esocket=%p uuid=0x%016" DAP_UINT64_FORMAT_x ")",
              l_session, l_session->stream,
-             a_flow->listener_es->worker ? a_flow->listener_es->worker->id : 0);
+             a_flow->listener_es->worker ? a_flow->listener_es->worker->id : 0,
+             (void *)a_flow->listener_es, a_flow->listener_es->uuid);
     
     return 0;
 }

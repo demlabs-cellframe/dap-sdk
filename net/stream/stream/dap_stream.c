@@ -1144,6 +1144,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
         return;
 
     unsigned int l_id=0;
+    bool l_need_error_reply = false;
     //debug_if(s_debug_more, L_DEBUG,"Prepare data stream");
     if(a_http_client->in_query_string[0]){
         debug_if(s_debug_more, L_INFO,"Query string [%s]",a_http_client->in_query_string);
@@ -1154,6 +1155,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                 log_it(L_ERROR,"No session id %u was found", l_id);
                 a_http_client->reply_status_code = Http_Status_NotFound;
                 strcpy(a_http_client->reply_reason_phrase,"Not found");
+                l_need_error_reply = true;
             } else {
                 debug_if(s_debug, L_DEBUG, "Session pointer: %p, mutex: %p, active_channels: %p",
                        (void*)l_ss, (void*)&l_ss->mutex, (void*)l_ss->active_channels);
@@ -1167,8 +1169,9 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     if (!l_stream) {
                         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                         a_http_client->reply_status_code = Http_Status_NotFound;
-                        return;
-                    }
+                        strcpy(a_http_client->reply_reason_phrase,"Not found");
+                        l_need_error_reply = true;
+                    } else {
                     debug_if(s_debug, L_DEBUG, "Stream created successfully: %p (esocket=%p, stream_worker=%p)",
                            (void*)l_stream, (void*)l_stream->esocket, (void*)l_stream->stream_worker);
                     l_stream->session = l_ss;
@@ -1180,9 +1183,9 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     for(size_t i = 0; i < count_channels; i++) {
                         dap_stream_ch_t * l_ch = dap_stream_ch_new(l_stream, l_ss->active_channels[i]);
                         if (!l_ch) {
+                            /* HTTP 200 already sent inside s_stream_new */
                             log_it(L_ERROR, "Failed to create channel '%c' for session %u", l_ss->active_channels[i], l_id);
-                            a_http_client->reply_status_code = Http_Status_InternalServerError;
-                            return;
+                            break;
                         }
                         l_ch->ready_to_read = true;
                         //l_stream->channel[i]->ready_to_write = true;
@@ -1202,16 +1205,32 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
                     dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
 #endif
+                    }
                 }else{
-                    log_it(L_ERROR,"Can't open session id %u", l_id);
+                    log_it(L_ERROR,"Can't open session id %u (already opened=%d)", l_id, l_open_ret);
                     a_http_client->reply_status_code = Http_Status_NotFound;
                     strcpy(a_http_client->reply_reason_phrase,"Not found");
+                    l_need_error_reply = true;
                 }
             }
+        } else {
+            log_it(L_ERROR, "Stream GET: cannot parse session_id from query '%s'",
+                   a_http_client->in_query_string);
+            a_http_client->reply_status_code = Http_Status_BadRequest;
+            strcpy(a_http_client->reply_reason_phrase,"Bad request");
+            l_need_error_reply = true;
         }
     }else{
         log_it(L_ERROR,"No query string");
+        a_http_client->reply_status_code = Http_Status_BadRequest;
+        strcpy(a_http_client->reply_reason_phrase,"Bad request");
+        l_need_error_reply = true;
     }
+    /* Error paths never reach s_stream_new (which writes 200). Without an
+     * explicit reply the HTTP layer drops the request silently and the
+     * client later sends SERVICE_REQUEST into a half-open stream. */
+    if (l_need_error_reply)
+        dap_http_client_write(a_http_client);
 }
 
 /**
