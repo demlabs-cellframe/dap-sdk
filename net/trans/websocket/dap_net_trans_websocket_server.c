@@ -202,7 +202,10 @@ int dap_net_trans_websocket_server_start(dap_net_trans_websocket_server_t *a_ws_
         .error_callback = dap_http_client_error
     };
 
-    a_ws_server->server = dap_server_new(a_cfg_section, NULL, &l_client_callbacks);
+    /* NULL cfg_section: do NOT auto-bind [server] listen_address (usually :80).
+     * That raced with HTTP via SO_REUSEPORT and stole ~half of port-80 accepts. */
+    (void)a_cfg_section;
+    a_ws_server->server = dap_server_new(NULL, NULL, &l_client_callbacks);
     if (!a_ws_server->server) {
         log_it(L_ERROR, "Failed to create dap_server for WebSocket");
         return -3;

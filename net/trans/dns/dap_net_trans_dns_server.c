@@ -172,7 +172,10 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
         .error_callback = NULL
     };
 
-    a_dns_server->server = dap_server_new(a_cfg_section, NULL, &l_dns_callbacks);
+    /* NULL cfg_section: do NOT auto-bind [server] listen_address (:80).
+     * That added a TCP :80 listener on the DNS dap_server (SO_REUSEPORT race). */
+    (void)a_cfg_section;
+    a_dns_server->server = dap_server_new(NULL, NULL, &l_dns_callbacks);
     if (!a_dns_server->server) {
         log_it(L_ERROR, "Failed to create dap_server for DNS");
         return -3;
