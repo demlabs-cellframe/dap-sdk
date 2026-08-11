@@ -29,8 +29,10 @@ static const int8_t s_b58digits_map[] = {
     47,48,49,50,51,52,53,54,55,56,57,-1,-1,-1,-1,-1,
 };
 
-size_t dap_base58_decode(const char *a_in, void *a_out)
+size_t dap_base58_decode_bounded(const char *a_in, void *a_out, size_t a_out_max)
 {
+    if (!a_in || !a_out)
+        return 0;
     size_t l_out_size_max = DAP_BASE58_DECODE_SIZE(strlen(a_in));
     size_t l_out_size = l_out_size_max;
 
@@ -105,6 +107,11 @@ size_t dap_base58_decode(const char *a_in, void *a_out)
         --l_out_size;
     }
 
+    /* WASM-C-10: check capacity BEFORE writing — the decoded payload plus
+     * the leading-zero padding and trailing NUL must all fit. */
+    if (l_out_size + zerocount + 1 > a_out_max)
+        return 0;
+
     unsigned char *l_out = a_out;
     memset(l_out, 0, zerocount);
     for (j = 0; j < l_out_size; j++)
@@ -113,6 +120,16 @@ size_t dap_base58_decode(const char *a_in, void *a_out)
     l_out_size += zerocount;
 
     return l_out_size;
+}
+
+size_t dap_base58_decode(const char *a_in, void *a_out)
+{
+    if (!a_in || !a_out)
+        return 0;
+    /* Unbounded variant: contract requires a_out to hold at least
+     * DAP_BASE58_DECODE_SIZE(strlen(a_in)) bytes — delegate to the bounded
+     * implementation with that documented capacity. */
+    return dap_base58_decode_bounded(a_in, a_out, DAP_BASE58_DECODE_SIZE(strlen(a_in)));
 }
 
 size_t dap_base58_encode(const void *a_in, size_t a_in_size, char *a_out)

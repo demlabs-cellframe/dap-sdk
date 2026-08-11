@@ -43,6 +43,17 @@ size_t dap_base58_encode(const void *a_in, size_t a_in_size, char *a_out);
 size_t dap_base58_decode(const char *a_in, void *a_out);
 
 /**
+ * @brief Decode base58 string to data with caller-provided capacity.
+ *        WASM-C-10: unlike dap_base58_decode(), validates a_out_max BEFORE
+ *        writing, so a too-small caller buffer cannot be overflowed.
+ * @param a_in Input base58 string
+ * @param a_out Output buffer
+ * @param a_out_max Capacity of a_out in bytes
+ * @return Output size, 0 on error (including "does not fit")
+ */
+size_t dap_base58_decode_bounded(const char *a_in, void *a_out, size_t a_out_max);
+
+/**
  * @brief Encode data to base58 and return newly allocated string
  * @param a_in Input data
  * @param a_in_size Input size
