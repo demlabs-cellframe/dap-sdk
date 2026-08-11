@@ -331,10 +331,11 @@ static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             if (l_state == DAP_TLS_MIMICRY_STATE_CLIENT_HELLO_SENT) {
                 /* Expecting ServerHello + CCS + fake extensions from server */
                 void *l_response = NULL;
-                size_t l_response_size = 0;
+                size_t l_response_size = 0, l_hs_consumed = 0;
                 int l_rc = dap_tls_mimicry_process_server_hello(l_ctx->mimicry,
                                                                   l_es->buf_in, l_avail,
-                                                                  &l_response, &l_response_size);
+                                                                  &l_response, &l_response_size,
+                                                                  &l_hs_consumed);
                 if (l_rc == 0) {
                     /* ServerHello processed — state is now ESTABLISHED.
                      * Send client CCS + fake Finished back to server. */
@@ -343,9 +344,15 @@ static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                                                        l_response, l_response_size);
                         DAP_DELETE(l_response);
                     }
-                    /* Clear consumed data from buffer (entire handshake consumed) */
-                    l_es->buf_in_size = 0;
-                    l_avail = 0;
+                    /* Shrink only handshake bytes — keep pipelined APP_DATA */
+                    if (l_hs_consumed > 0 && l_hs_consumed < l_es->buf_in_size) {
+                        memmove(l_es->buf_in, l_es->buf_in + l_hs_consumed,
+                                l_es->buf_in_size - l_hs_consumed);
+                        l_es->buf_in_size -= l_hs_consumed;
+                    } else {
+                        l_es->buf_in_size = 0;
+                    }
+                    l_avail = l_es->buf_in_size;
                     l_state = dap_tls_mimicry_get_state(l_ctx->mimicry);
                     debug_if(s_debug_more, L_DEBUG, "TLS handshake: ServerHello processed, state=ESTABLISHED");
                     /* TLS handshake complete — notify FSM to proceed with enc_init */
@@ -619,10 +626,11 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
     /* === HANDSHAKE phase: ServerHello uses its own parser (not TLS unwrap) === */
     if (l_ctx->phase == TLS_PHASE_HANDSHAKE) {
         void *l_response = NULL;
-        size_t l_response_size = 0;
+        size_t l_response_size = 0, l_hs_consumed = 0;
         int l_rc = dap_tls_mimicry_process_server_hello(l_ctx->mimicry,
                                                           a_es->buf_in, a_es->buf_in_size,
-                                                          &l_response, &l_response_size);
+                                                          &l_response, &l_response_size,
+                                                          &l_hs_consumed);
         if (l_rc != 0) {
             /* Incomplete or error — wait for more data */
             DAP_DELETE(l_response);
@@ -633,7 +641,14 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
             dap_events_socket_write_unsafe(a_es, l_response, l_response_size);
             DAP_DELETE(l_response);
         }
-        a_es->buf_in_size = 0;
+        /* Keep any bytes after the handshake (pipelined enc_init reply) */
+        if (l_hs_consumed > 0 && l_hs_consumed < a_es->buf_in_size) {
+            memmove(a_es->buf_in, a_es->buf_in + l_hs_consumed,
+                    a_es->buf_in_size - l_hs_consumed);
+            a_es->buf_in_size -= l_hs_consumed;
+        } else {
+            a_es->buf_in_size = 0;
+        }
 
         log_it(L_NOTICE, "TLS handshake completed — sending enc_init through TLS channel");
         if (s_tls_send_enc_init(l_stream, l_ctx, a_es) == 0) {
@@ -654,10 +669,9 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
             }
         }
 
-        /* If the enc_init reply is already in buf_in (CCS+Finished piggybacked
-         * or fast RTT), the buf_in_size is 0 here because we cleared it above.
-         * The next read event drives ENC_INIT_WAIT processing. No callback
-         * swap means no race to close. */
+        /* Pipelined enc_init reply already in buf_in — process without waiting */
+        if (a_es->buf_in_size > 0 && l_ctx->phase == TLS_PHASE_ENC_INIT_WAIT)
+            s_tls_read_cb(a_es, a_arg);
         return;
     }
 
@@ -683,10 +697,22 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
     if (l_rc == 1 || !l_unwrapped || l_unwrapped_size == 0) {
-        /* Incomplete TLS record — wait for more data */
-        log_it(L_DEBUG, "TLS read (phase %d): incomplete record, buf_in=%zu consumed=%zu — waiting",
-               (int)l_ctx->phase, a_es->buf_in_size, l_consumed);
         DAP_DELETE(l_unwrapped);
+        /* Skipped non-APP_DATA only — try again on remaining bytes */
+        if (l_rc == 0 && l_consumed > 0 && a_es->buf_in_size > 0) {
+            s_tls_read_cb(a_es, a_arg);
+            return;
+        }
+        if (a_es->buf_in_size >= 5) {
+            const uint8_t *b = a_es->buf_in;
+            log_it(L_DEBUG, "TLS read (phase %d): incomplete record, buf_in=%zu consumed=%zu "
+                   "hdr=%02x %02x %02x %02x %02x — waiting",
+                   (int)l_ctx->phase, a_es->buf_in_size, l_consumed,
+                   b[0], b[1], b[2], b[3], b[4]);
+        } else {
+            log_it(L_DEBUG, "TLS read (phase %d): incomplete record, buf_in=%zu consumed=%zu — waiting",
+                   (int)l_ctx->phase, a_es->buf_in_size, l_consumed);
+        }
         dap_events_socket_set_readable_unsafe(a_es, true);
         return;
     }

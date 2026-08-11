@@ -756,8 +756,7 @@ static void s_worker_execute_stage(void *a_arg)
         }
 
         // Session start — pass a real callback so the transport can signal
-        // readiness asynchronously (WebSocket waits for 101 Switching Protocols).
-        // For HTTP the callback fires synchronously inside session_start.
+        // readiness asynchronously (WebSocket waits for 101; HTTP waits for 200).
         dap_net_trans_t *l_transport = l_tc->stream->trans;
         int l_start_ret = 0;
         bool l_has_session_start = (l_transport && l_transport->ops && l_transport->ops->session_start);

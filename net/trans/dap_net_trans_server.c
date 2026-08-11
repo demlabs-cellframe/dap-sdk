@@ -355,9 +355,8 @@ int dap_net_trans_server_register_handlers(dap_net_trans_server_ctx_t *a_ctx)
     // Register QoS probe handler (legacy HTTP transport)
     dap_net_trans_qos_add_proc(a_ctx->http_server);
 
-    // Register trans-specific handlers FIRST via trans's callback.
-    // This allows transports like WebSocket to register their own /stream handler
-    // (e.g., WebSocket upgrade handler) before the default HTTP stream handler.
+    // Optional trans-specific hooks (must NOT replace /stream with an upgrade-only
+    // stub — dap_stream already handles Upgrade via try_upgrade).
     dap_net_trans_t *l_stream_trans = dap_net_trans_find(a_ctx->trans_type);
     if (l_stream_trans && l_stream_trans->ops && l_stream_trans->ops->register_server_handlers) {
         int l_ret = l_stream_trans->ops->register_server_handlers(l_stream_trans, a_ctx);
@@ -369,9 +368,7 @@ int dap_net_trans_server_register_handlers(dap_net_trans_server_ctx_t *a_ctx)
         }
     }
 
-    // Register standard stream handler only if the trans didn't register its own.
-    // uthash HASH_FIND_STR returns only the first entry for duplicate keys,
-    // so we check if /stream is already handled by the trans-specific handler.
+    // Always ensure /stream uses dap_stream (HTTP GET + WebSocket upgrade).
     dap_http_url_proc_t *l_existing_stream = NULL;
     HASH_FIND_STR(a_ctx->http_server->url_proc, "/stream", l_existing_stream);
     if (!l_existing_stream) {
