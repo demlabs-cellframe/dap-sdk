@@ -54,7 +54,9 @@ static bool s_test_base58_encode_decode(void) {
         DAP_TEST_ASSERT(l_actual_encoded_size <= l_encoded_size, "Encoded size should not exceed calculated size");
 
         // Decode
-        uint8_t l_decoded_data[l_test_size];
+        /* WASM-C-25: legacy decode writes payload + trailing NUL — size the
+         * buffer accordingly (was l_test_size, an off-by-one VLA overflow). */
+        uint8_t l_decoded_data[l_test_size + 1];
         size_t l_decoded_size = dap_enc_base58_decode(l_encoded_data, l_decoded_data);
         DAP_TEST_ASSERT(l_decoded_size == l_test_size, "Decoded size should match original size");
 
@@ -151,6 +153,54 @@ static bool s_test_base58_random_data(void) {
 }
 
 /**
+ * @brief WASM-C-10: bounded decode — capacity is validated BEFORE writing.
+ */
+static bool s_test_base58_decode_bounded(void) {
+    log_it(L_INFO, "Testing bounded Base58 decode...");
+
+    // Encode a 32-byte blob, then decode it through the bounded API.
+    uint8_t l_source[32];
+    dap_random_bytes(l_source, sizeof(l_source));
+    char l_encoded[DAP_ENC_BASE58_ENCODE_SIZE(sizeof(l_source))];
+    size_t l_enc = dap_enc_base58_encode(l_source, sizeof(l_source), l_encoded);
+    DAP_TEST_ASSERT(l_enc > 0, "encode should succeed");
+
+    // 1) Exact fit: decoded_size + 1 (NUL) == a_out_max → success, data intact.
+    uint8_t l_buf[sizeof(l_source) + 1];
+    l_buf[sizeof(l_source)] = 0xAA; // canary must be overwritten by NUL
+    size_t l_n = dap_base58_decode_bounded(l_encoded, l_buf, sizeof(l_buf));
+    DAP_TEST_ASSERT(l_n == sizeof(l_source), "exact-fit bounded decode size");
+    DAP_TEST_ASSERT(memcmp(l_source, l_buf, sizeof(l_source)) == 0, "exact-fit bounded decode data");
+    DAP_TEST_ASSERT(l_buf[sizeof(l_source)] == 0, "exact-fit bounded decode NUL");
+
+    // 2) One byte short → 0, and the buffer must be untouched (canary).
+    memset(l_buf, 0xCC, sizeof(l_buf));
+    size_t l_n2 = dap_base58_decode_bounded(l_encoded, l_buf, sizeof(l_source));
+    DAP_TEST_ASSERT(l_n2 == 0, "short bounded decode must fail");
+    for (size_t i = 0; i < sizeof(l_buf); i++)
+        DAP_TEST_ASSERT(l_buf[i] == 0xCC, "short bounded decode must not write");
+
+    // 3) a_out_max == 0 / NULL inputs → 0, no write.
+    DAP_TEST_ASSERT(dap_base58_decode_bounded(l_encoded, l_buf, 0) == 0, "zero capacity fails");
+    DAP_TEST_ASSERT(dap_base58_decode_bounded(NULL, l_buf, sizeof(l_buf)) == 0, "NULL input fails");
+    DAP_TEST_ASSERT(dap_base58_decode_bounded(l_encoded, NULL, sizeof(l_buf)) == 0, "NULL output fails");
+
+    // 4) Leading '1's: decoded size == input length (+NUL), so len <= a_out_max
+    //    is a valid call — the bound must be decoded_size+1, not 2*len+1.
+    const char *l_ones = "11111111"; // 8 leading-zero bytes
+    uint8_t l_ones_buf[9];
+    l_n = dap_base58_decode_bounded(l_ones, l_ones_buf, sizeof(l_ones_buf));
+    DAP_TEST_ASSERT(l_n == 8, "all-ones decode size");
+    for (size_t i = 0; i < 8; i++)
+        DAP_TEST_ASSERT(l_ones_buf[i] == 0, "all-ones decode zeros");
+    DAP_TEST_ASSERT(dap_base58_decode_bounded(l_ones, l_ones_buf, 8) == 0,
+                    "all-ones with payload-sized buffer must fail (NUL needs +1)");
+
+    log_it(L_INFO, "✓ Bounded Base58 decode tests passed");
+    return true;
+}
+
+/**
  * @brief Main test function
  */
 int main(void) {
@@ -171,6 +221,7 @@ int main(void) {
     l_all_passed &= s_test_base58_encode_decode();
     l_all_passed &= s_test_base58_edge_cases();
     l_all_passed &= s_test_base58_random_data();
+    l_all_passed &= s_test_base58_decode_bounded();
 
     // Cleanup
     dap_test_sdk_cleanup();

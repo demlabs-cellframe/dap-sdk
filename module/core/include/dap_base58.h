@@ -48,8 +48,12 @@ size_t dap_base58_decode(const char *a_in, void *a_out);
  *        writing, so a too-small caller buffer cannot be overflowed.
  * @param a_in Input base58 string
  * @param a_out Output buffer
- * @param a_out_max Capacity of a_out in bytes
- * @return Output size, 0 on error (including "does not fit")
+ * @param a_out_max Capacity of a_out in bytes. Must be at least
+ *        decoded_size + 1 — a trailing NUL is ALWAYS written after the
+ *        payload (leading-'1' zero padding included), so a buffer sized
+ *        exactly to the payload is NOT enough.
+ * @return Output size (payload + zero padding, excluding NUL), 0 on error
+ *         (including "does not fit" — nothing is written in that case)
  */
 size_t dap_base58_decode_bounded(const char *a_in, void *a_out, size_t a_out_max);
 

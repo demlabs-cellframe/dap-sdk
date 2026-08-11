@@ -108,7 +108,11 @@ size_t dap_base58_decode_bounded(const char *a_in, void *a_out, size_t a_out_max
     }
 
     /* WASM-C-10: check capacity BEFORE writing — the decoded payload plus
-     * the leading-zero padding and trailing NUL must all fit. */
+     * the leading-zero padding and trailing NUL must all fit. Note this sum
+     * form (not a_max - x reordering): the reordered variant underflows to
+     * SIZE_MAX at a_out_max == 0 and lets the write through. The sum cannot
+     * overflow size_t here — it is bounded by 3·len+2 and len is bounded by
+     * the VLA allocations above, which die long before SIZE_MAX. */
     if (l_out_size + zerocount + 1 > a_out_max)
         return 0;
 
