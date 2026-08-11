@@ -193,6 +193,7 @@ static bool s_test_base58_decode_bounded(void) {
     DAP_TEST_ASSERT(l_n == 8, "all-ones decode size");
     for (size_t i = 0; i < 8; i++)
         DAP_TEST_ASSERT(l_ones_buf[i] == 0, "all-ones decode zeros");
+    DAP_TEST_ASSERT(l_ones_buf[8] == 0, "all-ones decode NUL");
     DAP_TEST_ASSERT(dap_base58_decode_bounded(l_ones, l_ones_buf, 8) == 0,
                     "all-ones with payload-sized buffer must fail (NUL needs +1)");
 
