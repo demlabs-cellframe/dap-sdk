@@ -230,7 +230,12 @@ int dap_enc_kdf_hkdf(const void *a_salt, size_t a_salt_size,
     
     // EXTRACT: PRK = SHAKE256(salt || IKM)
     // If no salt, use zero-filled salt of length equal to hash output
-    size_t l_extract_input_size = a_salt_size + a_ikm_size;
+    // WASM-C-07: when a zero salt is substituted, the buffer must actually
+    // hold the 32 zero bytes — the old code allocated a_salt_size+a_ikm_size
+    // and then memset 32 bytes into a possibly smaller buffer (heap overflow
+    // when a_ikm_size < 32).
+    size_t l_zero_salt_size = (a_salt_size == 0 || !a_salt) ? 32 : 0;
+    size_t l_extract_input_size = (a_salt_size > 0 ? a_salt_size : l_zero_salt_size) + a_ikm_size;
     uint8_t *l_extract_input = DAP_NEW_SIZE(uint8_t, l_extract_input_size);
     if (!l_extract_input) {
         log_it(L_ERROR, "HKDF: failed to allocate extract input buffer");
@@ -240,9 +245,9 @@ int dap_enc_kdf_hkdf(const void *a_salt, size_t a_salt_size,
     if (a_salt_size > 0 && a_salt) {
         memcpy(l_extract_input, a_salt, a_salt_size);
     } else {
-        // No salt: use zeros
-        memset(l_extract_input, 0, 32);  // 32-byte zero salt
-        a_salt_size = 32;
+        // No salt: use zeros (buffer sized for the zero salt above)
+        memset(l_extract_input, 0, l_zero_salt_size);
+        a_salt_size = l_zero_salt_size;
     }
     memcpy(l_extract_input + a_salt_size, a_ikm, a_ikm_size);
     

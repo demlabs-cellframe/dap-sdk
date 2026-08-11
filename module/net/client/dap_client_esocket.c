@@ -510,15 +510,10 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
                 l_es->session_key_id, strnlen(l_es->session_key_id, DAP_ENC_KS_KEY_ID_SIZE),
                 l_es->session_key_block_size);
 
-        /* Log the derived symmetric key for cross-platform comparison. */
-        {
-            const uint8_t *l_dk = l_es->session_key && l_es->session_key->priv_key_data
-                ? (const uint8_t *)l_es->session_key->priv_key_data : NULL;
-            if (l_dk && l_es->session_key->priv_key_data_size >= 8)
-                log_it(L_DEBUG, "enc_init[client]: derived_key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x type=%d",
-                       l_dk[0], l_dk[1], l_dk[2], l_dk[3], l_dk[4], l_dk[5], l_dk[6], l_dk[7],
-                       l_es->session_key_type);
-        }
+        /* WASM-C-05: never log derived key bytes — they would leak into the
+         * browser console (WASM) and log dumps. Type/size only. */
+        log_it(L_DEBUG, "enc_init[client]: derived session key type=%d",
+               l_es->session_key_type);
 
         // Verify node sign
         if (l_node_sign_b64) {
