@@ -76,6 +76,14 @@ typedef struct dap_link {
         dap_time_t start_after;
         dap_events_socket_uuid_t es_uuid;
         bool ready;
+        /* Sync performance tracking — used for quality-based peer selection */
+        uint64_t bytes_synced;           // total bytes received during current sync session
+        uint32_t blocks_synced;          // total blocks received during current sync session
+        dap_time_t sync_session_start;   // when current sync session started
+        uint32_t sync_failures;          // count of failed/stalled sync sessions
+        uint32_t avg_blocks_per_sec;     // rolling average blocks/sec (last 5 sessions)
+        uint32_t rtt_ms;                 // last measured RTT in milliseconds (TCP connect time)
+        dap_time_t last_rtt_measure;     // when RTT was last measured
     } uplink;
     dap_list_t *static_clusters;
     dap_link_manager_t *link_manager;
@@ -131,3 +139,8 @@ void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_
 int dap_link_manager_add_active_channel(char a_ch_id);
 int dap_link_manager_remove_active_channel(char a_ch_id);
 const char *dap_link_manager_get_active_channels(void);
+
+/* Link quality tracking — sync performance metrics */
+void dap_link_manager_update_sync_metrics(dap_stream_node_addr_t *a_addr, uint32_t a_blocks_synced, uint64_t a_bytes_synced);
+void dap_link_manager_finish_sync_session(dap_stream_node_addr_t *a_addr, bool a_success);
+dap_stream_node_addr_t dap_link_manager_get_best_peer_for_net(uint64_t a_net_id);

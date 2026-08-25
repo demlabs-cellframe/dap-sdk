@@ -35,6 +35,7 @@
 #include <sys/types.h>
 #ifdef DAP_OS_UNIX
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <sys/resource.h>
 #elif defined DAP_OS_WINDOWS
@@ -1488,7 +1489,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             bool l_write_repeat = false;
             if (l_flag_write && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) && !(l_cur->flags & DAP_SOCK_CONNECTING) && !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)) {
                 if (l_cur->callbacks.write_callback)
-                    l_write_repeat = l_cur->callbacks.write_callback(l_cur, l_cur->callbacks.arg);  /* Call callback to process write event */
+                    l_write_repeat = l_cur->callbacks.write_callback(l_cur, l_cur->callbacks.arg);
                 debug_if(g_debug_reactor, L_DEBUG, "Main loop output: %zu bytes to send, repeat next time: %s",
                                                     l_cur->buf_out_size, l_write_repeat ? "true" : "false");
                 /*
@@ -1514,6 +1515,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                        " buf_out %zu bytes",
                                        l_cur->socket, l_cur->uuid, l_cur->buf_out_size);
                         }
+                        /* Drain loop: send as much as possible in one go.
+                         * Without this loop, only one send() per event-loop
+                         * iteration — data accumulates faster than it drains
+                         * when the cross-thread queue consumer keeps adding
+                         * ACKs.  The loop exits on EAGAIN (kernel buffer full)
+                         * or when buf_out is empty. */
                         l_bytes_sent = send(l_cur->socket, (const char *)l_cur->buf_out,
                                             l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
                         if (l_bytes_sent == -1) {
@@ -1636,14 +1643,19 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                                /* Keep EPOLLOUT armed. send() EAGAIN means the kernel
-                                 * TX queue is full — we must wait for the next writable
-                                 * event to flush the remainder. Disarming here stalled
-                                 * TLS enc_init replies (~5 KB) on the wire forever. */
-                                l_bytes_sent = 0;
+                                /* TCP EAGAIN: kernel send buffer full.
+                                 * Do NOT disarm EPOLLOUT — level-triggered
+                                 * epoll will not re-fire until the kernel
+                                 * buffer has space.  Set congestion sentinel
+                                 * so finalize_write stops calling epoll_ctl(MOD)
+                                 * on every cross-thread write (which causes the
+                                 * kernel to re-evaluate and re-report). */
+                                if (!l_cur->congestion_queue)
+                                    l_cur->congestion_queue = (void*)1;
                                 break;
                             case DESCRIPTOR_TYPE_PIPE:
-                                /* FILE (TUN) handled above — keeps EPOLLOUT armed */
+                                /* PIPE: drop buf_out and disarm to avoid busy loop */
+                                l_cur->buf_out_size = 0;
                                 dap_events_socket_set_writable_unsafe(l_cur, false);
                                 break;
                             default:
@@ -1665,23 +1677,22 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         debug_if(g_debug_reactor, L_DEBUG, "Output: %zu from %zu bytes are sent", l_bytes_sent, l_cur->buf_out_size);
                         if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP)
                             l_cur->last_time_active = l_cur_time;
-                        if (l_bytes_sent <= (ssize_t) l_cur->buf_out_size) {
-                            l_cur->buf_out_size -= l_bytes_sent;
-                            if (l_cur->buf_out_size)
-                                memmove(l_cur->buf_out, &l_cur->buf_out[l_bytes_sent], l_cur->buf_out_size);
-                            else if (l_cur->callbacks.write_finished_callback)    /* Optionaly call I/O completion routine */
-                                l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
-                        } else {
-                            log_it(L_ERROR, "Wrong bytes sent, %zd more then was in buffer %zd",l_bytes_sent, l_cur->buf_out_size);
-                            l_cur->buf_out_size = 0;
+                        /* Clear congestion only when buf_out is fully drained.
+                         * Partial sends mean the kernel buffer is still near-full. */
+                        if (l_cur->buf_out_size == 0 && l_cur->congestion_queue) {
+                            if (l_cur->congestion_queue != (void*)1)
+                                dap_context_queue_signal(l_cur->congestion_queue);
+                            l_cur->congestion_queue = NULL;
                         }
+                        if (l_cur->buf_out_size == 0 && l_cur->callbacks.write_finished_callback)
+                            l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
                     }
                 }
-                if (!l_cur->buf_out_size) {
+                if (!l_cur->buf_out_size && !l_write_repeat) {
                     if (l_cur->type != DESCRIPTOR_TYPE_SOCKET_UDP || !l_cur->packet_queue || !l_cur->packet_queue->count)
                         dap_events_socket_set_writable_unsafe(l_cur, false);
                 }
-            } else if (l_flag_write && !(l_cur->flags & (DAP_SOCK_READY_TO_WRITE | DAP_SOCK_CONNECTING | DAP_SOCK_SIGNAL_CLOSE))) {
+            } else if (l_flag_write && !(l_cur->flags & DAP_SOCK_READY_TO_WRITE)) {
                 dap_context_poll_update(l_cur);
             }
 

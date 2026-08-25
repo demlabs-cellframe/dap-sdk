@@ -57,7 +57,7 @@
 // ===== Module state =====
 
 static dap_client_fsm_t *s_fsm_table = NULL;
-static pthread_rwlock_t s_fsm_table_lock = PTHREAD_RWLOCK_INITIALIZER;
+pthread_rwlock_t s_fsm_table_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 static int s_max_attempts = 3;
 static int s_timeout = 20;
@@ -299,12 +299,14 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
     a_fsm->is_removing = true;
     a_fsm->worker = NULL;
 
+    /* Unregister FIRST so new dispatch callbacks can't find the FSM.
+     * Then wait for any in-flight dispatch (holding read lock) by
+     * acquiring the write lock for cleanup below. */
     dap_client_fsm_unregister(a_fsm);
 
-    /* Clean up transport and stream FIRST, while client->_internal still points to this
-     * FSM so that dap_client_trans_ctx_clean_unsafe can reach l_fsm->trans_ctx->stream
-     * and call dap_stream_delete_unsafe on it.  The is_removing flag above guards against
-     * any callbacks that access the FSM during this cleanup. */
+    /* Clean up transport and stream.  is_removing flag guards against
+     * callbacks that bypass the hash table lookup (e.g. HTTP response
+     * wrappers that go through DAP_CLIENT_FSM). */
     if (a_fsm->client_trans_ctx) {
         dap_client_trans_ctx_delete_unsafe(a_fsm->client_trans_ctx);
         a_fsm->client_trans_ctx = NULL;
@@ -578,9 +580,17 @@ static void s_worker_execute_stage(void *a_arg)
 
     dap_client_t *l_client = l_ctx->client;
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-    dap_client_trans_ctx_t *l_io = l_fsm ? l_fsm->client_trans_ctx : NULL;
-    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-    if (!l_fsm || !l_io || !l_tc) {
+    /* Guard: if FSM is being removed or freed, don't dereference it further.
+     * This callback runs on the worker thread, while deletion can run
+     * concurrently from another worker. is_removing is set before
+     * unregister, so if we see it set, the FSM is being torn down. */
+    if (!l_fsm || l_fsm->is_removing) {
+        DAP_DELETE(l_ctx);
+        return;
+    }
+    dap_client_trans_ctx_t *l_io = l_fsm->client_trans_ctx;
+    dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
+    if (!l_io || !l_tc) {
         log_it(L_ERROR, "No client trans ctx for stage execution");
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
@@ -1294,7 +1304,7 @@ static void s_worker_execute_enc_init_io(void *a_arg)
         .host = l_client->link_info.uplink_addr,
         .port = l_client->link_info.uplink_port,
         .node_addr = &l_client->link_info.node_addr,
-        .authorized = false,
+        .authorized = true,
         .callbacks = &l_handshake_callbacks,
         .client_ctx = l_client,
         .worker = l_worker
@@ -1751,10 +1761,21 @@ static void *s_fsm_dispatch_on_fsm_thread(void *a_arg)
     fsm_dispatch_ctx_t *l_ctx = (fsm_dispatch_ctx_t *)a_arg;
     if (!l_ctx) return NULL;
 
-    dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
+    /* Hold the read lock for the entire callback execution.  This prevents
+     * dap_client_fsm_unregister (called from dap_client_fsm_delete_unsafe on
+     * the worker thread) from removing the FSM from the hash table — and thus
+     * prevents DAP_DELETE(fsm) — while we're executing the callback.
+     * The callback may itself trigger deletion, but deletion calls
+     * dap_client_fsm_unregister which needs a write lock — it will block
+     * until we release the read lock here.  If the callback frees the FSM
+     * internally, the unregister inside delete will fail gracefully. */
+    pthread_rwlock_rdlock(&s_fsm_table_lock);
+    dap_client_fsm_t *l_fsm = NULL;
+    HASH_FIND(hh, s_fsm_table, &l_ctx->fsm_uuid, sizeof(uint64_t), l_fsm);
     if (l_fsm && !l_fsm->is_removing) {
         l_ctx->func(l_fsm, l_ctx->arg);
     }
+    pthread_rwlock_unlock(&s_fsm_table_lock);
 
     DAP_DELETE(l_ctx);
     return NULL;

@@ -121,7 +121,7 @@ typedef struct queue_entry {
 #define DAP_SOCK_SIGNAL_CLOSE       BIT( 2 )
 #define DAP_SOCK_CONNECTING         BIT( 3 )    // When connection happens this flag is armed for outgoing connections until its establish the connection
 #define DAP_SOCK_REASSIGN_ONCE      BIT( 4 )    // This usable for FlowControl to prevent multiple reassigment
-//#define DAP_SOCK_DROP_WRITE_IF_ZERO BIT( 5 )    // Drop down WRITE flag from socket if reach zero bytes in output buffer
+#define DAP_SOCK_WRITE_EAGAIN       BIT( 5 )    // Last send() returned EAGAIN; skip re-arm EPOLLOUT until successful drain
 #ifdef DAP_EVENTS_CAPS_IOCP
 #define DAP_SOCK_KEEP_INHERITOR     BIT( 6 )
 #define FLAG_KEEP_INHERITOR(f)  (f & DAP_SOCK_KEEP_INHERITOR)
@@ -367,6 +367,14 @@ typedef struct dap_events_socket {
     time_t time_connection;
     time_t last_time_active;
     time_t last_ping_request;
+
+    /* Backpressure: when a cross-thread queue consumer detects buf_out is
+     * full, it stores the queue here (quiet push, no eventfd signal).
+     * When the EPOLLOUT handler drains buf_out below threshold, it signals
+     * this queue to wake the consumer.  Set by s_ch_send_callback, cleared
+     * when buf_out drains.  Only one queue per esocket (the first one that
+     * congested). */
+    void *congestion_queue;
 
     void *_inheritor; // Inheritor data to specific client type, usualy states for state machine
     void *_pvt; //Private section, different for different types

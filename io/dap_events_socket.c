@@ -1942,7 +1942,16 @@ static inline void s_events_socket_finalize_write(dap_events_socket_t *a_es, siz
     a_es->buf_out_size += a_bytes_written;
     debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
              a_bytes_written, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
-    dap_events_socket_set_writable_unsafe(a_es, true);
+    /* Arm EPOLLOUT only if the socket is not congested.
+     * congestion_queue != NULL means s_ch_send_callback detected buf_out
+     * was too large and set congestion_queue.  When the event loop drains
+     * buf_out below threshold, it clears congestion_queue and signals
+     * the queue to resume processing.
+     * Without this guard, every write to buf_out re-arms EPOLLOUT →
+     * write_callback runs → adds more data → finalize_write re-arms →
+     * busy-spin. */
+    if (!a_es->congestion_queue)
+        dap_events_socket_set_writable_unsafe(a_es, true);
 }
 
 /**

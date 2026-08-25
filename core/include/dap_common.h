@@ -590,7 +590,7 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
  * DAP_PROTOCOL_VERSION may stay 27 for chain-sync features when the peer
  * reports support.
 */
-#define DAP_PROTOCOL_VERSION          27
+#define DAP_PROTOCOL_VERSION          26
 #define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
 
 #define DAP_CLIENT_PROTOCOL_VERSION   26
