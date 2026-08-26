@@ -860,7 +860,7 @@ void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
     dap_stream_node_addr_t *l_addr = (dap_stream_node_addr_t*)a_arg;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link = s_link_manager_link_find(l_addr);
-    if ( l_link && l_link == DAP_LINK(a_client) ) {
+    if ( l_link && l_link == DAP_LINK(a_client) && l_link->uplink.client ) {
         log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
                 NODE_ADDR_FP_ARGS_S(l_link->uplink.client->link_info.node_addr),
                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);

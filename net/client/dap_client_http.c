@@ -1594,6 +1594,11 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
         l_ctx = (dap_client_http_async_context_t *)l_client_http->callbacks_arg;
     }
     
+    if (l_client_http->were_callbacks_called) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_error: callbacks already called, ignoring error %d", a_errno);
+        return;
+    }
+
     if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
         // Special handling for interrupted streaming
         log_it(L_WARNING, "Streaming interrupted after %zu bytes (%s mode: %s)",

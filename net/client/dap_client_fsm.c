@@ -578,13 +578,21 @@ static void s_worker_execute_stage(void *a_arg)
     debug_if(s_debug_more, L_INFO, "FSM worker exec: stage %d (fsm_uuid=0x%"DAP_UINT64_FORMAT_x") on worker #%u",
            l_ctx->stage, l_ctx->fsm_uuid, l_cur_worker ? l_cur_worker->id : 999);
 
-    dap_client_t *l_client = l_ctx->client;
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-    /* Guard: if FSM is being removed or freed, don't dereference it further.
-     * This callback runs on the worker thread, while deletion can run
-     * concurrently from another worker. is_removing is set before
-     * unregister, so if we see it set, the FSM is being torn down. */
+    /* Look up FSM by UUID instead of trusting the raw client pointer.
+     * The dispatch context may outlive the client if another thread calls
+     * dap_client_delete_unsafe() between dispatch and execution.  The UUID
+     * lookup is safe: the FSM is unregistered from the hash table before
+     * being freed, so a non-NULL result means the FSM is still alive. */
+    dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
     if (!l_fsm || l_fsm->is_removing) {
+        DAP_DELETE(l_ctx);
+        return;
+    }
+    dap_client_t *l_client = l_fsm->client;
+    if (!l_client) {
+        log_it(L_ERROR, "FSM has no client, aborting stage execution");
+        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                              STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
         DAP_DELETE(l_ctx);
         return;
     }
