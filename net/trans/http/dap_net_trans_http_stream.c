@@ -1154,30 +1154,10 @@ static int s_http_trans_session_start(dap_stream_t *a_stream,
         return -1;
     }
 
-    /* Opportunistic flush: GET is often queued during a worker callback where
-     * EPOLLOUT may not fire again until later. Without an immediate send the
-     * request can sit in buf_out and never reach the node (seen on 134:80). */
-    dap_events_socket_t *l_es = a_stream->esocket;
-    dap_events_socket_set_readable_unsafe(l_es, true);
-    if (l_es->buf_out_size > 0) {
-        ssize_t l_flushed = send(l_es->socket, (const char *)l_es->buf_out,
-                                 l_es->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
-        if (l_flushed > 0) {
-            l_es->buf_out_size -= (size_t)l_flushed;
-            if (l_es->buf_out_size)
-                memmove(l_es->buf_out, l_es->buf_out + l_flushed, l_es->buf_out_size);
-            else
-                dap_events_socket_set_writable_unsafe(l_es, false);
-            log_it(L_INFO, "HTTP stream GET flushed %zd bytes (remain=%zu) session_id=%u",
-                   l_flushed, l_es->buf_out_size, a_session_id);
-        } else {
-            dap_events_socket_set_writable_unsafe(l_es, true);
-            log_it(L_WARNING, "HTTP stream GET queued %zu bytes, send pending (errno=%d) session_id=%u",
-                   l_es->buf_out_size, errno, a_session_id);
-        }
-    }
+    /* write_unsafe queued GET into buf_out and armed EPOLLOUT; reactor sends it. */
+    dap_events_socket_set_readable_unsafe(a_stream->esocket, true);
 
-    log_it(L_INFO, "HTTP stream GET sent (session_id=%u), waiting for 200 before STREAM ready",
+    log_it(L_INFO, "HTTP stream GET queued (session_id=%u), waiting for 200 before STREAM ready",
            a_session_id);
     return 0;
 }
@@ -1303,21 +1283,6 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
     }
 
     dap_events_socket_t *l_es = a_stream->esocket;
-
-    /* If there's pending data in buf_out (e.g., HTTP GET from session_start),
-     * flush it directly before appending new data. Otherwise the GET request
-     * and stream data get concatenated in buf_out and the server can't parse them. */
-    if (l_es->buf_out_size > 0) {
-        ssize_t l_flushed = send(l_es->socket, l_es->buf_out, l_es->buf_out_size, MSG_NOSIGNAL);
-        if (l_flushed > 0) {
-            if ((size_t)l_flushed < l_es->buf_out_size) {
-                memmove(l_es->buf_out, l_es->buf_out + l_flushed, l_es->buf_out_size - l_flushed);
-                l_es->buf_out_size -= l_flushed;
-            } else {
-                l_es->buf_out_size = 0;
-            }
-        }
-    }
 
     debug_if(s_debug_more, L_DEBUG, "HTTP trans write: size=%zu esocket=%p fd=%d _inheritor=%p buf_out_size=%zu",
              a_size, (void*)l_es, l_es->socket, (void*)l_es->_inheritor, l_es->buf_out_size);
