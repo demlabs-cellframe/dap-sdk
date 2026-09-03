@@ -1415,17 +1415,6 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
     } else {
         log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu, http_code=%d)",
                a_response, a_response_size, (int)a_http_code);
-        /* === TEMP_DEBUG_LINKS_CONNECTING: START (temporary, remove after investigation) === */
-        if (l_client_esocket->client)
-        {
-            dap_client_t *l_client = l_client_esocket->client;
-            log_it(L_WARNING, "[TEMP_DEBUG] HTTP empty response node=" NODE_ADDR_FP_STR " %s:%hu stage=%s/%s",
-                   NODE_ADDR_FP_ARGS_S(l_client->link_info.node_addr),
-                   l_client->link_info.uplink_addr[0] ? l_client->link_info.uplink_addr : "?",
-                   l_client->link_info.uplink_port,
-                   dap_client_get_stage_str(l_client), dap_client_get_stage_status_str(l_client));
-        }
-        /* === TEMP_DEBUG_LINKS_CONNECTING: END === */
         if (l_ctx->error_callback && l_client_esocket->client)
         {
             int l_err = (a_http_code >= Http_Status_BadRequest) ? (int)a_http_code : EINVAL;
