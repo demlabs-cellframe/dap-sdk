@@ -2139,11 +2139,24 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             // Process handshake response (Kyber shared secret derivation)
             int l_result = s_udp_handshake_response(a_stream, l_handshake, l_handshake_size);
             DAP_DELETE(l_handshake);
-            
+
+            /* UDP keeps session->key NULL until SESSION_CREATE installs the
+             * real stream key. The generic handshake_cb wrapper still requires
+             * stream_key or session->key for a_error==0 with empty body — same
+             * pattern as DNS. Promote handshake_key so FSM can proceed. */
+            if (l_result == 0 && l_ctx && l_udp_ctx->handshake_key) {
+                if (l_ctx->stream_key)
+                    dap_enc_key_delete(l_ctx->stream_key);
+                l_ctx->stream_key = dap_enc_key_dup(l_udp_ctx->handshake_key);
+                log_it(L_NOTICE, "CLIENT: UDP handshake OK, stream_key set (session_id=0x%" PRIx64 ")",
+                       l_udp_ctx->session_id);
+            }
+
             // Call handshake callback
             if (l_ctx && l_ctx->handshake_cb) {
                 debug_if(s_debug_more, L_DEBUG,
-                         "CLIENT: calling handshake_cb with result=%d", l_result);
+                         "CLIENT: calling handshake_cb with result=%d (stream_key=%p)",
+                         l_result, l_ctx ? (void *)l_ctx->stream_key : NULL);
                 l_ctx->handshake_cb(a_stream, NULL, 0, l_result);
             }
             

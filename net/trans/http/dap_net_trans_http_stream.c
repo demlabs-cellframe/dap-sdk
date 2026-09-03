@@ -25,7 +25,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-
+#include <errno.h>
+#ifdef DAP_OS_WINDOWS
+# include <winsock2.h>
+#else
+# include <sys/socket.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_config.h"
@@ -685,7 +690,10 @@ static void s_http_connect_es_connected(dap_events_socket_t *a_es)
         }
     }
 
-    dap_stream_start_keepalive(l_stream);
+    /* Keepalive must NOT start here: STREAM_KEEPALIVE_TIMEOUT is 3s and the
+     * timer would emit a binary STREAM keepalive while we still wait for HTTP
+     * 200 on GET /stream (seen as epoll ENOENT at +3s with no 200). Start it
+     * from s_http_trans_read once the HTTP response is accepted. */
 
     debug_if(s_debug_more, L_INFO, "HTTP TCP connected, esocket fd=%d associated with stream", a_es->fd);
 
@@ -831,30 +839,47 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
         return -3;
     }
 
-    // Prepare handshake data (alice public key, optionally with cert signatures)
-    size_t l_data_size = a_params->alice_pub_key_size;
-    uint8_t *l_data = DAP_DUP_SIZE(a_params->alice_pub_key, l_data_size);
+    /* Build enc_init body from the raw pubkey only, then sign once here.
+     * FSM may already append signatures into alice_pub_key for TLS; reusing that
+     * blob and signing again produced ~9.8KB POSTs. Truncating to pkey_exchange_size
+     * keeps HTTP/WS at ~5.5KB like production clients and stays compatible with
+     * older enc_http that verifies sign_count signatures over the raw key. */
+    size_t l_raw_size = a_params->pkey_exchange_size;
+    if (!l_raw_size || l_raw_size > a_params->alice_pub_key_size)
+        l_raw_size = a_params->alice_pub_key_size;
+    if (!l_raw_size || !a_params->alice_pub_key) {
+        log_it(L_ERROR, "HTTP handshake: empty alice public key");
+        return -4;
+    }
+
+    uint8_t *l_raw = DAP_DUP_SIZE(a_params->alice_pub_key, l_raw_size);
+    if (!l_raw) {
+        log_it(L_ERROR, "Failed to allocate handshake raw key");
+        return -4;
+    }
+    uint8_t *l_data = DAP_DUP_SIZE(l_raw, l_raw_size);
+    size_t l_data_size = l_raw_size;
     if (!l_data) {
+        DAP_DELETE(l_raw);
         log_it(L_ERROR, "Failed to allocate handshake data");
         return -4;
     }
 
-    size_t l_sign_count = a_params->sign_count;
-    /* protocol_version=0: legacy cellframe-node — pubkey only, FSM already prepared payload */
+    size_t l_sign_count = 0;
     if (!a_params->protocol_version) {
-        debug_if(s_debug_more, L_DEBUG, "HTTP handshake: legacy enc_init (sign_count=%zu)", l_sign_count);
+        debug_if(s_debug_more, L_DEBUG, "HTTP handshake: legacy enc_init (no signature, raw=%zu)", l_raw_size);
     } else {
         dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-        l_sign_count = 0;
-        if (a_params->auth_cert) {
+        if (a_params->auth_cert)
             l_sign_count += dap_cert_add_sign_to_data(a_params->auth_cert, &l_data, &l_data_size,
-                                                       a_params->alice_pub_key, a_params->alice_pub_key_size);
-        }
-        if (l_node_cert) {
+                                                       l_raw, l_raw_size);
+        if (l_node_cert)
             l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_data, &l_data_size,
-                                                       a_params->alice_pub_key, a_params->alice_pub_key_size);
-        }
+                                                       l_raw, l_raw_size);
+        debug_if(s_debug_more, L_DEBUG, "HTTP handshake: signed enc_init (sign_count=%zu, raw=%zu, total=%zu)",
+                 l_sign_count, l_raw_size, l_data_size);
     }
+    DAP_DELETE(l_raw);
     
     // Encode to base64
     size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_data_size);
@@ -1059,6 +1084,12 @@ static int s_http_trans_session_create(dap_stream_t *a_stream,
     return 0;
 }
 
+/* Per-stream: wait for HTTP 200 on GET /stream before FSM continues */
+typedef struct {
+    dap_net_trans_ready_cb_t ready_cb;
+    bool waiting_http_response;
+} s_http_stream_session_priv_t;
+
 /**
  * @brief Start streaming after session creation
  */
@@ -1093,6 +1124,20 @@ static int s_http_trans_session_start(dap_stream_t *a_stream,
     char l_full_path[2048];
     snprintf(l_full_path, sizeof(l_full_path), "%s/globaldb?session_id=%u", DAP_UPLINK_PATH_STREAM, a_session_id);
 
+    /* Defer ready_cb until HTTP 200 — early SERVICE_REQUEST is parsed by the
+     * server as a new HTTP request ("GET /") while stream takeover is pending. */
+    s_http_stream_session_priv_t *l_priv = a_stream->trans_ctx->transport_priv;
+    if (!l_priv) {
+        l_priv = DAP_NEW_Z(s_http_stream_session_priv_t);
+        if (!l_priv) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return -1;
+        }
+        a_stream->trans_ctx->transport_priv = l_priv;
+    }
+    l_priv->ready_cb = a_callback;
+    l_priv->waiting_http_response = true;
+
     // Write request to socket
     size_t l_sent = dap_events_socket_write_f_unsafe(a_stream->esocket, 
                                      "GET /%s HTTP/1.1\r\n"
@@ -1104,14 +1149,16 @@ static int s_http_trans_session_start(dap_stream_t *a_stream,
                                      
     if (l_sent == 0) {
         log_it(L_ERROR, "Failed to write HTTP GET request to stream socket");
+        l_priv->waiting_http_response = false;
+        l_priv->ready_cb = NULL;
         return -1;
     }
-    
-    // Signal readiness (request sent)
-    if (a_callback) {
-        a_callback(a_stream, 0);
-    }
-    
+
+    /* write_unsafe queued GET into buf_out and armed EPOLLOUT; reactor sends it. */
+    dap_events_socket_set_readable_unsafe(a_stream->esocket, true);
+
+    log_it(L_INFO, "HTTP stream GET queued (session_id=%u), waiting for 200 before STREAM ready",
+           a_session_id);
     return 0;
 }
 
@@ -1129,25 +1176,63 @@ static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t 
     }
 
     dap_events_socket_t *l_es = a_stream->esocket;
-    
+    s_http_stream_session_priv_t *l_priv = a_stream->trans_ctx
+        ? (s_http_stream_session_priv_t *)a_stream->trans_ctx->transport_priv : NULL;
+
+    /* Skip leading whitespace some proxies/old stacks prepend */
+    size_t l_off = 0;
+    while (l_off < l_es->buf_in_size &&
+           (l_es->buf_in[l_off] == ' ' || l_es->buf_in[l_off] == '\t' ||
+            l_es->buf_in[l_off] == '\r' || l_es->buf_in[l_off] == '\n'))
+        l_off++;
+
     // Check if we need to skip HTTP headers (only if buffer starts with "HTTP/")
-    if (l_es->buf_in_size >= 5 && memcmp(l_es->buf_in, "HTTP/", 5) == 0) {
-        // Search for double CRLF (end of headers)
+    if (l_es->buf_in_size >= l_off + 5 && memcmp(l_es->buf_in + l_off, "HTTP/", 5) == 0) {
+        // Search for end of headers: CRLFCRLF or LFLF (old/odd stacks)
         char *l_headers_end = NULL;
+        size_t l_hdr_style = 4; /* bytes to skip past terminator */
         size_t l_search_len = l_es->buf_in_size;
-        
-        // Find end of headers safely
-        for (size_t i = 0; i < l_search_len - 3; i++) {
+
+        for (size_t i = l_off; i + 3 < l_search_len; i++) {
             if (l_es->buf_in[i] == '\r' && l_es->buf_in[i+1] == '\n' &&
                 l_es->buf_in[i+2] == '\r' && l_es->buf_in[i+3] == '\n') {
-                l_headers_end = (char*)l_es->buf_in + i;
+                l_headers_end = (char *)l_es->buf_in + i;
+                l_hdr_style = 4;
                 break;
             }
         }
-        
+        if (!l_headers_end) {
+            for (size_t i = l_off; i + 1 < l_search_len; i++) {
+                if (l_es->buf_in[i] == '\n' && l_es->buf_in[i+1] == '\n') {
+                    l_headers_end = (char *)l_es->buf_in + i;
+                    l_hdr_style = 2;
+                    break;
+                }
+            }
+        }
+
         if (l_headers_end) {
-            size_t l_headers_size = (l_headers_end - (char*)l_es->buf_in) + 4;
+            size_t l_headers_size = (size_t)(l_headers_end - (char *)l_es->buf_in) + l_hdr_style;
             debug_if(s_debug_more, L_DEBUG, "Skipping HTTP headers (%zu bytes)", l_headers_size);
+
+            if (l_priv && l_priv->waiting_http_response) {
+                int l_http_code = 0;
+                if (sscanf((char *)l_es->buf_in + l_off, "HTTP/%*s %d", &l_http_code) != 1)
+                    l_http_code = 0;
+                l_priv->waiting_http_response = false;
+                dap_net_trans_ready_cb_t l_cb = l_priv->ready_cb;
+                l_priv->ready_cb = NULL;
+                if (l_http_code == 200) {
+                    log_it(L_INFO, "HTTP stream response 200, STREAM ready");
+                    dap_stream_start_keepalive(a_stream);
+                    if (l_cb)
+                        l_cb(a_stream, 0);
+                } else {
+                    log_it(L_ERROR, "HTTP stream response %d, STREAM failed", l_http_code);
+                    if (l_cb)
+                        l_cb(a_stream, ERROR_STREAM_CONNECT);
+                }
+            }
 
             size_t l_remaining = l_es->buf_in_size - l_headers_size;
             size_t l_stream_processed = 0;
@@ -1159,6 +1244,23 @@ static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t 
         } else {
             return 0;
         }
+    }
+
+    /* Waiting for HTTP 200, but peer sent stream bytes (no HTTP status) —
+     * old cellframe-node builds sometimes skip the response line after takeover. */
+    if (l_priv && l_priv->waiting_http_response) {
+        if (l_es->buf_in_size > l_off) {
+            log_it(L_WARNING, "HTTP stream: non-HTTP data while waiting for 200 (%zu bytes) — treating as STREAM ready (legacy server)",
+                   l_es->buf_in_size);
+            l_priv->waiting_http_response = false;
+            dap_net_trans_ready_cb_t l_cb = l_priv->ready_cb;
+            l_priv->ready_cb = NULL;
+            dap_stream_start_keepalive(a_stream);
+            if (l_cb)
+                l_cb(a_stream, 0);
+            return (ssize_t)dap_stream_data_proc_read(a_stream);
+        }
+        return 0;
     }
 
     return (ssize_t)dap_stream_data_proc_read(a_stream);
@@ -1181,21 +1283,6 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
     }
 
     dap_events_socket_t *l_es = a_stream->esocket;
-
-    /* If there's pending data in buf_out (e.g., HTTP GET from session_start),
-     * flush it directly before appending new data. Otherwise the GET request
-     * and stream data get concatenated in buf_out and the server can't parse them. */
-    if (l_es->buf_out_size > 0) {
-        ssize_t l_flushed = send(l_es->socket, l_es->buf_out, l_es->buf_out_size, MSG_NOSIGNAL);
-        if (l_flushed > 0) {
-            if ((size_t)l_flushed < l_es->buf_out_size) {
-                memmove(l_es->buf_out, l_es->buf_out + l_flushed, l_es->buf_out_size - l_flushed);
-                l_es->buf_out_size -= l_flushed;
-            } else {
-                l_es->buf_out_size = 0;
-            }
-        }
-    }
 
     debug_if(s_debug_more, L_DEBUG, "HTTP trans write: size=%zu esocket=%p fd=%d _inheritor=%p buf_out_size=%zu",
              a_size, (void*)l_es, l_es->socket, (void*)l_es->_inheritor, l_es->buf_out_size);
@@ -1657,6 +1744,14 @@ static void s_http_trans_close(dap_stream_t *a_stream)
     if (!a_stream) {
         log_it(L_ERROR, "Invalid stream pointer");
         return;
+    }
+
+    if (a_stream->trans_ctx && a_stream->trans_ctx->transport_priv) {
+        s_http_stream_session_priv_t *l_priv = a_stream->trans_ctx->transport_priv;
+        if (l_priv->waiting_http_response && l_priv->ready_cb)
+            l_priv->ready_cb(a_stream, ERROR_STREAM_CONNECT);
+        DAP_DELETE(l_priv);
+        a_stream->trans_ctx->transport_priv = NULL;
     }
 
     debug_if(s_debug_more, L_DEBUG, "HTTP trans connection closed");

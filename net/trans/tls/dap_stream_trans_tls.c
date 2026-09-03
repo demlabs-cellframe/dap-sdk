@@ -26,7 +26,6 @@
 # include <ws2tcpip.h>
 #else
 # include <sys/socket.h>
-# include <sys/ioctl.h>
 # include <netinet/tcp.h>
 #endif
 
@@ -35,7 +34,6 @@
 #include "dap_strfuncs.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
-#include "dap_context.h"
 #include "dap_net.h"
 #include "dap_net_trans.h"
 #include "dap_client.h"
@@ -47,7 +45,6 @@
 #include "dap_tls_fingerprint.h"
 #include "dap_stream_trans_tls.h"
 #include "dap_net_trans_tls_server.h"
-#include "dap_timerfd.h"
 
 #define LOG_TAG "dap_stream_trans_tls"
 
@@ -69,9 +66,6 @@ typedef struct tls_mimicry_ctx {
     dap_net_handshake_params_t  handshake_params;  /* saved for enc_init after TLS handshake */
     dap_net_trans_session_cb_t  session_create_cb; /* callback for stream_ctl response */
     tls_client_phase_t           phase;            /* current protocol phase */
-    dap_events_socket_uuid_t     es_uuid;          /* for reply-poll timer */
-    dap_worker_t                *worker;
-    dap_timerfd_t               *reply_poll_timer;
 } tls_mimicry_ctx_t;
 
 
@@ -410,10 +404,6 @@ static void s_tls_close(dap_stream_t *a_stream)
     if (a_stream->trans_ctx) {
         tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
         if (l_ctx) {
-            if (l_ctx->reply_poll_timer) {
-                dap_timerfd_delete_unsafe(l_ctx->reply_poll_timer);
-                l_ctx->reply_poll_timer = NULL;
-            }
             dap_tls_mimicry_free(l_ctx->mimicry);
             DAP_DEL_Z(l_ctx->sni_hostname);
             DAP_DELETE(l_ctx);
@@ -445,55 +435,6 @@ static uint32_t s_tls_get_caps(dap_net_trans_t *a_trans)
  * processes them, completes the TLS handshake, and notifies the FSM.
  */
 static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg);
-
-/**
- * @brief One-shot poll: if enc_init/stream_ctl reply is already in the
- * kernel socket buffer but EPOLLIN was missed, force a readable arm and
- * drain via s_tls_read_cb.
- */
-static bool s_tls_reply_poll_timer(void *a_arg)
-{
-    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_arg;
-    if (!l_ctx || !l_ctx->worker || !l_ctx->worker->context)
-        return false;
-    if (l_ctx->phase != TLS_PHASE_ENC_INIT_WAIT && l_ctx->phase != TLS_PHASE_STREAM_CTL_WAIT) {
-        l_ctx->reply_poll_timer = NULL;
-        return false;
-    }
-
-    dap_events_socket_t *l_es = dap_context_find(l_ctx->worker->context, l_ctx->es_uuid);
-    if (!l_es) {
-        l_ctx->reply_poll_timer = NULL;
-        return false;
-    }
-
-    dap_events_socket_set_readable_unsafe(l_es, true);
-
-#ifdef DAP_OS_LINUX
-    int l_pending = 0;
-    if (ioctl(l_es->socket, FIONREAD, &l_pending) == 0 && l_pending > 0) {
-        log_it(L_NOTICE, "TLS reply poll: %d bytes pending in kernel (phase %d), forcing read",
-               l_pending, (int)l_ctx->phase);
-        /* Read into buf_in if empty so read_cb has something to unwrap */
-        if (l_es->buf_in_size == 0 && l_es->buf_in && l_es->buf_in_size_max > 0) {
-            ssize_t l_n = recv(l_es->socket, (char *)l_es->buf_in,
-                               l_es->buf_in_size_max, MSG_DONTWAIT);
-            if (l_n > 0)
-                l_es->buf_in_size = (size_t)l_n;
-        }
-        if (l_es->buf_in_size > 0)
-            s_tls_read_cb(l_es, NULL);
-    }
-#else
-    if (l_es->buf_in_size > 0)
-        s_tls_read_cb(l_es, NULL);
-#endif
-    if (l_ctx->phase != TLS_PHASE_ENC_INIT_WAIT && l_ctx->phase != TLS_PHASE_STREAM_CTL_WAIT) {
-        l_ctx->reply_poll_timer = NULL;
-        return false;
-    }
-    return true;
-}
 
 /**
  * @brief Build and send the enc_init HTTP POST through the TLS channel.
@@ -653,20 +594,8 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
         log_it(L_NOTICE, "TLS handshake completed — sending enc_init through TLS channel");
         if (s_tls_send_enc_init(l_stream, l_ctx, a_es) == 0) {
             l_ctx->phase = TLS_PHASE_ENC_INIT_WAIT;
-            l_ctx->es_uuid = a_es->uuid;
-            l_ctx->worker = a_es->worker;
-            /* Ensure EPOLLIN stays armed while we wait for the enc_init reply.
-             * A prior EAGAIN disarm (or writable-only poll update) can leave the
-             * socket unable to notice the server response. */
+            /* Keep EPOLLIN armed; the reactor recv()s the enc_init reply. */
             dap_events_socket_set_readable_unsafe(a_es, true);
-            if (l_ctx->worker) {
-                if (l_ctx->reply_poll_timer) {
-                    dap_timerfd_delete_unsafe(l_ctx->reply_poll_timer);
-                    l_ctx->reply_poll_timer = NULL;
-                }
-                l_ctx->reply_poll_timer = dap_timerfd_start_on_worker(
-                    l_ctx->worker, 200, s_tls_reply_poll_timer, l_ctx);
-            }
         }
 
         /* Pipelined enc_init reply already in buf_in — process without waiting */
@@ -869,8 +798,6 @@ static int s_tls_handshake_init(dap_stream_t *a_stream,
      * the client→FSM→trans_ctx chain (see s_stream_from_es). */
     a_stream->trans_ctx->stream = a_stream;  /* ensure back-reference exists */
     l_ctx->phase = TLS_PHASE_HANDSHAKE;
-    l_ctx->es_uuid = a_stream->esocket->uuid;
-    l_ctx->worker = a_stream->esocket->worker;
     a_stream->esocket->callbacks.read_callback = s_tls_read_cb;
 
     log_it(L_NOTICE, "TLS handshake_init: ClientHello sent (%zd bytes), awaiting ServerHello",
@@ -968,19 +895,8 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
     if (l_ctx) {
         l_ctx->session_create_cb = a_callback;
         l_ctx->phase = TLS_PHASE_STREAM_CTL_WAIT;
-        if (a_stream->esocket) {
-            l_ctx->es_uuid = a_stream->esocket->uuid;
-            l_ctx->worker = a_stream->esocket->worker;
+        if (a_stream->esocket)
             dap_events_socket_set_readable_unsafe(a_stream->esocket, true);
-            if (l_ctx->worker) {
-                if (l_ctx->reply_poll_timer) {
-                    dap_timerfd_delete_unsafe(l_ctx->reply_poll_timer);
-                    l_ctx->reply_poll_timer = NULL;
-                }
-                l_ctx->reply_poll_timer = dap_timerfd_start_on_worker(
-                    l_ctx->worker, 200, s_tls_reply_poll_timer, l_ctx);
-            }
-        }
     }
 
     log_it(L_NOTICE, "TLS session_create: stream_ctl sent (%zd bytes), awaiting response", l_sent);
