@@ -417,14 +417,16 @@ static int s_client_flow_ctrl_packet_send_cb(
     (void)a_flow;
     dap_net_trans_udp_ctx_t *l_udp_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
     if (!l_udp_ctx || !l_udp_ctx->stream) {
-        log_it(L_ERROR, "CLIENT FC send: invalid UDP context");
+        /* Hot path during teardown / zombie FC — silence unless debug_more */
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: invalid UDP context");
         return -1;
     }
     
     // Get trans_ctx and esocket from stream
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)l_udp_ctx->stream->trans_ctx;
     if (!l_trans_ctx || !l_udp_ctx->stream->esocket) {
-        log_it(L_ERROR, "CLIENT FC send: no trans_ctx or esocket");
+        /* Hot path during teardown / zombie FC — silence unless debug_more */
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: no trans_ctx or esocket");
         return -1;
     }
     

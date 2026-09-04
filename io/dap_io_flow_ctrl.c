@@ -1031,7 +1031,8 @@ static bool s_retransmit_timer_callback(void *a_arg)
         if (l_now - l_entry->timestamp_ns > l_timeout_ns) {
             // Check max retries
             if (l_entry->retransmit_count >= l_ctrl->config.max_retransmit_count) {
-                log_it(L_WARNING, "Packet lost after %u retries: seq=%"PRIu64,
+                /* Can spam on dead sessions — silence unless io_flow debug_more */
+                debug_if(s_debug_more, L_DEBUG, "Packet lost after %u retries: seq=%"PRIu64,
                        l_entry->retransmit_count, seq);
                 atomic_fetch_add(&l_ctrl->stats_lost, 1);
                 
@@ -1053,7 +1054,8 @@ static bool s_retransmit_timer_callback(void *a_arg)
                 debug_if(s_debug_more, L_DEBUG, "Retransmitted packet: seq=%"PRIu64", retry=%u",
                        seq, l_entry->retransmit_count);
             } else {
-                log_it(L_WARNING, "Failed to retransmit packet: seq=%"PRIu64", ret=%d", seq, l_ret);
+                /* Hot path when send fails (e.g. zombie FC after disconnect) */
+                debug_if(s_debug_more, L_DEBUG, "Failed to retransmit packet: seq=%"PRIu64", ret=%d", seq, l_ret);
             }
         }
     }
