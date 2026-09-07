@@ -546,8 +546,8 @@ int dap_dns_tunnel_wire_build_response(const uint8_t *a_query,
         return l_result;
     size_t l_txt_strings = (l_frame_size + 254) / 255;
     size_t l_rdata_size = l_frame_size + l_txt_strings;
-    size_t l_required = DNS_HEADER_SIZE + (l_question_end - DNS_HEADER_SIZE) +
-            12 + l_rdata_size;
+    size_t l_question_size = l_name_size + 4;
+    size_t l_required = DNS_HEADER_SIZE + l_question_size + 12 + l_rdata_size;
     if(l_rdata_size > UINT16_MAX || l_required > DAP_DNS_TUNNEL_EDNS_UDP_SIZE)
         return DAP_DNS_TUNNEL_WIRE_ERROR_CAPACITY;
     if(!a_output || *a_output_size < l_required) {
@@ -561,9 +561,11 @@ int dap_dns_tunnel_wire_build_response(const uint8_t *a_query,
     s_write_u16(a_output + 4, 1);
     s_write_u16(a_output + 6, 1);
     size_t l_offset = DNS_HEADER_SIZE;
-    memcpy(a_output + l_offset, a_query + DNS_HEADER_SIZE,
-            l_question_end - DNS_HEADER_SIZE);
-    l_offset += l_question_end - DNS_HEADER_SIZE;
+    memcpy(a_output + l_offset, l_name, l_name_size);
+    l_offset += l_name_size;
+    s_write_u16(a_output + l_offset, DNS_TYPE_TXT);
+    s_write_u16(a_output + l_offset + 2, DNS_CLASS_IN);
+    l_offset += 4;
     a_output[l_offset++] = 0xC0;
     a_output[l_offset++] = DNS_HEADER_SIZE;
     s_write_u16(a_output + l_offset, DNS_TYPE_TXT);
