@@ -1056,6 +1056,10 @@ static bool s_retransmit_timer_callback(void *a_arg)
             } else {
                 /* Hot path when send fails (e.g. zombie FC after disconnect) */
                 debug_if(s_debug_more, L_DEBUG, "Failed to retransmit packet: seq=%"PRIu64", ret=%d", seq, l_ret);
+                /* A dead transport must not keep this entry hot forever. Count
+                 * failed send attempts and apply the normal retry budget. */
+                l_entry->timestamp_ns = l_now;
+                l_entry->retransmit_count++;
             }
         }
     }

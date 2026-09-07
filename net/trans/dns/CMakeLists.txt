@@ -4,8 +4,8 @@ project(dap_trans_dns C)
 file(GLOB TRANS_DNS_SRCS FILES *.c)
 file(GLOB TRANS_DNS_HDRS FILES include/*.h)
 # Explicitly include DNS server and stream files
-list(APPEND TRANS_DNS_SRCS dap_net_trans_dns_server.c dap_net_trans_dns_stream.c)
-list(APPEND TRANS_DNS_HDRS include/dap_net_trans_dns_server.h include/dap_net_trans_dns_stream.h)
+list(APPEND TRANS_DNS_SRCS dap_net_trans_dns_server.c dap_net_trans_dns_stream.c dap_dns_tunnel_wire.c)
+list(APPEND TRANS_DNS_HDRS include/dap_net_trans_dns_server.h include/dap_net_trans_dns_stream.h include/dap_dns_tunnel_wire.h)
 
 # Include LibraryHelpers for object library creation
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)

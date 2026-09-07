@@ -102,6 +102,8 @@ static int s_tls_handshake_init(dap_stream_t *a_stream,
                                 dap_net_trans_handshake_cb_t a_callback);
 static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t *a_params,
                                 dap_net_trans_session_cb_t a_callback);
+static int s_tls_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
+                               dap_net_trans_ready_cb_t a_callback);
 
 static const dap_net_trans_ops_t s_tls_ops = {
     .init             = s_tls_init,
@@ -113,7 +115,7 @@ static const dap_net_trans_ops_t s_tls_ops = {
     .get_capabilities = s_tls_get_caps,
     .handshake_init   = s_tls_handshake_init,
     .session_create   = s_tls_session_create,
-    .session_start    = NULL
+    .session_start    = s_tls_session_start
 };
 
 /* ========================================================================== */
@@ -900,6 +902,46 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
     }
 
     log_it(L_NOTICE, "TLS session_create: stream_ctl sent (%zd bytes), awaiting response", l_sent);
+    return 0;
+}
+
+/**
+ * @brief Mark the direct TLS stream ready after stream_ctl
+ *
+ * The TLS server creates and binds the DAP stream while processing stream_ctl.
+ * Unlike HTTP and WebSocket, TLS continues on the same socket and must not
+ * issue a second GET /stream request.
+ */
+static int s_tls_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
+                               dap_net_trans_ready_cb_t a_callback)
+{
+    if(!a_stream || !a_stream->trans_ctx || !a_stream->esocket)
+    {
+        log_it(L_ERROR, "TLS session_start: stream is not attached");
+        return -1;
+    }
+
+    tls_mimicry_ctx_t *l_ctx =
+        (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
+    if(!l_ctx || !l_ctx->mimicry ||
+       dap_tls_mimicry_get_state(l_ctx->mimicry) != DAP_TLS_MIMICRY_STATE_ESTABLISHED ||
+       l_ctx->phase != TLS_PHASE_STREAMING)
+    {
+        log_it(L_ERROR, "TLS session_start: transport is not ready (phase=%d)",
+               l_ctx ? (int)l_ctx->phase : -1);
+        return -2;
+    }
+
+    if(a_session_id == 0)
+    {
+        log_it(L_ERROR, "TLS session_start: invalid session ID");
+        return -3;
+    }
+
+    debug_if(s_debug_more, L_DEBUG,
+             "TLS session_start: direct stream ready (session_id=%u)", a_session_id);
+    if(a_callback)
+        a_callback(a_stream, 0);
     return 0;
 }
 
