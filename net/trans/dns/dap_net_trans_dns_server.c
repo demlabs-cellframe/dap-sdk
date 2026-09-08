@@ -411,6 +411,7 @@ static int s_complete_handshake(dap_events_socket_t *a_es,
     void *l_bob_pub = NULL;
     size_t l_shared = l_bob_key->gen_bob_shared_key(l_bob_key, a_data, a_size, &l_bob_pub);
     if(!l_bob_pub || !l_shared || !l_bob_key->shared_key) {
+        log_it(L_ERROR, "DNS server: KEM encapsulation failed, alice pub size %zu", a_size);
         dap_enc_key_delete(l_bob_key);
         return -1;
     }

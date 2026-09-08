@@ -124,6 +124,7 @@ typedef struct dns_reasm {
 typedef struct dns_client_priv {
     uint64_t client_nonce;
     uint64_t session_cookie;
+    dap_enc_key_t *alice_key;
     uint32_t stream_id;
     uint32_t next_message_id;
     uint16_t next_txid;
@@ -351,6 +352,8 @@ static void s_client_free_priv(dns_client_priv_t *a_ctx)
     for(size_t i = 0; i < a_ctx->out_count; ++i)
         DAP_DELETE(a_ctx->out[i].payload);
     s_reasm_reset(&a_ctx->reasm);
+    if(a_ctx->alice_key)
+        dap_enc_key_delete(a_ctx->alice_key);
     DAP_DELETE(a_ctx);
 }
 
@@ -564,24 +567,23 @@ static int s_finish_handshake(dap_stream_t *a_stream, dns_client_priv_t *a_ctx,
     dap_client_t *l_client = (dap_client_t *)a_stream->esocket->_inheritor;
     dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-    if(!l_tc || !l_tc->session_key_open ||
-            !l_tc->session_key_open->gen_alice_shared_key) {
+    if(!l_tc || !a_ctx->alice_key || !a_ctx->alice_key->gen_alice_shared_key) {
         if(a_ctx->handshake_cb)
             a_ctx->handshake_cb(a_stream, NULL, 0, -1);
         a_ctx->handshake_cb = NULL;
         return -1;
     }
-    size_t l_shared = l_tc->session_key_open->gen_alice_shared_key(
-            l_tc->session_key_open, l_tc->session_key_open->priv_key_data,
+    size_t l_shared = a_ctx->alice_key->gen_alice_shared_key(
+            a_ctx->alice_key, a_ctx->alice_key->priv_key_data,
             l_kem_size, (void *)l_kem);
-    if(!l_shared || !l_tc->session_key_open->shared_key) {
+    if(!l_shared || !a_ctx->alice_key->shared_key) {
         if(a_ctx->handshake_cb)
             a_ctx->handshake_cb(a_stream, NULL, 0, -1);
         a_ctx->handshake_cb = NULL;
         return -1;
     }
     dap_enc_key_t *l_key = dap_enc_kdf_create_cipher_key(
-            l_tc->session_key_open, DAP_ENC_KEY_TYPE_SALSA2012,
+            a_ctx->alice_key, DAP_ENC_KEY_TYPE_SALSA2012,
             "dns_handshake", 13, 0, 32);
     if(!l_key) {
         if(a_ctx->handshake_cb)
@@ -616,11 +618,27 @@ static int s_dns_handshake_init(dap_stream_t *a_stream,
         return -1;
     l_ctx->handshake_cb = a_callback;
     a_stream->esocket->callbacks.read_callback = s_dns_client_read_cb;
+    const uint8_t *l_payload = a_params->alice_pub_key;
+    size_t l_payload_size = a_params->alice_pub_key_size;
+    if(a_params->pkey_exchange_type != DAP_ENC_KEY_TYPE_QOS_PROBE) {
+        /* DNS tunnel runs its own KEM exchange: the FSM key may be legacy MSRLN,
+         * which server side does not speak and whose public key with signatures
+         * exceeds the query fragment budget */
+        if(l_ctx->alice_key)
+            dap_enc_key_delete(l_ctx->alice_key);
+        l_ctx->alice_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512,
+                NULL, 0, NULL, 0, 0);
+        if(!l_ctx->alice_key || !l_ctx->alice_key->pub_key_data ||
+                !l_ctx->alice_key->pub_key_data_size)
+            return -1;
+        l_payload = (const uint8_t *)l_ctx->alice_key->pub_key_data;
+        l_payload_size = l_ctx->alice_key->pub_key_data_size;
+    }
     if(s_enqueue_message(l_ctx, DAP_DNS_TUNNEL_MSG_HANDSHAKE,
-            a_params->alice_pub_key, a_params->alice_pub_key_size) != 0)
+            l_payload, l_payload_size) != 0)
         return -1;
     log_it(L_INFO, "DNS handshake init: enc_type=%d key_size=%zu fragments queued",
-            a_params->enc_type, a_params->alice_pub_key_size);
+            a_params->enc_type, l_payload_size);
     return s_client_send_next(a_stream, l_ctx);
 }
 
