@@ -29,6 +29,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_cluster.h"
 #include "dap_global_db.h"
 #include "dap_net_common.h"  // Contains forward declaration for dap_link_manager_t
+#include "dap_proc_thread.h"
 
 #define DAP_GLOBAL_DB_CLUSTER_GLOBAL    DAP_CLUSTER_GLOBAL ".*"      // This groups mask is for globally broadcasting grops
 #define DAP_GLOBAL_DB_CLUSTER_LOCAL     DAP_CLUSTER_LOCAL  ".*"      // This groups mask is for not broadcasting groups
@@ -87,6 +88,7 @@ typedef struct dap_global_db_cluster {
     dap_global_db_instance_t *dbi;              // Pointer to database instance that contains the cluster
     struct dap_global_db_cluster *prev, *next;  // Pointers to next and previous cluster instances in the global clusters list
     dap_global_db_sync_context_t sync_context;  // Cluster synchronization context for current client
+    dap_proc_thread_timer_t sync_timer;         // confcall W53-F8: the 1 s sync timer; cancelled in delete (was never stopped → freed-ctx UAF per tick)
 } dap_global_db_cluster_t;
 
 int dap_global_db_cluster_init();

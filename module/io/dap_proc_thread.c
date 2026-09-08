@@ -292,19 +292,50 @@ struct timer_arg {
     void *callback_arg;
     bool oneshot;
     dap_queue_msg_priority_t priority;
+    /* confcall W53-F8: cancellable repeating timers.
+     * `cancelled` is set by dap_proc_thread_timer_cancel(); both hops
+     * (worker tick, proc-thread dispatch) check it, so after cancel no user
+     * callback ever runs again and the timer esocket self-closes on its
+     * next tick.  `refs` counts the holders of this wrapper: the live
+     * timer esocket (1) plus every proc-thread hop currently posted (+1
+     * each) — whichever hop drops the last ref frees it.  Before this the
+     * wrapper was never freed on ANY path (oneshot leaked it; repeating
+     * timers could not be stopped at all, so a deleted owner left a 1 s
+     * callback dereferencing freed memory forever). */
+    _Atomic bool cancelled;
+    _Atomic int  refs;
 };
+
+static inline void s_timer_arg_unref(struct timer_arg *a_arg)
+{
+    if (atomic_fetch_sub_explicit(&a_arg->refs, 1, memory_order_acq_rel) == 1)
+        DAP_DELETE(a_arg);
+}
 
 static bool s_thread_timer_callback(void *a_arg)
 {
     struct timer_arg *l_arg = a_arg;
-    return l_arg->callback(l_arg->callback_arg), false;
+    if (!atomic_load_explicit(&l_arg->cancelled, memory_order_acquire))
+        l_arg->callback(l_arg->callback_arg);
+    s_timer_arg_unref(l_arg);   /* this hop's ref */
+    return false;
 }
 
 static bool s_timer_callback(void *a_arg)
 {
     struct timer_arg *l_arg = a_arg;
-    // Repeat after exit, if not oneshot
-    return dap_proc_thread_callback_add_pri(l_arg->thread, s_thread_timer_callback, l_arg, l_arg->priority), !l_arg->oneshot;
+    if (atomic_load_explicit(&l_arg->cancelled, memory_order_acquire)) {
+        s_timer_arg_unref(l_arg);   /* the timer esocket's ref */
+        return false;               /* esocket closes → timerfd freed by the inheritor path */
+    }
+    atomic_fetch_add_explicit(&l_arg->refs, 1, memory_order_relaxed);   /* the hop's ref */
+    if (dap_proc_thread_callback_add_pri(l_arg->thread, s_thread_timer_callback, l_arg, l_arg->priority) != 0)
+        s_timer_arg_unref(l_arg);   /* post failed — no hop will run */
+    if (l_arg->oneshot) {
+        s_timer_arg_unref(l_arg);   /* the timer esocket's ref: it closes now */
+        return false;
+    }
+    return true;
 }
 
 /* ─── WASM ST: inline init & non-blocking step (main-thread polling) ── */
@@ -368,6 +399,13 @@ void dap_proc_thread_poll_step(void)
 
 int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority)
 {
+    return dap_proc_thread_timer_add_pri_ex(a_thread, a_callback, a_callback_arg, a_timeout_ms, a_oneshot, a_priority, NULL);
+}
+
+int dap_proc_thread_timer_add_pri_ex(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg,
+                                     uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority,
+                                     dap_proc_thread_timer_t *a_handle)
+{
     dap_return_val_if_fail(a_callback && a_timeout_ms, -1);
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
     dap_return_val_if_fail(l_thread && l_thread->context, -1);
@@ -377,9 +415,31 @@ int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_
         return -2;
     }
     struct timer_arg *l_timer_arg = DAP_NEW_Z(struct timer_arg);
+    if (!l_timer_arg)
+        return -3;
     *l_timer_arg = (struct timer_arg){  .thread = l_thread, .callback = a_callback,
                                         .callback_arg = a_callback_arg,
                                         .oneshot = a_oneshot, .priority = a_priority };
-    dap_timerfd_start_on_worker(l_worker, a_timeout_ms, s_timer_callback, l_timer_arg);
+    atomic_store_explicit(&l_timer_arg->refs, 1, memory_order_release);   /* the timer esocket */
+    if (!dap_timerfd_start_on_worker(l_worker, a_timeout_ms, s_timer_callback, l_timer_arg)) {
+        DAP_DELETE(l_timer_arg);
+        return -4;
+    }
+    if (a_handle)
+        *a_handle = l_timer_arg;
     return 0;
+}
+
+/* confcall W53-F8: stop a repeating proc-thread timer.  Safe from any
+ * thread; idempotent for a given handle only until the first call (the
+ * handle is consumed).  After return no user callback runs; the wrapper
+ * and the timer esocket are released asynchronously by the worker's next
+ * tick (≤ one period).  Callbacks ALREADY dispatched to the proc thread
+ * before the cancel still see `cancelled` and skip the user callback, so
+ * the owner may free the callback_arg immediately after this call. */
+void dap_proc_thread_timer_cancel(dap_proc_thread_timer_t a_handle)
+{
+    if (!a_handle)
+        return;
+    atomic_store_explicit(&a_handle->cancelled, true, memory_order_release);
 }

@@ -31,6 +31,8 @@ typedef struct dap_context dap_context_t;
 /// Callback for processor. Returns TRUE for repeat
 typedef bool (*dap_proc_queue_callback_t)(void *a_arg);
 typedef void (*dap_thread_timer_callback_t)(void *a_arg);
+/// Opaque handle of a proc-thread timer (confcall W53-F8) — use with dap_proc_thread_timer_cancel()
+typedef struct timer_arg *dap_proc_thread_timer_t;
 
 typedef enum dap_queue_msg_priority {
     DAP_QUEUE_MSG_PRIORITY_IDLE = 0,                                        /* Lowest priority (Idle). Don't use Idle until you sure what you do */
@@ -79,9 +81,22 @@ DAP_STATIC_INLINE int dap_proc_thread_callback_add(dap_proc_thread_t *a_thread, 
     return dap_proc_thread_callback_add_pri(a_thread, a_callback, a_callback_arg, DAP_QUEUE_MSG_PRIORITY_NORMAL);
 }
 int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority);
+/* confcall W53-F8: same as _add_pri but returns a cancel handle in *a_handle (may be NULL). */
+int dap_proc_thread_timer_add_pri_ex(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg,
+                                     uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority,
+                                     dap_proc_thread_timer_t *a_handle);
+/* Stop a repeating proc-thread timer.  Thread-safe.  After return no user callback runs
+ * (hops already queued see the cancel and skip), so the owner may free a_callback_arg
+ * right away; the timer itself is released on the worker's next tick. */
+void dap_proc_thread_timer_cancel(dap_proc_thread_timer_t a_handle);
 DAP_STATIC_INLINE int dap_proc_thread_timer_add(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms)
 {
     return dap_proc_thread_timer_add_pri(a_thread, a_callback, a_callback_arg, a_timeout_ms, false, DAP_QUEUE_MSG_PRIORITY_NORMAL);
+}
+DAP_STATIC_INLINE int dap_proc_thread_timer_add_ex(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg,
+                                                   uint64_t a_timeout_ms, dap_proc_thread_timer_t *a_handle)
+{
+    return dap_proc_thread_timer_add_pri_ex(a_thread, a_callback, a_callback_arg, a_timeout_ms, false, DAP_QUEUE_MSG_PRIORITY_NORMAL, a_handle);
 }
 size_t dap_proc_thread_get_avg_queue_size();
 uint32_t dap_proc_thread_get_count();

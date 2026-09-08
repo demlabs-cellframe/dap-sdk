@@ -146,7 +146,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
     dap_dl_append(a_dbi->clusters, l_cluster);
     if (dap_strcmp(DAP_CLUSTER_LOCAL, a_mnemonim))
-        dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
+        dap_proc_thread_timer_add_ex(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000, &l_cluster->sync_timer);
     log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s, TTL %s",
                     dap_guuid_to_hex_str(a_guuid), a_group_mask, l_cluster->ttl ? dap_itoa(l_cluster->ttl) : "unlimited");
     return l_cluster;
@@ -175,6 +175,15 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     //    dap_cluster_delete(a_cluster->links_cluster);
     // TODO make a reference counter for cluster mnemonims
     if (!a_cluster) return; //happens when no network connection available
+    /* confcall W53-F8: the 1 s sync timer registered in _add() was never
+     * stopped — every deleted cluster (per-room AVRS/chat clusters in
+     * ConfCall churn constantly) left a repeating callback dereferencing
+     * this freed struct forever.  Cancel first: no sync callback runs after
+     * this point, including hops already queued on the proc thread. */
+    if (a_cluster->sync_timer) {
+        dap_proc_thread_timer_cancel(a_cluster->sync_timer);
+        a_cluster->sync_timer = NULL;
+    }
     dap_cluster_delete(a_cluster->role_cluster);
     DAP_DELETE(a_cluster->groups_mask);
     dap_dl_delete(a_cluster->dbi->clusters, a_cluster);
