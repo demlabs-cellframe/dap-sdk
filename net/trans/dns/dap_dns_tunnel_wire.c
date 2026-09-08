@@ -445,20 +445,46 @@ int dap_dns_tunnel_wire_build_query(uint16_t a_transaction_id,
         const char *a_suffix, const dap_dns_tunnel_frame_t *a_frame,
         uint8_t *a_output, size_t *a_output_size)
 {
-    if(!a_output_size)
+    if(!a_output_size || !a_frame)
         return DAP_DNS_TUNNEL_WIRE_ERROR_ARGUMENT;
-    uint8_t l_frame[DNS_MAX_NAME_WIRE];
-    size_t l_frame_size = sizeof(l_frame);
-    int l_result = dap_dns_tunnel_frame_encode(a_frame, l_frame, &l_frame_size);
+    uint8_t l_suffix[DNS_MAX_NAME_WIRE];
+    size_t l_suffix_size = sizeof(l_suffix);
+    size_t l_suffix_text_size = 0;
+    int l_result = s_suffix_to_wire(a_suffix, l_suffix, &l_suffix_size,
+            &l_suffix_text_size);
     if(l_result)
         return l_result;
+
+    /* Small frames fit into the QNAME labels, larger payload moves into the
+     * EDNS0 option so a query is not capped by the 253-char name limit */
+    dap_dns_tunnel_frame_t l_source = *a_frame;
+    bool l_edns_payload = !s_qname_fits(DAP_DNS_TUNNEL_FRAME_HEADER_SIZE +
+            l_source.payload_length, l_suffix_text_size);
+    if(l_edns_payload)
+        l_source.flags |= DAP_DNS_TUNNEL_FLAG_EDNS_PAYLOAD;
+    else
+        l_source.flags &= (uint16_t)~DAP_DNS_TUNNEL_FLAG_EDNS_PAYLOAD;
+
+    uint8_t l_frame[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
+    size_t l_frame_size = sizeof(l_frame);
+    l_result = dap_dns_tunnel_frame_encode(&l_source, l_frame, &l_frame_size);
+    if(l_result)
+        return l_result;
+
+    size_t l_name_frame_size = l_edns_payload ?
+            DAP_DNS_TUNNEL_FRAME_HEADER_SIZE : l_frame_size;
+    size_t l_option_size = l_edns_payload ? l_source.payload_length : 0;
     uint8_t l_qname[DNS_MAX_NAME_WIRE];
     size_t l_qname_size = sizeof(l_qname);
-    l_result = s_build_qname(l_frame, l_frame_size, a_suffix, l_qname,
+    l_result = s_build_qname(l_frame, l_name_frame_size, a_suffix, l_qname,
             &l_qname_size);
     if(l_result)
         return l_result;
-    size_t l_required = DNS_HEADER_SIZE + l_qname_size + 4 + DNS_OPT_SIZE;
+    size_t l_rdata_size = l_option_size ? l_option_size + 4 : 0;
+    size_t l_required = DNS_HEADER_SIZE + l_qname_size + 4 + DNS_OPT_SIZE +
+            l_rdata_size;
+    if(l_required > DAP_DNS_TUNNEL_EDNS_UDP_SIZE)
+        return DAP_DNS_TUNNEL_WIRE_ERROR_CAPACITY;
     if(!a_output || *a_output_size < l_required) {
         *a_output_size = l_required;
         return DAP_DNS_TUNNEL_WIRE_ERROR_CAPACITY;
@@ -478,8 +504,16 @@ int dap_dns_tunnel_wire_build_query(uint16_t a_transaction_id,
     s_write_u16(a_output + l_offset, DNS_TYPE_OPT);
     s_write_u16(a_output + l_offset + 2, DAP_DNS_TUNNEL_EDNS_UDP_SIZE);
     s_write_u32(a_output + l_offset + 4, 0);
-    s_write_u16(a_output + l_offset + 8, 0);
-    *a_output_size = l_required;
+    s_write_u16(a_output + l_offset + 8, (uint16_t)l_rdata_size);
+    l_offset += 10;
+    if(l_option_size) {
+        s_write_u16(a_output + l_offset, DAP_DNS_TUNNEL_EDNS_OPTION_CODE);
+        s_write_u16(a_output + l_offset + 2, (uint16_t)l_option_size);
+        memcpy(a_output + l_offset + 4,
+                l_frame + DAP_DNS_TUNNEL_FRAME_HEADER_SIZE, l_option_size);
+        l_offset += 4 + l_option_size;
+    }
+    *a_output_size = l_offset;
     return DAP_DNS_TUNNEL_WIRE_OK;
 }
 
@@ -497,23 +531,55 @@ int dap_dns_tunnel_wire_parse_query(const uint8_t *a_packet,
         return DAP_DNS_TUNNEL_WIRE_ERROR_FORMAT;
     uint8_t l_name[DNS_MAX_NAME_WIRE];
     size_t l_name_size = sizeof(l_name);
-    uint8_t l_frame[DNS_MAX_NAME_WIRE];
+    uint8_t l_frame[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
     size_t l_frame_size = sizeof(l_frame);
     size_t l_question_end = 0;
     int l_result = s_parse_question(a_packet, a_packet_size, a_suffix,
             l_name, &l_name_size, &l_question_end, l_frame, &l_frame_size);
     if(l_result)
         return l_result;
+    if(l_frame_size < DAP_DNS_TUNNEL_FRAME_HEADER_SIZE)
+        return DAP_DNS_TUNNEL_WIRE_ERROR_BOUNDS;
 
     uint16_t l_additional = s_read_u16(a_packet + 10);
-    if(l_additional != 1 || l_question_end + DNS_OPT_SIZE != a_packet_size)
+    if(l_additional != 1 || l_question_end + DNS_OPT_SIZE > a_packet_size)
         return DAP_DNS_TUNNEL_WIRE_ERROR_FORMAT;
     size_t l_offset = l_question_end;
     if(a_packet[l_offset] || s_read_u16(a_packet + l_offset + 1) != DNS_TYPE_OPT ||
             s_read_u16(a_packet + l_offset + 3) != DAP_DNS_TUNNEL_EDNS_UDP_SIZE ||
-            s_read_u32(a_packet + l_offset + 5) ||
-            s_read_u16(a_packet + l_offset + 9))
+            s_read_u32(a_packet + l_offset + 5))
         return DAP_DNS_TUNNEL_WIRE_ERROR_FORMAT;
+    size_t l_rdata_size = s_read_u16(a_packet + l_offset + 9);
+    l_offset += DNS_OPT_SIZE;
+    if(l_offset + l_rdata_size != a_packet_size)
+        return DAP_DNS_TUNNEL_WIRE_ERROR_FORMAT;
+
+    if(s_read_u16(l_frame + 6) & DAP_DNS_TUNNEL_FLAG_EDNS_PAYLOAD) {
+        if(l_frame_size != DAP_DNS_TUNNEL_FRAME_HEADER_SIZE)
+            return DAP_DNS_TUNNEL_WIRE_ERROR_FORMAT;
+        size_t l_declared = s_read_u16(l_frame + 38);
+        size_t l_rdata_end = l_offset + l_rdata_size;
+        bool l_found = false;
+        while(l_offset + 4 <= l_rdata_end) {
+            uint16_t l_code = s_read_u16(a_packet + l_offset);
+            size_t l_size = s_read_u16(a_packet + l_offset + 2);
+            l_offset += 4;
+            if(l_offset + l_size > l_rdata_end)
+                return DAP_DNS_TUNNEL_WIRE_ERROR_BOUNDS;
+            if(l_code == DAP_DNS_TUNNEL_EDNS_OPTION_CODE) {
+                if(l_size != l_declared ||
+                        l_frame_size + l_size > sizeof(l_frame))
+                    return DAP_DNS_TUNNEL_WIRE_ERROR_FORMAT;
+                memcpy(l_frame + l_frame_size, a_packet + l_offset, l_size);
+                l_frame_size += l_size;
+                l_found = true;
+                break;
+            }
+            l_offset += l_size;
+        }
+        if(!l_found)
+            return DAP_DNS_TUNNEL_WIRE_ERROR_FORMAT;
+    }
     l_result = dap_dns_tunnel_frame_decode(l_frame, l_frame_size, a_frame,
             a_payload, a_payload_size);
     if(!l_result)
@@ -650,6 +716,38 @@ int dap_dns_tunnel_wire_parse_response(const uint8_t *a_packet,
         l_offset += l_rdata_size;
     }
     return DAP_DNS_TUNNEL_WIRE_ERROR_FORMAT;
+}
+
+int dap_dns_tunnel_wire_payload_budget_ext(const char *a_suffix,
+        size_t *a_query_qname_payload, size_t *a_query_edns_payload,
+        size_t *a_response_payload)
+{
+    size_t l_qname_payload = 0;
+    size_t l_response_payload = 0;
+    int l_result = dap_dns_tunnel_wire_payload_budget(a_suffix,
+            &l_qname_payload, &l_response_payload);
+    if(l_result)
+        return l_result;
+    if(a_query_qname_payload)
+        *a_query_qname_payload = l_qname_payload;
+    if(a_response_payload)
+        *a_response_payload = l_response_payload;
+    if(a_query_edns_payload) {
+        /* header-only QNAME plus the EDNS0 option carrying the payload */
+        size_t l_name_size = s_base32_size(DAP_DNS_TUNNEL_FRAME_HEADER_SIZE);
+        size_t l_labels = (l_name_size + DNS_MAX_LABEL - 1) / DNS_MAX_LABEL;
+        size_t l_suffix_size = DNS_MAX_NAME_WIRE;
+        l_result = s_suffix_to_wire(a_suffix, NULL, &l_suffix_size, NULL);
+        if(l_result)
+            return l_result;
+        size_t l_fixed = DNS_HEADER_SIZE + l_name_size + l_labels +
+                l_suffix_size + 4 + DNS_OPT_SIZE + 4;
+        *a_query_edns_payload = l_fixed < DAP_DNS_TUNNEL_EDNS_UDP_SIZE ?
+                DAP_DNS_TUNNEL_EDNS_UDP_SIZE - l_fixed : 0;
+        if(*a_query_edns_payload > UINT16_MAX)
+            *a_query_edns_payload = UINT16_MAX;
+    }
+    return DAP_DNS_TUNNEL_WIRE_OK;
 }
 
 int dap_dns_tunnel_wire_payload_budget(const char *a_suffix,

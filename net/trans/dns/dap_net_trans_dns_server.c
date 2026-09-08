@@ -44,11 +44,12 @@
 #define LOG_TAG "dap_net_trans_dns_server"
 
 #define DNS_MAX_FRAGS 32U
-#define DNS_MAX_DOWN 64U
+#define DNS_MAX_DOWN 512U
 #define DNS_MAX_MSG (16U * 1024U)
 #define DNS_MAX_SESSIONS 256U
 #define DNS_IDLE_TTL_SEC 120
 #define DNS_IDLE_TICK_MS 10000U
+#define DNS_DOWN_RETRY_MS 400U
 
 static bool s_debug_more = false;
 static char s_domain_suffix[256] = DAP_DNS_TUNNEL_DEFAULT_SUFFIX;
@@ -75,12 +76,18 @@ typedef struct dns_down_frag {
     uint16_t count;
     uint16_t payload_len;
     bool acked;
+    uint64_t sent_ms;
     uint8_t *payload;
 } dns_down_frag_t;
 
 static dns_down_frag_t *s_down(dns_server_client_session_t *a_session)
 {
     return (dns_down_frag_t *)a_session->down_queue;
+}
+
+static uint64_t s_now_ms(void)
+{
+    return dap_nanotime_now() / 1000000ULL;
 }
 
 static dns_reasm_t *s_reasm(dns_server_client_session_t *a_session)
@@ -319,15 +326,32 @@ static int s_reasm_add(dns_reasm_t *a_reasm, const dap_dns_tunnel_frame_t *a_fra
 static int s_enqueue_down(dns_server_client_session_t *a_session, uint8_t a_type,
         const uint8_t *a_data, size_t a_size)
 {
+    dns_down_frag_t *l_down = s_down(a_session);
+    if(!l_down)
+        return -1;
+    if(a_session->down_pos) {
+        size_t l_keep = 0;
+        for(size_t i = a_session->down_pos; i < a_session->down_count; ++i) {
+            if(l_down[i].acked) {
+                DAP_DEL_Z(l_down[i].payload);
+                continue;
+            }
+            if(l_keep != i)
+                l_down[l_keep] = l_down[i];
+            ++l_keep;
+        }
+        if(l_keep < a_session->down_count)
+            memset(l_down + l_keep, 0,
+                    (a_session->down_count - l_keep) * sizeof(*l_down));
+        a_session->down_count = l_keep;
+        a_session->down_pos = 0;
+    }
     size_t l_budget = s_response_budget ? s_response_budget : 64;
     size_t l_count = a_size ? (a_size + l_budget - 1) / l_budget : 1;
     if(l_count > DNS_MAX_FRAGS || a_session->down_count + l_count > DNS_MAX_DOWN)
         return -1;
     uint32_t l_id = ++a_session->next_down_id;
     size_t l_off = 0;
-    dns_down_frag_t *l_down = s_down(a_session);
-    if(!l_down)
-        return -1;
     for(size_t i = 0; i < l_count; ++i) {
         size_t l_chunk = a_size - l_off;
         if(l_chunk > l_budget)
@@ -354,12 +378,26 @@ static dns_down_frag_t *s_next_down(dns_server_client_session_t *a_session)
     dns_down_frag_t *l_down = s_down(a_session);
     if(!l_down)
         return NULL;
+    uint64_t l_now = s_now_ms();
+    dns_down_frag_t *l_stale = NULL;
     for(size_t i = a_session->down_pos; i < a_session->down_count; ++i) {
-        if(!l_down[i].acked)
+        if(l_down[i].acked) {
+            if(i == a_session->down_pos)
+                a_session->down_pos = i + 1;
+            continue;
+        }
+        /* Parallel queries must not all get the same fragment, so hand out
+         * unsent ones first and only resend after the ack timeout */
+        if(!l_down[i].sent_ms) {
+            l_down[i].sent_ms = l_now;
             return &l_down[i];
-        a_session->down_pos = i + 1;
+        }
+        if(!l_stale && l_now - l_down[i].sent_ms >= DNS_DOWN_RETRY_MS)
+            l_stale = &l_down[i];
     }
-    return NULL;
+    if(l_stale)
+        l_stale->sent_ms = l_now;
+    return l_stale;
 }
 
 static bool s_addr_equal(const struct sockaddr_storage *a_left, socklen_t a_left_len,
@@ -481,6 +519,37 @@ static int s_complete_handshake(dap_events_socket_t *a_es,
     return 0;
 }
 
+/* Answers a query when there is downlink data, or when a_force is set the reply
+ * goes out empty. Returns true if the query was answered. */
+static bool s_reply_query(dns_server_client_session_t *a_session,
+        dap_events_socket_t *a_es, const void *a_query, size_t a_query_size,
+        struct sockaddr_storage *a_addr, socklen_t a_addr_len, bool a_force)
+{
+    dns_down_frag_t *l_down = s_next_down(a_session);
+    if(!l_down && !a_force)
+        return false;
+    dap_dns_tunnel_frame_t l_reply = {
+        .type = l_down ? l_down->type : DAP_DNS_TUNNEL_MSG_POLL,
+        .client_nonce = a_session->nonce,
+        .session_cookie = a_session->handshake_complete ? a_session->cookie : 0,
+        .message_id = l_down ? l_down->message_id : 0,
+        .fragment_index = l_down ? l_down->index : 0,
+        .fragment_count = l_down ? l_down->count : 1,
+        .ack_message_id = a_session->last_up_msg,
+        .ack_fragment_index = a_session->last_up_frag,
+        .payload_length = l_down ? l_down->payload_len : 0,
+        .payload = l_down ? l_down->payload : NULL
+    };
+    uint8_t l_response[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
+    size_t l_response_size = sizeof(l_response);
+    if(dap_dns_tunnel_wire_build_response(a_query, a_query_size, s_domain_suffix,
+            &l_reply, l_response, &l_response_size) != DAP_DNS_TUNNEL_WIRE_OK)
+        return false;
+    dap_events_socket_sendto_unsafe(a_es, l_response, l_response_size,
+            a_addr, a_addr_len);
+    return true;
+}
+
 static void s_dns_process_datagram(dap_events_socket_t *a_es,
         dap_net_trans_dns_server_t *a_dns_server,
         void *a_data, size_t a_size,
@@ -508,7 +577,8 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es,
             pthread_mutex_unlock(&a_dns_server->sessions_lock);
             return;
         }
-        l_session->down_queue = DAP_NEW_Z_SIZE(dns_down_frag_t, DNS_MAX_DOWN);
+        l_session->down_queue = DAP_NEW_Z_SIZE(dns_down_frag_t,
+                DNS_MAX_DOWN * sizeof(dns_down_frag_t));
         l_session->reasm = DAP_NEW_Z(dns_reasm_t);
         if(!l_session->down_queue || !l_session->reasm) {
             pthread_mutex_unlock(&a_dns_server->sessions_lock);
@@ -556,25 +626,9 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es,
         }
     }
 
-    dns_down_frag_t *l_down = s_next_down(l_session);
-    dap_dns_tunnel_frame_t l_reply = {
-        .type = l_down ? l_down->type : DAP_DNS_TUNNEL_MSG_POLL,
-        .client_nonce = l_session->nonce,
-        .session_cookie = l_session->handshake_complete ? l_session->cookie : 0,
-        .message_id = l_down ? l_down->message_id : 0,
-        .fragment_index = l_down ? l_down->index : 0,
-        .fragment_count = l_down ? l_down->count : 1,
-        .ack_message_id = l_session->last_up_msg,
-        .ack_fragment_index = l_session->last_up_frag,
-        .payload_length = l_down ? l_down->payload_len : 0,
-        .payload = l_down ? l_down->payload : NULL
-    };
-    uint8_t l_response[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
-    size_t l_response_size = sizeof(l_response);
-    if(dap_dns_tunnel_wire_build_response(a_data, a_size, s_domain_suffix,
-            &l_reply, l_response, &l_response_size) == DAP_DNS_TUNNEL_WIRE_OK)
-        dap_events_socket_sendto_unsafe(a_es, l_response, l_response_size,
-                a_addr, a_addr_len);
+    /* Every query gets a response immediately. The client's sliding window
+     * keeps enough polls in flight to carry queued downlink fragments. */
+    s_reply_query(l_session, a_es, a_data, a_size, a_addr, a_addr_len, true);
 }
 
 static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg)

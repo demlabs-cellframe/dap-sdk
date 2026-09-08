@@ -47,11 +47,15 @@
 #define LOG_TAG "dap_stream_trans_dns"
 
 #define DNS_MAX_FRAGS 32U
-#define DNS_MAX_OUT 64U
+#define DNS_MAX_OUT 256U
 #define DNS_MAX_MSG (16U * 1024U)
 #define DNS_RETRY_MS 400U
 #define DNS_POLL_MS 300U
+#define DNS_TICK_MS 50U
 #define DNS_MAX_RETRIES 8U
+#define DNS_WINDOW 12U
+#define DNS_POLL_WINDOW_MIN 2U
+#define DNS_POLL_WINDOW_MAX 10U
 
 static bool s_debug_more = false;
 
@@ -108,6 +112,7 @@ typedef struct dns_out_frag {
     uint16_t count;
     uint16_t payload_len;
     uint8_t retries;
+    bool sent;
     bool acked;
     uint8_t *payload;
 } dns_out_frag_t;
@@ -120,6 +125,18 @@ typedef struct dns_reasm {
     uint16_t lens[DNS_MAX_FRAGS];
     uint8_t *frags[DNS_MAX_FRAGS];
 } dns_reasm_t;
+
+typedef struct dns_inflight {
+    bool used;
+    bool poll_only;
+    uint16_t txid;
+    uint8_t retries;
+    uint32_t message_id;
+    uint16_t fragment_index;
+    uint64_t sent_ms;
+    size_t query_size;
+    uint8_t query[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
+} dns_inflight_t;
 
 typedef struct dns_client_priv {
     uint64_t client_nonce;
@@ -134,9 +151,9 @@ typedef struct dns_client_priv {
     bool handshake_done;
     bool polling;
     bool closed;
-    bool inflight;
-    uint16_t inflight_txid;
-    uint8_t retries;
+    size_t inflight_count;
+    size_t poll_inflight;
+    size_t poll_window;
     uint32_t last_ack_msg;
     uint16_t last_ack_frag;
     size_t out_count;
@@ -145,8 +162,7 @@ typedef struct dns_client_priv {
     dns_reasm_t reasm;
     dap_timerfd_t *retry_timer;
     dap_timerfd_t *poll_timer;
-    uint8_t last_query[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
-    size_t last_query_size;
+    dns_inflight_t window[DNS_WINDOW];
 } dns_client_priv_t;
 
 static dap_stream_trans_dns_private_t *s_get_private(dap_net_trans_t *a_trans);
@@ -362,6 +378,23 @@ static int s_enqueue_message(dns_client_priv_t *a_ctx, uint8_t a_type,
 {
     if(!a_ctx || a_size > DNS_MAX_MSG)
         return -1;
+    if(a_ctx->out_pos) {
+        size_t l_keep = 0;
+        for(size_t i = a_ctx->out_pos; i < a_ctx->out_count; ++i) {
+            if(a_ctx->out[i].acked) {
+                DAP_DEL_Z(a_ctx->out[i].payload);
+                continue;
+            }
+            if(l_keep != i)
+                a_ctx->out[l_keep] = a_ctx->out[i];
+            ++l_keep;
+        }
+        if(l_keep < a_ctx->out_count)
+            memset(a_ctx->out + l_keep, 0,
+                    (a_ctx->out_count - l_keep) * sizeof(*a_ctx->out));
+        a_ctx->out_count = l_keep;
+        a_ctx->out_pos = 0;
+    }
     size_t l_budget = a_ctx->query_budget ? a_ctx->query_budget : 32;
     size_t l_count = a_size ? (a_size + l_budget - 1) / l_budget : 1;
     if(!l_count || l_count > DNS_MAX_FRAGS ||
@@ -393,43 +426,94 @@ static int s_enqueue_message(dns_client_priv_t *a_ctx, uint8_t a_type,
 static dns_out_frag_t *s_next_unacked(dns_client_priv_t *a_ctx)
 {
     for(size_t i = a_ctx->out_pos; i < a_ctx->out_count; ++i) {
-        if(!a_ctx->out[i].acked)
+        if(!a_ctx->out[i].acked && !a_ctx->out[i].sent)
             return &a_ctx->out[i];
-        a_ctx->out_pos = i + 1;
+        if(a_ctx->out[i].acked && i == a_ctx->out_pos)
+            a_ctx->out_pos = i + 1;
     }
     return NULL;
 }
 
+static uint64_t s_now_ms(void)
+{
+    return dap_nanotime_now() / 1000000ULL;
+}
+
+static dns_inflight_t *s_window_slot(dns_client_priv_t *a_ctx)
+{
+    for(size_t i = 0; i < DNS_WINDOW; ++i) {
+        if(!a_ctx->window[i].used)
+            return &a_ctx->window[i];
+    }
+    return NULL;
+}
+
+static dns_inflight_t *s_window_find(dns_client_priv_t *a_ctx, uint16_t a_txid)
+{
+    for(size_t i = 0; i < DNS_WINDOW; ++i) {
+        if(a_ctx->window[i].used && a_ctx->window[i].txid == a_txid)
+            return &a_ctx->window[i];
+    }
+    return NULL;
+}
+
+static void s_window_release(dns_client_priv_t *a_ctx, dns_inflight_t *a_slot)
+{
+    if(!a_slot->used)
+        return;
+    a_slot->used = false;
+    if(a_slot->poll_only && a_ctx->poll_inflight)
+        --a_ctx->poll_inflight;
+    if(a_ctx->inflight_count)
+        --a_ctx->inflight_count;
+}
+
 static int s_client_send_frame(dap_stream_t *a_stream, dns_client_priv_t *a_ctx,
-        const dap_dns_tunnel_frame_t *a_frame)
+        const dap_dns_tunnel_frame_t *a_frame, bool a_poll_only)
 {
     dap_events_socket_t *l_es = a_stream->esocket;
     if(!l_es)
         return -1;
-    size_t l_size = sizeof(a_ctx->last_query);
+    dns_inflight_t *l_slot = s_window_slot(a_ctx);
+    if(!l_slot)
+        return -1;
+    size_t l_size = sizeof(l_slot->query);
     int l_rc = dap_dns_tunnel_wire_build_query(a_ctx->next_txid, a_ctx->suffix,
-            a_frame, a_ctx->last_query, &l_size);
+            a_frame, l_slot->query, &l_size);
     if(l_rc != DAP_DNS_TUNNEL_WIRE_OK)
         return -1;
-    size_t l_sent = dap_events_socket_sendto_unsafe(l_es, a_ctx->last_query,
+    size_t l_sent = dap_events_socket_sendto_unsafe(l_es, l_slot->query,
             l_size, &l_es->addr_storage, l_es->addr_size);
     if(l_sent != l_size)
         return -1;
-    a_ctx->last_query_size = l_size;
-    a_ctx->inflight_txid = a_ctx->next_txid++;
-    a_ctx->inflight = true;
-    a_ctx->retries = 0;
+    l_slot->used = true;
+    l_slot->poll_only = a_poll_only;
+    l_slot->txid = a_ctx->next_txid++;
+    l_slot->retries = 0;
+    l_slot->message_id = a_frame->message_id;
+    l_slot->fragment_index = a_frame->fragment_index;
+    l_slot->sent_ms = s_now_ms();
+    l_slot->query_size = l_size;
+    ++a_ctx->inflight_count;
+    if(a_poll_only)
+        ++a_ctx->poll_inflight;
     if(l_es->worker && !a_ctx->retry_timer)
         a_ctx->retry_timer = dap_timerfd_start_on_worker(l_es->worker,
-                DNS_RETRY_MS, s_client_retry_cb, a_stream);
+                DNS_TICK_MS, s_client_retry_cb, a_stream);
     return 0;
 }
 
-static int s_client_send_next(dap_stream_t *a_stream, dns_client_priv_t *a_ctx)
+static int s_client_send_one(dap_stream_t *a_stream, dns_client_priv_t *a_ctx)
 {
-    if(!a_stream || !a_ctx || a_ctx->closed || a_ctx->inflight)
-        return 0;
     dns_out_frag_t *l_frag = s_next_unacked(a_ctx);
+    if(!l_frag) {
+        /* Downlink only flows in response to a query, so keep a few polls in
+         * flight; the window grows while the server has data to hand back */
+        if(!a_ctx->polling)
+            return a_ctx->handshake_cb ? -1 : 0;
+        if(a_ctx->poll_inflight >= a_ctx->poll_window)
+            return 0;
+    }
     dap_dns_tunnel_frame_t l_frame = {
         .type = l_frag ? l_frag->type : DAP_DNS_TUNNEL_MSG_POLL,
         .client_nonce = a_ctx->client_nonce,
@@ -442,11 +526,29 @@ static int s_client_send_next(dap_stream_t *a_stream, dns_client_priv_t *a_ctx)
         .payload_length = l_frag ? l_frag->payload_len : 0,
         .payload = l_frag ? l_frag->payload : NULL
     };
-    if(!l_frag && !a_ctx->polling && a_ctx->handshake_done)
+    if(s_client_send_frame(a_stream, a_ctx, &l_frame, !l_frag) != 0)
+        return -1;
+    if(l_frag)
+        l_frag->sent = true;
+    return 1;
+}
+
+static int s_client_send_next(dap_stream_t *a_stream, dns_client_priv_t *a_ctx)
+{
+    if(!a_stream || !a_ctx || a_ctx->closed)
         return 0;
-    if(!l_frag && !a_ctx->polling && !a_ctx->handshake_cb)
+    if(!a_ctx->handshake_done && !a_ctx->handshake_cb)
         return 0;
-    return s_client_send_frame(a_stream, a_ctx, &l_frame);
+    int l_sent = 0;
+    while(a_ctx->inflight_count < DNS_WINDOW) {
+        int l_rc = s_client_send_one(a_stream, a_ctx);
+        if(l_rc < 0)
+            return l_sent ? 0 : -1;
+        if(!l_rc)
+            break;
+        ++l_sent;
+    }
+    return 0;
 }
 
 static bool s_client_retry_cb(void *a_arg)
@@ -460,21 +562,46 @@ static bool s_client_retry_cb(void *a_arg)
             l_ctx->retry_timer = NULL;
         return false;
     }
-    if(!l_ctx->inflight || !l_stream->esocket)
+    if(!l_stream->esocket)
         return true;
-    if(l_ctx->retries++ >= DNS_MAX_RETRIES) {
+    uint64_t l_now = s_now_ms();
+    bool l_exhausted = false;
+    for(size_t i = 0; i < DNS_WINDOW; ++i) {
+        dns_inflight_t *l_slot = &l_ctx->window[i];
+        if(!l_slot->used || l_now - l_slot->sent_ms < DNS_RETRY_MS)
+            continue;
+        if(l_slot->retries++ >= DNS_MAX_RETRIES) {
+            if(!l_slot->poll_only) {
+                for(size_t j = 0; j < l_ctx->out_count; ++j) {
+                    if(l_ctx->out[j].message_id == l_slot->message_id &&
+                            l_ctx->out[j].index == l_slot->fragment_index &&
+                            !l_ctx->out[j].acked) {
+                        l_ctx->out[j].sent = false;
+                        break;
+                    }
+                }
+            }
+            s_window_release(l_ctx, l_slot);
+            l_exhausted = true;
+            continue;
+        }
+        l_slot->sent_ms = l_now;
+        dap_events_socket_sendto_unsafe(l_stream->esocket, l_slot->query,
+                l_slot->query_size, &l_stream->esocket->addr_storage,
+                l_stream->esocket->addr_size);
+    }
+    if(l_exhausted) {
         log_it(L_ERROR, "DNS client: query retry budget exhausted");
-        l_ctx->inflight = false;
+        if(l_ctx->poll_window > DNS_POLL_WINDOW_MIN)
+            l_ctx->poll_window = DNS_POLL_WINDOW_MIN;
         if(l_ctx->handshake_cb && !l_ctx->handshake_done) {
             dap_net_trans_handshake_cb_t l_cb = l_ctx->handshake_cb;
             l_ctx->handshake_cb = NULL;
             l_cb(l_stream, NULL, 0, -1);
+            return true;
         }
-        return true;
     }
-    dap_events_socket_sendto_unsafe(l_stream->esocket, l_ctx->last_query,
-            l_ctx->last_query_size, &l_stream->esocket->addr_storage,
-            l_stream->esocket->addr_size);
+    s_client_send_next(l_stream, l_ctx);
     return true;
 }
 
@@ -821,9 +948,12 @@ static dns_client_priv_t *s_get_or_create_client_ctx(dap_stream_t *a_stream)
             l_priv->config.domain_suffix : DAP_DNS_TUNNEL_DEFAULT_SUFFIX;
     dap_strncpy(l_ctx->suffix, l_suffix, sizeof(l_ctx->suffix) - 1);
     size_t l_response = 0;
-    if(dap_dns_tunnel_wire_payload_budget(l_ctx->suffix, &l_ctx->query_budget,
-            &l_response) != DAP_DNS_TUNNEL_WIRE_OK)
+    size_t l_qname_budget = 0;
+    if(dap_dns_tunnel_wire_payload_budget_ext(l_ctx->suffix, &l_qname_budget,
+            &l_ctx->query_budget, &l_response) != DAP_DNS_TUNNEL_WIRE_OK ||
+            !l_ctx->query_budget)
         l_ctx->query_budget = 32;
+    l_ctx->poll_window = DNS_POLL_WINDOW_MIN;
     a_stream->trans_ctx->transport_priv = l_ctx;
     return l_ctx;
 }
@@ -859,9 +989,17 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         debug_if(s_debug_more, L_DEBUG, "DNS client: dropping malformed response (%d)", l_rc);
         return;
     }
-    if(l_ctx->inflight && l_txid != l_ctx->inflight_txid)
+    dns_inflight_t *l_slot = s_window_find(l_ctx, l_txid);
+    if(!l_slot)
         return;
-    l_ctx->inflight = false;
+    s_window_release(l_ctx, l_slot);
+    if(l_frame.type == DAP_DNS_TUNNEL_MSG_DATA && l_frame.payload_length) {
+        if(l_ctx->poll_window < DNS_POLL_WINDOW_MAX)
+            ++l_ctx->poll_window;
+    } else if(l_frame.type == DAP_DNS_TUNNEL_MSG_POLL &&
+            l_ctx->poll_window > DNS_POLL_WINDOW_MIN) {
+        --l_ctx->poll_window;
+    }
     if(l_frame.session_cookie)
         l_ctx->session_cookie = l_frame.session_cookie;
     for(size_t i = 0; i < l_ctx->out_count; ++i) {

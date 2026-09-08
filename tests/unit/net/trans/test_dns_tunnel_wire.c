@@ -16,7 +16,7 @@ static dap_dns_tunnel_frame_t s_frame(const uint8_t *a_payload,
 {
     dap_dns_tunnel_frame_t l_frame = {
         .type = 3,
-        .flags = 0x1201,
+        .flags = 0x1200,
         .client_nonce = UINT64_C(0x0102030405060708),
         .session_cookie = UINT64_C(0x8877665544332211),
         .message_id = 0xA1B2C3D4,
@@ -34,7 +34,7 @@ static int s_check_frame(const dap_dns_tunnel_frame_t *a_frame,
         const uint8_t *a_payload, size_t a_payload_size)
 {
     CHECK(a_frame->type == 3);
-    CHECK(a_frame->flags == 0x1201);
+    CHECK((a_frame->flags & ~DAP_DNS_TUNNEL_FLAG_EDNS_PAYLOAD) == 0x1200);
     CHECK(a_frame->client_nonce == UINT64_C(0x0102030405060708));
     CHECK(a_frame->session_cookie == UINT64_C(0x8877665544332211));
     CHECK(a_frame->message_id == 0xA1B2C3D4);
@@ -186,6 +186,53 @@ static int s_test_budgets(void)
     CHECK(l_response_payload > l_query_payload);
     CHECK(dap_dns_tunnel_wire_payload_budget("bad..suffix", &l_query_payload,
             &l_response_payload) == DAP_DNS_TUNNEL_WIRE_ERROR_FORMAT);
+
+    size_t l_qname_payload = 0;
+    size_t l_edns_payload = 0;
+    CHECK(dap_dns_tunnel_wire_payload_budget_ext(TEST_SUFFIX, &l_qname_payload,
+            &l_edns_payload, &l_response_payload) == DAP_DNS_TUNNEL_WIRE_OK);
+    CHECK(l_edns_payload > l_qname_payload);
+    CHECK(l_edns_payload > l_response_payload);
+    return 0;
+}
+
+static int s_test_edns_payload(void)
+{
+    size_t l_qname_payload = 0;
+    size_t l_edns_payload = 0;
+    size_t l_response_payload = 0;
+    CHECK(dap_dns_tunnel_wire_payload_budget_ext(TEST_SUFFIX, &l_qname_payload,
+            &l_edns_payload, &l_response_payload) == DAP_DNS_TUNNEL_WIRE_OK);
+
+    uint8_t l_input[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
+    size_t l_input_size = l_edns_payload;
+    for(size_t i = 0; i < l_input_size; ++i)
+        l_input[i] = (uint8_t)(i * 13 + 5);
+    dap_dns_tunnel_frame_t l_frame = s_frame(l_input, (uint16_t)l_input_size);
+    uint8_t l_query[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
+    size_t l_query_size = sizeof(l_query);
+    CHECK(dap_dns_tunnel_wire_build_query(0x1234, TEST_SUFFIX, &l_frame,
+            l_query, &l_query_size) == DAP_DNS_TUNNEL_WIRE_OK);
+    CHECK(l_query_size <= DAP_DNS_TUNNEL_EDNS_UDP_SIZE);
+
+    uint8_t l_output[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
+    size_t l_output_size = sizeof(l_output);
+    uint16_t l_transaction_id = 0;
+    dap_dns_tunnel_frame_t l_decoded;
+    CHECK(dap_dns_tunnel_wire_parse_query(l_query, l_query_size, TEST_SUFFIX,
+            &l_transaction_id, &l_decoded, l_output,
+            &l_output_size) == DAP_DNS_TUNNEL_WIRE_OK);
+    CHECK(l_transaction_id == 0x1234);
+    CHECK(l_decoded.flags & DAP_DNS_TUNNEL_FLAG_EDNS_PAYLOAD);
+    CHECK(l_decoded.payload_length == l_input_size);
+    CHECK(!memcmp(l_decoded.payload, l_input, l_input_size));
+
+    /* option payload must stay consistent with the length in the QNAME header */
+    l_query[l_query_size - 1] ^= 0xFF;
+    l_output_size = sizeof(l_output);
+    CHECK(dap_dns_tunnel_wire_parse_query(l_query, l_query_size, TEST_SUFFIX,
+            &l_transaction_id, &l_decoded, l_output,
+            &l_output_size) == DAP_DNS_TUNNEL_WIRE_ERROR_CRC);
     return 0;
 }
 
@@ -231,6 +278,7 @@ int main(void)
     CHECK(!s_test_query_codec(l_query, &l_query_size));
     CHECK(!s_test_response_codec(l_query, l_query_size));
     CHECK(!s_test_budgets());
+    CHECK(!s_test_edns_payload());
     CHECK(!s_test_poll_and_suffix());
     printf("DNS tunnel wire tests passed\n");
     return 0;

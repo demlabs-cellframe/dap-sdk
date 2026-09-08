@@ -19,6 +19,10 @@
 #define DAP_DNS_TUNNEL_MSG_POLL 3U
 #define DAP_DNS_TUNNEL_MSG_CLOSE 4U
 
+/* Payload travels in an EDNS0 option instead of the QNAME labels */
+#define DAP_DNS_TUNNEL_FLAG_EDNS_PAYLOAD 0x0001U
+#define DAP_DNS_TUNNEL_EDNS_OPTION_CODE 0xFDE9U
+
 typedef enum dap_dns_tunnel_wire_error {
     DAP_DNS_TUNNEL_WIRE_OK = 0,
     DAP_DNS_TUNNEL_WIRE_ERROR_ARGUMENT = -1,
@@ -67,3 +71,6 @@ int dap_dns_tunnel_wire_parse_response(const uint8_t *a_packet,
 
 int dap_dns_tunnel_wire_payload_budget(const char *a_suffix,
         size_t *a_query_payload, size_t *a_response_payload);
+int dap_dns_tunnel_wire_payload_budget_ext(const char *a_suffix,
+        size_t *a_query_qname_payload, size_t *a_query_edns_payload,
+        size_t *a_response_payload);
