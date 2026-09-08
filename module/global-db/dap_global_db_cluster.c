@@ -38,6 +38,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #define LOG_TAG "dap_global_db_cluster"
 
 static void s_gdb_cluster_sync_timer_callback(void *a_arg);
+static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg);
 
 static dap_global_db_cluster_t *s_local_cluster = NULL, *s_global_cluster = NULL;
 
@@ -169,6 +170,26 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
     return dap_cluster_member_add(a_cluster->role_cluster, a_node_addr, a_role, NULL);
 }
 
+/* confcall W54-F2: the actual teardown.  Runs on the sync timer's proc
+ * thread (posted behind any in-flight sync callback — FIFO), or inline when
+ * there was no timer / the post was impossible.  Also drops the peer-stream
+ * notifier the sync state machine may have left registered with `l_cluster`
+ * as its arg (the IDLE→START transition removes it, a delete mid-cycle did
+ * not) — a GDB REQUEST from that link would otherwise invoke
+ * s_ch_in_pkt_callback on the freed cluster. */
+static bool s_cluster_delete_finalize(void *a_arg)
+{
+    dap_global_db_cluster_t *l_cluster = a_arg;
+    if (!dap_cluster_node_addr_is_blank(&l_cluster->sync_context.current_link))
+        dap_stream_ch_del_notifier(&l_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
+                                   DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
+    dap_cluster_delete(l_cluster->role_cluster);
+    DAP_DELETE(l_cluster->groups_mask);
+    dap_dl_delete(l_cluster->dbi->clusters, l_cluster);
+    DAP_DELETE(l_cluster);
+    return false;
+}
+
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 {
     //if (a_cluster->links_cluster)
@@ -178,16 +199,21 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     /* confcall W53-F8: the 1 s sync timer registered in _add() was never
      * stopped — every deleted cluster (per-room AVRS/chat clusters in
      * ConfCall churn constantly) left a repeating callback dereferencing
-     * this freed struct forever.  Cancel first: no sync callback runs after
-     * this point, including hops already queued on the proc thread. */
+     * this freed struct forever.
+     * W54-F2: cancel alone is NOT a drain — a sync callback that already
+     * passed its cancelled check may be mid-flight on the proc thread doing
+     * GDB/driver I/O against this struct for tens of ms.  Post the teardown
+     * to that same proc thread: the per-thread FIFO guarantees it runs
+     * after the in-flight hop returned. */
     if (a_cluster->sync_timer) {
-        dap_proc_thread_timer_cancel(a_cluster->sync_timer);
+        dap_proc_thread_timer_t l_timer = a_cluster->sync_timer;
         a_cluster->sync_timer = NULL;
+        if (dap_proc_thread_timer_cancel_then(l_timer, s_cluster_delete_finalize, a_cluster) == 0)
+            return;   /* finalizer owns a_cluster now */
+        /* post impossible (module deinit / OOM): no proc-thread callback can
+         * be mid-flight during deinit; fall through to inline teardown */
     }
-    dap_cluster_delete(a_cluster->role_cluster);
-    DAP_DELETE(a_cluster->groups_mask);
-    dap_dl_delete(a_cluster->dbi->clusters, a_cluster);
-    DAP_DELETE(a_cluster);
+    s_cluster_delete_finalize(a_cluster);
 }
 
 static bool s_db_cluster_notify_on_proc_thread(void *a_arg)

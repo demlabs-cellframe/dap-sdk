@@ -81,14 +81,21 @@ DAP_STATIC_INLINE int dap_proc_thread_callback_add(dap_proc_thread_t *a_thread, 
     return dap_proc_thread_callback_add_pri(a_thread, a_callback, a_callback_arg, DAP_QUEUE_MSG_PRIORITY_NORMAL);
 }
 int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority);
-/* confcall W53-F8: same as _add_pri but returns a cancel handle in *a_handle (may be NULL). */
+/* confcall W53-F8: same as _add_pri but returns a cancel handle in *a_handle (may be NULL).
+ * W54-F1: for oneshot timers *a_handle is set to NULL — the wrapper self-frees on fire. */
 int dap_proc_thread_timer_add_pri_ex(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg,
                                      uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority,
                                      dap_proc_thread_timer_t *a_handle);
-/* Stop a repeating proc-thread timer.  Thread-safe.  After return no user callback runs
- * (hops already queued see the cancel and skip), so the owner may free a_callback_arg
- * right away; the timer itself is released on the worker's next tick. */
+/* Stop a repeating proc-thread timer.  Thread-safe; the handle is consumed.  After return
+ * no NEW user callback starts, but one that already passed its cancelled check may still be
+ * running on the proc thread — do not free a_callback_arg until it drained (see _cancel_then). */
 void dap_proc_thread_timer_cancel(dap_proc_thread_timer_t a_handle);
+/* W54-F2: cancel + drain.  Posts a_finalizer(a_arg) to the timer's own proc thread; the
+ * per-thread FIFO guarantees it runs after any in-flight callback.  0 = posted (finalizer
+ * owns a_arg); <0 = could not post (module deinit / OOM) — the timer is still cancelled and
+ * the caller must run the finalizer itself. */
+int dap_proc_thread_timer_cancel_then(dap_proc_thread_timer_t a_handle,
+                                      dap_proc_queue_callback_t a_finalizer, void *a_arg);
 DAP_STATIC_INLINE int dap_proc_thread_timer_add(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms)
 {
     return dap_proc_thread_timer_add_pri(a_thread, a_callback, a_callback_arg, a_timeout_ms, false, DAP_QUEUE_MSG_PRIORITY_NORMAL);

@@ -425,21 +425,49 @@ int dap_proc_thread_timer_add_pri_ex(dap_proc_thread_t *a_thread, dap_thread_tim
         DAP_DELETE(l_timer_arg);
         return -4;
     }
+    /* confcall W54-F1: a oneshot wrapper self-frees on its own tick, so a
+     * handle to it would dangle — never hand one out. */
     if (a_handle)
-        *a_handle = l_timer_arg;
+        *a_handle = a_oneshot ? NULL : l_timer_arg;
     return 0;
 }
 
-/* confcall W53-F8: stop a repeating proc-thread timer.  Safe from any
- * thread; idempotent for a given handle only until the first call (the
- * handle is consumed).  After return no user callback runs; the wrapper
- * and the timer esocket are released asynchronously by the worker's next
- * tick (≤ one period).  Callbacks ALREADY dispatched to the proc thread
- * before the cancel still see `cancelled` and skip the user callback, so
- * the owner may free the callback_arg immediately after this call. */
+/* confcall W53-F8 / W54-F2: stop a repeating proc-thread timer.  Safe from
+ * any thread; the handle is consumed (the wrapper and the timer esocket are
+ * released asynchronously by the worker's next tick, ≤ one period).
+ *
+ * After return no NEW user callback starts.  A callback that already passed
+ * its `cancelled` check may still be RUNNING on the proc thread — the owner
+ * must NOT free a_callback_arg until that has drained.  Use
+ * dap_proc_thread_timer_cancel_then() to run the owner's teardown on the
+ * same proc thread behind any in-flight hop (FIFO), or ensure by other
+ * means that no callback is mid-flight. */
 void dap_proc_thread_timer_cancel(dap_proc_thread_timer_t a_handle)
 {
     if (!a_handle)
         return;
     atomic_store_explicit(&a_handle->cancelled, true, memory_order_release);
+}
+
+/* W54-F2: cancel + drain.  Cancels the timer and posts a_finalizer(a_arg)
+ * to the SAME proc thread the timer's callbacks run on.  The per-thread
+ * queue is a single-consumer FIFO, so the finalizer executes strictly after
+ * every hop that was already queued — i.e. after any in-flight user
+ * callback has returned.  Returns 0 when posted; the finalizer then owns
+ * a_arg.  Returns <0 when the post is impossible (proc-thread module
+ * deinitialising / OOM) — the timer IS still cancelled, and the caller must
+ * fall back to running the finalizer itself (unsafe only if a callback is
+ * concurrently mid-flight, which during module deinit it cannot be). */
+int dap_proc_thread_timer_cancel_then(dap_proc_thread_timer_t a_handle,
+                                      dap_proc_queue_callback_t a_finalizer, void *a_arg)
+{
+    if (!a_handle)
+        return -EINVAL;
+    dap_proc_thread_t *l_thread = a_handle->thread;
+    dap_queue_msg_priority_t l_pri = a_handle->priority;
+    atomic_store_explicit(&a_handle->cancelled, true, memory_order_release);
+    /* a_handle may be freed by the worker from here on — do not touch it */
+    if (!a_finalizer)
+        return 0;
+    return dap_proc_thread_callback_add_pri(l_thread, a_finalizer, a_arg, l_pri);
 }
