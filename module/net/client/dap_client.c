@@ -19,6 +19,8 @@
 #include <pthread.h>
 
 #include "dap_common.h"
+#include <errno.h>
+#include "dap_time.h"
 #include "dap_strfuncs.h"
 #include "dap_http_client.h"
 #include "dap_client.h"
@@ -191,7 +193,12 @@ int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_ty
     l_args->type = a_type;
     l_args->data_size = a_data_size;
     memcpy(l_args->data, a_data, a_data_size);
-    dap_worker_exec_callback_on(l_fsm->worker, s_client_write_on_worker, l_args);
+    /* confcall W56-F4: a dropped post used to leak l_args and report success
+     * for data that was never sent. */
+    if (dap_worker_exec_callback_on(l_fsm->worker, s_client_write_on_worker, l_args) != 0) {
+        DAP_DELETE(l_args);
+        return -EAGAIN;
+    }
     return 0;
 }
 
@@ -253,7 +260,18 @@ void dap_client_delete_mt(dap_client_t *a_client)
     if (l_fsm->esocket)
         l_fsm->esocket->is_removing = true;
 
-    dap_worker_exec_callback_on_sync(l_fsm->worker, s_client_delete_on_worker, a_client);
+    /* confcall W56-F4: a dropped sync post used to return silently with the
+     * client NOT deleted while the caller proceeded to drop its pointer
+     * (leak + a live FSM referencing a caller-freed context).  Retry a few
+     * times — the ring drains in microseconds — then fail loudly. */
+    int l_rc = -1;
+    for (int i = 0; i < 100 && l_rc != 0; i++) {
+        l_rc = dap_worker_exec_callback_on_sync(l_fsm->worker, s_client_delete_on_worker, a_client);
+        if (l_rc != 0)
+            dap_usleep(1000);
+    }
+    if (l_rc != 0)
+        log_it(L_CRITICAL, "dap_client_delete_mt: worker queue stayed full, client %p LEAKED (FSM still live)", a_client);
 
     debug_if(s_debug_more, L_DEBUG, "Client %p deleted", a_client);
 }
@@ -518,7 +536,13 @@ int dap_client_request(dap_client_t *a_client, const char *a_path, void *a_reque
     l_args->response_error = a_response_error;
     l_args->callback_arg = a_callback_arg;
 
-    dap_worker_exec_callback_on(l_fsm->worker, s_client_request_on_worker, l_args);
+    if (dap_worker_exec_callback_on(l_fsm->worker, s_client_request_on_worker, l_args) != 0) {
+        /* confcall W56-F4: dropped post — free what we duplicated */
+        DAP_DELETE(l_args->path);
+        DAP_DELETE(l_args->request);
+        DAP_DELETE(l_args);
+        return -EAGAIN;
+    }
     return 0;
 }
 
@@ -544,6 +568,14 @@ int dap_client_request_enc(dap_client_t *a_client, const char *a_path, const cha
     l_args->response_error = a_response_error;
     l_args->callback_arg = a_callback_arg;
 
-    dap_worker_exec_callback_on(l_fsm->worker, s_client_request_enc_on_worker, l_args);
+    if (dap_worker_exec_callback_on(l_fsm->worker, s_client_request_enc_on_worker, l_args) != 0) {
+        /* confcall W56-F4: dropped post — free what we duplicated */
+        DAP_DELETE(l_args->path);
+        DAP_DELETE(l_args->sub_url);
+        DAP_DELETE(l_args->query);
+        DAP_DELETE(l_args->request);
+        DAP_DELETE(l_args);
+        return -EAGAIN;
+    }
     return 0;
 }

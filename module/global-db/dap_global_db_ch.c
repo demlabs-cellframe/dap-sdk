@@ -84,16 +84,29 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void UNUSED_ARG *a_arg)
     DAP_DEL_Z(a_ch->internal);
 }
 
+static bool s_proc_thread_reader_ref(void *a_arg, dap_global_db_cluster_t *l_cluster);
+
+/* confcall W56-F1: by_group returns a REFERENCED cluster; the wrapper owns
+ * the ref for the whole body and drops it on every return path. */
 bool s_proc_thread_reader(void *a_arg)
 {
     dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t) + sizeof(byte_t));
-    byte_t l_type = *((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t));
     const char *l_group = (const char *)l_pkt->group;
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
     if (!l_cluster) {
         log_it(L_ERROR, "Cluster for group %s not found", l_group);
         return false;
     }
+    bool l_r = s_proc_thread_reader_ref(a_arg, l_cluster);
+    dap_global_db_cluster_unref(l_cluster);
+    return l_r;
+}
+
+static bool s_proc_thread_reader_ref(void *a_arg, dap_global_db_cluster_t *l_cluster)
+{
+    dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t) + sizeof(byte_t));
+    byte_t l_type = *((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t));
+    const char *l_group = (const char *)l_pkt->group;
     dap_cluster_node_addr_t *l_sender_addr = (dap_cluster_node_addr_t *)a_arg;
     if (dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
@@ -149,11 +162,27 @@ bool s_proc_thread_reader(void *a_arg)
     return l_ret;
 }
 
+static bool s_process_hashes_ref(void *a_arg, dap_global_db_cluster_t *l_cluster);
+
 static bool s_process_hashes(void *a_arg)
 {
     dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t));
     const char *l_group = (const char *)l_pkt->group_n_hashses;
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
+    if (!l_cluster) {
+        log_it(L_ERROR, "Cluster for group %s not found", l_group);
+        DAP_DELETE(a_arg);
+        return false;
+    }
+    bool l_r = s_process_hashes_ref(a_arg, l_cluster);   /* W56-F1 */
+    dap_global_db_cluster_unref(l_cluster);
+    return l_r;
+}
+
+static bool s_process_hashes_ref(void *a_arg, dap_global_db_cluster_t *l_cluster)
+{
+    dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t));
+    const char *l_group = (const char *)l_pkt->group_n_hashses;
     if (!l_cluster) {
         log_it(L_ERROR, "Cluster for group %s not found", l_group);
         DAP_DELETE(a_arg);
@@ -181,6 +210,8 @@ static bool s_process_hashes(void *a_arg)
     return false;
 }
 
+static bool s_process_request_ref(void *a_arg, dap_global_db_cluster_t *l_cluster);
+
 static bool s_process_request(void *a_arg)
 {
     dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t));
@@ -191,6 +222,15 @@ static bool s_process_request(void *a_arg)
         DAP_DELETE(a_arg);
         return false;
     }
+    bool l_r = s_process_request_ref(a_arg, l_cluster);   /* W56-F1 */
+    dap_global_db_cluster_unref(l_cluster);
+    return l_r;
+}
+
+static bool s_process_request_ref(void *a_arg, dap_global_db_cluster_t *l_cluster)
+{
+    dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t));
+    const char *l_group = (const char *)l_pkt->group_n_hashses;
     dap_cluster_node_addr_t *l_sender_addr = (dap_cluster_node_addr_t *)a_arg;
     if (dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
@@ -243,17 +283,20 @@ bool dap_global_db_ch_check_store_obj(dap_global_db_store_obj_t *a_obj, dap_clus
         log_it(L_ERROR, "Cluster for group %s not found", a_obj->group);
         return false;
     }
+    bool l_ok;
     if (dap_cluster_node_addr_is_blank(a_addr) &&
             l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_EMBEDDED &&
             l_cluster->links_cluster->status == DAP_CLUSTER_STATUS_ENABLED)
         // Unverified stream, let it access to embedded (network) clusters for legacy support
-        return true;
-    if (!dap_cluster_member_find_unsafe(l_cluster->links_cluster, a_addr)) {
+        l_ok = true;
+    else if (!dap_cluster_member_find_unsafe(l_cluster->links_cluster, a_addr)) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
         log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s", NODE_ADDR_FP_ARGS(a_addr), l_name);
-        return false;
-    }
-    return true;
+        l_ok = false;
+    } else
+        l_ok = true;
+    dap_global_db_cluster_unref(l_cluster);   /* W56-F1 */
+    return l_ok;
 }
 
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED

@@ -436,7 +436,10 @@ int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
         memcpy(&l_args->addr, a_addr, a_addr_len);
         l_args->addr_len = a_addr_len;
         
-        dap_worker_exec_callback_on(l_target_worker, s_flow_sendto_callback, l_args);
+        if (dap_worker_exec_callback_on(l_target_worker, s_flow_sendto_callback, l_args) != 0) {
+            DAP_DELETE(l_args);   /* confcall W56-F4: dropped post — was leaked + reported as sent */
+            return -EAGAIN;
+        }
         
         return a_size;  // Queued successfully
     }

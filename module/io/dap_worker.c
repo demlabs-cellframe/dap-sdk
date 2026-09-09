@@ -489,9 +489,9 @@ static bool s_socket_all_check_activity( void * a_arg)
  * @param a_events_socket
  * @param a_worker
  */
-void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
+int dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
 {
-    dap_return_if_fail(a_worker && a_events_socket);
+    dap_return_val_if_fail(a_worker && a_events_socket, -EINVAL);
     int l_ret = 0;
     const char *l_type_str = dap_events_socket_get_type_str(a_events_socket);
     SOCKET l_s = a_events_socket->socket;
@@ -522,6 +522,7 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
                "%s es \"%s\" [%s], uuid "DAP_FORMAT_ESOCKET_UUID" to worker #%d",
                dap_worker_get_current() == a_worker ? "Assigned" : "Sent",
                l_type_str, dap_itoa(l_s), l_uuid, a_worker->id);
+    return l_ret;   /* confcall W56-F11: callers must know the add failed (EMFILE / full ring) */
 }
 
 /**
@@ -1389,9 +1390,16 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             while (read(l_cur->socket, &l_drain, 1) > 0) {}
                         }
 #endif
-                        if (l_cur->callbacks.timer_callback)
+                        if (l_cur->callbacks.timer_callback) {
+                            /* confcall W56-F10: the timer callback may delete
+                             * its own esocket (self-cancel) — after it returns
+                             * l_cur may be FREED.  Re-find by uuid before the
+                             * loop touches flags/buffers again. */
+                            dap_events_socket_uuid_t l_timer_uuid = l_cur->uuid;
                             l_cur->callbacks.timer_callback(l_cur);
-                        else
+                            if (dap_context_find(a_context, l_timer_uuid) != l_cur)
+                                continue;
+                        } else
                             log_it(L_ERROR, "Socket %"DAP_FORMAT_SOCKET" with timer callback fired, but callback is NULL ", l_cur->socket);
 
                     } break;

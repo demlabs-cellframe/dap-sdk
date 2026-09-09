@@ -209,7 +209,14 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
         pthread_cond_init( &a_context->started_cond, &attr);
 
         struct timespec l_timeout;
+        /* confcall W56-F7: the cond was set to CLOCK_MONOTONIC above, so the
+         * deadline must come from the same clock — a REALTIME timestamp is
+         * ~1.7e9 s in the monotonic future and the wait never times out. */
+#if !defined(DAP_OS_DARWIN) && !defined(DAP_OS_ANDROID) && !defined(DAP_OS_WASM)
+        clock_gettime(CLOCK_MONOTONIC, &l_timeout);
+#else
         clock_gettime(CLOCK_REALTIME, &l_timeout);
+#endif
         l_timeout.tv_sec += DAP_CONTEXT_WAIT_FOR_STARTED_TIME;
         pthread_mutex_lock(&a_context->started_mutex);
 
@@ -549,6 +556,14 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
         if (a_es->context == a_context) {
             debug_if(g_debug_reactor, L_DEBUG, "Es %p already attached to context #%u, skip add", a_es, a_context->id);
             return 0;
+        }
+        /* confcall W56-F9: dap_context_remove touches the OLD context's live
+         * selection arrays (esocket_current/epoll_events/poll_*) with no lock
+         * — only its owner thread may do that.  Refuse a cross-thread switch. */
+        if (dap_context_current() != a_es->context) {
+            log_it(L_ERROR, "Refusing cross-thread context switch on es %p : %" DAP_FORMAT_SOCKET " (from context %u to %u)",
+                   a_es, a_es->socket, a_es->context->id, a_context->id);
+            return -EBUSY;
         }
         log_it(L_WARNING, "Context switch detected on es %p : %" DAP_FORMAT_SOCKET ", moving from context %u to %u",
                a_es, a_es->socket, a_es->context->id, a_context->id);

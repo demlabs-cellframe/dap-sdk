@@ -214,6 +214,9 @@ typedef struct dap_events_socket_callbacks {
 #define DAP_STREAM_PKT_SIZE_MAX         (128 * 1024 * 1024)
 #define DAP_EVENTS_SOCKET_BUF_SIZE      (DAP_STREAM_PKT_FRAGMENT_SIZE * 16)
 #define DAP_EVENTS_SOCKET_BUF_LIMIT     DAP_STREAM_PKT_SIZE_MAX
+/* confcall W56-F15: absolute outbound ceiling per socket; a write that would
+ * exceed it is refused and the socket is flagged for close (see write_unsafe) */
+#define DAP_EVENTS_SOCKET_BUF_OUT_HARD_LIMIT (4 * DAP_EVENTS_SOCKET_BUF_LIMIT)
 #define DAP_QUEUE_MAX_MSGS              1024
 
 typedef enum {

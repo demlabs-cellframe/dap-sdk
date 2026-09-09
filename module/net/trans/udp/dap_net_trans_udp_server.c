@@ -1781,7 +1781,13 @@ static void s_kem_task_callback(dap_thread_pool_t *a_pool,
     }
     
     // Schedule reactor callback on OWNER worker (thread-safe session modification)
-    dap_worker_exec_callback_on(l_worker, s_kem_reactor_callback, l_reactor_arg);
+    if (dap_worker_exec_callback_on(l_worker, s_kem_reactor_callback, l_reactor_arg) != 0) {
+        /* confcall W56-F4: dropped post — release everything the callback would have consumed */
+        DAP_DELETE(l_result->bob_ciphertext);
+        DAP_DELETE(l_result);
+        DAP_DELETE(l_reactor_arg);
+        return;
+    }
     
     debug_if(s_debug_more, L_DEBUG,
              "[KEM Callback] Scheduled reactor callback for session %p on worker %p",

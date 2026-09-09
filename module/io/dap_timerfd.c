@@ -406,8 +406,18 @@ dap_timerfd_t* dap_timerfd_start_on_worker(dap_worker_t * a_worker, uint64_t a_t
         log_it(L_CRITICAL,"Can't create timer");
         return NULL;
     }
-    dap_worker_add_events_socket(a_worker, l_timerfd->events_socket);
     l_timerfd->worker = a_worker;
+    /* confcall W56-F11: the add can FAIL (epoll EMFILE on-thread, full
+     * queue_es_new ring off-thread) and used to be ignored — the caller got
+     * a non-NULL timer that never fires, and a later delete-by-uuid finds
+     * nothing: dap_timerfd_t + esocket + kernel timerfd leaked while the
+     * owner believed it was armed (proc-thread sync timers, HTTP client
+     * timeouts, stream keepalives, the avrs kick deferred delete). */
+    if (dap_worker_add_events_socket(a_worker, l_timerfd->events_socket) != 0) {
+        log_it(L_ERROR, "Can't arm timer on worker #%u", a_worker->id);
+        dap_events_socket_delete_unsafe(l_timerfd->events_socket, false);   /* frees the inheritor too */
+        return NULL;
+    }
     return l_timerfd;
 }
 
@@ -605,7 +615,22 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
         return;
     // run user's callback
     debug_if(g_debug_reactor, L_DEBUG, "Call timer cb on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
-    if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_timer_fd->callback_arg)) {
+    /* confcall W56-F10: the user callback may delete THIS timer from inside
+     * (dap_timerfd_delete_unsafe(self) — e.g. a join-timeout handler that
+     * tears the whole client down).  remove_and_delete_unsafe then freed
+     * BOTH the esocket and this dap_timerfd_t, and the code below wrote
+     * SIGNAL_CLOSE into the freed esocket (UAF write); the worker loop
+     * next read that bit and deleted it AGAIN (double free).  Snapshot the
+     * uuid and re-find the esocket in the owner context after the callback
+     * — an unhashed uuid means it is gone and nothing may be touched. */
+    dap_events_socket_uuid_t l_uuid = a_event_sock->uuid;
+    dap_context_t *l_ctx = a_event_sock->context;
+    dap_timerfd_callback_t l_cb = l_timer_fd->callback;
+    void *l_cb_arg = l_timer_fd->callback_arg;
+    bool l_repeat = l_cb ? l_cb(l_cb_arg) : false;
+    if (!l_ctx || dap_context_find(l_ctx, l_uuid) != a_event_sock)
+        return;   /* deleted (and possibly freed) by the callback */
+    if (l_repeat) {
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
         debug_if(g_debug_reactor, L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
@@ -654,7 +679,10 @@ void dap_timerfd_reset(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid)
         return dap_timerfd_reset_unsafe(l_es->_inheritor);
     }
     dap_events_socket_uuid_t *l_uuid = DAP_DUP(&a_uuid);
-    dap_worker_exec_callback_on(a_worker, s_timerfd_reset_worker_callback, l_uuid);
+    if (!l_uuid)
+        return;   /* W56-F12: the callback assert()ed on a NULL arg */
+    if (dap_worker_exec_callback_on(a_worker, s_timerfd_reset_worker_callback, l_uuid) != 0)
+        DAP_DELETE(l_uuid);   /* W56-F4: dropped post — the callback never frees it */
 }
 
 /**

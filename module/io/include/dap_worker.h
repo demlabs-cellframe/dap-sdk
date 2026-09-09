@@ -84,7 +84,8 @@ dap_worker_t *dap_worker_get_current();
 #define dap_worker_get_auto dap_events_worker_get_auto
 
 int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket);
-void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
+/* confcall W56-F11: 0 = assigned/queued; nonzero = NOT added (caller still owns the esocket). */
+int dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
 dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t * a_events_socket );
 /* confcall W55-F5: 0 = queued; <0 = dropped (caller keeps ownership of a_arg). */
 int dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);

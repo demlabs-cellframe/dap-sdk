@@ -384,9 +384,12 @@ dap_cluster_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster)
 {
     dap_cluster_node_addr_t ret = {};
     dap_return_val_if_fail(a_cluster, ret);
-    if (a_cluster->members) {
-        int num = rand() % (int)dap_ht_count(a_cluster->members), idx = 0;
-        pthread_rwlock_rdlock(&a_cluster->members_lock);
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+    /* confcall W56: the count and the modulo were computed OUTSIDE the lock —
+     * a concurrent last-member delete made it `% 0` (SIGFPE). */
+    unsigned l_count = a_cluster->members ? dap_ht_count(a_cluster->members) : 0;
+    if (l_count) {
+        int num = rand() % (int)l_count, idx = 0;
         dap_cluster_member_t *it = NULL, *it_tmp = NULL;
         dap_ht_foreach(a_cluster->members, it, it_tmp) {
             if (idx++ == num) {
@@ -394,8 +397,8 @@ dap_cluster_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster)
                 break;
             }
         }
-        pthread_rwlock_unlock(&a_cluster->members_lock);
     }
+    pthread_rwlock_unlock(&a_cluster->members_lock);
     return ret;
 }
 

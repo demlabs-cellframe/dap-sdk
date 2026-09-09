@@ -1231,6 +1231,11 @@ static void s_store_obj_update_timestamp(dap_global_db_store_obj_t *a_obj, dap_g
     a_obj->sign = dap_global_db_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
 }
 
+static int s_store_obj_apply_locked(dap_global_db_instance_t *a_dbi, dap_global_db_store_obj_t *a_obj, dap_global_db_cluster_t *l_cluster);
+
+/* confcall W56-F1: by_group returns a REFERENCED cluster; this wrapper owns
+ * the ref across the whole apply (driver I/O, broadcast, notify) and drops
+ * it on every return path of the body. */
 static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_global_db_store_obj_t *a_obj)
 {
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(a_dbi, a_obj->group);
@@ -1238,6 +1243,13 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_global_db_stor
         log_it(L_WARNING, "An entry in the group %s was rejected because the group name doesn't match any cluster", a_obj->group);
         return -11;
     }
+    int l_rc = s_store_obj_apply_locked(a_dbi, a_obj, l_cluster);
+    dap_global_db_cluster_unref(l_cluster);
+    return l_rc;
+}
+
+static int s_store_obj_apply_locked(dap_global_db_instance_t *a_dbi, dap_global_db_store_obj_t *a_obj, dap_global_db_cluster_t *l_cluster)
+{
     dap_global_db_hash_t a_obj_drv_hash = dap_global_db_hash_get(a_obj);
     // Check if hash exists in storage
     if (dap_global_db_exists_hash(a_obj->group, a_obj_drv_hash)) {
@@ -1734,6 +1746,78 @@ static void s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
 }
 
 /* *** Get_all functions group *** */
+
+/* confcall W56-F16: bounded newest-first read.  Walks the B-tree cursor from
+ * LAST backwards and stops after a_max entries — a materialising get_all of
+ * a 7-day chat group (hundreds of thousands of rows) to deliver 200 was a
+ * per-request memory/CPU amplifier inside a stream callback.  Result is in
+ * DESCENDING key order (newest first); the driver key order is the group's
+ * natural (timestamp-prefixed) order for time-keyed groups. */
+static dap_global_db_store_obj_t *s_storage_read_last_n(const char *a_group, size_t a_max, size_t *a_count_out, bool a_with_deleted)
+{
+    if (a_count_out) *a_count_out = 0;
+    dap_return_val_if_fail(a_group && a_max, NULL);
+    dap_global_db_t *l_btree = s_group_get(a_group);
+    if (!l_btree)
+        return NULL;
+    dap_global_db_cursor_t *l_cursor = dap_global_db_cursor_create(l_btree);
+    if (!l_cursor)
+        return NULL;
+    dap_global_db_store_obj_t *l_results = DAP_NEW_Z_COUNT(dap_global_db_store_obj_t, a_max);
+    if (!l_results) {
+        dap_global_db_cursor_close(l_cursor);
+        return NULL;
+    }
+    size_t l_count = 0;
+    if (dap_global_db_cursor_move(l_cursor, DAP_GLOBAL_DB_LAST, NULL) == 0) {
+        do {
+            if (l_count >= a_max)
+                break;
+            dap_global_db_key_t l_drv_key;
+            char *l_text_key = NULL;
+            void *l_value = NULL;
+            uint32_t l_value_len = 0;
+            void *l_sign = NULL;
+            uint32_t l_sign_len = 0;
+            uint8_t l_flags = 0;
+            if (dap_global_db_cursor_get(l_cursor, &l_drv_key, &l_text_key,
+                                          &l_value, &l_value_len,
+                                          &l_sign, &l_sign_len, &l_flags) == 0) {
+                if (!a_with_deleted && (l_flags & DAP_GLOBAL_DB_RECORD_DEL)) {
+                    DAP_DEL_MULTY(l_text_key, l_value, l_sign);
+                    continue;
+                }
+                l_results[l_count].group = dap_strdup(a_group);
+                l_results[l_count].key = l_text_key;
+                l_results[l_count].value = l_value;
+                l_results[l_count].value_len = l_value_len;
+                l_results[l_count].sign = (dap_sign_t *)l_sign;
+                l_results[l_count].flags = l_flags;
+                l_results[l_count].timestamp = be64toh(l_drv_key.bets);
+                l_results[l_count].crc = be64toh(l_drv_key.becrc);
+                l_count++;
+            }
+        } while (dap_global_db_cursor_move(l_cursor, DAP_GLOBAL_DB_PREV, NULL) == 0);
+    }
+    dap_global_db_cursor_close(l_cursor);
+    if (a_count_out) *a_count_out = l_count;
+    if (l_count == 0) {
+        DAP_DELETE(l_results);
+        return NULL;
+    }
+    return l_results;
+}
+
+dap_global_db_obj_t *dap_global_db_get_last_n_sync(const char *a_group, size_t a_max, size_t *a_objs_count)
+{
+    dap_return_val_if_fail(s_dbi && a_group, NULL);
+    size_t l_values_count = 0;
+    dap_global_db_store_obj_t *l_store_objs = s_storage_read_last_n(a_group, a_max, &l_values_count, false);
+    dap_global_db_obj_t *l_objs = l_store_objs ? s_objs_from_store_objs(l_store_objs, l_values_count) : NULL;
+    if (a_objs_count)
+        *a_objs_count = l_values_count;
+    return l_objs;
+}
 
 dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count)
 {
@@ -2650,6 +2734,7 @@ static void s_clean_old_obj_gdb_callback(void UNUSED_ARG *a_arg) {
         }
         dap_nanotime_t l_time_now = dap_nanotime_now();
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
+        dap_global_db_cluster_unref(l_cluster);   /* W56-F1: only ttl was needed */
         size_t l_ret_count = 0;
         dap_global_db_store_obj_t *l_ret = s_storage_read_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
         log_it(L_DEBUG, "Start clean gdb group %s, %zu records will check", (char*)l_list->data, l_ret_count);
@@ -2730,6 +2815,7 @@ static bool s_check_pinned_db_objs_callback(void UNUSED_ARG *a_arg)
             continue;
         }
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
+        dap_global_db_cluster_unref(l_cluster);   /* W56-F1: only ttl was needed */
         if (l_ttl == 0) {
             debug_if(g_dap_global_db_debug_more, L_INFO, "Pinned object with 0 ttl %s", l_group_name);
             DAP_DELETE(l_group_name);
@@ -2810,10 +2896,12 @@ static void s_set_pinned_timer(const char *a_group)
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(s_dbi, a_group);
     if (!l_cluster)
         return;
-    if ((l_cluster->ttl != 0 && s_minimal_ttl > dap_nanotime_from_sec(l_cluster->ttl)) || !s_check_pinned_db_objs_timer) {
+    uint64_t l_cluster_ttl = l_cluster->ttl;
+    dap_global_db_cluster_unref(l_cluster);   /* W56-F1: only ttl was needed */
+    if ((l_cluster_ttl != 0 && s_minimal_ttl > dap_nanotime_from_sec(l_cluster_ttl)) || !s_check_pinned_db_objs_timer) {
         s_check_pinned_db_objs_deinit();
-        if (l_cluster->ttl != 0)
-            s_minimal_ttl = dap_nanotime_from_sec(l_cluster->ttl);
+        if (l_cluster_ttl != 0)
+            s_minimal_ttl = dap_nanotime_from_sec(l_cluster_ttl);
         s_check_pinned_db_objs_timer = dap_timerfd_start(dap_nanotime_to_millitime(s_minimal_ttl/2), 
                                                         (dap_timerfd_callback_t)s_start_check_pinned_db_objs_callback, NULL);
         debug_if(g_dap_global_db_debug_more, L_INFO, "New pinned callback timer %"DAP_UINT64_FORMAT_U" sec", (uint64_t)dap_nanotime_to_sec(s_minimal_ttl/2));

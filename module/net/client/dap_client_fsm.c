@@ -89,6 +89,7 @@ static void s_fsm_thread_callback_add(uint32_t a_thread_idx,
 // ===== Forward declarations =====
 
 static void s_fsm_process(dap_client_fsm_t *a_fsm);
+static void s_set_stage_status(dap_client_fsm_t *a_fsm, dap_client_stage_status_t a_status);
 static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm);
 
 /* Client is alive only while client->_internal still points back to this FSM. */
@@ -869,6 +870,27 @@ static bool s_stream_timer_timeout_after_connected_check(void *a_arg)
 
 // ===== Main FSM process function (runs on FSM thread) =====
 
+
+/* confcall W56-F4: a dropped worker post used to leak the dispatch AND wedge
+ * the FSM forever (the stage never completed nor errored).  Report it the
+ * way the worker reports an IO failure — an ASYNC notify to the FSM thread
+ * — never by recursing into s_fsm_process from inside a dispatch: the ERROR
+ * state itself dispatches a cleanup stage, and with no reactor at all (a
+ * unit test without dap_events_init) a synchronous recursion looped forever
+ * (avrs_integration hang).  With no thread pool the notify runs inline; it
+ * still terminates because a second drop while already in ERROR is final. */
+static void s_fsm_dispatch_failed(dap_client_fsm_t *a_fsm, void *a_dispatch)
+{
+    DAP_DELETE(a_dispatch);
+    if (a_fsm->stage_status == STAGE_STATUS_ERROR) {
+        log_it(L_CRITICAL, "FSM: worker queue full during error cleanup — client %p left in ERROR (no reactor?)",
+               a_fsm->client);
+        return;
+    }
+    log_it(L_ERROR, "FSM: worker queue full, stage dispatch dropped");
+    dap_client_fsm_notify(a_fsm->uuid, a_fsm->fsm_thread_idx, STAGE_STATUS_ERROR, ERROR_NETWORK_CONNECTION_REFUSE);
+}
+
 static void s_fsm_process(dap_client_fsm_t *a_fsm)
 {
     if (!a_fsm || a_fsm->is_removing || !s_fsm_client_bound(a_fsm))
@@ -950,7 +972,8 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
                 l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
                 l_dispatch->client = a_fsm->client;
                 l_dispatch->stage = STAGE_BEGIN;
-                dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+                if (dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch) != 0)
+                    s_fsm_dispatch_failed(a_fsm, l_dispatch);
             }
         }
     } break;
@@ -1129,7 +1152,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         l_dispatch->client = a_fsm->client;
         l_dispatch->stage = STAGE_BEGIN;
         a_fsm->reconnect_attempts = 0;
-        dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+        if (dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch) != 0)
+            s_fsm_dispatch_failed(a_fsm, l_dispatch);
         return;
     }
 
@@ -1223,7 +1247,10 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         };
 
         debug_if(s_debug_more, L_INFO, "FSM thread: ENC_INIT crypto done, dispatching IO to worker");
-        dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_enc_init_io, l_dispatch);
+        if (dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_enc_init_io, l_dispatch) != 0) {
+            DAP_DELETE(l_dispatch->handshake_params.alice_pub_key);
+            s_fsm_dispatch_failed(a_fsm, l_dispatch);
+        }
         return;
     }
 
@@ -1245,7 +1272,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
         l_dispatch->client = l_client;
         l_dispatch->stage = STAGE_QOS_PROBE;
-        dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+        if (dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch) != 0)
+            s_fsm_dispatch_failed(a_fsm, l_dispatch);
         return;
     }
 
@@ -1256,7 +1284,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
     l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
     l_dispatch->client = a_fsm->client;
     l_dispatch->stage = a_fsm->stage;
-    dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+    if (dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch) != 0)
+        s_fsm_dispatch_failed(a_fsm, l_dispatch);
 }
 
 // ===== FSM stage transaction =====

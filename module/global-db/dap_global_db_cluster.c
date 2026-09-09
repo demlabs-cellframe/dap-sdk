@@ -23,6 +23,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 */
 
 #include <errno.h>
+#include <stdatomic.h>
 #include <time.h>
 #include "dap_common.h"
 #include "dap_global_db.h"
@@ -40,6 +41,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #define LOG_TAG "dap_global_db_cluster"
 
 static void s_gdb_cluster_sync_timer_callback(void *a_arg);
+static void s_cluster_free(dap_global_db_cluster_t *l_cluster);
 static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg);
 
 static dap_global_db_cluster_t *s_local_cluster = NULL, *s_global_cluster = NULL;
@@ -131,10 +133,21 @@ dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t
     dap_dl_foreach(a_dbi->clusters, it)
         if (dap_global_db_group_match_mask(a_group_name, it->groups_mask)) {
             l_ret = it;
+            /* W56-F1: pin under the same lock the unlink takes — a delete
+             * that starts after our unlock can no longer free it under us */
+            atomic_fetch_add_explicit(&it->refs, 1, memory_order_acq_rel);
             break;
         }
     pthread_rwlock_unlock(&a_dbi->clusters_lock);
     return l_ret;
+}
+
+void dap_global_db_cluster_unref(dap_global_db_cluster_t *a_cluster)
+{
+    if (!a_cluster)
+        return;
+    if (atomic_fetch_sub_explicit(&a_cluster->refs, 1, memory_order_acq_rel) == 1)
+        s_cluster_free(a_cluster);
 }
 
 void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_t *a_store_obj)
@@ -200,6 +213,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
+    atomic_store_explicit(&l_cluster->refs, 1, memory_order_release);   /* W56-F1: the list's ref */
     pthread_rwlock_wrlock(&a_dbi->clusters_lock);   /* confcall W55-F2 */
     dap_dl_append(a_dbi->clusters, l_cluster);
     pthread_rwlock_unlock(&a_dbi->clusters_lock);
@@ -243,7 +257,24 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
  * only releases memory. */
 static bool s_cluster_delete_finalize(void *a_arg)
 {
-    dap_global_db_cluster_t *l_cluster = a_arg;
+    /* W56-F1: this drops the LIST's reference; a by_group borrower still
+     * mid-use keeps the struct alive and frees it on its own unref. */
+    dap_global_db_cluster_unref((dap_global_db_cluster_t *)a_arg);
+    return false;
+}
+
+static void s_cluster_free(dap_global_db_cluster_t *l_cluster)
+{
+    /* confcall W56-F3: the unlink-time notifier removal raced an in-flight
+     * sync callback that SET current_link + registered the notifier after
+     * the deleter's check; this runs strictly after that callback (FIFO on
+     * its proc thread, or inline with no timer) — repeat the removal.  A
+     * proc thread is never a stream worker, so the sync form is safe. */
+    if (!dap_cluster_node_addr_is_blank(&l_cluster->sync_context.current_link)) {
+        dap_stream_ch_del_notifier_sync(&l_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
+                                        DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
+        l_cluster->sync_context.current_link = (dap_cluster_node_addr_t){};
+    }
     dap_cluster_delete(l_cluster->role_cluster);
     DAP_DELETE(l_cluster->groups_mask);
     /* W55-F1: the notifier list (dap_global_db_cluster_add_notify_callback)
@@ -254,7 +285,6 @@ static bool s_cluster_delete_finalize(void *a_arg)
         DAP_DELETE(l_n);
     }
     DAP_DELETE(l_cluster);
-    return false;
 }
 
 /* confcall W55-F1/F2: synchronous UNLINK.  After this returns no new lookup
@@ -363,6 +393,7 @@ static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const vo
             debug_if(g_dap_global_db_debug_more, L_NOTICE, "Last activity for cluster %s was renewed", l_cluster->groups_mask);
             l_cluster->sync_context.stage_last_activity = dap_time_now();
         }
+        dap_global_db_cluster_unref(l_msg_cluster);   /* W56-F1 */
     } break;
 
     default:

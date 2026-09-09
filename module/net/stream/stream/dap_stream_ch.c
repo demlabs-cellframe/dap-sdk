@@ -307,9 +307,13 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
     pthread_mutex_unlock(&a_ch->mutex);
 
     // Defer actual free to worker's queue to avoid freeing while iterating notifiers
-    if (l_stream_worker && l_stream_worker->worker)
-        dap_worker_exec_callback_on(l_stream_worker->worker, s_stream_ch_free_callback, a_ch);
-    else
+    if (l_stream_worker && l_stream_worker->worker) {
+        /* confcall W56-F4: a dropped post leaked the channel; the deferral
+         * exists to avoid freeing under a notifier walk — on the drop path
+         * fall back to the inline free (same behaviour as the no-worker case). */
+        if (dap_worker_exec_callback_on(l_stream_worker->worker, s_stream_ch_free_callback, a_ch) != 0)
+            dap_stm_ch_free(a_ch);
+    } else
         dap_stm_ch_free(a_ch);
 }
 
@@ -516,7 +520,17 @@ static int s_stream_ch_place_notifier_ex(dap_cluster_node_addr_t *a_stream_addr,
      * callback_arg — the async post returns before the worker unlinks the
      * notifier, so a packet arriving in that gap dispatches to the freed
      * arg.  Never call the sync form FROM the target worker. */
-    int l_rc = (a_sync && l_worker != dap_worker_get_current())
+    /* confcall W56-F2: on the OWNER worker run it inline — the async fallback
+     * returned before the notifier was unlinked while the caller (a
+     * cluster finalizer racing on another thread) could free the arg first;
+     * a packet in that gap dispatched to the freed arg.  We are on the
+     * thread that owns the list; s_ch_in_pkt_callback never re-enters
+     * this path, so the iteration in dap_stream is not underneath us. */
+    if (a_sync && l_worker == dap_worker_get_current()) {
+        s_place_notifier_callback(l_arg);   /* frees l_arg */
+        return 0;
+    }
+    int l_rc = a_sync
              ? dap_worker_exec_callback_on_sync(l_worker, s_place_notifier_callback, l_arg)
              : dap_worker_exec_callback_on(l_worker, s_place_notifier_callback, l_arg);
     if (l_rc != 0)

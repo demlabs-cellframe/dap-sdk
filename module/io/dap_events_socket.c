@@ -2054,6 +2054,20 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
     byte_t *l_buf_out;
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_data_size) {
+        /* confcall W56-F15: the outbound buffer grew WITHOUT BOUND — a peer
+         * that stops reading (stalled subscriber of an SFU fan-out, a
+         * history reply amplifier) made the server buffer forever, 32 MiB
+         * per step.  Above the hard ceiling refuse the write, flag the
+         * socket for close and let the owner's error callback see ENOBUFS
+         * — the connection is dead for all practical purposes anyway. */
+        if (a_es->buf_out_size + a_data_size > DAP_EVENTS_SOCKET_BUF_OUT_HARD_LIMIT) {
+            log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" outbound buffer over hard limit (%zu + %zu > %zu) — closing",
+                   a_es->fd, a_es->buf_out_size, a_data_size, (size_t)DAP_EVENTS_SOCKET_BUF_OUT_HARD_LIMIT);
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            if (a_es->callbacks.error_callback)
+                a_es->callbacks.error_callback(a_es, ENOBUFS);
+            return 0;
+        }
         a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_data_size);
         if (!( l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max) ))
             return log_it(L_ERROR, "Can't increase capacity: OOM!"), 0;

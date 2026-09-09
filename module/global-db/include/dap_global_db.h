@@ -285,6 +285,9 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
 byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts);
 dap_global_db_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group);
 dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count);
+/* confcall W56-F16: at most a_max NEWEST records (descending key order) without
+ * materialising the whole group. */
+dap_global_db_obj_t *dap_global_db_get_last_n_sync(const char *a_group, size_t a_max, size_t *a_objs_count);
 dap_global_db_store_obj_t *dap_global_db_get_all_raw_sync(const char *a_group, size_t *a_objs_count);
 
 int dap_global_db_set_sync(const char *a_group, const char *a_key, const void *a_value, const size_t a_value_length, bool a_pin_value);

@@ -30,6 +30,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db.h"
 #include "dap_net_common.h"  // Contains forward declaration for dap_link_manager_t
 #include "dap_proc_thread.h"
+#include <stdatomic.h>
 
 #define DAP_GLOBAL_DB_CLUSTER_GLOBAL    DAP_CLUSTER_GLOBAL ".*"      // This groups mask is for globally broadcasting grops
 #define DAP_GLOBAL_DB_CLUSTER_LOCAL     DAP_CLUSTER_LOCAL  ".*"      // This groups mask is for not broadcasting groups
@@ -89,11 +90,16 @@ typedef struct dap_global_db_cluster {
     struct dap_global_db_cluster *prev, *next;  // Pointers to next and previous cluster instances in the global clusters list
     dap_global_db_sync_context_t sync_context;  // Cluster synchronization context for current client
     dap_proc_thread_timer_t sync_timer;         // confcall W53-F8: the 1 s sync timer; cancelled in delete (was never stopped → freed-ctx UAF per tick)
+    _Atomic int refs;                           // confcall W56-F1: list ref (1) + one per live by_group borrower; freed at 0
 } dap_global_db_cluster_t;
 
 int dap_global_db_cluster_init();
 void dap_global_db_cluster_deinit();
+/* confcall W56-F1: returns a REFERENCED cluster (or NULL) — the caller MUST
+ * dap_global_db_cluster_unref() it when done.  Before this the returned raw
+ * pointer could be freed by a concurrent delete mid-use (driver I/O long). */
 dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name);
+void dap_global_db_cluster_unref(dap_global_db_cluster_t *a_cluster);
 void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_t *a_store_obj);
 dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_guuid_t a_guuid,
                                                    const char *a_group_mask, uint64_t a_ttl, bool a_owner_root_access,

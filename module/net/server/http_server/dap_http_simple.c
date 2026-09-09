@@ -242,7 +242,11 @@ static void s_esocket_worker_write_callback(void *a_arg)
 
 inline static void s_write_data_to_socket(dap_http_simple_t *a_simple)
 {
-    dap_worker_exec_callback_on(dap_events_worker_get(a_simple->worker->id), s_esocket_worker_write_callback, a_simple);
+    /* confcall W56-F4: a dropped post meant the reply was never written and
+     * the connection hung to its timeout.  Log it — the http client owns
+     * a_simple, nothing to free here. */
+    if (dap_worker_exec_callback_on(dap_events_worker_get(a_simple->worker->id), s_esocket_worker_write_callback, a_simple) != 0)
+        log_it(L_ERROR, "http_simple: worker queue full, reply for %s dropped", a_simple->http_client ? a_simple->http_client->url_path : "?");
 }
 
 static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg)
