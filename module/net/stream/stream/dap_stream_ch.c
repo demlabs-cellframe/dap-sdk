@@ -499,19 +499,43 @@ ret_n_clear:
     DAP_DELETE(l_arg);
 }
 
-static int s_stream_ch_place_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
-                                      dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
-                                      void *a_callback_arg, bool a_add)
+static int s_stream_ch_place_notifier_ex(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+                                         dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
+                                         void *a_callback_arg, bool a_add, bool a_sync)
 {
     dap_worker_t *l_worker = NULL;
     dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(a_stream_addr, &l_worker);
     if (!l_worker || !l_uuid)
         return -1;
     struct place_notifier_arg *l_arg = DAP_NEW(struct place_notifier_arg);
+    if (!l_arg)
+        return -2;
     *l_arg = (struct place_notifier_arg) { .es_uuid = l_uuid, .ch_id = a_ch_id, .direction = a_direction,
                                            .callback = a_callback, .callback_arg = a_callback_arg, .add = a_add };
-    dap_worker_exec_callback_on(l_worker, s_place_notifier_callback, l_arg);
-    return 0;
+    /* confcall W55-F4: a synchronous variant for owners about to free the
+     * callback_arg — the async post returns before the worker unlinks the
+     * notifier, so a packet arriving in that gap dispatches to the freed
+     * arg.  Never call the sync form FROM the target worker. */
+    int l_rc = (a_sync && l_worker != dap_worker_get_current())
+             ? dap_worker_exec_callback_on_sync(l_worker, s_place_notifier_callback, l_arg)
+             : dap_worker_exec_callback_on(l_worker, s_place_notifier_callback, l_arg);
+    if (l_rc != 0)
+        DAP_DELETE(l_arg);   /* W55-F5: dropped post — the callback never runs, so it never frees l_arg */
+    return l_rc;
+}
+
+static int s_stream_ch_place_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+                                      dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
+                                      void *a_callback_arg, bool a_add)
+{
+    return s_stream_ch_place_notifier_ex(a_stream_addr, a_ch_id, a_direction, a_callback, a_callback_arg, a_add, false);
+}
+
+int dap_stream_ch_del_notifier_sync(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+                                    dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
+                                    void *a_callback_arg)
+{
+    return s_stream_ch_place_notifier_ex(a_stream_addr, a_ch_id, a_direction, a_callback, a_callback_arg, false, true);
 }
 
 int dap_stream_ch_add_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,

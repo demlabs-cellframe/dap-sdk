@@ -110,5 +110,10 @@ int dap_stream_ch_add_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a
 int dap_stream_ch_del_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
                              dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
                              void *a_callback_arg);
+/* confcall W55-F4: blocking removal — returns after the notifier is unlinked on the stream's
+ * worker, so the caller may free a_callback_arg.  Falls back to async when called from that worker. */
+int dap_stream_ch_del_notifier_sync(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+                                    dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
+                                    void *a_callback_arg);
 
 #endif

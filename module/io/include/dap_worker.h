@@ -86,8 +86,10 @@ dap_worker_t *dap_worker_get_current();
 int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket);
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
 dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t * a_events_socket );
-void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
-void dap_worker_exec_callback_on_sync(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
+/* confcall W55-F5: 0 = queued; <0 = dropped (caller keeps ownership of a_arg). */
+int dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
+/* 0 = executed; <0 = could not be queued (callback did NOT run) — never blocks on a dropped post. */
+int dap_worker_exec_callback_on_sync(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
 
 bool dap_worker_check_esocket_polled_now(); // Check if esocket is right now polled and present in list
 // Context callbacks

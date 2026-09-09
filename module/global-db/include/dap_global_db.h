@@ -169,6 +169,7 @@ typedef struct dap_global_db_instance {
     dap_list_t *blacklist;
     uint64_t store_time_limit;
     dap_global_db_cluster_t *clusters;
+    pthread_rwlock_t clusters_lock;   // confcall W55-F2: guards `clusters` (add/unlink wr, by_group rd) — mutators run on different threads
     dap_enc_key_t *signing_key;
     uint32_t sync_idle_time;
 } dap_global_db_instance_t;

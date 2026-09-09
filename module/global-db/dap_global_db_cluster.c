@@ -22,6 +22,8 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <errno.h>
+#include <time.h>
 #include "dap_common.h"
 #include "dap_global_db.h"
 #include "dap_global_db_cluster.h"
@@ -66,23 +68,73 @@ int dap_global_db_cluster_init()
     return 0;
 }
 
+/* confcall W55-F3: deinit barrier.  cluster_delete posts each cluster's
+ * FREE to a proc thread; the dbi is freed right after this function by
+ * dap_global_db_instance_deinit — a finalizer running later would touch a
+ * dead dbi, one never running (proc thread stopped first) would leak the
+ * cluster.  Post a barrier to EVERY proc thread and wait: their FIFOs
+ * guarantee every previously-posted finalizer completed. */
+struct s_deinit_barrier { pthread_mutex_t lock; pthread_cond_t cond; unsigned pending; };
+
+static bool s_deinit_barrier_cb(void *a_arg)
+{
+    struct s_deinit_barrier *l_b = a_arg;
+    pthread_mutex_lock(&l_b->lock);
+    if (--l_b->pending == 0)
+        pthread_cond_broadcast(&l_b->cond);
+    pthread_mutex_unlock(&l_b->lock);
+    return false;
+}
+
 void dap_global_db_cluster_deinit()
 {
     dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
-    if (l_dbi) {
-        dap_global_db_cluster_t *it, *tmp;
-        dap_dl_foreach_safe(l_dbi->clusters, it, tmp)
-            dap_global_db_cluster_delete(it);
+    if (!l_dbi)
+        return;
+    /* snapshot under the lock — each delete unlinks under the same lock */
+    dap_global_db_cluster_t *it, *tmp;
+    dap_dl_foreach_safe(l_dbi->clusters, it, tmp)
+        dap_global_db_cluster_delete(it);
+
+    struct s_deinit_barrier l_b = { .lock = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER, .pending = 0 };
+    uint32_t l_n = dap_proc_thread_get_count();
+    pthread_mutex_lock(&l_b.lock);
+    for (uint32_t i = 0; i < l_n; i++) {
+        dap_proc_thread_t *l_t = dap_proc_thread_get(i);
+        if (l_t && dap_proc_thread_callback_add_pri(l_t, s_deinit_barrier_cb, &l_b, DAP_QUEUE_MSG_PRIORITY_NORMAL) == 0)
+            l_b.pending++;
     }
+    /* bounded wait: a proc thread that already stopped cannot ack; its
+     * queue was discarded by the SDK (leak, not UAF — the finalizer never
+     * runs).  5 s is far beyond any pending GDB callback. */
+    struct timespec l_deadline;
+    clock_gettime(CLOCK_REALTIME, &l_deadline);
+    l_deadline.tv_sec += 5;
+    while (l_b.pending > 0)
+        if (pthread_cond_timedwait(&l_b.cond, &l_b.lock, &l_deadline) == ETIMEDOUT) {
+            log_it(L_WARNING, "GlobalDB cluster deinit: %u proc thread(s) did not drain in time", l_b.pending);
+            break;
+        }
+    pthread_mutex_unlock(&l_b.lock);
 }
 
 dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name)
 {
-    dap_global_db_cluster_t *it;
+    /* confcall W55-F2: the list is mutated by add (caller thread) and by
+     * the delete-unlink (caller thread) while proc/GDB threads walk it
+     * here — read under the rwlock.  The returned pointer's lifetime is
+     * the same as before this lock existed: a cluster is unlinked
+     * synchronously in dap_global_db_cluster_delete (W55-F1), so a match
+     * found here can only race a delete that started after our unlock. */
+    dap_global_db_cluster_t *it, *l_ret = NULL;
+    pthread_rwlock_rdlock(&a_dbi->clusters_lock);
     dap_dl_foreach(a_dbi->clusters, it)
-        if (dap_global_db_group_match_mask(a_group_name, it->groups_mask))
-            return it;
-    return NULL;
+        if (dap_global_db_group_match_mask(a_group_name, it->groups_mask)) {
+            l_ret = it;
+            break;
+        }
+    pthread_rwlock_unlock(&a_dbi->clusters_lock);
+    return l_ret;
 }
 
 void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_t *a_store_obj)
@@ -102,12 +154,15 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
                                                    dap_global_db_role_t a_default_role, dap_cluster_type_t a_links_cluster_role)
 {
     dap_global_db_cluster_t *it;
+    pthread_rwlock_rdlock(&a_dbi->clusters_lock);
     dap_dl_foreach(a_dbi->clusters, it) {
         if (!dap_strcmp(it->groups_mask, a_group_mask)) {
+            pthread_rwlock_unlock(&a_dbi->clusters_lock);
             log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_group_mask);
             return NULL;
         }
     }
+    pthread_rwlock_unlock(&a_dbi->clusters_lock);
     dap_global_db_cluster_t *l_cluster = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_global_db_cluster_t, NULL);
     if (a_mnemonim)
         l_cluster->links_cluster = dap_cluster_by_mnemonim(a_mnemonim);
@@ -145,7 +200,9 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
+    pthread_rwlock_wrlock(&a_dbi->clusters_lock);   /* confcall W55-F2 */
     dap_dl_append(a_dbi->clusters, l_cluster);
+    pthread_rwlock_unlock(&a_dbi->clusters_lock);
     if (dap_strcmp(DAP_CLUSTER_LOCAL, a_mnemonim))
         dap_proc_thread_timer_add_ex(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000, &l_cluster->sync_timer);
     log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s, TTL %s",
@@ -177,17 +234,48 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
  * as its arg (the IDLE→START transition removes it, a delete mid-cycle did
  * not) — a GDB REQUEST from that link would otherwise invoke
  * s_ch_in_pkt_callback on the freed cluster. */
+/* confcall W54-F2 / W55-F1: the FREE half of the teardown.  Runs on the
+ * sync timer's proc thread (posted behind any in-flight sync callback —
+ * FIFO), or inline when there was no timer / the post was impossible.  By
+ * the time it runs the cluster is already UNLINKED from dbi->clusters and
+ * from every stream notifier (done synchronously on the caller thread in
+ * dap_global_db_cluster_delete), so nothing can find it any more — this
+ * only releases memory. */
 static bool s_cluster_delete_finalize(void *a_arg)
 {
     dap_global_db_cluster_t *l_cluster = a_arg;
-    if (!dap_cluster_node_addr_is_blank(&l_cluster->sync_context.current_link))
-        dap_stream_ch_del_notifier(&l_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
-                                   DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
     dap_cluster_delete(l_cluster->role_cluster);
     DAP_DELETE(l_cluster->groups_mask);
-    dap_dl_delete(l_cluster->dbi->clusters, l_cluster);
+    /* W55-F1: the notifier list (dap_global_db_cluster_add_notify_callback)
+     * was never freed — and its callback_arg's owner (avrs cluster) is gone. */
+    dap_global_db_notifier_t *l_n, *l_tmp;
+    dap_dl_foreach_safe(l_cluster->notifiers, l_n, l_tmp) {
+        dap_dl_delete(l_cluster->notifiers, l_n);
+        DAP_DELETE(l_n);
+    }
     DAP_DELETE(l_cluster);
     return false;
+}
+
+/* confcall W55-F1/F2: synchronous UNLINK.  After this returns no new lookup
+ * (by_group / notify / stream packet) can reach the cluster, so the owner
+ * may free the objects its callbacks reference.  The memory itself is
+ * released later by s_cluster_delete_finalize behind the in-flight sync
+ * callback (W54-F2). */
+static void s_cluster_unlink(dap_global_db_cluster_t *a_cluster)
+{
+    pthread_rwlock_wrlock(&a_cluster->dbi->clusters_lock);
+    dap_dl_delete(a_cluster->dbi->clusters, a_cluster);
+    pthread_rwlock_unlock(&a_cluster->dbi->clusters_lock);
+    /* W54-F2/W55-F4: the peer-stream notifier the sync state machine may
+     * have left registered with `a_cluster` as its arg — removed
+     * SYNCHRONOUSLY (the async form returned before the worker unlinked
+     * it; a GDB packet in that gap dispatched to the freed cluster). */
+    if (!dap_cluster_node_addr_is_blank(&a_cluster->sync_context.current_link)) {
+        dap_stream_ch_del_notifier_sync(&a_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
+                                        DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, a_cluster);
+        a_cluster->sync_context.current_link = (dap_cluster_node_addr_t){};
+    }
 }
 
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
@@ -202,9 +290,14 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
      * this freed struct forever.
      * W54-F2: cancel alone is NOT a drain — a sync callback that already
      * passed its cancelled check may be mid-flight on the proc thread doing
-     * GDB/driver I/O against this struct for tens of ms.  Post the teardown
-     * to that same proc thread: the per-thread FIFO guarantees it runs
-     * after the in-flight hop returned. */
+     * GDB/driver I/O against this struct for tens of ms.  Post the FREE to
+     * that same proc thread: the per-thread FIFO guarantees it runs after
+     * the in-flight hop returned.
+     * W55-F1: but UNLINK synchronously here — while the cluster stayed in
+     * dbi->clusters until the finalizer ran, a store for its group could
+     * still resolve it and post its notifiers with a callback_arg (the avrs
+     * cluster) the caller had already freed. */
+    s_cluster_unlink(a_cluster);
     if (a_cluster->sync_timer) {
         dap_proc_thread_timer_t l_timer = a_cluster->sync_timer;
         a_cluster->sync_timer = NULL;

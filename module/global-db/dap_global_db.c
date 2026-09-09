@@ -1116,6 +1116,7 @@ int dap_global_db_init()
             l_rc = -5;
             goto lb_return;
         }
+        pthread_rwlock_init(&s_dbi->clusters_lock, NULL);   /* confcall W55-F2 */
 
         char *l_gdb_path_cfg = dap_config_get_item_str_path_default(g_config, "global_db", "path", NULL);
         s_dbi->storage_path = l_gdb_path_cfg ? l_gdb_path_cfg : dap_strdup_printf("%s/var/lib/global_db", g_sys_dir_path);
@@ -1187,6 +1188,7 @@ void dap_global_db_instance_deinit()
     dap_list_free_full(s_dbi->blacklist, NULL);
     dap_list_free_full(s_dbi->whitelist, NULL);
     DAP_DEL_Z(s_dbi->storage_path);
+    pthread_rwlock_destroy(&s_dbi->clusters_lock);
     DAP_DEL_Z(s_dbi);
 }
 

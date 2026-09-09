@@ -527,20 +527,27 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
 /**
  * @brief dap_worker_exec_callback_on
  */
-void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
+/* confcall W55-F5: returns 0 when queued, <0 when the post was DROPPED
+ * (OOM / full ring).  Callers that own a_arg must free it on failure —
+ * previously the drop was silent and the sync variant below blocked
+ * forever waiting for a callback that would never run. */
+int dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
 {
-    dap_return_if_fail(a_worker && a_callback);
+    dap_return_val_if_fail(a_worker && a_callback, -EINVAL);
     dap_worker_msg_callback_t *l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
+        return -ENOMEM;
     }
     *l_msg = (dap_worker_msg_callback_t) { .callback = a_callback, .arg = a_arg };
     if (!dap_context_queue_push(a_worker->queue_callback, l_msg)) {
+        int l_err = errno ? errno : EAGAIN;
         log_it(L_ERROR, "Can't push callback to worker queue: \"%s\"(code %d)",
-                        dap_strerror(errno), errno);
+                        dap_strerror(l_err), l_err);
         DAP_DELETE(l_msg);
+        return -l_err;
     }
+    return 0;
 }
 
 typedef struct {
@@ -561,30 +568,35 @@ static void s_worker_exec_callback_on_sync_wrapper(void *a_arg)
     pthread_mutex_unlock(&l_msg->mutex);
 }
 
-void dap_worker_exec_callback_on_sync(dap_worker_t *a_worker, dap_worker_callback_t a_callback, void *a_arg)
+int dap_worker_exec_callback_on_sync(dap_worker_t *a_worker, dap_worker_callback_t a_callback, void *a_arg)
 {
-    dap_return_if_fail(a_worker && a_callback);
+    dap_return_val_if_fail(a_worker && a_callback, -EINVAL);
     if (dap_context_current() == a_worker->context) {
         a_callback(a_arg);
-        return;
+        return 0;
     }
 #ifdef DAP_OS_WASM_ST
     /* In WASM single-threaded mode there is only one thread — blocking on
      * pthread_cond_wait would deadlock because no worker thread exists to
      * process the queued callback.  Execute inline instead. */
     a_callback(a_arg);
-    return;
+    return 0;
 #endif
     dap_worker_sync_msg_t l_msg = { .callback = a_callback, .arg = a_arg, .done = false };
     pthread_mutex_init(&l_msg.mutex, NULL);
     pthread_cond_init(&l_msg.cond, NULL);
-    dap_worker_exec_callback_on(a_worker, s_worker_exec_callback_on_sync_wrapper, &l_msg);
-    pthread_mutex_lock(&l_msg.mutex);
-    while (!l_msg.done)
-        pthread_cond_wait(&l_msg.cond, &l_msg.mutex);
-    pthread_mutex_unlock(&l_msg.mutex);
+    /* confcall W55-F5: a dropped post (full ring) used to leave this wait
+     * blocked FOREVER — the callback never ran, `done` never flipped. */
+    int l_rc = dap_worker_exec_callback_on(a_worker, s_worker_exec_callback_on_sync_wrapper, &l_msg);
+    if (l_rc == 0) {
+        pthread_mutex_lock(&l_msg.mutex);
+        while (!l_msg.done)
+            pthread_cond_wait(&l_msg.cond, &l_msg.mutex);
+        pthread_mutex_unlock(&l_msg.mutex);
+    }
     pthread_mutex_destroy(&l_msg.mutex);
     pthread_cond_destroy(&l_msg.cond);
+    return l_rc;
 }
 
 /**
@@ -1709,16 +1721,29 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #else
 #error "No selection esockets left to proc implemenetation"
 #endif
-                        if (!l_es_selected || l_es_selected == l_cur) {
-                            if (g_debug_reactor) {
-                                if (!l_es_selected)
-                                    log_it(L_ATT,"NULL esocket found when cleaning selected list at index %zd/%zd", nn, l_sockets_max);
-                                else 
-                                    log_it(L_ATT,"Duplicate esockets %" DAP_FORMAT_SOCKET " removed from selected event list at index %zd/%zd",
-                                                                                             l_es_selected->socket, nn, l_sockets_max);
-                            }
-                            n=nn; // TODO here we need to make smth like poll() array compressing.
-                                  // Here we expect thats event duplicates goes together in it. If not - we lose some events between.
+                        /* confcall W55-F7: a NULL slot is NOT a duplicate of
+                         * l_cur — it is a slot that dap_context_remove() scrubbed
+                         * for some OTHER socket deleted earlier in this batch
+                         * (the out-of-band kick path relies on that scrub).  The
+                         * old `n = nn` jump on EITHER condition skipped every
+                         * live event between n and nn — lost I/O for unrelated
+                         * sockets (a permanent stall for edge-triggered users).
+                         * Duplicates of l_cur are neutralised IN PLACE by NULLing
+                         * their slot (the main loop already skips NULL), and the
+                         * cursor is never moved. */
+                        if (!l_es_selected)
+                            continue;
+                        if (l_es_selected == l_cur) {
+                            if (g_debug_reactor)
+                                log_it(L_ATT,"Duplicate esockets %" DAP_FORMAT_SOCKET " removed from selected event list at index %zd/%zd",
+                                                                                         l_es_selected->socket, nn, l_sockets_max);
+#ifdef DAP_EVENTS_CAPS_EPOLL
+                            l_epoll_events[nn].data.ptr = NULL;
+#elif defined ( DAP_EVENTS_CAPS_POLL)
+                            a_context->poll_esocket[nn] = NULL;
+#elif defined (DAP_EVENTS_CAPS_KQUEUE)
+                            a_context->kqueue_events_selected[nn].udata = NULL;
+#endif
                         }
                     }
                     dap_events_socket_remove_and_delete_unsafe( l_cur, false);
