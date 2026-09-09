@@ -760,9 +760,16 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 if ( !l_cur->callbacks.timer_callback ) {
                     log_it(L_ERROR, "Es %p has no timer callback, nothing to do. Dump eet", l_cur);
                     l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                }
-                else
+                } else {
+                    /* confcall W57-F3: the timer callback may delete its own
+                     * esocket (self-cancel) — after it returns l_cur may be
+                     * FREED; re-find by uuid before the common flag/buf
+                     * handling below touches it. */
+                    dap_events_socket_uuid_t l_timer_uuid = l_cur->uuid;
                     l_cur->callbacks.timer_callback(l_cur);
+                    if (dap_context_find(a_context, l_timer_uuid) != l_cur)
+                        continue;
+                }
                 break;
 
             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
@@ -1029,8 +1036,15 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 uint64_t l_drained = 0;
                 dap_wasm_sab_channel_drain_event(l_es_sab->sab_channel,
                                                  &l_drained);
-                if (l_drained && l_es_sab->callbacks.timer_callback)
+                if (l_drained && l_es_sab->callbacks.timer_callback) {
+                    /* confcall W57-F3: the timer callback may delete its own
+                     * esocket (self-cancel) — after it returns l_es_sab may
+                     * be FREED; re-find by uuid before touching it again. */
+                    dap_events_socket_uuid_t l_timer_uuid = l_es_sab->uuid;
                     l_es_sab->callbacks.timer_callback(l_es_sab);
+                    if (dap_context_find(a_context, l_timer_uuid) != l_es_sab)
+                        continue;
+                }
                 if (FLAG_CLOSE(l_es_sab->flags))
                     dap_events_socket_remove_and_delete_unsafe(l_es_sab, false);
                 break;

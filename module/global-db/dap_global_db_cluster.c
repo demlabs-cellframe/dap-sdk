@@ -35,6 +35,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream_ch_gossip.h"
 #include "dap_strfuncs.h"
 #include "dap_proc_thread.h"
+#include "dap_worker.h"
 #include "dap_hash.h"
 #include "dap_dl.h"
 
@@ -42,6 +43,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 static void s_gdb_cluster_sync_timer_callback(void *a_arg);
 static void s_cluster_free(dap_global_db_cluster_t *l_cluster);
+static bool s_cluster_free_on_proc_thread(void *a_arg);
 static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg);
 
 static dap_global_db_cluster_t *s_local_cluster = NULL, *s_global_cluster = NULL;
@@ -140,14 +142,6 @@ dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t
         }
     pthread_rwlock_unlock(&a_dbi->clusters_lock);
     return l_ret;
-}
-
-void dap_global_db_cluster_unref(dap_global_db_cluster_t *a_cluster)
-{
-    if (!a_cluster)
-        return;
-    if (atomic_fetch_sub_explicit(&a_cluster->refs, 1, memory_order_acq_rel) == 1)
-        s_cluster_free(a_cluster);
 }
 
 void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_t *a_store_obj)
@@ -268,8 +262,10 @@ static void s_cluster_free(dap_global_db_cluster_t *l_cluster)
     /* confcall W56-F3: the unlink-time notifier removal raced an in-flight
      * sync callback that SET current_link + registered the notifier after
      * the deleter's check; this runs strictly after that callback (FIFO on
-     * its proc thread, or inline with no timer) — repeat the removal.  A
-     * proc thread is never a stream worker, so the sync form is safe. */
+     * its proc thread, or inline with no timer) — repeat the removal.  The
+     * caller (dap_global_db_cluster_unref) routes the free away from stream
+     * workers (W57-F2), so the sync form below never runs inline on the
+     * worker whose notifier list is being iterated. */
     if (!dap_cluster_node_addr_is_blank(&l_cluster->sync_context.current_link)) {
         dap_stream_ch_del_notifier_sync(&l_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
                                         DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
@@ -285,6 +281,34 @@ static void s_cluster_free(dap_global_db_cluster_t *l_cluster)
         DAP_DELETE(l_n);
     }
     DAP_DELETE(l_cluster);
+}
+
+static bool s_cluster_free_on_proc_thread(void *a_arg)
+{
+    s_cluster_free((dap_global_db_cluster_t *)a_arg);
+    return false;
+}
+
+void dap_global_db_cluster_unref(dap_global_db_cluster_t *a_cluster)
+{
+    if (!a_cluster)
+        return;
+    if (atomic_fetch_sub_explicit(&a_cluster->refs, 1, memory_order_acq_rel) == 1) {
+        /* confcall W57-F2/F7: the last ref can drop on ANY thread — borrowers
+         * include store/apply on stream workers (chat relay, metrics) and the
+         * stream-notifier s_ch_in_pkt_callback itself.  Freeing here would run
+         * dap_stream_ch_del_notifier_sync from inside the worker: a different-
+         * worker link blocks this worker on a sync post (cross-worker
+         * deadlock), a same-worker link mutates the packet_in_notifiers list
+         * while dap_stream.c iterates it (UAF).  Post the free to a proc
+         * thread; the inline form is only the deinit/OOM fallback (no proc
+         * callback can be mid-flight then). */
+        if (dap_worker_get_current()
+                && dap_proc_thread_callback_add_pri(NULL, s_cluster_free_on_proc_thread,
+                                                    a_cluster, DAP_QUEUE_MSG_PRIORITY_NORMAL) == 0)
+            return;
+        s_cluster_free(a_cluster);
+    }
 }
 
 /* confcall W55-F1/F2: synchronous UNLINK.  After this returns no new lookup

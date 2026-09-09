@@ -339,7 +339,17 @@ static void s_wasm_timer_callback(void *a_arg)
     dap_timerfd_t *l_timerfd = (dap_timerfd_t *)a_arg;
     if (!l_timerfd || !l_timerfd->callback)
         return;
+    /* confcall W57-F3: mirror of the native W56-F10 guard — the user
+     * callback may delete THIS timer from inside (dap_timerfd_delete_unsafe
+     * self-cancel), which frees the struct; the clear below would then be a
+     * use-after-free.  Snapshot the context binding before the callback and
+     * re-find afterwards: an unhashed uuid means it is gone. */
+    dap_events_socket_t *l_es = l_timerfd->events_socket;
+    dap_context_t *l_ctx = l_es ? l_es->context : NULL;
+    dap_events_socket_uuid_t l_uuid = l_es ? l_es->uuid : 0;
     if (!l_timerfd->callback(l_timerfd->callback_arg)) {
+        if (l_ctx && dap_context_find(l_ctx, l_uuid) != l_es)
+            return;   /* deleted (and freed) by the callback */
         emscripten_clear_interval(l_timerfd->interval_id);
         l_timerfd->interval_id = 0;
     }

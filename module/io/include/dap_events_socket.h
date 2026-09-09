@@ -215,8 +215,14 @@ typedef struct dap_events_socket_callbacks {
 #define DAP_EVENTS_SOCKET_BUF_SIZE      (DAP_STREAM_PKT_FRAGMENT_SIZE * 16)
 #define DAP_EVENTS_SOCKET_BUF_LIMIT     DAP_STREAM_PKT_SIZE_MAX
 /* confcall W56-F15: absolute outbound ceiling per socket; a write that would
- * exceed it is refused and the socket is flagged for close (see write_unsafe) */
-#define DAP_EVENTS_SOCKET_BUF_OUT_HARD_LIMIT (4 * DAP_EVENTS_SOCKET_BUF_LIMIT)
+ * exceed it is refused and the socket is flagged for close (see write_unsafe).
+ * confcall W57-A6: 512 MiB (4× the packet max) was not a real memory cap on
+ * an SFU host with hundreds of peers — a stalled reader let a socket buffer
+ * gigabytes.  32 MiB is an absolute bound: several seconds of a saturated
+ * media uplink, far above any single legitimate message this SDK emits
+ * (fragments are 16 KiB, GDB packs are typically < 1 MiB).  A single write
+ * larger than this is refused WITHOUT closing the link (see write_unsafe). */
+#define DAP_EVENTS_SOCKET_BUF_OUT_HARD_LIMIT (32u * 1024u * 1024u)
 #define DAP_QUEUE_MAX_MSGS              1024
 
 typedef enum {

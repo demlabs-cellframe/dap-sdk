@@ -955,10 +955,19 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
                 l_timer_ctx->fsm_thread_idx = a_fsm->fsm_thread_idx;
 
                 unsigned long l_delay_ms = l_is_last_attempt ? (s_timeout * 1000) : 300;
-                log_it(L_INFO, "Reconnect attempt %d in %lu ms", a_fsm->reconnect_attempts, l_delay_ms);
 
-                if (!dap_timerfd_start_on_worker(a_fsm->worker, l_delay_ms,
+                /* confcall W57-F4: mark the reconnect as pending ONLY when the
+                 * timer is actually armed — while it is, duplicate ERROR
+                 * notifies (a second dropped dispatch, a dying transport's
+                 * teardown in the same window) must not run the ERROR branch
+                 * again and arm a SECOND timer (two concurrent stage
+                 * executions on one FSM).  s_fsm_timer_fired_on_fsm_thread
+                 * clears the flag when the timer fires. */
+                if (dap_timerfd_start_on_worker(a_fsm->worker, l_delay_ms,
                                                  s_timer_reconnect_callback, l_timer_ctx)) {
+                    a_fsm->reconnect_pending = true;
+                    log_it(L_INFO, "Reconnect attempt %d in %lu ms", a_fsm->reconnect_attempts, l_delay_ms);
+                } else {
                     log_it(L_ERROR, "Can't start reconnect timer");
                     DAP_DELETE(l_timer_ctx);
                 }
@@ -1424,6 +1433,19 @@ static void *s_fsm_notify_on_fsm_thread(void *a_arg)
 
     dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
     if (!l_fsm || l_fsm->is_removing || !s_fsm_client_bound(l_fsm)) {
+        DAP_DELETE(l_ctx);
+        return NULL;
+    }
+
+    /* confcall W57-F4: ERROR is a single-flight report of the ONE stage
+     * execution that was in progress.  While a reconnect timer is already
+     * pending, an ERROR notify can only be a duplicate of that same failure
+     * (a second dispatch drop, a second transport's teardown in the same
+     * window) — processing it would run the ERROR branch again and arm a
+     * second reconnect timer, so two concurrent stage executions end up
+     * running on one FSM.  The timer's own fire clears reconnect_pending. */
+    if (l_ctx->status == STAGE_STATUS_ERROR && l_fsm->reconnect_pending) {
+        debug_if(s_debug_more, L_INFO, "FSM "DAP_UINT64_FORMAT_U": duplicate ERROR notify (reconnect already pending) dropped", l_fsm->uuid);
         DAP_DELETE(l_ctx);
         return NULL;
     }

@@ -2732,9 +2732,14 @@ static void s_clean_old_obj_gdb_callback(void UNUSED_ARG *a_arg) {
         if (!l_cluster) {
             continue;
         }
+        /* confcall W57-F1: hold the borrower ref for the WHOLE scan and drop
+         * it only at the end — the loop below reads l_cluster->del_callback
+         * / del_arg across driver I/O.  The old code unref'd here, so a
+         * room/chain cluster deleted mid-scan (its list ref already dropped
+         * by the delete finalizer) hit zero on THIS ref and was freed while
+         * the scan was still dereferencing it (UAF). */
         dap_nanotime_t l_time_now = dap_nanotime_now();
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
-        dap_global_db_cluster_unref(l_cluster);   /* W56-F1: only ttl was needed */
         size_t l_ret_count = 0;
         dap_global_db_store_obj_t *l_ret = s_storage_read_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
         log_it(L_DEBUG, "Start clean gdb group %s, %zu records will check", (char*)l_list->data, l_ret_count);
@@ -2759,6 +2764,7 @@ static void s_clean_old_obj_gdb_callback(void UNUSED_ARG *a_arg) {
             l_ret_count = 0;
             l_ret = s_storage_read_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
         }
+        dap_global_db_cluster_unref(l_cluster);   /* W57-F1: see above — ref held across the scan */
     }
     dap_list_free(l_group_list);
 }

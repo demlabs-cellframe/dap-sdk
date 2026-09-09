@@ -2053,6 +2053,16 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
 #endif
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
     byte_t *l_buf_out;
+    /* confcall W57-A6: a SINGLE message beyond the hard ceiling (a buggy
+     * sender, an oversized GDB RECORD_PACK reply) must not kill a healthy
+     * link — drop just that message.  The close-based protection below is
+     * for the cumulative case: many messages piling up behind a peer that
+     * stopped reading. */
+    if (a_data_size > DAP_EVENTS_SOCKET_BUF_OUT_HARD_LIMIT) {
+        log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET": single write of %zu bytes exceeds hard limit %zu — message dropped",
+               a_es->fd, a_data_size, (size_t)DAP_EVENTS_SOCKET_BUF_OUT_HARD_LIMIT);
+        return 0;
+    }
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_data_size) {
         /* confcall W56-F15: the outbound buffer grew WITHOUT BOUND — a peer
          * that stops reading (stalled subscriber of an SFU fan-out, a
