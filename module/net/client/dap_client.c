@@ -260,6 +260,14 @@ void dap_client_delete_mt(dap_client_t *a_client)
     if (l_fsm->esocket)
         l_fsm->esocket->is_removing = true;
 
+    /* confcall W58-F6: the FSM thread may be INSIDE s_fsm_process on this
+     * FSM right now (raw pointer from dap_client_fsm_find; is_removing is
+     * checked at task entry only) — e.g. avrs_client_disconnect racing the
+     * STREAMING-done callback.  Freeing on the worker below would pull the
+     * struct out from under it.  Wait for the in-flight task to return;
+     * everything queued behind it bails on is_removing. */
+    dap_client_fsm_drain(l_fsm);
+
     /* confcall W56-F4: a dropped sync post used to return silently with the
      * client NOT deleted while the caller proceeded to drop its pointer
      * (leak + a live FSM referencing a caller-freed context).  Retry a few

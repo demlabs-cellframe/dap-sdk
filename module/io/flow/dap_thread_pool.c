@@ -289,6 +289,17 @@ uint32_t dap_thread_pool_get_thread_count(dap_thread_pool_t *a_pool)
     return a_pool ? a_pool->num_threads : 0;
 }
 
+int dap_thread_pool_current_index(dap_thread_pool_t *a_pool)
+{
+    if (!a_pool || !a_pool->workers)
+        return -1;
+    pthread_t l_self = pthread_self();
+    for (uint32_t i = 0; i < a_pool->num_threads; i++)
+        if (pthread_equal(a_pool->workers[i].thread, l_self))
+            return (int)i;
+    return -1;
+}
+
 uint32_t dap_thread_pool_get_pending_count(dap_thread_pool_t *a_pool)
 {
     if (!a_pool)

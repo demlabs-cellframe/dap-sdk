@@ -363,6 +363,11 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     s_cluster_delete_finalize(a_cluster);
 }
 
+static void s_notify_store_obj_free(void *a_arg)
+{
+    dap_global_db_store_obj_free_one((dap_global_db_store_obj_t *)a_arg);
+}
+
 static bool s_db_cluster_notify_on_proc_thread(void *a_arg)
 {
     dap_global_db_store_obj_t *l_store_obj = a_arg;
@@ -378,7 +383,12 @@ void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_global
     dap_dl_foreach(a_cluster->notifiers, l_notifier) {
         assert(l_notifier->callback_notify);
         dap_global_db_store_obj_t *l_store_obj = dap_global_db_store_obj_copy_ext(a_store_obj, l_notifier, sizeof(*l_notifier));
-        dap_proc_thread_callback_add_pri(NULL, s_db_cluster_notify_on_proc_thread, l_store_obj, DAP_QUEUE_MSG_PRIORITY_LOW);
+        if (!l_store_obj)
+            continue;
+        /* W58-F7: the copy is owned by the post — released by the queue if
+         * the post is dropped or discarded at thread stop */
+        dap_proc_thread_callback_add_pri_owned(NULL, s_db_cluster_notify_on_proc_thread, l_store_obj,
+                                               s_notify_store_obj_free, DAP_QUEUE_MSG_PRIORITY_LOW);
     }
 }
 

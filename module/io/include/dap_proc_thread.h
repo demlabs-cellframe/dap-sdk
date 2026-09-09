@@ -49,6 +49,11 @@ typedef enum dap_queue_msg_priority {
 typedef struct dap_proc_queue_item {
      dap_proc_queue_callback_t  callback;                                   /* An address of the action routine */
                           void *callback_arg;                               /* Address of the action routine argument */
+     /* confcall W58-F7: optional owner-release for callback_arg, invoked
+      * INSTEAD of callback when the item is discarded without running
+      * (thread stop / module deinit).  Without it every owned arg still
+      * queued at shutdown leaked. */
+     void                      (*arg_free)(void *a_arg);
     struct dap_proc_queue_item *prev;
     struct dap_proc_queue_item *next;
 } dap_proc_queue_item_t;
@@ -76,6 +81,13 @@ void dap_proc_thread_poll_step(void);
 dap_proc_thread_t *dap_proc_thread_get(uint32_t a_thread_number);
 dap_proc_thread_t *dap_proc_thread_get_auto();
 int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, dap_queue_msg_priority_t a_priority);
+/* confcall W58-F7: like _add_pri, plus an owner-release for the arg that runs
+ * if the item is discarded without executing (thread stop / deinit) — and on
+ * a failed post (return != 0) the caller's arg is released HERE too, so the
+ * caller never has to special-case the error path. */
+int dap_proc_thread_callback_add_pri_owned(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback,
+                                           void *a_callback_arg, void (*a_arg_free)(void *),
+                                           dap_queue_msg_priority_t a_priority);
 DAP_STATIC_INLINE int dap_proc_thread_callback_add(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg)
 {
     return dap_proc_thread_callback_add_pri(a_thread, a_callback, a_callback_arg, DAP_QUEUE_MSG_PRIORITY_NORMAL);

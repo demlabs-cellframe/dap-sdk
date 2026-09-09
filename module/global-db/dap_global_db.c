@@ -142,6 +142,7 @@ static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 static dap_timerfd_t* s_check_pinned_db_objs_timer;
 static dap_nanotime_t s_minimal_ttl = 3600000000000;  //def half an hour
 static size_t s_gdb_auto_clean_period = 3600 / 2;  // def half an hour
+static dap_proc_thread_timer_t s_gdb_clean_timer = NULL;   /* confcall W58-F1 */
 
 static dap_global_db_instance_t *s_dbi = NULL; // GlobalDB instance is only static now
 
@@ -2773,11 +2774,41 @@ static int s_gdb_clean_init()
 {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Init global_db clean old objects");
     s_gdb_auto_clean_period = dap_config_get_item_int32_default(g_config, "global_db", "gdb_auto_clean_period", s_gdb_auto_clean_period);
-    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, s_gdb_auto_clean_period * 1000);
+    dap_proc_thread_timer_add_ex(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL,
+                                 s_gdb_auto_clean_period * 1000, &s_gdb_clean_timer);
     return 0;
 }
 
+/* confcall W58-F1: the TTL sweep was never cancelled and can run for a long
+ * time (driver I/O over a large group, holding a cluster ref — W57-F1).  The
+ * deinit sequence used to bound its wait at the cluster barrier (5 s) and
+ * then tear down storage + dbi under a still-running sweep.  Cancel + DRAIN:
+ * the finalizer is posted behind any in-flight sweep on its proc thread, so
+ * when it acks the sweep has returned. */
+struct s_clean_drain { pthread_mutex_t lock; pthread_cond_t cond; bool done; };
+
+static bool s_gdb_clean_drained_cb(void *a_arg)
+{
+    struct s_clean_drain *l_d = a_arg;
+    pthread_mutex_lock(&l_d->lock);
+    l_d->done = true;
+    pthread_cond_broadcast(&l_d->cond);
+    pthread_mutex_unlock(&l_d->lock);
+    return false;
+}
+
 static void s_gdb_clean_deinit() {
+    if (!s_gdb_clean_timer)
+        return;
+    dap_proc_thread_timer_t l_timer = s_gdb_clean_timer;
+    s_gdb_clean_timer = NULL;
+    struct s_clean_drain l_d = { .lock = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER, .done = false };
+    if (dap_proc_thread_timer_cancel_then(l_timer, s_gdb_clean_drained_cb, &l_d) != 0)
+        return;   /* proc threads already gone: nothing can be mid-flight */
+    pthread_mutex_lock(&l_d.lock);
+    while (!l_d.done)
+        pthread_cond_wait(&l_d.cond, &l_d.lock);
+    pthread_mutex_unlock(&l_d.lock);
 }
 
 static bool s_check_is_obj_pinned(const char * a_group, const char * a_key) {

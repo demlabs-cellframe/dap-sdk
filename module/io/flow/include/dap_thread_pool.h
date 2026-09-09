@@ -114,6 +114,15 @@ uint32_t dap_thread_pool_get_thread_count(dap_thread_pool_t *a_pool);
 uint32_t dap_thread_pool_get_pending_count(dap_thread_pool_t *a_pool);
 
 /**
+ * @brief Worker index of the calling thread within a_pool
+ * @return index, or -1 when the caller is not one of a_pool's worker threads
+ *
+ * confcall W58-F6: lets a sticky-bound owner detect "I am already on my own
+ * thread" before posting a synchronous barrier to it (self-deadlock guard).
+ */
+int dap_thread_pool_current_index(dap_thread_pool_t *a_pool);
+
+/**
  * @brief Shutdown thread pool (wait for all tasks to complete)
  * @param a_pool Thread pool handle
  * @param a_timeout_ms Timeout in milliseconds (0 = wait forever)

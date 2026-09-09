@@ -322,6 +322,21 @@ static bool s_process_records(void *a_arg)
 }
 #endif
 
+/* confcall W58-F7: owner-release hooks for posts that the proc-thread queue
+ * may discard without running (thread stop / deinit / dropped post). */
+static void s_plain_arg_free(void *a_arg) { DAP_DELETE(a_arg); }
+static void s_store_obj_arg_free(void *a_arg) { dap_global_db_store_obj_free_one((dap_global_db_store_obj_t *)a_arg); }
+#ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
+static void s_processing_arg_free(void *a_arg)
+{
+    struct processing_arg *l_arg = a_arg;
+    if (!l_arg)
+        return;
+    dap_global_db_store_obj_free(l_arg->objs, l_arg->count);
+    DAP_DELETE(l_arg);
+}
+#endif
+
 static bool s_process_record(void *a_arg)
 {
     dap_return_val_if_fail(a_arg, false);
@@ -342,7 +357,8 @@ static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, da
     }
     debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_GOSSIP packet for group %s with key %s",
                  l_obj->group, l_obj->key);
-    dap_proc_thread_callback_add_pri(NULL, s_process_record, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
+    /* W58-F7: owned arg — released by the queue if the post is dropped */
+    dap_proc_thread_callback_add_pri_owned(NULL, s_process_record, l_obj, s_store_obj_arg_free, DAP_GLOBAL_DB_TASK_PRIORITY);
 }
 
 static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
@@ -374,7 +390,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         memcpy(l_arg + sizeof(dap_cluster_node_addr_t) + sizeof(byte_t), l_pkt, l_ch_pkt->hdr.data_size);
         *(dap_cluster_node_addr_t *)l_arg = a_ch->stream->node;
         *(l_arg + sizeof(dap_cluster_node_addr_t)) = l_ch_pkt->hdr.type;
-        dap_proc_thread_callback_add_pri(NULL, s_proc_thread_reader, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
+        dap_proc_thread_callback_add_pri_owned(NULL, s_proc_thread_reader, l_arg, s_plain_arg_free, DAP_GLOBAL_DB_TASK_PRIORITY);
     } break;
 
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES:
@@ -407,7 +423,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         *(dap_cluster_node_addr_t *)l_arg = a_ch->stream->node;
         dap_proc_queue_callback_t l_callback = l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES ?
                     s_process_hashes : s_process_request;
-        dap_proc_thread_callback_add_pri(NULL, l_callback, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
+        dap_proc_thread_callback_add_pri_owned(NULL, l_callback, l_arg, s_plain_arg_free, DAP_GLOBAL_DB_TASK_PRIORITY);
     } break;
 
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK: {
@@ -432,10 +448,10 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
         struct processing_arg *l_arg = DAP_NEW_Z(struct processing_arg);
         *l_arg = (struct processing_arg) { .count = l_objs_count, .objs = l_objs, .addr = a_ch->stream->node };
-        dap_proc_thread_callback_add_pri(NULL, s_process_records, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
+        dap_proc_thread_callback_add_pri_owned(NULL, s_process_records, l_arg, s_processing_arg_free, DAP_GLOBAL_DB_TASK_PRIORITY);
 #else
         for (uint32_t i = 0; i < l_objs_count; i++)
-            dap_proc_thread_callback_add_pri(NULL, s_process_record, l_objs[i], DAP_GLOBAL_DB_TASK_PRIORITY);
+            dap_proc_thread_callback_add_pri_owned(NULL, s_process_record, l_objs[i], s_store_obj_arg_free, DAP_GLOBAL_DB_TASK_PRIORITY);
         DAP_DELETE(l_objs);
 #endif
     } break;

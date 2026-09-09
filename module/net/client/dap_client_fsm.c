@@ -300,6 +300,7 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
 
 typedef struct {
     uint64_t fsm_uuid;
+    uint32_t reconnect_gen;   /* W58-F3: only meaningful for timer-fired */
 } fsm_proc_ctx_t;
 
 typedef struct {
@@ -421,6 +422,7 @@ typedef struct {
 typedef struct {
     uint64_t fsm_uuid;
     uint32_t fsm_thread_idx;
+    uint32_t reconnect_gen;   /* W58-F3: generation at arm time */
 } fsm_reconnect_timer_ctx_t;
 
 static bool s_timer_reconnect_callback(void *a_arg)
@@ -428,7 +430,7 @@ static bool s_timer_reconnect_callback(void *a_arg)
     if (!a_arg)
         return false;
     fsm_reconnect_timer_ctx_t *l_ctx = (fsm_reconnect_timer_ctx_t *)a_arg;
-    dap_client_fsm_notify_timer_fired(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx);
+    dap_client_fsm_notify_timer_fired(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx, l_ctx->reconnect_gen);
     DAP_DELETE(l_ctx);
     return false;
 }
@@ -953,6 +955,7 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
             if (l_timer_ctx) {
                 l_timer_ctx->fsm_uuid = a_fsm->uuid;
                 l_timer_ctx->fsm_thread_idx = a_fsm->fsm_thread_idx;
+                l_timer_ctx->reconnect_gen = ++a_fsm->reconnect_gen;
 
                 unsigned long l_delay_ms = l_is_last_attempt ? (s_timeout * 1000) : 300;
 
@@ -966,6 +969,8 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
                 if (dap_timerfd_start_on_worker(a_fsm->worker, l_delay_ms,
                                                  s_timer_reconnect_callback, l_timer_ctx)) {
                     a_fsm->reconnect_pending = true;
+                    a_fsm->reconnect_pending_at = time(NULL);
+                    a_fsm->reconnect_delay_ms = l_delay_ms;
                     log_it(L_INFO, "Reconnect attempt %d in %lu ms", a_fsm->reconnect_attempts, l_delay_ms);
                 } else {
                     log_it(L_ERROR, "Can't start reconnect timer");
@@ -1378,6 +1383,17 @@ static void *s_fsm_go_stage_on_fsm_thread(void *a_arg)
     l_client->stage_target = l_ctx->stage_target;
     l_client->stage_target_done_callback = l_ctx->done_callback;
 
+    /* confcall W58-F3: a go_stage while a reconnect retry is pending used to
+     * start a SECOND stage execution beside the timer's retry (two concurrent
+     * connects on one FSM — reachable via the link manager's drop path).
+     * The explicit request supersedes the retry: bump the generation so the
+     * pending timer's fire becomes a no-op, and proceed. */
+    if (l_fsm->reconnect_pending) {
+        debug_if(s_debug_more, L_INFO, "FSM go_stage supersedes pending reconnect retry");
+        l_fsm->reconnect_gen++;
+        l_fsm->reconnect_pending = false;
+    }
+
     // Handle already at target
     if (l_fsm->stage_status == STAGE_STATUS_COMPLETE &&
         l_fsm->stage == l_ctx->stage_target) {
@@ -1445,9 +1461,20 @@ static void *s_fsm_notify_on_fsm_thread(void *a_arg)
      * second reconnect timer, so two concurrent stage executions end up
      * running on one FSM.  The timer's own fire clears reconnect_pending. */
     if (l_ctx->status == STAGE_STATUS_ERROR && l_fsm->reconnect_pending) {
-        debug_if(s_debug_more, L_INFO, "FSM "DAP_UINT64_FORMAT_U": duplicate ERROR notify (reconnect already pending) dropped", l_fsm->uuid);
-        DAP_DELETE(l_ctx);
-        return NULL;
+        /* confcall W58-F4: a timer whose queued add was discarded by an
+         * exiting worker never fires — the flag would gate every later ERROR
+         * forever (FSM stuck, app never told).  Treat the flag as stale once
+         * the retry is overdue by a wide margin. */
+        time_t l_overdue_s = (time_t)(l_fsm->reconnect_delay_ms / 1000) * 2 + 2;
+        if (time(NULL) - l_fsm->reconnect_pending_at <= l_overdue_s) {
+            debug_if(s_debug_more, L_INFO, "FSM %"DAP_UINT64_FORMAT_U": duplicate ERROR notify (reconnect already pending) dropped", l_fsm->uuid);
+            DAP_DELETE(l_ctx);
+            return NULL;
+        }
+        log_it(L_WARNING, "FSM %"DAP_UINT64_FORMAT_U": reconnect timer never fired (%ld s overdue) — processing ERROR",
+               l_fsm->uuid, (long)(time(NULL) - l_fsm->reconnect_pending_at));
+        l_fsm->reconnect_gen++;   /* a late fire of the lost timer is a no-op */
+        l_fsm->reconnect_pending = false;
     }
 
     s_set_stage_status(l_fsm, l_ctx->status);
@@ -1479,6 +1506,14 @@ static void *s_fsm_timer_fired_on_fsm_thread(void *a_arg)
 
     dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
     if (l_fsm && !l_fsm->is_removing) {
+        /* W58-F3: a retry superseded by a go_stage (or declared lost, W58-F4)
+         * carries a stale generation — do not start a second execution. */
+        if (l_ctx->reconnect_gen != l_fsm->reconnect_gen) {
+            debug_if(s_debug_more, L_INFO, "FSM %"DAP_UINT64_FORMAT_U": stale reconnect timer (gen %u != %u) ignored",
+                     l_fsm->uuid, l_ctx->reconnect_gen, l_fsm->reconnect_gen);
+            DAP_DELETE(l_ctx);
+            return NULL;
+        }
         l_fsm->reconnect_pending = false;
         // Timer fired = retry the stage
         s_set_stage_status(l_fsm, STAGE_STATUS_IN_PROGRESS);
@@ -1489,11 +1524,64 @@ static void *s_fsm_timer_fired_on_fsm_thread(void *a_arg)
     return NULL;
 }
 
-void dap_client_fsm_notify_timer_fired(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx)
+void dap_client_fsm_notify_timer_fired(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx, uint32_t a_reconnect_gen)
 {
     fsm_proc_ctx_t *l_ctx = DAP_NEW_Z(fsm_proc_ctx_t);
     if (!l_ctx) return;
     l_ctx->fsm_uuid = a_fsm_uuid;
+    l_ctx->reconnect_gen = a_reconnect_gen;
 
     s_fsm_thread_callback_add(a_fsm_thread_idx, s_fsm_timer_fired_on_fsm_thread, l_ctx);
+}
+
+/* confcall W58-F6: drain barrier.  dap_client_delete_mt frees the FSM on the
+ * worker while the FSM thread may still be INSIDE s_fsm_process on a raw
+ * pointer from dap_client_fsm_find (rdlock, no ref): every *_on_fsm_thread
+ * task checks is_removing only at entry, then runs stage logic + user
+ * callbacks (stage_target_done_callback → e.g. avrs s_on_stream_ready) for
+ * milliseconds.  The sticky per-thread FIFO makes a barrier sufficient: post
+ * it to the FSM's thread AFTER is_removing was set and wait — every task
+ * queued before it (including the in-flight one) has returned, every task
+ * queued after it bails on is_removing. */
+struct fsm_drain_barrier {
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    bool done;
+};
+
+static void *s_fsm_drain_barrier_on_fsm_thread(void *a_arg)
+{
+    struct fsm_drain_barrier *l_b = a_arg;
+    pthread_mutex_lock(&l_b->lock);
+    l_b->done = true;
+    pthread_cond_broadcast(&l_b->cond);
+    pthread_mutex_unlock(&l_b->lock);
+    return NULL;
+}
+
+void dap_client_fsm_drain(dap_client_fsm_t *a_fsm)
+{
+    if (!a_fsm)
+        return;
+    if (!s_fsm_pool)
+        return;   /* inline dispatch: nothing can be in flight on another thread */
+    if (dap_thread_pool_current_index(s_fsm_pool) == (int)a_fsm->fsm_thread_idx)
+        return;   /* we ARE the FSM thread: a barrier would wait on itself; the
+                   * only in-flight task is the caller, which owns the pointer */
+    struct fsm_drain_barrier l_b = {
+        .lock = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER, .done = false
+    };
+    /* the barrier lives on this stack — the task must not be dropped, so
+     * do not go through s_fsm_thread_callback_add (it frees the arg) */
+    int l_rc = dap_thread_pool_submit_to(s_fsm_pool, a_fsm->fsm_thread_idx,
+                                         s_fsm_drain_barrier_on_fsm_thread, &l_b, NULL, NULL);
+    if (l_rc != 0) {
+        log_it(L_ERROR, "FSM drain: can't post barrier to FSM thread %u (%d) — pool shutting down?",
+               a_fsm->fsm_thread_idx, l_rc);
+        return;
+    }
+    pthread_mutex_lock(&l_b.lock);
+    while (!l_b.done)
+        pthread_cond_wait(&l_b.cond, &l_b.lock);
+    pthread_mutex_unlock(&l_b.lock);
 }

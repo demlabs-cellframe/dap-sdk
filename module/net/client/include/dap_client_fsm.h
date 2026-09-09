@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdatomic.h>
+#include <time.h>
 #include "dap_client.h"
 #include "dap_enc_key.h"
 #include "dap_net_trans.h"
@@ -64,6 +65,15 @@ typedef struct dap_client_fsm {
     // Reconnect state
     int reconnect_attempts;
     bool reconnect_pending;
+    /* confcall W58-F3/F4: every armed reconnect timer carries the generation
+     * current at arm time; a fire with a stale generation is a no-op.  A
+     * go_stage() while pending bumps the generation (cancelling the retry
+     * logically) instead of running a second execution beside it.
+     * reconnect_pending_at bounds a pending flag whose timer can never fire
+     * (queued add discarded by an exiting worker). */
+    uint32_t reconnect_gen;
+    time_t reconnect_pending_at;
+    unsigned long reconnect_delay_ms;
 
     // Transport fallback
     dap_net_trans_type_t *tried_transports;
@@ -110,6 +120,16 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client);
  * @param a_fsm FSM to delete
  */
 void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm);
+
+/**
+ * @brief Wait until no FSM-thread task for this FSM is in flight (confcall W58-F6)
+ *
+ * Call AFTER setting is_removing and BEFORE freeing the FSM: FSM-thread tasks
+ * hold a raw pointer from dap_client_fsm_find for their whole duration (stage
+ * logic + user callbacks) and only check is_removing at entry.  Blocks the
+ * caller; a no-op when called from the FSM's own thread or without a pool.
+ */
+void dap_client_fsm_drain(dap_client_fsm_t *a_fsm);
 
 // ===== UUID lookup (thread-safe) =====
 
@@ -159,7 +179,7 @@ void dap_client_fsm_notify(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx,
 /**
  * @brief Notify FSM that reconnect timer has fired (called from worker thread)
  */
-void dap_client_fsm_notify_timer_fired(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx);
+void dap_client_fsm_notify_timer_fired(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx, uint32_t a_reconnect_gen);
 
 // ===== Backward compatibility =====
 

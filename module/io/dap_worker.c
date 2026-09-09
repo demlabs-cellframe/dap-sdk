@@ -993,12 +993,16 @@ int dap_worker_thread_loop(dap_context_t * a_context)
          *      not represented in the pollfd array. */
         pthread_mutex_lock(&a_context->wasm_sab_esockets_lock);
         size_t l_sab_count = a_context->wasm_sab_esockets_count;
-        dap_events_socket_t **l_sab_snap = l_sab_count
-            ? (dap_events_socket_t **)alloca(l_sab_count * sizeof(void*))
+        /* confcall W58-F2: snapshot UUIDs, not pointers.  A callback for entry
+         * i (join timer → app destroy → dap_client_delete_mt runs inline on
+         * this worker) can free entry j>i — the pointer snapshot then read
+         * `sab_channel` from freed memory.  Re-resolve each entry through the
+         * context hash (owned by this thread) right before use. */
+        dap_events_socket_uuid_t *l_sab_snap = l_sab_count
+            ? (dap_events_socket_uuid_t *)alloca(l_sab_count * sizeof(dap_events_socket_uuid_t))
             : NULL;
-        if (l_sab_snap)
-            memcpy(l_sab_snap, a_context->wasm_sab_esockets,
-                   l_sab_count * sizeof(void*));
+        for (size_t i = 0; i < l_sab_count; i++)
+            l_sab_snap[i] = a_context->wasm_sab_esockets[i] ? a_context->wasm_sab_esockets[i]->uuid : 0;
         pthread_mutex_unlock(&a_context->wasm_sab_esockets_lock);
 
         uint32_t l_sab_expected = atomic_load_explicit(
@@ -1006,7 +1010,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
         bool l_sab_has_data = false;
         for (size_t i = 0; i < l_sab_count; i++) {
-            dap_events_socket_t *l_es_sab = l_sab_snap[i];
+            dap_events_socket_t *l_es_sab = l_sab_snap[i] ? dap_context_find(a_context, l_sab_snap[i]) : NULL;
             if (l_es_sab && l_es_sab->sab_channel
                 && dap_wasm_sab_channel_has_data(l_es_sab->sab_channel)) {
                 l_sab_has_data = true;
@@ -1020,7 +1024,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         l_selected_sockets = poll(a_context->poll, a_context->poll_count, 0);
 
         for (size_t i = 0; i < l_sab_count; i++) {
-            dap_events_socket_t *l_es_sab = l_sab_snap[i];
+            dap_events_socket_t *l_es_sab = l_sab_snap[i] ? dap_context_find(a_context, l_sab_snap[i]) : NULL;
             if (!l_es_sab || !l_es_sab->sab_channel)
                 continue;
             if (!dap_wasm_sab_channel_has_data(l_es_sab->sab_channel))
