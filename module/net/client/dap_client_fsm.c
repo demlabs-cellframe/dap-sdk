@@ -61,6 +61,7 @@ static time_t s_client_timeout_active_after_connect_seconds = 15;
 
 static dap_thread_pool_t *s_fsm_pool = NULL;
 static uint32_t s_fsm_thread_count = 0;
+static void s_fsm_ctx_free(void *a_arg) { DAP_DELETE(a_arg); }   /* W59-N2 */
 
 /**
  * @brief Submit task to FSM thread (thread-safe, called from any thread)
@@ -78,12 +79,13 @@ static void s_fsm_thread_callback_add(uint32_t a_thread_idx,
         a_callback(a_arg);
         return;
     }
-    int l_ret = dap_thread_pool_submit_to(s_fsm_pool, a_thread_idx,
-                                           a_callback, a_arg, NULL, NULL);
-    if (l_ret != 0) {
+    /* confcall W59-N2: ctx structs are heap-owned by the post — on a refused
+     * submit OR a pool delete with the task still queued the arg is released
+     * by the pool instead of leaking. */
+    int l_ret = dap_thread_pool_submit_to_owned(s_fsm_pool, a_thread_idx,
+                                                a_callback, a_arg, s_fsm_ctx_free, NULL, NULL);
+    if (l_ret != 0)
         log_it(L_ERROR, "Failed to submit FSM task to thread %u: %d", a_thread_idx, l_ret);
-        DAP_DELETE(a_arg);
-    }
 }
 
 // ===== Forward declarations =====

@@ -453,9 +453,13 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
                 dap_worker_t *l_worker = dap_events_worker_get(i);
                 if (l_worker) {
                     // Use sync callback to delete queue on owning worker
-                    dap_worker_exec_callback_on_sync(l_worker, 
-                        (dap_worker_callback_t)dap_context_queue_delete, 
-                        a_server->queue_inputs[i]);
+                    if (dap_worker_exec_callback_on_sync(l_worker,
+                            (dap_worker_callback_t)dap_context_queue_delete,
+                            a_server->queue_inputs[i]) != 0)
+                        /* W59-N7: the queue object leaks here — freeing it from
+                         * a foreign thread would race a full-but-alive worker.
+                         * Deinit-time only; logged for ops. */
+                        log_it(L_WARNING, "io_flow deinit: queue delete post dropped on worker %u — queue leaked", i);
                 }
                 a_server->queue_inputs[i] = NULL;
             }

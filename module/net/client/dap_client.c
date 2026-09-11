@@ -212,8 +212,10 @@ static void s_client_queue_clear_on_worker(void *a_arg)
 void dap_client_queue_clear(dap_client_t *a_client)
 {
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (l_fsm)
-        dap_worker_exec_callback_on(l_fsm->worker, s_client_queue_clear_on_worker, a_client);
+    if (l_fsm && dap_worker_exec_callback_on(l_fsm->worker, s_client_queue_clear_on_worker, a_client) != 0)
+        /* W59-N7: a dropped post leaves the queued packets in place — they
+         * are freed with the esocket at delete, but the caller must know */
+        log_it(L_WARNING, "dap_client_queue_clear: worker post dropped, queued packets kept until delete");
 }
 
 void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_cert_name)

@@ -100,6 +100,22 @@ int dap_thread_pool_submit_to(dap_thread_pool_t *a_pool,
                               void *a_callback_arg);
 
 /**
+ * @brief Submit to a specific worker thread with OWNED arg (confcall W59-N2)
+ *
+ * a_arg_free is invoked on a_task_arg when the task is discarded without
+ * executing: submit refused (-2 shutdown, -3/-4), or the task still queued
+ * when the pool is deleted after a shutdown timeout.  The task function
+ * itself owns the arg on a successful run.
+ */
+int dap_thread_pool_submit_to_owned(dap_thread_pool_t *a_pool,
+                                    uint32_t a_thread_idx,
+                                    dap_thread_pool_task_func_t a_task_func,
+                                    void *a_task_arg,
+                                    void (*a_arg_free)(void *),
+                                    dap_thread_pool_callback_t a_callback,
+                                    void *a_callback_arg);
+
+/**
  * @brief Get number of worker threads in the pool
  * @param a_pool Thread pool handle
  * @return Number of worker threads

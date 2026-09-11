@@ -25,6 +25,10 @@ typedef struct dap_thread_pool_task {
     void *arg;
     dap_thread_pool_callback_t callback;
     void *callback_arg;
+    /* confcall W59-N2: owner-release for arg, invoked when the task is
+     * discarded without executing (pool delete drain after a shutdown
+     * timeout).  Without it every heap arg still queued at shutdown leaked. */
+    void (*arg_free)(void *a_arg);
     struct dap_thread_pool_task *next;
 } dap_thread_pool_task_t;
 
@@ -209,7 +213,8 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
  */
 static int s_submit_to_worker(dap_thread_pool_worker_t *a_worker, uint32_t a_queue_size,
                                dap_thread_pool_task_func_t a_task_func, void *a_task_arg,
-                               dap_thread_pool_callback_t a_callback, void *a_callback_arg)
+                               dap_thread_pool_callback_t a_callback, void *a_callback_arg,
+                               void (*a_arg_free)(void *))
 {
     // Allocate task outside lock
     dap_thread_pool_task_t *l_task = DAP_NEW_Z(dap_thread_pool_task_t);
@@ -220,18 +225,24 @@ static int s_submit_to_worker(dap_thread_pool_worker_t *a_worker, uint32_t a_que
     l_task->arg = a_task_arg;
     l_task->callback = a_callback;
     l_task->callback_arg = a_callback_arg;
+    l_task->arg_free = a_arg_free;
     l_task->next = NULL;
 
     pthread_mutex_lock(&a_worker->mutex);
 
     if (a_worker->shutdown) {
         pthread_mutex_unlock(&a_worker->mutex);
+        /* W59-N2: a refused task never runs — release the owned arg too */
+        if (l_task->arg_free)
+            l_task->arg_free(a_task_arg);
         DAP_DELETE(l_task);
         return -2;
     }
 
     if (a_queue_size > 0 && a_worker->queue_count >= a_queue_size) {
         pthread_mutex_unlock(&a_worker->mutex);
+        if (l_task->arg_free)
+            l_task->arg_free(a_task_arg);
         DAP_DELETE(l_task);
         return -3;
     }
@@ -262,7 +273,7 @@ int dap_thread_pool_submit(dap_thread_pool_t *a_pool,
     // Round-robin selection
     uint32_t l_idx = atomic_fetch_add(&a_pool->next_thread, 1) % a_pool->num_threads;
     return s_submit_to_worker(&a_pool->workers[l_idx], a_pool->queue_size,
-                               a_task_func, a_task_arg, a_callback, a_callback_arg);
+                               a_task_func, a_task_arg, a_callback, a_callback_arg, NULL);
 }
 
 int dap_thread_pool_submit_to(dap_thread_pool_t *a_pool,
@@ -281,7 +292,22 @@ int dap_thread_pool_submit_to(dap_thread_pool_t *a_pool,
     }
 
     return s_submit_to_worker(&a_pool->workers[a_thread_idx], a_pool->queue_size,
-                               a_task_func, a_task_arg, a_callback, a_callback_arg);
+                               a_task_func, a_task_arg, a_callback, a_callback_arg, NULL);
+}
+
+int dap_thread_pool_submit_to_owned(dap_thread_pool_t *a_pool,
+                                    uint32_t a_thread_idx,
+                                    dap_thread_pool_task_func_t a_task_func,
+                                    void *a_task_arg,
+                                    void (*a_arg_free)(void *),
+                                    dap_thread_pool_callback_t a_callback,
+                                    void *a_callback_arg)
+{
+    /* confcall W59-N2: heap args must never leak on a refused/discarded task */
+    if (!a_arg_free)
+        return -1;
+    return s_submit_to_worker(&a_pool->workers[a_thread_idx], a_pool->queue_size,
+                               a_task_func, a_task_arg, a_callback, a_callback_arg, a_arg_free);
 }
 
 uint32_t dap_thread_pool_get_thread_count(dap_thread_pool_t *a_pool)
@@ -391,6 +417,9 @@ void dap_thread_pool_delete(dap_thread_pool_t *a_pool)
             dap_thread_pool_task_t *l_task = l_w->queue_head;
             while (l_task) {
                 dap_thread_pool_task_t *l_next = l_task->next;
+                /* W59-N2: a task that will never run releases its owned arg */
+                if (l_task->arg_free)
+                    l_task->arg_free(l_task->arg);
                 DAP_DELETE(l_task);
                 l_task = l_next;
             }

@@ -69,6 +69,10 @@ static uint32_t s_max_attempts_num = 1;
 static uint32_t s_reconnect_delay = 20; // sec
 static dap_link_manager_t *s_link_manager = NULL;
 static dap_proc_thread_t *s_query_thread = NULL;
+/* confcall W59-N1: handle of the repeating s_update_states timer — deinit
+ * must cancel + drain it BEFORE freeing s_link_manager (its arg). */
+static dap_proc_thread_timer_t s_update_states_timer = NULL;
+static void s_lm_arg_free(void *a_arg) { DAP_DELETE(a_arg); }
 
 static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
@@ -250,7 +254,8 @@ struct link_moving_args {
      dap_return_if_fail(a_node_addr && s_link_manager->active);
      struct link_moving_args *l_args = DAP_NEW_Z_RET_IF_FAIL(struct link_moving_args);
      *l_args = (struct link_moving_args) { .addr = *a_node_addr, .uplink = a_uplink };
-     dap_proc_thread_callback_add_pri(s_query_thread, s_stream_add_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+     /* W59-N2: owned arg — released by the queue if the post is dropped */
+     dap_proc_thread_callback_add_pri_owned(s_query_thread, s_stream_add_callback, l_args, s_lm_arg_free, DAP_QUEUE_MSG_PRIORITY_HIGH);
  }
 
  static void s_link_manager_stream_replace(dap_cluster_node_addr_t *a_addr, bool a_new_is_uplink, void UNUSED_ARG *a_user_arg)
@@ -258,7 +263,7 @@ struct link_moving_args {
      dap_return_if_fail(a_addr && s_link_manager->active);
      struct link_moving_args *l_args = DAP_NEW_Z_RET_IF_FAIL(struct link_moving_args);
      *l_args = (struct link_moving_args) { .addr = *a_addr, .uplink = a_new_is_uplink };
-     dap_proc_thread_callback_add_pri(s_query_thread, s_stream_replace_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+     dap_proc_thread_callback_add_pri_owned(s_query_thread, s_stream_replace_callback, l_args, s_lm_arg_free, DAP_QUEUE_MSG_PRIORITY_HIGH);
  }
 
  static void s_link_manager_stream_delete(dap_cluster_node_addr_t *a_node_addr, void UNUSED_ARG *a_user_arg)
@@ -269,7 +274,7 @@ struct link_moving_args {
          log_it(L_CRITICAL, "%s", c_error_memory_alloc);
          return;
      }
-     dap_proc_thread_callback_add_pri(s_query_thread, s_stream_delete_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+     dap_proc_thread_callback_add_pri_owned(s_query_thread, s_stream_delete_callback, l_args, s_lm_arg_free, DAP_QUEUE_MSG_PRIORITY_HIGH);
  }
 
 // General functional
@@ -296,7 +301,8 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         log_it(L_ERROR, "Default link manager not inited");
         return -2;
     }
-    if (dap_proc_thread_timer_add(s_query_thread, s_update_states, s_link_manager, s_timer_update_states)) {
+    if (dap_proc_thread_timer_add_ex(s_query_thread, s_update_states, s_link_manager,
+                                     s_timer_update_states, &s_update_states_timer)) {
         log_it(L_ERROR, "Can't activate timer on link manager");
         return -3;
     }
@@ -309,12 +315,50 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
 /**
  * @brief close connections and memory free
  */
+struct link_manager_drain { pthread_mutex_t lock; pthread_cond_t cond; bool done; };
+
+static bool s_update_states_drained_cb(void *a_arg)
+{
+    struct link_manager_drain *l_d = a_arg;
+    pthread_mutex_lock(&l_d->lock);
+    l_d->done = true;
+    pthread_cond_broadcast(&l_d->cond);
+    pthread_mutex_unlock(&l_d->lock);
+    return false;
+}
+
 void dap_link_manager_deinit()
 {
 // sanity check
     dap_return_if_pass_err(!s_link_manager, "%s", s_init_error);
 // func work
-    dap_link_manager_set_condition(false);
+    /* confcall W59-N1: cancel the repeating s_update_states timer and wait
+     * for any in-flight hop BEFORE freeing s_link_manager (its callback_arg):
+     * the timer was never cancelled, so it kept firing — and dereferencing
+     * the freed manager — after deinit. */
+    dap_link_manager_set_condition(false);   /* in-flight hops become no-ops */
+    if (s_update_states_timer) {
+        dap_proc_thread_timer_t l_timer = s_update_states_timer;
+        s_update_states_timer = NULL;
+        struct link_manager_drain l_b = {
+            .lock = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER, .done = false
+        };
+        if (dap_proc_thread_timer_cancel_then(l_timer, s_update_states_drained_cb, &l_b) == 0) {
+            pthread_mutex_lock(&l_b.lock);
+            while (!l_b.done)
+                pthread_cond_wait(&l_b.cond, &l_b.lock);
+            pthread_mutex_unlock(&l_b.lock);
+        }
+        /* post impossible (proc threads gone): no hop can exist either */
+    }
+    /* KNOWN-HELD (W59-N1, accepted for the deinit-only path): the loop below
+     * holds links_lock across s_link_delete → dap_client_delete_mt, which
+     * blocks on the FSM/stream workers.  A true deadlock needs a worker that
+     * takes links_lock — none exists today (stream events only POST to the
+     * query thread), so this is a bounded hold, and detaching the clients
+     * instead would break the `uplink.client == a_client` invariant that
+     * s_client_error_callback asserts during the deletion window.  Revisit
+     * only together with an s_link_delete phase split. */
     dap_link_t *l_link = NULL, *l_link_tmp;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_ht_foreach(s_link_manager->links, l_link, l_link_tmp)
@@ -678,7 +722,8 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
     assert(l_link->uplink.client == a_client);
     struct link_drop_args *l_args = DAP_NEW_Z_RET_IF_FAIL(struct link_drop_args);
     *l_args = (struct link_drop_args) { .addr = l_link->addr, .disconnected = a_arg };
-    dap_proc_thread_callback_add_pri(s_query_thread, s_link_drop_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+    /* W59-N2: owned arg (see s_link_drop_callback's own DAP_DEL_Z) */
+    dap_proc_thread_callback_add_pri_owned(s_query_thread, s_link_drop_callback, l_args, s_lm_arg_free, DAP_QUEUE_MSG_PRIORITY_HIGH);
 }
 
 /**
