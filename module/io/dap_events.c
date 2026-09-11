@@ -588,18 +588,29 @@ void dap_events_stop_all( )
  * @return
  */
 uint32_t dap_events_worker_get_index_min() {
-    uint32_t min = 0;
-
     if (!s_workers_init) {
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
-        return -1;
+        return (uint32_t)-1;
     }
-    for(uint32_t i = 0; i < s_threads_count; i++) {
-        if (s_workers[min]->context->event_sockets_count > s_workers[i]->context->event_sockets_count)
+    /* confcall W59-R7.2: s_workers_init flips to 1 at the END of
+     * dap_events_init(), before dap_events_start() has populated a single
+     * s_workers[i] slot - and dap_events_wait() nulls slots back out
+     * individually as each worker context is torn down. A caller racing
+     * either window used to dereference s_workers[min]->context off a NULL
+     * entry (min defaulted to 0 and was never revalidated against it).
+     * Track the winning index only once a live worker has actually been
+     * observed. */
+    uint32_t min = 0;
+    bool l_found = false;
+    for (uint32_t i = 0; i < s_threads_count; i++) {
+        if (!s_workers[i] || !s_workers[i]->context)
+            continue;
+        if (!l_found || s_workers[i]->context->event_sockets_count < s_workers[min]->context->event_sockets_count) {
             min = i;
+            l_found = true;
+        }
     }
-
-    return min;
+    return l_found ? min : (uint32_t)-1;
 }
 
 uint32_t dap_events_thread_get_count()
@@ -618,7 +629,8 @@ dap_worker_t *dap_events_worker_get_auto( )
         return NULL;
     }
 
-    return s_workers[dap_events_worker_get_index_min()];
+    uint32_t l_idx = dap_events_worker_get_index_min();
+    return (l_idx == (uint32_t)-1) ? NULL : s_workers[l_idx];
 }
 
 /**

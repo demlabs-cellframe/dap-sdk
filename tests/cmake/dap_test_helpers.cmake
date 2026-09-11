@@ -141,6 +141,18 @@ function(dap_test_link_libraries TARGET_NAME)
         target_link_libraries(${TARGET_NAME} PRIVATE dap_test)
     endif()
 
+    # confcall W59-R7.1: dap_mlkem_512/768/1024 are separate STATIC libraries
+    # (not part of DAP_INTERNAL_MODULES' *_static naming) that libdap_crypto
+    # depends on via an INTERFACE link — dap_kem.c references their symbols
+    # directly.  Any test transitively linking crypto (most do, via
+    # dap_hash/dap_enc) needs them explicitly, exactly as the main confcall
+    # build already lists them for its own test binaries.
+    foreach(_mlkem_lib dap_mlkem_512 dap_mlkem_768 dap_mlkem_1024)
+        if(TARGET ${_mlkem_lib})
+            target_link_libraries(${TARGET_NAME} PRIVATE ${_mlkem_lib})
+        endif()
+    endforeach()
+
     # Math library: required by any test that calls sqrt(), log(), etc.
     if(UNIX)
         target_link_libraries(${TARGET_NAME} PRIVATE m)

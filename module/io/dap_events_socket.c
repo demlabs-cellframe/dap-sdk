@@ -2143,6 +2143,12 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
  */
 size_t dap_events_socket_pop_from_buf_in(dap_events_socket_t *a_es, void *a_data, size_t a_data_size)
 {
+    /* confcall W59-R7.3: NULL a_es (or a_data with a nonzero size) used to
+     * crash here — every sibling buffer accessor (shrink_buf_in,
+     * delete_unsafe) already guards against NULL, this one and the two
+     * below did not. */
+    if (!a_es || !a_data || !a_data_size)
+        return 0;
     if ( a_data_size < a_es->buf_in_size)
     {
         memcpy(a_data, a_es->buf_in, a_data_size);
@@ -2195,7 +2201,8 @@ void dap_events_socket_shrink_buf_in(dap_events_socket_t * a_es, size_t shrink_s
  */
 size_t dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_data, size_t a_data_size)
 {
-    if ( (!a_data_size) || (!a_data) )
+    /* confcall W59-R7.3: see dap_events_socket_pop_from_buf_in above */
+    if ( (!a_es) || (!a_data_size) || (!a_data) )
         return  0;                                                          /* Nothing to do - OK */
 
     if ( (a_es->buf_out_size_max - a_es->buf_out_size) < a_data_size )

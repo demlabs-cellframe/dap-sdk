@@ -78,21 +78,23 @@ static void s_test_events_socket_create(void)
     dap_events_socket_callbacks_t l_callbacks = {0};
     l_callbacks.read_callback = s_test_callback;
     
-    // Test creating queue type socket
-    dap_events_socket_t *l_es_queue = dap_events_socket_create(
-        DESCRIPTOR_TYPE_QUEUE, &l_callbacks);
+    /* confcall W59-R7.1: dap_events_socket_create() is a plain-SOCKET
+     * factory only (its switch covers exactly SOCKET_CLIENT/UDP/
+     * LOCAL_CLIENT/RAW — see module/io/dap_events_socket.c); QUEUE/EVENT/
+     * PIPE go through their own dap_events_socket_create_type_* functions.
+     * Every call below with those enum values had ALWAYS returned NULL
+     * (this test never ran before it was wired into the build — see the
+     * CMakeLists.txt fix in this same wave). Use the real constructors. */
+    dap_events_socket_t *l_es_queue = dap_events_socket_create_type_queue_ptr(NULL, NULL);
     dap_assert(l_es_queue != NULL, "Create queue socket");
     
     if (l_es_queue) {
         dap_assert(l_es_queue->type == DESCRIPTOR_TYPE_QUEUE, "Socket type is queue");
-        dap_assert(l_es_queue->callbacks.read_callback == s_test_callback, 
-                   "Callback properly assigned");
         dap_events_socket_delete_unsafe(l_es_queue, false);
     }
     
     // Test creating event type socket
-    dap_events_socket_t *l_es_event = dap_events_socket_create(
-        DESCRIPTOR_TYPE_EVENT, &l_callbacks);
+    dap_events_socket_t *l_es_event = dap_events_socket_create_type_event(NULL, NULL);
     dap_assert(l_es_event != NULL, "Create event socket");
     
     if (l_es_event) {
@@ -101,8 +103,7 @@ static void s_test_events_socket_create(void)
     }
     
     // Test creating pipe type socket
-    dap_events_socket_t *l_es_pipe = dap_events_socket_create(
-        DESCRIPTOR_TYPE_PIPE, &l_callbacks);
+    dap_events_socket_t *l_es_pipe = dap_events_socket_create_type_pipe(NULL, NULL, 0);
     dap_assert(l_es_pipe != NULL, "Create pipe socket");
     
     if (l_es_pipe) {
@@ -169,8 +170,7 @@ static void s_test_events_socket_buffers(void)
     dap_assert(l_ret == 0, "Events socket initialization");
     
     dap_events_socket_callbacks_t l_callbacks = {0};
-    dap_events_socket_t *l_es = dap_events_socket_create(
-        DESCRIPTOR_TYPE_PIPE, &l_callbacks);
+    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(-1, &l_callbacks);
     dap_assert(l_es != NULL, "Create pipe socket");
     
     if (l_es) {
@@ -233,8 +233,7 @@ static void s_test_buffer_shrink_variations(void)
     dap_assert(l_ret == 0, "Events socket initialization");
     
     dap_events_socket_callbacks_t l_callbacks = {0};
-    dap_events_socket_t *l_es = dap_events_socket_create(
-        DESCRIPTOR_TYPE_PIPE, &l_callbacks);
+    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(-1, &l_callbacks);
     dap_assert(l_es != NULL, "Create pipe socket");
     
     if (l_es && l_es->buf_in) {
@@ -291,8 +290,7 @@ static void s_test_buffer_insert_operations(void)
     dap_assert(l_ret == 0, "Events socket initialization");
     
     dap_events_socket_callbacks_t l_callbacks = {0};
-    dap_events_socket_t *l_es = dap_events_socket_create(
-        DESCRIPTOR_TYPE_PIPE, &l_callbacks);
+    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(-1, &l_callbacks);
     dap_assert(l_es != NULL, "Create pipe socket");
     
     if (l_es) {
@@ -343,8 +341,7 @@ static void s_test_socket_event_signal(void)
     dap_events_socket_callbacks_t l_callbacks = {0};
     l_callbacks.event_callback = NULL;
     
-    dap_events_socket_t *l_es = dap_events_socket_create(
-        DESCRIPTOR_TYPE_EVENT, &l_callbacks);
+    dap_events_socket_t *l_es = dap_events_socket_create_type_event(NULL, NULL);
     dap_assert(l_es != NULL, "Create event socket");
     
     if (l_es) {
@@ -377,8 +374,7 @@ static void s_test_socket_lifecycle(void)
     
     // Create and immediately delete
     dap_events_socket_callbacks_t l_callbacks = {0};
-    dap_events_socket_t *l_es = dap_events_socket_create(
-        DESCRIPTOR_TYPE_QUEUE, &l_callbacks);
+    dap_events_socket_t *l_es = dap_events_socket_create_type_queue_ptr(NULL, NULL);
     dap_assert(l_es != NULL, "Create socket");
     
     if (l_es) {
@@ -394,7 +390,7 @@ static void s_test_socket_lifecycle(void)
     dap_events_socket_t *l_sockets[SOCKET_COUNT];
     
     for (int i = 0; i < SOCKET_COUNT; i++) {
-        l_sockets[i] = dap_events_socket_create(DESCRIPTOR_TYPE_PIPE, &l_callbacks);
+        l_sockets[i] = dap_events_socket_create_type_pipe(NULL, NULL, 0);
         if (l_sockets[i]) {
             log_it(L_DEBUG, "Socket[%d] UUID: %lu", i, (unsigned long)l_sockets[i]->uuid);
         }
@@ -421,10 +417,9 @@ static void s_test_events_socket_edge_cases(void)
     int l_ret = dap_events_socket_init();
     dap_assert(l_ret == 0, "Events socket initialization");
     
-    // Test create with NULL callbacks
-    dap_events_socket_t *l_es_null = dap_events_socket_create(
-        DESCRIPTOR_TYPE_PIPE, NULL);
-    log_it(L_DEBUG, "Socket with NULL callbacks: %p", l_es_null);
+    // Test create with NULL callback
+    dap_events_socket_t *l_es_null = dap_events_socket_create_type_pipe(NULL, NULL, 0);
+    log_it(L_DEBUG, "Socket with NULL callback: %p", l_es_null);
     
     if (l_es_null) {
         dap_events_socket_delete_unsafe(l_es_null, false);
@@ -460,33 +455,32 @@ static void s_test_buffer_boundaries(void)
     dap_assert(l_ret == 0, "Events socket initialization");
     
     dap_events_socket_callbacks_t l_callbacks = {0};
-    dap_events_socket_t *l_es = dap_events_socket_create(
-        DESCRIPTOR_TYPE_PIPE, &l_callbacks);
+    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(-1, &l_callbacks);
     dap_assert(l_es != NULL, "Create pipe socket");
     
     if (l_es && l_es->buf_in) {
+        /* confcall W59-R7.1: this used to read l_max_size from buf_in_size
+         * (the CURRENT data length of a freshly created, empty socket — 0)
+         * instead of buf_in_size_max (the actual capacity), so "fill to
+         * maximum" was a no-op and every assertion below happened to pass
+         * by accident (0 == 0). Use the real capacity. */
         // Fill to maximum
-        size_t l_max_size = l_es->buf_in_size;
+        size_t l_max_size = l_es->buf_in_size_max;
         l_es->buf_in_size = l_max_size;
         log_it(L_DEBUG, "Buffer filled to maximum: %zu", l_max_size);
         
         // Try to get free size when full
         size_t l_free = dap_events_socket_get_free_buf_size(l_es);
         log_it(L_DEBUG, "Free size when full: %zu", l_free);
-        dap_assert(l_free == 0, "No free space when buffer full");
+        dap_assert(l_free == l_es->buf_out_size_max, "buf_out is independent of buf_in fill");
         
         // Try to insert when full
         size_t l_inserted = dap_events_socket_insert_buf_out(l_es, "test", 4);
         log_it(L_DEBUG, "Insert when full: %zu bytes", l_inserted);
         
-        // Shrink to empty
+        // Shrink buf_in to empty
         dap_events_socket_shrink_buf_in(l_es, l_max_size);
         dap_assert(l_es->buf_in_size == 0, "Buffer emptied");
-        
-        // Get free size when empty
-        l_free = dap_events_socket_get_free_buf_size(l_es);
-        log_it(L_DEBUG, "Free size when empty: %zu", l_free);
-        dap_assert(l_free == l_max_size, "Full space when buffer empty");
         
         dap_events_socket_delete_unsafe(l_es, false);
     }

@@ -177,6 +177,17 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/global-db/CMakeLists.txt)
     add_subdirectory(unit/global-db)
 endif()
 
+# IO module unit tests (reactor: worker, proc-thread, context, events,
+# events_socket, server, timerfd).  confcall W59-R7.1: this directory
+# existed since the 82267680d "centralized infrastructure" migration but
+# was never add_subdirectory'd — every reactor lifecycle test (the exact
+# area waves W51-W58 kept finding UAF/deadlock in) silently never built or
+# ran in any configuration, including CI.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/io/CMakeLists.txt)
+    add_subdirectory(unit/io)
+    message("[+] IO module unit tests configured (reactor lifecycle)")
+endif()
+
 # Crypto module unit tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     add_dap_test(test_unit_crypto_sha3 unit/crypto/hash/test_sha3.c)

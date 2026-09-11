@@ -71,20 +71,41 @@ static void s_test_events_worker_get(void)
     uint32_t l_thread_count = 2;
     int l_ret = dap_events_init(l_thread_count, 60);
     dap_assert(l_ret == 0, "Events initialization");
+    /* confcall W59-R7.1: dap_events_worker_get()/get_auto() dereference
+     * s_workers[i]->context, which is only populated by dap_events_start()
+     * (init() only allocates the array of NULL pointers).  This test used
+     * to call init() alone, so worker_get_auto()'s load-balancing scan
+     * (dap_events_worker_get_index_min) read ->context off a NULL pointer.
+     * Disable the mocked context/worker constructors so start() spins up
+     * real worker threads, exactly like every production caller pairs
+     * init()+start() (dap_sdk.c:s_init_io). */
+    DAP_MOCK_DISABLE(dap_worker_init);
+    DAP_MOCK_DISABLE(dap_context_init);
+    DAP_MOCK_DISABLE(dap_context_new);
+    DAP_MOCK_DISABLE(dap_context_run);
+    dap_assert(dap_events_start() == 0, "Events started");
     
     // Test getting worker by index
     dap_worker_t *l_worker0 = dap_events_worker_get(0);
     log_it(L_DEBUG, "Worker 0: %p", l_worker0);
+    dap_assert(l_worker0 != NULL, "Worker 0 is not NULL after start");
     
     // Test getting auto worker
     dap_worker_t *l_worker_auto = dap_events_worker_get_auto();
     log_it(L_DEBUG, "Auto worker: %p", l_worker_auto);
+    dap_assert(l_worker_auto != NULL, "Auto worker is not NULL after start");
     
     // Test invalid worker index
     dap_worker_t *l_worker_invalid = dap_events_worker_get(99);
     dap_assert(l_worker_invalid == NULL, "Invalid worker index returns NULL");
     
+    dap_events_stop_all();
+    dap_events_wait();
     dap_events_deinit();
+    DAP_MOCK_ENABLE(dap_worker_init);
+    DAP_MOCK_ENABLE(dap_context_init);
+    DAP_MOCK_ENABLE(dap_context_new);
+    DAP_MOCK_ENABLE(dap_context_run);
     
 }
 
@@ -100,15 +121,26 @@ static void s_test_events_start_wait(void)
     int l_ret = dap_events_init(l_thread_count, 60);
     dap_assert(l_ret == 0, "Events initialization");
     
-    // Test start (may not actually start threads with mocked context_run)
+    /* Real worker threads this time — exercises the full start/stop/wait
+     * lifecycle instead of the mocked-out constructors returning NULL. */
+    DAP_MOCK_DISABLE(dap_worker_init);
+    DAP_MOCK_DISABLE(dap_context_init);
+    DAP_MOCK_DISABLE(dap_context_new);
+    DAP_MOCK_DISABLE(dap_context_run);
     int32_t l_start_ret = dap_events_start();
     log_it(L_DEBUG, "Events start returned: %d", l_start_ret);
+    dap_assert(l_start_ret == 0, "Events start succeeded");
     
     // Test stop
     dap_events_stop_all();
     dap_pass_msg("Events stopped");
+    dap_events_wait();
     
     dap_events_deinit();
+    DAP_MOCK_ENABLE(dap_worker_init);
+    DAP_MOCK_ENABLE(dap_context_init);
+    DAP_MOCK_ENABLE(dap_context_new);
+    DAP_MOCK_ENABLE(dap_context_run);
     
 }
 
