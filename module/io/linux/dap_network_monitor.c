@@ -125,6 +125,17 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
     es_uuid = l_es->uuid;
     s_notify_cb = cb;
     es_worker = dap_events_worker_get_auto();
+    /* confcall W59: dap_events_worker_get_auto() can return NULL in the
+     * window before dap_events_start() has populated any worker (or during
+     * dap_events_wait() teardown) - see W59-R7.2. dap_worker_add_events_socket()
+     * itself tolerates that (dap_return_val_if_fail -> -EINVAL, no-op), but
+     * the log line right after used to dereference es_worker->id
+     * unconditionally either way. */
+    if (!es_worker) {
+        log_it(L_ERROR, "Network monitor init failed: no worker available (reactor not started?)");
+        dap_events_socket_delete_unsafe(l_es, false);
+        return -3;
+    }
     dap_worker_add_events_socket( es_worker, l_es );
     log_it(L_INFO, "Network monitor initialized, es uid "DAP_FORMAT_ESOCKET_UUID", worker #%u", es_uuid, es_worker->id);
     return 0;

@@ -2170,6 +2170,13 @@ size_t dap_events_socket_pop_from_buf_in(dap_events_socket_t *a_es, void *a_data
  */
 void dap_events_socket_shrink_buf_in(dap_events_socket_t * a_es, size_t shrink_size)
 {
+    /* confcall W59: missed in the W59-R7.3 NULL-guard pass despite that
+     * commit's own comment claiming every sibling accessor was covered -
+     * found by hostile re-audit. shrink_size==0 used to short-circuit
+     * BEFORE the a_es dereference, so a test calling shrink_buf_in(NULL, 0)
+     * passed by accident without exercising the NULL path at all. */
+    if (!a_es)
+        return;
     if ( (!shrink_size) || (!a_es->buf_in_size) )
         return;                                                             /* Nothing to do - OK */
 

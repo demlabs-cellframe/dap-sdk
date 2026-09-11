@@ -429,8 +429,15 @@ static void s_test_events_socket_edge_cases(void)
     dap_events_socket_delete_unsafe(NULL, false);
     dap_pass_msg("Delete NULL socket handled gracefully");
     
-    // Test shrink with NULL
+    // Test shrink with NULL. confcall W59: shrink_size=0 alone short-circuits
+    // BEFORE the a_es dereference (see the function body), so it never
+    // actually exercised the NULL-a_es path this "handled gracefully" name
+    // implies - a hostile re-audit caught this as a false-green regression
+    // test right after the W59-R7.3 NULL-guard pass missed this very
+    // function. Also call it with a nonzero shrink_size, which previously
+    // crashed and now must not.
     dap_events_socket_shrink_buf_in(NULL, 0);
+    dap_events_socket_shrink_buf_in(NULL, 10);
     dap_pass_msg("Shrink NULL socket handled gracefully");
     
     // Test insert with NULL socket
