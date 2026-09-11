@@ -47,11 +47,7 @@ void dap_enc_chacha20_poly1305_key_generate(dap_enc_key_t *a_key,
     } else {
         dap_random_bytes(a_key->priv_key_data, DAP_CHACHA20_KEY_SIZE);
     }
-    const uint8_t *l_key_bytes = (const uint8_t *)a_key->priv_key_data;
-    log_it(L_NOTICE, "ChaCha20 key[0..7]: %02x%02x%02x%02x %02x%02x%02x%02x (kex=%zu seed=%zu)",
-           l_key_bytes[0], l_key_bytes[1], l_key_bytes[2], l_key_bytes[3],
-           l_key_bytes[4], l_key_bytes[5], l_key_bytes[6], l_key_bytes[7],
-           kex_size, seed_size);
+    log_it(L_DEBUG, "ChaCha20 key generated (kex=%zu seed=%zu)", kex_size, seed_size);
 }
 
 void dap_enc_chacha20_poly1305_key_delete(dap_enc_key_t *a_key)

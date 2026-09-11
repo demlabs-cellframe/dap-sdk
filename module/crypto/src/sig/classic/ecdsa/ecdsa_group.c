@@ -25,20 +25,6 @@ void ecdsa_group_set_debug(bool a_enable) {
     debug_if(true, L_DEBUG, "ECDSA group debug logs %s", a_enable ? "ENABLED" : "DISABLED");
 }
 
-// Helper for debug field printing
-static void s_debug_field_print(const char *a_name, const ecdsa_field_t *a_field) {
-    if (!s_debug_more) return;
-    ecdsa_field_t l_tmp = *a_field;
-    ecdsa_field_normalize(&l_tmp);
-    uint8_t l_buf[32];
-    ecdsa_field_get_b32(l_buf, &l_tmp);
-    char l_hex[65];
-    for (int i = 0; i < 32; i++) {
-        snprintf(l_hex + i*2, 3, "%02x", l_buf[i]);
-    }
-    log_it(L_DEBUG, "  %s: %s", a_name, l_hex);
-}
-
 // =============================================================================
 // secp256k1 Generator Point G
 // Gx = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
@@ -184,33 +170,25 @@ void ecdsa_ge_set_gej(ecdsa_ge_t *r, const ecdsa_gej_t *a) {
     }
     
     debug_if(s_debug_more, L_DEBUG, "ecdsa_ge_set_gej: converting Jacobian to Affine");
-    s_debug_field_print("input X", &a->x);
-    s_debug_field_print("input Y", &a->y);
-    s_debug_field_print("input Z", &a->z);
     
     ecdsa_field_t z2, z3, z_inv;
     
     // z_inv = 1/Z
     ecdsa_field_inv(&z_inv, &a->z);
-    s_debug_field_print("z_inv = 1/Z", &z_inv);
     
     // z2 = 1/Z²
     ecdsa_field_sqr(&z2, &z_inv);
-    s_debug_field_print("z2 = 1/Z²", &z2);
     
     // z3 = 1/Z³
     ecdsa_field_mul(&z3, &z2, &z_inv);
-    s_debug_field_print("z3 = 1/Z³", &z3);
     
     // x = X/Z²
     ecdsa_field_mul(&r->x, &a->x, &z2);
     ecdsa_field_normalize(&r->x);
-    s_debug_field_print("result x = X*z2", &r->x);
     
     // y = Y/Z³
     ecdsa_field_mul(&r->y, &a->y, &z3);
     ecdsa_field_normalize(&r->y);
-    s_debug_field_print("result y = Y*z3", &r->y);
     
     r->infinity = false;
     debug_if(s_debug_more, L_DEBUG, "ecdsa_ge_set_gej: done");

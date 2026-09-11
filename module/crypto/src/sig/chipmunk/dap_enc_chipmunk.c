@@ -117,9 +117,8 @@ dap_enc_key_t *dap_enc_chipmunk_key_generate(
     uint8_t l_key_seed[32];
     memcpy(l_key_seed, seed, 32);
     
-    debug_if(s_debug_more, L_DEBUG, "Calling chipmunk_keypair_from_seed with seed %02x%02x%02x%02x...", 
-             l_key_seed[0], l_key_seed[1], l_key_seed[2], l_key_seed[3]);
-    
+    debug_if(s_debug_more, L_DEBUG, "Calling chipmunk_keypair_from_seed");
+
     // Генерируем ключи детерминированно
     int ret = chipmunk_keypair_from_seed(l_key_seed,
                                          l_key->pub_key_data, l_key->pub_key_data_size,

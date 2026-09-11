@@ -1723,16 +1723,8 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
             log_it(L_DEBUG, "SERVER sending ciphertext to Alice (first 16 bytes): %s", l_hex);
         }
         
-        // DEBUG: Log first 16 bytes of shared secret
         debug_if(s_debug_more, L_DEBUG, "SERVER: shared secret size=%zu", l_shared_key_size);
-        if (s_debug_more && l_shared_key && l_shared_key_size >= 16) {
-            char l_hex[49] = {0};
-            for (int i = 0; i < 16; i++) {
-                sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_shared_key)[i]);
-            }
-            log_it(L_DEBUG, "SERVER shared secret (first 16 bytes): %s", l_hex);
-        }
-        
+
         // Create HANDSHAKE key from shared secret using KDF (NOT session key yet!)
         // This key will be used to encrypt/decrypt the session key seed
         // Using KDF with context "handshake" and counter 0 (no ratcheting for handshake)

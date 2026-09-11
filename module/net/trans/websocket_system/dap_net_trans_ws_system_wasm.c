@@ -722,22 +722,12 @@ static void s_ws_session_create_response(void *a_resp, size_t a_resp_size, int a
     size_t l_dec_len = dap_enc_decode(l_ctx->session_key, a_resp, a_resp_size,
                                        l_dec, l_dec_max, DAP_ENC_DATA_TYPE_RAW);
     if (l_dec_len == 0) {
-        const uint8_t *l_kb = l_ctx->session_key && l_ctx->session_key->priv_key_data
-            ? (const uint8_t *)l_ctx->session_key->priv_key_data : NULL;
-        if (l_kb)
-            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu key_type=%d key_size=%zu key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x resp[0..3]=%02x%02x%02x%02x)",
-                   a_resp_size,
-                   l_ctx->session_key->type,
-                   l_ctx->session_key->priv_key_data_size,
-                   l_kb[0], l_kb[1], l_kb[2], l_kb[3],
-                   l_kb[4], l_kb[5], l_kb[6], l_kb[7],
-                   ((const uint8_t *)a_resp)[0], ((const uint8_t *)a_resp)[1],
-                   ((const uint8_t *)a_resp)[2], ((const uint8_t *)a_resp)[3]);
+        // Metadata only: never inspect key or response bytes on the error path.
+        if (l_ctx->session_key)
+            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu key_type=%d key_size=%zu)",
+                   a_resp_size, l_ctx->session_key->type, l_ctx->session_key->priv_key_data_size);
         else
-            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu, no session key priv_data=%p dec_na=%p)",
-                   a_resp_size,
-                   l_ctx->session_key ? (void*)l_ctx->session_key->priv_key_data : NULL,
-                   l_ctx->session_key ? (void*)l_ctx->session_key->dec_na : NULL);
+            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu, no session key)", a_resp_size);
         DAP_DELETE(l_dec);
         if (l_ctx->callback) l_ctx->callback(l_ctx->stream, 0, NULL, 0, -1);
         DAP_DELETE(l_ctx);
