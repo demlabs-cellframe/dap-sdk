@@ -100,12 +100,15 @@ int dap_thread_pool_submit_to(dap_thread_pool_t *a_pool,
                               void *a_callback_arg);
 
 /**
- * @brief Submit to a specific worker thread with OWNED arg (confcall W59-N2)
+ * @brief Submit to a specific worker thread with an owned argument
  *
- * a_arg_free is invoked on a_task_arg when the task is discarded without
- * executing: submit refused (-2 shutdown, -3/-4), or the task still queued
- * when the pool is deleted after a shutdown timeout.  The task function
- * itself owns the arg on a successful run.
+ * With non-NULL a_arg_free, ownership transfers even on failure: rejection
+ * invokes a_arg_free(a_task_arg) exactly once, outside worker locks.
+ * On execution the task function owns the argument; the pool does not free it.
+ * a_arg_free is required: NULL returns -1 without taking ownership.
+ * a_task_func is required; the completion callback may be NULL.
+ * Callers must keep the pool alive throughout submission and rejection cleanup.
+ * @return 0 on success, -1 invalid args, -2 shutdown, -3 queue full, -4 OOM
  */
 int dap_thread_pool_submit_to_owned(dap_thread_pool_t *a_pool,
                                     uint32_t a_thread_idx,

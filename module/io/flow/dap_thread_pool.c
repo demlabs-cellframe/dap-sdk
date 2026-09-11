@@ -218,8 +218,11 @@ static int s_submit_to_worker(dap_thread_pool_worker_t *a_worker, uint32_t a_que
 {
     // Allocate task outside lock
     dap_thread_pool_task_t *l_task = DAP_NEW_Z(dap_thread_pool_task_t);
-    if (!l_task)
+    if (!l_task) {
+        if (a_arg_free)
+            a_arg_free(a_task_arg);
         return -4;
+    }
 
     l_task->func = a_task_func;
     l_task->arg = a_task_arg;
@@ -303,9 +306,12 @@ int dap_thread_pool_submit_to_owned(dap_thread_pool_t *a_pool,
                                     dap_thread_pool_callback_t a_callback,
                                     void *a_callback_arg)
 {
-    /* confcall W59-N2: heap args must never leak on a refused/discarded task */
     if (!a_arg_free)
         return -1;
+    if (!a_pool || !a_task_func || a_thread_idx >= a_pool->num_threads) {
+        a_arg_free(a_task_arg);
+        return -1;
+    }
     return s_submit_to_worker(&a_pool->workers[a_thread_idx], a_pool->queue_size,
                                a_task_func, a_task_arg, a_callback, a_callback_arg, a_arg_free);
 }

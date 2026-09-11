@@ -660,6 +660,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/test/test_mock.c)
     register_dap_test(test_unit_dap_test_mock "unit;test")
 endif()
 
+# Static linkage keeps the allocation-injected pool implementation local to this test.
+add_executable(test_dap_thread_pool_owned unit/io/test_dap_thread_pool_owned.c)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/dap_test_helpers.cmake)
+dap_test_add_includes(test_dap_thread_pool_owned)
+dap_test_link_libraries(test_dap_thread_pool_owned)
+register_dap_test(test_dap_thread_pool_owned "unit;io;regression;thread_pool")
+set_tests_properties(test_dap_thread_pool_owned PROPERTIES TIMEOUT ${DAP_T30})
+
 # Net module unit tests (link_manager hot list)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/net/test_link_manager_hot_list.c)
     add_dap_test(test_unit_net_link_manager_hot_list unit/net/test_link_manager_hot_list.c)
