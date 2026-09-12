@@ -2105,7 +2105,10 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
  */
 ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...)
 {
-    if(!a_es->buf_out){
+    /* confcall W60: same missed-guard class the W59 hostile re-audit hunted
+     * down in pop_from_buf_in/insert_buf_out/shrink_buf_in - this sibling
+     * dereferenced a_es before checking it for NULL. */
+    if (!a_es || !a_es->buf_out) {
         log_it(L_ERROR,"Can't write formatted data to NULL buffer output");
         return 0;
     }

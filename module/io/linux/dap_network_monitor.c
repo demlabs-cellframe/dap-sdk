@@ -117,6 +117,16 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
 
     dap_events_socket_callbacks_t l_cb = { .read_callback = s_callback_read, .write_callback = s_callback_write };
     dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(fd, &l_cb);
+    /* confcall W60: dap_events_socket_wrap_no_add() can return NULL on OOM
+     * (s_dap_evsock_alloc() failure) - the line right below used to
+     * dereference it unconditionally, one line above the es_worker==NULL
+     * check W59 just added in this very function for the same class of
+     * unguarded-nullable-return bug. */
+    if (!l_es) {
+        log_it(L_CRITICAL, "Network monitor init failed: could not allocate events socket");
+        close(fd);
+        return -4;
+    }
     l_es->type = DESCRIPTOR_TYPE_SOCKET_RAW;
     memcpy(&l_es->addr_storage, &storage, sizeof(storage));
     l_es->addr_size = sizeof(storage);
@@ -134,7 +144,7 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
     if (!es_worker) {
         log_it(L_ERROR, "Network monitor init failed: no worker available (reactor not started?)");
         dap_events_socket_delete_unsafe(l_es, false);
-        return -3;
+        return -5;
     }
     dap_worker_add_events_socket( es_worker, l_es );
     log_it(L_INFO, "Network monitor initialized, es uid "DAP_FORMAT_ESOCKET_UUID", worker #%u", es_uuid, es_worker->id);
