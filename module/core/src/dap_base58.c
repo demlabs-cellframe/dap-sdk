@@ -37,8 +37,25 @@ size_t dap_base58_decode(const char *a_in, void *a_out)
     const unsigned char *l_in_u8 = (const unsigned char*)a_in;
     size_t l_outi_size = (l_out_size_max + 3) / 4;
 
-    uint32_t l_outi[l_outi_size];
-    memset(l_outi, 0, l_outi_size * sizeof(uint32_t));
+    /* NOTE: a_in is frequently node/attacker supplied (JSON "addr", "params",
+     * sign payloads, ...).  The scratch space below therefore MUST NOT be
+     * stack-allocated: a multi-hundred-kilobyte string used to consume
+     * multiple megabytes of the calling thread's stack and abort the whole
+     * WASM runtime with "stack overflow".  Heap allocation turns that fatal
+     * crash into a simple allocation failure.  See the stack-budget
+     * regression in binary/tests/wasm/run-wasm-tests.cjs. */
+    uint32_t *l_outi = DAP_NEW_Z_SIZE(uint32_t, l_outi_size * sizeof(uint32_t));
+    /* The big-endian expansion loop below writes up to 4*l_outi_size bytes,
+     * which is 2 bytes past l_out_size_max when l_out_size_max % 4 == 1, so
+     * size the buffer for the real write extent.  Only the first
+     * l_out_size_max bytes are ever read. */
+    unsigned char *l_out_u80 = DAP_NEW_Z_SIZE(unsigned char, l_outi_size * 4 + 4);
+    if (!l_outi || !l_out_u80) {
+        DAP_DELETE(l_outi);
+        DAP_DELETE(l_out_u80);
+        return 0;
+    }
+    size_t l_ret = 0;
     uint64_t t;
     uint32_t c;
     size_t i, j;
@@ -53,9 +70,9 @@ size_t dap_base58_decode(const char *a_in, void *a_out)
 
     for (; i < l_in_len; ++i) {
         if (l_in_u8[i] & 0x80)
-            return 0;  // High-bit set on invalid digit
+            goto out;  // High-bit set on invalid digit
         if (s_b58digits_map[l_in_u8[i]] == -1)
-            return 0;  // Invalid base58 digit
+            goto out;  // Invalid base58 digit
         c = (unsigned)s_b58digits_map[l_in_u8[i]];
         for (j = l_outi_size; j--;) {
             t = ((uint64_t)l_outi[j]) * 58 + c;
@@ -63,13 +80,11 @@ size_t dap_base58_decode(const char *a_in, void *a_out)
             l_outi[j] = t & 0xffffffff;
         }
         if (c)
-            return 0;  // Output number too big
+            goto out;  // Output number too big
         if (l_outi[0] & zeromask)
-            return 0;  // Output number too big
+            goto out;  // Output number too big
     }
 
-    unsigned char l_out_u80[l_out_size_max];
-    memset(l_out_u80, 0, l_out_size_max);
     unsigned char *l_out_u8 = l_out_u80;
     j = 0;
     switch (bytesleft) {
@@ -99,7 +114,7 @@ size_t dap_base58_decode(const char *a_in, void *a_out)
     for (i = 0; i < l_out_size_max; ++i) {
         if (l_out_u8[i]) {
             if (zerocount > i)
-                return 0;  // Result too large
+                goto out;  // Result too large
             break;
         }
         --l_out_size;
@@ -112,7 +127,11 @@ size_t dap_base58_decode(const char *a_in, void *a_out)
     l_out[j + zerocount] = 0;
     l_out_size += zerocount;
 
-    return l_out_size;
+    l_ret = l_out_size;
+out:
+    DAP_DELETE(l_outi);
+    DAP_DELETE(l_out_u80);
+    return l_ret;
 }
 
 size_t dap_base58_encode(const void *a_in, size_t a_in_size, char *a_out)
@@ -127,8 +146,12 @@ size_t dap_base58_encode(const void *a_in, size_t a_in_size, char *a_out)
         ++zcount;
 
     size = (a_in_size - zcount) * 138 / 100 + 1;
-    uint8_t buf[size];
-    memset(buf, 0, size);
+    /* Heap scratch: a_in_size can be a whole TX item (TSD/receipt params),
+     * so an input-sized stack buffer here overflows the thread stack for
+     * multi-megabyte inputs.  See dap_base58_decode() above. */
+    uint8_t *buf = DAP_NEW_Z_SIZE(uint8_t, size);
+    if (!buf)
+        return 0;
 
     for (i = zcount, high = size - 1; i < (ssize_t)a_in_size; ++i, high = j) {
         for (carry = l_in_u8[i], j = size - 1; (j > high) || carry; --j) {
@@ -142,6 +165,7 @@ size_t dap_base58_encode(const void *a_in, size_t a_in_size, char *a_out)
 
     if (l_out_size <= (zcount + size - j)) {
         l_out_size = (zcount + size - j + 1);
+        DAP_DELETE(buf);
         return l_out_size;
     }
 
@@ -152,6 +176,7 @@ size_t dap_base58_encode(const void *a_in, size_t a_in_size, char *a_out)
     a_out[i] = '\0';
     l_out_size = i;
 
+    DAP_DELETE(buf);
     return l_out_size;
 }
 
@@ -169,9 +194,15 @@ char *dap_base58_from_hex_str(const char *a_in_str)
     size_t l_in_len = dap_strlen(a_in_str);
     if (l_in_len < 3 || dap_strncmp(a_in_str, "0x", 2))
         return NULL;
-    char *l_out_str = DAP_NEW_STACK_SIZE(char, l_in_len / 2 + 1);
+    /* Heap, not stack: DAP_NEW_STACK_SIZE() silently returns NULL for sizes
+     * >= 32 KiB, which then fed dap_hex2bin() a NULL destination. */
+    char *l_out_str = DAP_NEW_Z_SIZE(char, l_in_len / 2 + 1);
+    if (!l_out_str)
+        return NULL;
     size_t len = dap_hex2bin((uint8_t*)l_out_str, a_in_str + 2, l_in_len - 2);
-    return dap_base58_encode_to_str(l_out_str, len / 2);
+    char *l_ret = dap_base58_encode_to_str(l_out_str, len / 2);
+    DAP_DELETE(l_out_str);
+    return l_ret;
 }
 
 char *dap_base58_to_hex_str(const char *a_in_str)
@@ -180,15 +211,25 @@ char *dap_base58_to_hex_str(const char *a_in_str)
     if (l_in_len < 8)
         return NULL;
     size_t l_out_size_max = DAP_BASE58_DECODE_SIZE(l_in_len);
-    void *l_out = DAP_NEW_STACK_SIZE(char, l_out_size_max + 1);
-    size_t l_out_size = dap_base58_decode(a_in_str, l_out);
-    if (l_out_size < 8 || l_out_size % 8)
+    /* Heap, not stack: DAP_NEW_STACK_SIZE() returns NULL above 32 KiB and
+     * dap_base58_decode() would then memset() a NULL output buffer. */
+    void *l_out = DAP_NEW_Z_SIZE(char, l_out_size_max + 1);
+    if (!l_out)
         return NULL;
+    size_t l_out_size = dap_base58_decode(a_in_str, l_out);
+    if (l_out_size < 8 || l_out_size % 8) {
+        DAP_DELETE(l_out);
+        return NULL;
+    }
     size_t l_out_str_size = l_out_size * 2 + 3;
     char *l_out_str = DAP_NEW_Z_SIZE(char, l_out_str_size);
-    if (!l_out_str) return NULL;
+    if (!l_out_str) {
+        DAP_DELETE(l_out);
+        return NULL;
+    }
     l_out_str[0] = '0';
     l_out_str[1] = 'x';
     dap_htoa64((l_out_str + 2), l_out, l_out_size);
+    DAP_DELETE(l_out);
     return l_out_str;
 }
