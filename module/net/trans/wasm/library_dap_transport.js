@@ -148,11 +148,57 @@ addToLibrary({
 
     /* ==================================================================
      * HTTP POST (synchronous XHR, runs on calling pthread's Web Worker)
+     *
+     * The browser path is BOUNDED and NEGATIVELY CACHED.
+     *
+     * Why: C calls this from the thread that runs the engine, and in the
+     * single-threaded (Firefox) build that is the *only* thread. An
+     * unbounded synchronous XHR to an unreachable node blocks it forever —
+     * no JS timer can fire while the thread is blocked, so a timer-based
+     * timeout can never fire, and the thread stays wedged afterwards.
+     *
+     * The bound is `xhr.timeout` on the synchronous request. The XHR spec
+     * only forbids `timeout` for a *Window* global (hence the try/catch
+     * below); this code runs inside a Worker, where the browser does abort
+     * the request when the timer fires. Measured (worker scope, sync XHR):
+     *   Firefox 140.15.0esr — connect phase holding (SYN dropped, the
+     *     rpc.cellframe.net failure mode) 2001 ms; DNS failure 2002 ms;
+     *     connected-but-silent 2001 ms — all TimeoutError from send().
+     *   Chromium (headless) — same three cases: 3004 ms / 2 ms / 3003 ms.
+     * No timer of ours is needed: the browser aborts, and the blocking
+     * `send()` throws instead of never returning.
+     *
+     * Negative cache: a connection-level failure (timeout, network error)
+     * marks the origin unreachable for `downTtlMs`, so the retry storm every
+     * caller does against a dead node fails immediately instead of paying
+     * the timeout again. The TTL expiring is what makes recovery automatic;
+     * any HTTP answer (even an error status) clears the mark at once.
+     *
+     * Rejected alternatives (measured/derived, not guessed):
+     *  - Asyncify (the wasm is already instrumented and `ccall(..., {async:
+     *    true})` already used for the rpc path): suspending inside this
+     *    import only works when the *caller* passed `async: true`. Many
+     *    exports that reach the network (cf_token_info, cf_tx_find,
+     *    cf_mempool_add, cf_compose_*, cf_srv_dex_*, cf_shared_*) are called
+     *    synchronously, and emscripten's ccall aborts the runtime for those
+     *    ("The call to X is running asynchronously... add the async option").
+     *  - A separate async pre-flight probe: it can fail for reasons that are
+     *    not reachability (a Firefox MV3 host-permission denial turns every
+     *    manifest origin into an opt-in, so a probe is blocked although the
+     *    engine's own request is not). A cache a probe like that can poison
+     *    would make the transport *skip* a request that would have worked.
+     *    A failure observed by the request itself cannot have that problem.
      * ================================================================== */
 
     js_http_post_sync__deps: ['$UTF8ToString', '$setValue', 'malloc'],
     js_http_post_sync: function(a_url_ptr, a_content_type_ptr, a_body, a_body_len,
                                 a_extra_headers_ptr, a_out_ptr_addr, a_out_len_addr) {
+        /* Keep in sync with CF_TRANSPORT_ERR_NODE_UNREACHABLE in
+         * cf_client/include/cf_client_rpc_transport.h. */
+        var DAP_NODE_UNREACHABLE_RC = -1001;
+        var originOf = function(a_url) {
+            try { return new URL(a_url).origin; } catch (e) { return a_url; }
+        };
         var url = UTF8ToString(a_url_ptr);
         var contentType = a_content_type_ptr ? UTF8ToString(a_content_type_ptr) : null;
         var extraHeaders = a_extra_headers_ptr ? UTF8ToString(a_extra_headers_ptr) : null;
@@ -205,7 +251,25 @@ addToLibrary({
             return result;
         }
 
-        // Browser path: synchronous XHR.
+        // Browser path: synchronous XHR, bounded (see the header comment).
+        var cfg = Module.__dapNodeTransport || (Module.__dapNodeTransport = {});
+        if (!cfg.timeoutMs || cfg.timeoutMs < 0) cfg.timeoutMs = 10000;
+        if (!cfg.downTtlMs || cfg.downTtlMs < 0) cfg.downTtlMs = 10000;
+        var origin = originOf(url);
+
+        // Fast fail: this origin was unreachable a moment ago. Returning here
+        // costs nothing and keeps a dead node from occupying the engine thread
+        // once per call; the TTL expiring re-arms the real request.
+        if (Module.__dapNodeDown && Module.__dapNodeDown.origin === origin) {
+            if (Date.now() >= Module.__dapNodeDown.until) {
+                Module.__dapNodeDown = null;
+            } else {
+                setValue(a_out_ptr_addr, 0, '*');
+                setValue(a_out_len_addr, 0, 'i32');
+                return DAP_NODE_UNREACHABLE_RC;
+            }
+        }
+
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, false);
         // Request a binary response. Sync XHR with responseType is supported on
@@ -218,6 +282,10 @@ addToLibrary({
             binaryAsString = true;
             xhr.overrideMimeType("text/plain; charset=x-user-defined");
         }
+        // Abort the *synchronous* request once the budget is spent. Throws on a
+        // Window global (spec restriction); there no bound is available, so keep
+        // the historical unbounded behaviour rather than fail the call.
+        try { xhr.timeout = cfg.timeoutMs; } catch (e) { /* Window scope */ }
         if (contentType) xhr.setRequestHeader("Content-Type", contentType);
 
         if (extraHeaders) {
@@ -231,11 +299,28 @@ addToLibrary({
             }
         }
 
-        if (a_body && a_body_len > 0) {
-            xhr.send(HEAPU8.slice(a_body, a_body + a_body_len));
-        } else {
-            xhr.send();
+        var sendError = null;
+        try {
+            if (a_body && a_body_len > 0) {
+                xhr.send(HEAPU8.slice(a_body, a_body + a_body_len));
+            } else {
+                xhr.send();
+            }
+        } catch (e) {
+            // A sync XHR reports timeout/network failure by throwing from
+            // send() instead of firing onerror (measured in both browsers).
+            sendError = e;
         }
+
+        if (sendError || xhr.status === 0) {
+            Module.__dapNodeDown = { origin: origin, until: Date.now() + cfg.downTtlMs };
+            setValue(a_out_ptr_addr, 0, '*');
+            setValue(a_out_len_addr, 0, 'i32');
+            return DAP_NODE_UNREACHABLE_RC;
+        }
+
+        // The node answered (any HTTP status) — it is up, clear the mark.
+        Module.__dapNodeDown = null;
 
         if (xhr.status >= 200 && xhr.status < 300) {
             var responseBytes = null;
