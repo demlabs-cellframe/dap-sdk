@@ -110,7 +110,43 @@ addToLibrary({
             return;
         }
 
-        // Browser path: async XMLHttpRequest
+        // Browser path: async XMLHttpRequest.
+        //
+        // Bounded and negatively cached for the same reason the synchronous one
+        // is (see js_http_post_sync below): a node that accepts the connection
+        // and never answers otherwise leaves the callback pending until the
+        // browser's own network timeout. Measured through the wallet in Chrome
+        // against rpc.cellframe.net: 129 717 ms for one `net_list`, with the
+        // single-threaded engine suspended on it and every later call — crypto
+        // included — queued behind it.
+        var DAP_NODE_TIMEOUT_RC = -1002;   /* keep in sync with cf_client_rpc_transport.h */
+        var cfg = Module.__dapNodeTransport || (Module.__dapNodeTransport = {});
+        if (!cfg.asyncTimeoutMs || cfg.asyncTimeoutMs < 0) cfg.asyncTimeoutMs = 15000;
+        if (!cfg.downTtlMs || cfg.downTtlMs < 0) cfg.downTtlMs = 10000;
+        var originOfUrl = function(aUrl) {
+            try { return new URL(aUrl).origin; } catch (e) { return aUrl; }
+        };
+        var origin = originOfUrl(url);
+
+        var settled = false;
+        var finish = function(a_ptr, a_len, a_status) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            __dap_http_async_callback(a_req_id, a_ptr, a_len, a_status);
+        };
+
+        // An origin that just refused a request is skipped rather than paid for
+        // again; the TTL expiring re-arms it, so recovery needs no user action.
+        if (Module.__dapNodeDown && Module.__dapNodeDown.origin === origin) {
+            if (Date.now() >= Module.__dapNodeDown.until) {
+                Module.__dapNodeDown = null;
+            } else {
+                __dap_http_async_callback(a_req_id, 0, 0, -1);
+                return;
+            }
+        }
+
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, true);
         xhr.responseType = "arraybuffer";
@@ -124,23 +160,31 @@ addToLibrary({
                                          lines[i].substring(sep + 1).trim());
             }
         }
+        var timer = setTimeout(function() {
+            try { xhr.abort(); } catch (e) { /* already finished */ }
+            Module.__dapNodeDown = { origin: origin, until: Date.now() + cfg.downTtlMs };
+            finish(0, 0, DAP_NODE_TIMEOUT_RC);
+        }, cfg.asyncTimeoutMs);
         xhr.onload = function() {
+            // Any HTTP answer — even an error status — proves the node is up.
+            Module.__dapNodeDown = null;
             if (xhr.status >= 200 && xhr.status < 300 && xhr.response) {
                 var resp = new Uint8Array(xhr.response);
                 if (resp.length > 0) {
                     var ptr = _malloc(resp.length + 1);
                     HEAPU8.set(resp, ptr);
                     HEAPU8[ptr + resp.length] = 0;
-                    __dap_http_async_callback(a_req_id, ptr, resp.length, 0);
+                    finish(ptr, resp.length, 0);
                 } else {
-                    __dap_http_async_callback(a_req_id, 0, 0, 0);
+                    finish(0, 0, 0);
                 }
             } else {
-                __dap_http_async_callback(a_req_id, 0, 0, -xhr.status || -1);
+                finish(0, 0, -xhr.status || -1);
             }
         };
         xhr.onerror = function() {
-            __dap_http_async_callback(a_req_id, 0, 0, -1);
+            Module.__dapNodeDown = { origin: origin, until: Date.now() + cfg.downTtlMs };
+            finish(0, 0, -1);
         };
         if (bodySlice) xhr.send(bodySlice);
         else xhr.send();
@@ -192,10 +236,11 @@ addToLibrary({
 
     js_http_post_sync__deps: ['$UTF8ToString', '$setValue', 'malloc'],
     js_http_post_sync: function(a_url_ptr, a_content_type_ptr, a_body, a_body_len,
-                                a_extra_headers_ptr, a_out_ptr_addr, a_out_len_addr) {
-        /* Keep in sync with CF_TRANSPORT_ERR_NODE_UNREACHABLE in
-         * cf_client/include/cf_client_rpc_transport.h. */
+                                a_extra_headers_ptr, a_out_ptr_addr, a_out_len_addr,
+                                a_timeout_ms) {
+        /* Keep in sync with cf_client/include/cf_client_rpc_transport.h. */
         var DAP_NODE_UNREACHABLE_RC = -1001;
+        var DAP_NODE_TIMEOUT_RC = -1002;
         var originOf = function(a_url) {
             try { return new URL(a_url).origin; } catch (e) { return a_url; }
         };
@@ -255,6 +300,13 @@ addToLibrary({
         var cfg = Module.__dapNodeTransport || (Module.__dapNodeTransport = {});
         if (!cfg.timeoutMs || cfg.timeoutMs < 0) cfg.timeoutMs = 10000;
         if (!cfg.downTtlMs || cfg.downTtlMs < 0) cfg.downTtlMs = 10000;
+        // The CALLER's budget wins when it has one: the engine's own commands
+        // legitimately take longer than any fixed default (measured: 20 s for
+        // wallet;outputs on a cold node), and a bound shorter than the caller's
+        // turns "slow but alive" into a bogus "unreachable".
+        var callTimeoutMs = (typeof a_timeout_ms === 'number' && a_timeout_ms > 0)
+            ? a_timeout_ms
+            : cfg.timeoutMs;
         var origin = originOf(url);
 
         // Fast fail: this origin was unreachable a moment ago. Returning here
@@ -285,7 +337,7 @@ addToLibrary({
         // Abort the *synchronous* request once the budget is spent. Throws on a
         // Window global (spec restriction); there no bound is available, so keep
         // the historical unbounded behaviour rather than fail the call.
-        try { xhr.timeout = cfg.timeoutMs; } catch (e) { /* Window scope */ }
+        try { xhr.timeout = callTimeoutMs; } catch (e) { /* Window scope */ }
         if (contentType) xhr.setRequestHeader("Content-Type", contentType);
 
         if (extraHeaders) {
@@ -313,9 +365,23 @@ addToLibrary({
         }
 
         if (sendError || xhr.status === 0) {
-            Module.__dapNodeDown = { origin: origin, until: Date.now() + cfg.downTtlMs };
             setValue(a_out_ptr_addr, 0, '*');
             setValue(a_out_len_addr, 0, 'i32');
+            // A request that ran out of its budget is NOT proof the node is gone
+            // — it may simply be slow (measured: wallet;outputs 20 s on a cold
+            // node while the node answered other commands in <1 s). Reporting
+            // that as "unreachable" made the wallet claim a live node was down.
+            var l_timedOut = !!sendError && (sendError.name === 'TimeoutError' ||
+                                             /timeout/i.test(String(sendError.message || '')));
+            if (l_timedOut) {
+                // Nor may it arm the negative cache: that cache exists to skip
+                // requests to an origin that just refused one, and a node slow
+                // enough to miss the budget still answers — caching it would
+                // turn one slow command into a burst of fabricated
+                // "unreachable" replies for cfg.downTtlMs.
+                return DAP_NODE_TIMEOUT_RC;
+            }
+            Module.__dapNodeDown = { origin: origin, until: Date.now() + cfg.downTtlMs };
             return DAP_NODE_UNREACHABLE_RC;
         }
 
