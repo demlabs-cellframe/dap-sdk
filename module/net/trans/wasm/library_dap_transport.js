@@ -123,6 +123,7 @@ addToLibrary({
         var cfg = Module.__dapNodeTransport || (Module.__dapNodeTransport = {});
         if (!cfg.asyncTimeoutMs || cfg.asyncTimeoutMs < 0) cfg.asyncTimeoutMs = 15000;
         if (!cfg.downTtlMs || cfg.downTtlMs < 0) cfg.downTtlMs = 10000;
+        if (!cfg.timeoutTtlMs || cfg.timeoutTtlMs < 0) cfg.timeoutTtlMs = 5000;
         var originOfUrl = function(aUrl) {
             try { return new URL(aUrl).origin; } catch (e) { return aUrl; }
         };
@@ -142,7 +143,8 @@ addToLibrary({
             if (Date.now() >= Module.__dapNodeDown.until) {
                 Module.__dapNodeDown = null;
             } else {
-                __dap_http_async_callback(a_req_id, 0, 0, -1);
+                // Replay the remembered condition (see the synchronous path).
+                __dap_http_async_callback(a_req_id, 0, 0, Module.__dapNodeDown.rc || -1);
                 return;
             }
         }
@@ -162,7 +164,11 @@ addToLibrary({
         }
         var timer = setTimeout(function() {
             try { xhr.abort(); } catch (e) { /* already finished */ }
-            Module.__dapNodeDown = { origin: origin, until: Date.now() + cfg.downTtlMs };
+            Module.__dapNodeDown = {
+                origin: origin,
+                until: Date.now() + cfg.timeoutTtlMs,
+                rc: DAP_NODE_TIMEOUT_RC,
+            };
             finish(0, 0, DAP_NODE_TIMEOUT_RC);
         }, cfg.asyncTimeoutMs);
         xhr.onload = function() {
@@ -300,6 +306,12 @@ addToLibrary({
         var cfg = Module.__dapNodeTransport || (Module.__dapNodeTransport = {});
         if (!cfg.timeoutMs || cfg.timeoutMs < 0) cfg.timeoutMs = 10000;
         if (!cfg.downTtlMs || cfg.downTtlMs < 0) cfg.downTtlMs = 10000;
+        // A spent budget is remembered far more briefly than a refusal: the node
+        // may be slow rather than absent, and the next call is allowed to find
+        // out. Short is enough to stop a *burst* of queued calls (the wallet
+        // issues several at startup) from each paying the whole budget, which on
+        // the single-threaded engine starves everything behind them.
+        if (!cfg.timeoutTtlMs || cfg.timeoutTtlMs < 0) cfg.timeoutTtlMs = 5000;
         // The CALLER's budget wins when it has one: the engine's own commands
         // legitimately take longer than any fixed default (measured: 20 s for
         // wallet;outputs on a cold node), and a bound shorter than the caller's
@@ -309,16 +321,18 @@ addToLibrary({
             : cfg.timeoutMs;
         var origin = originOf(url);
 
-        // Fast fail: this origin was unreachable a moment ago. Returning here
+        // Fast fail: this origin refused a request a moment ago. Returning here
         // costs nothing and keeps a dead node from occupying the engine thread
-        // once per call; the TTL expiring re-arms the real request.
+        // once per call; the TTL expiring re-arms the real request. The code the
+        // entry was created with is replayed, so a remembered timeout is still
+        // reported as a timeout and a remembered refusal as a refusal.
         if (Module.__dapNodeDown && Module.__dapNodeDown.origin === origin) {
             if (Date.now() >= Module.__dapNodeDown.until) {
                 Module.__dapNodeDown = null;
             } else {
                 setValue(a_out_ptr_addr, 0, '*');
                 setValue(a_out_len_addr, 0, 'i32');
-                return DAP_NODE_UNREACHABLE_RC;
+                return Module.__dapNodeDown.rc || DAP_NODE_UNREACHABLE_RC;
             }
         }
 
@@ -374,11 +388,18 @@ addToLibrary({
             var l_timedOut = !!sendError && (sendError.name === 'TimeoutError' ||
                                              /timeout/i.test(String(sendError.message || '')));
             if (l_timedOut) {
-                // Nor may it arm the negative cache: that cache exists to skip
-                // requests to an origin that just refused one, and a node slow
-                // enough to miss the budget still answers — caching it would
-                // turn one slow command into a burst of fabricated
-                // "unreachable" replies for cfg.downTtlMs.
+                // Remembered as a TIMEOUT for a short TTL, not as a refusal: the
+                // code is replayed by the fast-fail path above, so the wallet
+                // still says "did not answer in time" and never claims the node
+                // is down. Without this, a burst of queued calls each paid the
+                // full budget and pure crypto behind them did not run at all
+                // (bench pureCryptoWorksWhileNodeUnreachable, single-threaded
+                // engine).
+                Module.__dapNodeDown = {
+                    origin: origin,
+                    until: Date.now() + cfg.timeoutTtlMs,
+                    rc: DAP_NODE_TIMEOUT_RC,
+                };
                 return DAP_NODE_TIMEOUT_RC;
             }
             Module.__dapNodeDown = { origin: origin, until: Date.now() + cfg.downTtlMs };
