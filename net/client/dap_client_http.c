@@ -1071,36 +1071,14 @@ static dap_client_http_t* s_client_http_create_and_connect(
         }
     }
 
-    // Add socket to worker - s_http_new will be called to set CONNECTING flag
+    /* Transfer ownership to the worker. s_http_new enables connection polling,
+     * including for sockets that are already connected when registered.
+     * dap_events_socket_connect also returns success for EINPROGRESS, so its
+     * result cannot be used to dispatch connected_callback here. Never touch
+     * the socket after handoff: the worker may already have deleted it. */
     dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
-    
-    // Check if connection completed immediately (connect() returned 0, l_connect_err == 0)
-    // In this case, EPOLLOUT won't fire, so we need to handle connection immediately
-    if (l_connect_ret == 0 && l_connect_err == 0 && l_ev_socket->context) {
-        // Connection was established immediately - verify and handle
-        int l_errno_check = 0;
-        socklen_t l_errno_len = sizeof(l_errno_check);
-        if (getsockopt(l_ev_socket->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno_check, &l_errno_len) == 0 && l_errno_check == 0) {
-            // Connection is ready - clear CONNECTING flag and call connected callback
-            l_ev_socket->flags &= ~DAP_SOCK_CONNECTING;
-            if (l_ev_socket->callbacks.connected_callback) {
-                debug_if(s_debug_more, L_DEBUG, "[HANDSHAKE DEBUG] Connection completed immediately, calling connected_callback for socket %"DAP_FORMAT_SOCKET, 
-                         l_ev_socket->socket);
-                l_ev_socket->callbacks.connected_callback(l_ev_socket);
-            }
-            dap_context_poll_update(l_ev_socket);
-            
-            /* connected_callback may have freed l_client_http (via full
-             * request/response cycle on localhost).  Check if the esocket
-             * still references us — if not, the client is gone. */
-            if (l_ev_socket->_inheritor != l_client_http) {
-                *a_error_code = 0;
-                return NULL;
-            }
-        }
-    }
-        *a_error_code = 0;
-        return l_client_http;
+    *a_error_code = 0;
+    return l_client_http;
 #endif
     
     // Should not reach here
@@ -2606,5 +2584,4 @@ static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_cl
     
     return true;
 }
-
 

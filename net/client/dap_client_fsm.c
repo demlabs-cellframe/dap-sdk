@@ -222,12 +222,6 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     l_fsm->client = a_client;
     l_fsm->worker = dap_events_worker_get_auto();
 
-    log_it(L_ATT, "DIAG fsm_new: fsm=%p sizeof=%zu worker_off=%zu client_tc_off=%zu worker=%p uuid=0x%"PRIx64,
-           (void*)l_fsm, sizeof(dap_client_fsm_t),
-           __builtin_offsetof(dap_client_fsm_t, worker),
-           __builtin_offsetof(dap_client_fsm_t, client_trans_ctx),
-           (void*)l_fsm->worker, l_fsm->uuid);
-
     // Crypto defaults: legacy cellframe-node master uses MSRLN (type 11, pubkey 1824 B);
     // modern nodes use Kyber512 (type 23, pubkey 800 B).
     l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;

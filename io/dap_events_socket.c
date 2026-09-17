@@ -186,8 +186,6 @@ static int s_packet_queue_push(dap_events_socket_packet_queue_t *a_queue,
     
     // Check capacity limit
     if (a_queue->count >= DAP_PACKET_QUEUE_MAX_CAPACITY) {
-        log_it(L_WARNING, "[TEST] Packet queue full (%zu packets), dropping packet size=%zu",
-               a_queue->count, a_size);
         log_it(L_WARNING, "Packet queue full (%zu packets), dropping packet", a_queue->count);
         return -1;
     }
@@ -1918,8 +1916,6 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
             return NULL;
         }
         a_es->buf_out = l_buf_out;
-        log_it(L_WARNING, "[TEST] buf_out grow: fd=%"DAP_FORMAT_SOCKET" cap=%zu used=%zu need+%zu",
-               a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size, a_required_size);
         debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", 
                  a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + a_required_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
