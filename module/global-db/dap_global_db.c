@@ -859,16 +859,37 @@ static int s_storage_write(dap_global_db_store_obj_t *a_obj)
     };
     dap_global_db_hash_t l_hash = { .bets = l_key.bets, .becrc = l_key.becrc };
     if (a_obj->flags & DAP_GLOBAL_DB_RECORD_ERASE) {
-        if (l_group->wal)
+        if (l_group->wal) {
+            /* W67 (breather wave, MED): dap_global_db_wal_commit() had ZERO
+             * callers anywhere in the tree — every write/delete appended an
+             * INSERT/DELETE record but nothing ever appended the COMMIT
+             * marker that dap_global_db_wal_recover()'s `l_committed`
+             * bookkeeping exists to gate on. Recovery replayed every record
+             * unconditionally regardless of commit state (see the recover
+             * fix below), so the header's documented "Durability: committed
+             * data survives crashes" / "Atomicity: operations complete
+             * fully or not at all" guarantees were not actually implemented
+             * — a crash mid-write left a WAL record with no way to
+             * distinguish "this fully happened" from "this was torn". Each
+             * storage-layer write/erase call is already ConfCall's natural
+             * transaction boundary (there is no multi-op batching API
+             * exposed to callers), so commit immediately after the op
+             * record — this makes the WAL's own commit/recovery contract
+             * real without redesigning the (currently unused-in-production,
+             * wal_enabled defaults to false) transaction model. */
             dap_global_db_wal_delete(l_group->wal, l_hash);
+            dap_global_db_wal_commit(l_group->wal);
+        }
         return dap_global_db_delete(l_group->btree, &l_key);
     }
     uint32_t l_sign_len = a_obj->sign ? dap_sign_get_size(a_obj->sign) : 0;
     uint32_t l_key_len = a_obj->key ? strlen(a_obj->key) + 1 : 0;
-    if (l_group->wal)
+    if (l_group->wal) {
         dap_global_db_wal_write(l_group->wal, l_hash, a_obj->key,
                                  a_obj->value, a_obj->value_len,
                                  a_obj->sign, l_sign_len, a_obj->flags);
+        dap_global_db_wal_commit(l_group->wal);
+    }
     int l_ret = dap_global_db_insert(l_group->btree, &l_key,
                                  a_obj->key, l_key_len,
                                  a_obj->value, a_obj->value_len,
@@ -886,8 +907,10 @@ static int s_storage_erase(const char *a_group, dap_global_db_hash_t a_hash)
     gdb_group_t *l_group = s_group_find(a_group, false);
     if (!l_group || !l_group->btree)
         return 1;
-    if (l_group->wal)
+    if (l_group->wal) {
         dap_global_db_wal_delete(l_group->wal, a_hash);
+        dap_global_db_wal_commit(l_group->wal);   /* W67: see s_storage_write */
+    }
     dap_global_db_key_t l_key = {
         .bets = a_hash.bets,
         .becrc = a_hash.becrc

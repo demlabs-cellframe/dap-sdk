@@ -190,6 +190,25 @@ void dap_global_db_wal_close(dap_global_db_wal_t *a_wal)
     DAP_DEL_MULTY(a_wal->path, a_wal);
 }
 
+/* W67 (breather wave, MED re-audit fix): a plain in-order struct list
+ * buffering records BETWEEN commit boundaries. Previously
+ * dap_global_db_wal_recover() replayed every op record unconditionally the
+ * moment it was read — the `l_committed` flag was tracked but never
+ * actually gated anything, so a crash mid-write (torn record: written but
+ * never followed by its COMMIT marker because the process died in
+ * between) would still be replayed as if it had completed, breaking the
+ * "committed data survives crashes" / "atomicity" guarantees documented in
+ * dap_global_db_wal.h. Now: records are buffered here as they're read;
+ * only on an OP_COMMIT record does the buffer actually get replayed (and
+ * cleared); any records still buffered at EOF (i.e. a transaction that was
+ * never committed — the crash-mid-write case) are discarded, not
+ * replayed. */
+typedef struct s_wal_pending_rec {
+    dap_global_db_wal_op_t op;
+    byte_t *data;
+    size_t data_len;
+} s_wal_pending_rec_t;
+
 int dap_global_db_wal_recover(dap_global_db_wal_t *a_wal,
                                dap_global_db_wal_replay_cb_t a_replay_cb,
                                void *a_arg)
@@ -209,6 +228,19 @@ int dap_global_db_wal_recover(dap_global_db_wal_t *a_wal,
     
     int l_replayed = 0;
     bool l_committed = false;
+
+    /* Pending (not-yet-committed) records since the last COMMIT/CHECKPOINT
+     * boundary, or since the start of the file. Growable, freed on every
+     * exit path (commit-flush, checkpoint-reset, discard-at-EOF, and every
+     * early `return -1`/`break` below). */
+    s_wal_pending_rec_t *l_pending = NULL;
+    size_t l_pending_count = 0, l_pending_cap = 0;
+
+#define WAL_PENDING_FREE_ALL() do { \
+        for (size_t _i = 0; _i < l_pending_count; _i++) DAP_DEL_Z(l_pending[_i].data); \
+        DAP_DEL_Z(l_pending); \
+        l_pending_count = 0; l_pending_cap = 0; \
+    } while (0)
     
     while (1) {
         // Read record header
@@ -234,8 +266,10 @@ int dap_global_db_wal_recover(dap_global_db_wal_t *a_wal,
         
         if (l_data_len > 0) {
             l_data = DAP_NEW_SIZE(byte_t, l_data_len);
-            if (!l_data)
+            if (!l_data) {
+                WAL_PENDING_FREE_ALL();
                 return -1;
+            }
             
             l_read = read(a_wal->fd, l_data, l_data_len);
             if (l_read != (ssize_t)l_data_len) {
@@ -265,30 +299,64 @@ int dap_global_db_wal_recover(dap_global_db_wal_t *a_wal,
         if (l_rec_hdr.op == DAP_GLOBAL_DB_WAL_OP_COMMIT) {
             l_committed = true;
             DAP_DEL_Z(l_data);
+            /* Flush every pending record accumulated since the last
+             * boundary — these are now known-committed. */
+            for (size_t i = 0; i < l_pending_count; i++) {
+                if (a_replay_cb) {
+                    int l_rc = a_replay_cb(l_pending[i].op, l_pending[i].data,
+                                           l_pending[i].data_len, a_arg);
+                    if (l_rc < 0) {
+                        log_it(L_ERROR, "WAL: replay callback failed");
+                        WAL_PENDING_FREE_ALL();
+                        return -1;
+                    }
+                }
+                l_replayed++;
+            }
+            WAL_PENDING_FREE_ALL();
             continue;
         }
         
         if (l_rec_hdr.op == DAP_GLOBAL_DB_WAL_OP_CHECKPOINT) {
-            // Checkpoint means everything before is applied
+            // Checkpoint means everything before is applied — any records
+            // buffered but not yet committed at this point were never
+            // completed and are correctly discarded, not replayed.
             l_committed = false;
             l_replayed = 0;
             DAP_DEL_Z(l_data);
+            WAL_PENDING_FREE_ALL();
             continue;
         }
         
-        // Replay callback
-        if (a_replay_cb) {
-            int l_rc = a_replay_cb(l_rec_hdr.op, l_data, l_data_len, a_arg);
-            if (l_rc < 0) {
+        // Buffer the op record — do NOT replay it yet; it only becomes
+        // eligible for replay once a COMMIT record is actually seen.
+        if (l_pending_count >= l_pending_cap) {
+            size_t l_newcap = l_pending_cap ? l_pending_cap * 2 : 8;
+            s_wal_pending_rec_t *l_grow = DAP_REALLOC(l_pending, l_newcap * sizeof(*l_pending));
+            if (!l_grow) {
                 DAP_DEL_Z(l_data);
-                log_it(L_ERROR, "WAL: replay callback failed");
-                return -1;
+                log_it(L_ERROR, "WAL: OOM buffering pending record, stopping recovery");
+                break;
             }
+            l_pending = l_grow;
+            l_pending_cap = l_newcap;
         }
-        
-        l_replayed++;
-        DAP_DEL_Z(l_data);
+        l_pending[l_pending_count].op = (dap_global_db_wal_op_t)l_rec_hdr.op;
+        l_pending[l_pending_count].data = l_data;
+        l_pending[l_pending_count].data_len = l_data_len;
+        l_pending_count++;
     }
+
+    /* Anything still buffered here was written but never committed — a
+     * torn/in-progress transaction interrupted by the crash this WAL is
+     * recovering from. Discard it: replaying it would violate atomicity
+     * (a partially-applied change with no COMMIT to prove it was meant to
+     * be durable). */
+    if (l_pending_count > 0)
+        log_it(L_WARNING, "WAL %s: discarding %zu uncommitted record(s) at EOF (torn transaction)",
+               a_wal->path, l_pending_count);
+    WAL_PENDING_FREE_ALL();
+#undef WAL_PENDING_FREE_ALL
     
     log_it(L_INFO, "WAL %s: recovery complete, replayed %d records (committed=%s)",
            a_wal->path, l_replayed, l_committed ? "yes" : "no");

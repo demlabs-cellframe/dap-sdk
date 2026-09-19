@@ -16,6 +16,10 @@ target_link_libraries(test_globaldb_storage dap_sdk dap_test)
 add_executable(test_globaldb_migrate test_globaldb_migrate.c)
 target_link_libraries(test_globaldb_migrate dap_global_db_migrate dap_sdk dap_test)
 
+# WAL commit/recovery tests (confcall W67)
+add_executable(test_globaldb_wal test_globaldb_wal.c)
+target_link_libraries(test_globaldb_wal dap_sdk dap_test)
+
 # Register tests with CTest
 add_test(NAME test_globaldb_btree COMMAND test_globaldb_btree)
 set_tests_properties(test_globaldb_btree PROPERTIES 
@@ -29,4 +33,7 @@ set_tests_properties(test_globaldb_storage PROPERTIES LABELS "unit;global-db;sto
 add_test(NAME test_globaldb_migrate COMMAND test_globaldb_migrate)
 set_tests_properties(test_globaldb_migrate PROPERTIES LABELS "integration;global-db;migration")
 
-message("[+] GlobalDB tests: B-tree, Storage, Migration")
+add_test(NAME test_globaldb_wal COMMAND test_globaldb_wal)
+set_tests_properties(test_globaldb_wal PROPERTIES LABELS "unit;global-db;wal")
+
+message("[+] GlobalDB tests: B-tree, Storage, Migration, WAL")
