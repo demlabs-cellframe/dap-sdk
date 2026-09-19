@@ -258,6 +258,8 @@ typedef struct dap_io_flow_ctrl_callbacks {
     /* One-shot terminal failure, on the FC timer worker, outside FC locks.
      * May delete FC. Packet callbacks must not destroy their owner synchronously. */
     dap_io_flow_ctrl_keepalive_timeout_cb_t transport_failed;
+    /* Owner-only progress notification; must not delete FC or its flow. */
+    dap_io_flow_ctrl_keepalive_timeout_cb_t receive_progress;
 } dap_io_flow_ctrl_callbacks_t;
 
 /**

@@ -405,6 +405,7 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
         if (l_send_fd < 0) {
             log_it(L_ERROR, "Failed to create sending socket: %s", strerror(errno));
             s_datagram_ops->protocol_destroy(l_datagram_flow);
+            DAP_DELETE(l_datagram_flow);
             return NULL;
         }
         
@@ -418,19 +419,23 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
             log_it(L_ERROR, "Failed to wrap send socket");
             close(l_send_fd);
             s_datagram_ops->protocol_destroy(l_datagram_flow);
+            DAP_DELETE(l_datagram_flow);
             return NULL;
         }
         
         l_datagram_flow->send_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
         l_datagram_flow->send_es->flags |= DAP_SOCK_READY_TO_WRITE;
         
-        // CRITICAL FIX: Add send_es to SAME worker as listener_es!
-        // flow_ctrl retransmit timer runs on listener's worker, so send_es 
-        // MUST be on same worker to use FAST PATH (direct sendto) instead of
-        // SLOW PATH (cross-worker queue) which causes packet loss under load.
-        dap_worker_t *l_listener_worker = a_listener_es->worker;
+        // Register synchronously on the flow owner. A queued add on the listener
+        // could otherwise run after finalize failure has queued socket deletion.
+        dap_worker_t *l_listener_worker = dap_worker_get_current();
         if (l_listener_worker) {
-            dap_worker_add_events_socket(l_listener_worker, l_datagram_flow->send_es);
+            if (dap_worker_add_events_socket_unsafe(l_listener_worker, l_datagram_flow->send_es)) {
+                dap_events_socket_delete_unsafe(l_datagram_flow->send_es, true);
+                l_datagram_flow->send_es = NULL;
+                s_datagram_flow_destroy_wrapper(&l_datagram_flow->base);
+                return NULL;
+            }
             // Log port and expected worker for BPF debugging
             uint16_t l_src_port = 0;
             if (a_remote_addr->ss_family == AF_INET) {
@@ -442,9 +447,8 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
                      l_src_port, l_listener_worker->id, l_src_port % 10, l_send_fd);
         } else {
             // Fallback if listener has no worker (shouldn't happen)
-            dap_worker_t *l_auto_worker = dap_worker_add_events_socket_auto(l_datagram_flow->send_es);
-            log_it(L_WARNING, "DATAGRAM flow_create: listener has no worker! send fd=%d on auto worker=%u", 
-                   l_send_fd, l_auto_worker ? l_auto_worker->id : 999);
+            s_datagram_flow_destroy_wrapper(&l_datagram_flow->base);
+            return NULL;
         }
     } else {
         // CLIENT flow: no separate send socket needed
@@ -466,7 +470,7 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
     if (s_datagram_ops && s_datagram_ops->protocol_finalize) {
         if (s_datagram_ops->protocol_finalize(l_datagram_flow) != 0) {
             log_it(L_ERROR, "Protocol finalize failed");
-            s_datagram_ops->protocol_destroy(l_datagram_flow);
+            s_datagram_flow_destroy_wrapper(&l_datagram_flow->base);
             return NULL;
         }
     }
@@ -494,7 +498,9 @@ static void s_datagram_flow_destroy_wrapper(dap_io_flow_t *a_flow)
     // Close separate send socket if exists (SERVER flows)
     if (l_datagram_flow->send_es) {
         // Remove from worker and delete (MT-safe via UUID)
-        if (l_datagram_flow->send_es->worker) {
+        if (l_datagram_flow->send_es->worker == dap_worker_get_current() && l_datagram_flow->send_es->worker) {
+            dap_events_socket_remove_and_delete_unsafe(l_datagram_flow->send_es, true);
+        } else if (l_datagram_flow->send_es->worker) {
             dap_events_socket_remove_and_delete_mt(l_datagram_flow->send_es->worker, 
                                                    l_datagram_flow->send_es->uuid);
             debug_if(s_debug_more, L_DEBUG, "Removed and deleted separate send socket from worker");
@@ -514,6 +520,3 @@ static void s_datagram_flow_destroy_wrapper(dap_io_flow_t *a_flow)
     // Free DATAGRAM flow
     DAP_DELETE(l_datagram_flow);
 }
-
-
-

@@ -759,6 +759,8 @@ static void s_process_flow_packet_common(
     if (!a_server || !a_data || !a_remote_addr || !a_listener_es) {
         return;
     }
+    if (atomic_load(&a_server->is_deleting))
+        return;
     
     dap_worker_t *l_worker = dap_worker_get_current();
     if (!l_worker) {

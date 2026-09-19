@@ -809,6 +809,8 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             debug_if(s_debug_more, L_DEBUG, "FC recv: UPDATING send_seq_acked: %"PRIu64" -> %"PRIu64,
                    a_ctrl->send_seq_acked, l_metadata.ack_seq);
             a_ctrl->send_seq_acked = l_metadata.ack_seq;
+            if (a_ctrl->callbacks.receive_progress)
+                a_ctrl->callbacks.receive_progress(a_ctrl->flow, a_ctrl->callbacks.arg);
         }
     }
     
@@ -840,6 +842,8 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                        a_ctrl->flow, l_payload_size, a_ctrl->callbacks.arg);
                 
                 int l_deliver_ret = a_ctrl->callbacks.payload_deliver(a_ctrl->flow, l_payload, l_payload_size, a_ctrl->callbacks.arg);
+                if (l_deliver_ret >= 0 && a_ctrl->callbacks.receive_progress)
+                    a_ctrl->callbacks.receive_progress(a_ctrl->flow, a_ctrl->callbacks.arg);
                 
                 debug_if(s_debug_more, L_DEBUG, "FC recv: payload_deliver RETURNED: ret=%d", l_deliver_ret);
                 
@@ -858,10 +862,12 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                     if (a_ctrl->recv_window[l_idx].received && 
                         a_ctrl->recv_window[l_idx].seq_num == a_ctrl->recv_seq_expected) {
                         // Deliver buffered packet
-                        a_ctrl->callbacks.payload_deliver(a_ctrl->flow, 
+                        int l_buffered_ret = a_ctrl->callbacks.payload_deliver(a_ctrl->flow,
                                                           a_ctrl->recv_window[l_idx].payload,
                                                           a_ctrl->recv_window[l_idx].payload_size,
                                                           a_ctrl->callbacks.arg);
+                        if (l_buffered_ret >= 0 && a_ctrl->callbacks.receive_progress)
+                            a_ctrl->callbacks.receive_progress(a_ctrl->flow, a_ctrl->callbacks.arg);
                         // Free buffered payload
                         DAP_DEL_Z(a_ctrl->recv_window[l_idx].payload);
                         // Free original packet buffer

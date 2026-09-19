@@ -95,7 +95,7 @@ static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY
 
 static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
 
-static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt);
+static bool s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt);
 
 // Callbacks for HTTP client
 static void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg); // Prepare stream when all headers are read
@@ -161,22 +161,17 @@ ssize_t dap_stream_trans_write_unsafe(dap_stream_t *a_stream, const void *a_data
         return 0;
     }
 
-    if (!a_stream->trans_ctx) {
-        log_it(L_ERROR, "Stream has no trans_ctx");
-        return 0;
-    }
-
-    if (!a_stream->trans_ctx->trans ||
-        !a_stream->trans_ctx->trans->ops ||
-        !a_stream->trans_ctx->trans->ops->write) {
-        log_it(L_WARNING, "Stream trans has no write callback (trans_ctx->trans may not be set yet)");
+    dap_net_trans_t *l_trans = a_stream->trans_ctx && a_stream->trans_ctx->trans
+            ? a_stream->trans_ctx->trans : a_stream->trans;
+    if (!l_trans || !l_trans->ops || !l_trans->ops->write) {
+        log_it(L_WARNING, "Stream trans has no write callback");
         return 0;
     }
 
     debug_if(s_debug, L_DEBUG,
              "dap_stream_trans_write_unsafe: writing %zu bytes via trans->ops->write", a_size);
 
-    ssize_t l_ret = a_stream->trans_ctx->trans->ops->write(
+    ssize_t l_ret = l_trans->ops->write(
         a_stream,  // stream
         a_data,    // data
         a_size     // size
@@ -239,9 +234,10 @@ ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_
      * datagram/stream paths.  Without this check, a DNS stream whose underlying socket
      * is SOCK_DGRAM would incorrectly fall into s_stream_send_datagram_unsafe which
      * requires a_stream->flow to be set. */
-    if (a_stream->trans_ctx && a_stream->trans_ctx->trans &&
-        a_stream->trans_ctx->trans->ops && a_stream->trans_ctx->trans->ops->write) {
-        return a_stream->trans_ctx->trans->ops->write(a_stream, a_data, a_size);
+    dap_net_trans_t *l_trans = a_stream->trans_ctx && a_stream->trans_ctx->trans
+            ? a_stream->trans_ctx->trans : a_stream->trans;
+    if (l_trans && l_trans->ops && l_trans->ops->write) {
+        return l_trans->ops->write(a_stream, a_data, a_size);
     }
 
     dap_events_socket_t *l_es = a_stream->esocket;
@@ -1482,6 +1478,14 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
  */
 size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data, size_t a_data_size)
 {
+    return dap_stream_data_proc_read_ext_validated(a_stream, a_data, a_data_size, NULL);
+}
+
+size_t dap_stream_data_proc_read_ext_validated(dap_stream_t *a_stream, const void *a_data,
+                                              size_t a_data_size, bool *a_accepted)
+{
+    if (a_accepted)
+        *a_accepted = false;
     if (!a_stream || !a_data || a_data_size == 0)
         return 0;
 
@@ -1511,7 +1515,9 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
-                s_stream_proc_pkt_in(a_stream, l_pkt);
+                bool l_accepted = s_stream_proc_pkt_in(a_stream, l_pkt);
+                if (a_accepted && l_accepted)
+                    *a_accepted = true;
             } else {
                 debug_if(s_debug_more, L_DEBUG, "proc_read_ext: incomplete packet need=%zu have=%zu",
                          l_shift, (size_t)(l_end - l_pos));
@@ -1552,10 +1558,15 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
  * @brief stream_proc_pkt_in
  * @param sid
  */
-static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pkt)
+static bool s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pkt)
 {
     size_t a_pkt_size = sizeof(dap_stream_pkt_hdr_t) + a_pkt->hdr.size;
     bool l_is_clean_fragments = false;
+    bool l_accepted = false;
+    if ((a_pkt->hdr.type == STREAM_PKT_TYPE_DATA_PACKET ||
+         a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) &&
+        (!a_stream->session || !a_stream->session->key))
+        return false;
     a_stream->is_active = true;
     // dap_events_socket_t *l_es = a_stream->esocket;
 
@@ -1574,6 +1585,10 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
 
         DAP_DEL_Z(a_stream->pkt_cache);
         a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_fragm_dec_size);
+        if (!a_stream->pkt_cache) {
+            l_is_clean_fragments = true;
+            break;
+        }
         dap_stream_fragment_pkt_t *l_fragm_pkt = (dap_stream_fragment_pkt_t*)a_stream->pkt_cache;
 
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: CALLING dap_stream_pkt_read_unsafe (stream=%p, pkt=%p, out=%p, out_size=%zu)",
@@ -1589,7 +1604,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: dap_stream_pkt_read_unsafe returned l_dec_pkt_size=%zu (expected_min=%zu)",
                  l_dec_pkt_size, sizeof(dap_stream_fragment_pkt_t));
 
-        if(l_dec_pkt_size == 0) {
+        if(l_dec_pkt_size < sizeof(dap_stream_fragment_pkt_t)) {
             log_it(L_WARNING, "Input: decryption returned 0 for pkt_size=%zu (stream=%p) — padding mismatch or corrupt data?", a_pkt_size, (void*)a_stream);
             l_is_clean_fragments = true;
             break;
@@ -1602,7 +1617,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         }
         {
           size_t l_ms = (size_t)l_fragm_pkt->mem_shift, l_fs = (size_t)l_fragm_pkt->full_size, l_sz = (size_t)l_fragm_pkt->size;
-          if (!l_fs || l_fs > (size_t)DAP_STREAM_PKT_SIZE_MAX || l_sz > l_fs || l_ms > l_fs - l_sz) {
+          if (!l_sz || !l_fs || l_fs > (size_t)DAP_STREAM_PKT_SIZE_MAX || l_sz > l_fs || l_ms > l_fs - l_sz) {
             debug_if(s_dump_packet_headers, L_WARNING, "Input: invalid fragment bounds mem_shift=%zu size=%zu full_size=%zu", l_ms, l_sz, l_fs);
             l_is_clean_fragments = true;
             break;
@@ -1629,6 +1644,10 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
                 DAP_DEL_Z(a_stream->buf_fragments);
                 a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
+                if (!a_stream->buf_fragments) {
+                    l_is_clean_fragments = true;
+                    break;
+                }
                 a_stream->buf_fragments_size_total = l_fragm_pkt->full_size;
             }
             memcpy(a_stream->buf_fragments + l_fragm_pkt->mem_shift, l_fragm_pkt->data, l_fragm_pkt->size);
@@ -1637,6 +1656,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
 
         // Not last fragment, otherwise go to parsing STREAM_PKT_TYPE_DATA_PACKET
         if(a_stream->buf_fragments_size_filled < l_fragm_pkt->full_size) {
+            l_accepted = true;
             debug_if(s_dump_packet_headers, L_DEBUG, "Fragment not complete yet: filled=%zu full=%u",
                    a_stream->buf_fragments_size_filled, l_fragm_pkt->full_size);
             break;
@@ -1658,6 +1678,10 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             size_t l_pkt_dec_size = dap_enc_decode_out_size(a_stream->session->key, a_pkt->hdr.size, DAP_ENC_DATA_TYPE_RAW);
             DAP_DEL_Z(a_stream->pkt_cache);
             a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_pkt_dec_size);
+            if (!a_stream->pkt_cache) {
+                l_is_clean_fragments = true;
+                break;
+            }
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
             if (l_dec_pkt_size > l_pkt_dec_size) {
@@ -1669,7 +1693,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
 
         debug_if(s_debug_more, L_DEBUG, "DATA_PKT: dec=%zu hdr=%zu ch_id=0x%02x data_size=%u",
                l_dec_pkt_size, sizeof(l_ch_pkt->hdr),
-               l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size);
+               l_dec_pkt_size >= sizeof(l_ch_pkt->hdr) ? l_ch_pkt->hdr.id : 0,
+               l_dec_pkt_size >= sizeof(l_ch_pkt->hdr) ? l_ch_pkt->hdr.data_size : 0);
 
         if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
             log_it(L_WARNING, "DATA_PKT: decoded %zu < hdr %zu — drop", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
@@ -1720,6 +1745,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
 
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
+                    l_accepted = l_security_check_passed;
                     // if (!l_es->_inheritor)
                     //     return;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
@@ -1763,20 +1789,25 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         uint32_t l_session_id = l_srv_pkt->session_id;
         if (a_stream->esocket)
             s_check_session(l_session_id, a_stream->esocket);
+        /* SERVICE is setup, not proof of established peer activity. */
     } break;
     case STREAM_PKT_TYPE_KEEPALIVE: {
+        if (a_pkt->hdr.size)
+            break;
+        l_accepted = true;
         debug_if(s_debug, L_DEBUG, "Keep alive check recieved");
         dap_stream_pkt_hdr_t l_ret_pkt = {
             .type = STREAM_PKT_TYPE_ALIVE
         };
         memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(c_dap_stream_sig));
-        if (a_stream->trans_ctx) {
-            dap_stream_send_unsafe(a_stream, &l_ret_pkt, sizeof(l_ret_pkt));
-        }
+        dap_stream_send_unsafe(a_stream, &l_ret_pkt, sizeof(l_ret_pkt));
         // Reset client keepalive timer (UUID lookup — never dereference keepalive_timer)
         s_stream_reset_keepalive_timer_unsafe(a_stream);
     } break;
     case STREAM_PKT_TYPE_ALIVE:
+        if (a_pkt->hdr.size)
+            break;
+        l_accepted = true;
         a_stream->is_active = false; // To prevent keep-alive concurrency
         debug_if(s_debug, L_DEBUG, "Keep alive response recieved");
         break;
@@ -1789,6 +1820,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         DAP_DEL_Z(a_stream->buf_fragments);
         a_stream->buf_fragments_size_total = a_stream->buf_fragments_size_filled = 0;
     }
+    return l_accepted;
 }
 
 /**

@@ -37,6 +37,7 @@
 #include "dap_context_queue.h"
 #include "dap_io_flow_ctrl.h"  // Flow Control for reliable delivery
 #include "dap_stream.h"
+#include "dap_stream_pkt.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_net_trans_qos.h"
@@ -45,6 +46,7 @@
 #include "dap_net_trans.h"
 #include "dap_worker.h"
 #include "dap_thread_pool.h"
+#include "dap_timerfd.h"
 #include "json.h"
 
 #define LOG_TAG "dap_net_trans_udp_server"
@@ -159,20 +161,26 @@ typedef struct stream_udp_session {
     
     // Handshake state protection
     _Atomic bool kem_task_pending;       // KEM task in progress (prevent duplicate HANDSHAKE)
+    struct kem_task_ctx *kem_task;
+    dap_timerfd_t *lifecycle_timer;
+    uint64_t last_rx_ns;
+    uint64_t created_ns;
+    bool closing;
     
     // Packet type tracking (for FC callbacks)
     _Atomic uint8_t last_send_type;     // Last packet type sent (for packet_prepare_cb)
-    _Atomic uint8_t last_recv_type;     // Last packet type received (for payload_deliver_cb)
 } stream_udp_session_t;
 
 /**
  * @brief KEM task context for thread pool offload
  */
 typedef struct kem_task_ctx {
-    stream_udp_session_t *session;       // Session handle (must remain valid!)
+    _Atomic unsigned refs;
+    _Atomic bool done;
+    struct kem_task_result *result;
+    uint64_t session_id;
     uint8_t *alice_pub_key;              // Alice's public key (copied)
     size_t alice_pub_key_size;           // Alice's public key size
-    dap_events_socket_uuid_t session_uuid; // Session UUID for validation
 } kem_task_ctx_t;
 
 /**
@@ -193,6 +201,28 @@ typedef struct kem_task_result {
     uint64_t session_id;                 // Session ID
     int error_code;                      // 0 on success, negative on error
 } kem_task_result_t;
+
+/* One reference belongs to the owner worker, one to the pool. No pool task
+ * retains a session/server pointer; the mailbox itself is the attempt identity. */
+static void s_kem_task_release(kem_task_ctx_t *a_task)
+{
+    if (!a_task || atomic_fetch_sub(&a_task->refs, 1) != 1)
+        return;
+    if (a_task->result) {
+        if (a_task->result->handshake_key)
+            dap_enc_key_delete(a_task->result->handshake_key);
+        DAP_DELETE(a_task->result->bob_ciphertext);
+        DAP_DELETE(a_task->result);
+    }
+    DAP_DELETE(a_task->alice_pub_key);
+    DAP_DELETE(a_task);
+}
+static bool s_udp_lifecycle_tick(void *a_arg);
+static void s_udp_receive_progress(dap_io_flow_t *a_flow, void *a_arg)
+{
+    UNUSED(a_arg);
+    ((stream_udp_session_t *)a_flow)->last_rx_ns = dap_nanotime_now();
+}
 
 // Forward declarations for protocol handlers
 static bool s_stream_udp_should_forward(dap_io_flow_t *a_flow);
@@ -252,6 +282,7 @@ static const dap_io_flow_ctrl_callbacks_t s_flow_ctrl_callbacks = {
     .payload_deliver = s_flow_ctrl_payload_deliver_cb,
     .keepalive_timeout = s_flow_ctrl_keepalive_timeout_cb,
     .transport_failed = s_flow_ctrl_failed,
+    .receive_progress = s_udp_receive_progress,
     .arg = NULL,  // Not used, session is passed via protocol_ctx
 };
 
@@ -408,6 +439,8 @@ static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
     }
     
     dap_net_trans_udp_server_t *l_udp_server = (dap_net_trans_udp_server_t*)a_server;
+    if (l_udp_server->flow_servers)
+        return -1;
     
     debug_if(s_debug_more, L_DEBUG, "Starting UDP server '%s' with %zu address:port pairs",
              l_udp_server->server_name, a_count);
@@ -458,6 +491,7 @@ static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
             }
             DAP_DELETE(l_udp_server->flow_servers);
             l_udp_server->flow_servers = NULL;
+            l_udp_server->flow_servers_count = 0;
             
             return -2;
         }
@@ -487,6 +521,7 @@ static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
             }
             DAP_DELETE(l_udp_server->flow_servers);
             l_udp_server->flow_servers = NULL;
+            l_udp_server->flow_servers_count = 0;
             
             return l_ret;
         }
@@ -698,9 +733,9 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
  * Called by UDP flow layer when packet arrives. Parses stream UDP
  * protocol header and dispatches to appropriate handler.
  */
-static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
-                                    const uint8_t *a_data,
-                                    size_t a_size)
+static int s_udp_packet_received_impl(dap_io_flow_datagram_t *a_flow,
+                                     const uint8_t *a_data,
+                                     size_t a_size)
 {
     if (!a_data || a_size == 0) {
         return -1;
@@ -838,6 +873,18 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
 }
 
 
+static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
+                                    const uint8_t *a_data, size_t a_size)
+{
+    stream_udp_session_t *l_session = (stream_udp_session_t *)a_flow;
+    if (!l_session || l_session->closing)
+        return -1;
+    int l_ret = s_udp_packet_received_impl(a_flow, a_data, a_size);
+    if (l_ret < 0 && !l_session->session)
+        l_session->closing = true;
+    return l_ret;
+}
+
 /**
  * @brief Callback to get remote address for datagram flow (SERVER side)
  * 
@@ -949,8 +996,11 @@ static int s_udp_protocol_finalize_cb(dap_io_flow_datagram_t *a_flow)
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     
-    // Now we can set stream_worker using listener_es->worker
-    l_session->stream->stream_worker = DAP_STREAM_WORKER(a_flow->listener_es->worker);
+    // Channel registry and lifecycle belong to the current flow owner.
+    dap_worker_t *l_owner = dap_worker_get_current();
+    if (!l_owner)
+        return -1;
+    l_session->stream->stream_worker = DAP_STREAM_WORKER(l_owner);
 
     /* VPN TUN→client path validates stream->esocket via dap_context_find.
      * Without this, IP_ASSIGNED stores nil and every VPN_RECV is dropped
@@ -966,6 +1016,12 @@ static int s_udp_protocol_finalize_cb(dap_io_flow_datagram_t *a_flow)
     
     // CRITICAL: Link SERVER flow to stream (same as CLIENT)
     l_session->stream->flow = &l_session->base;
+    l_session->last_rx_ns = dap_nanotime_now();
+    l_session->created_ns = l_session->last_rx_ns;
+    l_session->lifecycle_timer = dap_timerfd_start_on_worker(
+        dap_worker_get_current(), 100, s_udp_lifecycle_tick, l_session);
+    if (!l_session->lifecycle_timer)
+        return -1;
     
     debug_if(s_debug_more, L_DEBUG,
              "Finalized stream_udp_session_t %p (stream=%p, worker=%u, esocket=%p uuid=0x%016" DAP_UINT64_FORMAT_x ")",
@@ -988,6 +1044,12 @@ static void s_udp_protocol_destroy_cb(dap_io_flow_datagram_t *a_flow)
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     
     // CRITICAL: Delete Flow Control FIRST to stop retransmits!
+    if (l_session->lifecycle_timer) {
+        dap_timerfd_delete_unsafe(l_session->lifecycle_timer);
+        l_session->lifecycle_timer = NULL;
+    }
+    s_kem_task_release(l_session->kem_task);
+    l_session->kem_task = NULL;
     // This prevents use-after-free when FC tries to send after flow is deleted.
     // Flow control is in base flow structure now
     if (l_session->base.base.flow_ctrl) {
@@ -1004,6 +1066,7 @@ static void s_udp_protocol_destroy_cb(dap_io_flow_datagram_t *a_flow)
         DAP_DEL_Z(l_session->stream);
     }
     l_session->base.base.stream_context = NULL;
+    l_session->base.protocol_data = NULL;
     if (l_session->session) {
         l_session->session->key = NULL;
         dap_stream_session_close_mt(l_session->session->id);
@@ -1047,16 +1110,17 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     dap_net_session_params_t *l_params = (dap_net_session_params_t*)a_session_params;
     
     // Create dap_stream_session_t
-    dap_stream_session_t *l_stream_session = dap_stream_session_new(0, false);
+    dap_stream_session_t *l_stream_session = dap_stream_session_pure_new();
     if (!l_stream_session) {
         log_it(L_ERROR, "Failed to create stream session");
         return NULL;
     }
+    l_stream_session->create_empty = false;
     
     // Open session
     if (dap_stream_session_open(l_stream_session) != 0) {
         log_it(L_ERROR, "Failed to open stream session");
-        DAP_DELETE(l_stream_session);
+        dap_stream_session_close_mt(l_stream_session->id);
         return NULL;
     }
     
@@ -1126,7 +1190,7 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     
     if (!l_flow_ctrl) {
         log_it(L_ERROR, "Failed to create Flow Control for session");
-        s_udp_protocol_destroy_cb(&l_session->base);
+        l_session->closing = true;
         return NULL;
     } else {
         debug_if(s_debug_more, L_DEBUG, "Flow Control enabled for session (RELIABLE mode: retransmit + reorder)");
@@ -1142,7 +1206,8 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
     }
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
-    dap_stream_session_t *l_stream_session = (dap_stream_session_t*)a_session_context;
+    if (l_session->session != a_session_context)
+        return;
     
     // Delete Flow Control
     // NOTE: flow_ctrl is in base.base (dap_io_flow_t), not directly in session
@@ -1154,13 +1219,11 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
         debug_if(s_debug_more, L_DEBUG, "Flow Control deleted for session");
     }
     
-    // Close session using session ID
-    if (l_stream_session->id) {
-        dap_stream_session_close_mt(l_stream_session->id);
-    }
-    
-    l_session->session = NULL;
-    l_session->base.base.session_context = NULL;
+    dap_timerfd_t *l_timer = l_session->lifecycle_timer;
+    l_session->lifecycle_timer = NULL;
+    s_udp_protocol_destroy_cb(&l_session->base);
+    l_session->lifecycle_timer = l_timer;
+    l_session->closing = true;
 }
 
 static void* s_stream_udp_stream_create_cb(dap_io_flow_t *a_flow, void *a_stream_params)
@@ -1185,9 +1248,10 @@ static ssize_t s_stream_udp_stream_write_cb(dap_io_flow_t *a_flow, void *a_strea
     dap_stream_t *l_stream = (dap_stream_t*)a_stream_context;
     
     // Use transport-agnostic stream data processing
-    size_t l_processed = dap_stream_data_proc_read_ext(l_stream, a_data, a_size);
+    bool l_accepted = false;
+    size_t l_processed = dap_stream_data_proc_read_ext_validated(l_stream, a_data, a_size, &l_accepted);
     
-    return (ssize_t)l_processed;
+    return l_accepted ? (ssize_t)l_processed : -1;
 }
 
 static ssize_t s_stream_udp_stream_packet_send_cb(dap_io_flow_t *a_flow, void *a_stream_context,
@@ -1541,6 +1605,8 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     switch (l_type) {
         case DAP_STREAM_UDP_PKT_SESSION_CREATE:
             l_result = s_handle_session_create(a_session, l_payload, l_payload_size);
+            if (l_result < 0)
+                a_session->closing = true;
             break;
             
         case DAP_STREAM_UDP_PKT_DATA:
@@ -1592,7 +1658,7 @@ static void* s_kem_task_func(void *a_arg)
         return NULL;
     }
     
-    l_result->session_id = l_ctx->session->session_id;
+    l_result->session_id = l_ctx->session_id;
     l_result->error_code = 0;
     
     // Generate ephemeral Bob key (Kyber512)
@@ -1647,7 +1713,7 @@ static void* s_kem_task_func(void *a_arg)
     if (!l_handshake_key) {
         log_it(L_ERROR, "[KEM Task] Failed to derive handshake key via KDF");
         dap_enc_key_delete(l_bob_key);
-        DAP_DELETE(l_result->bob_ciphertext);
+        DAP_DEL_Z(l_result->bob_ciphertext);
         l_result->error_code = -6;
         return l_result;
     }
@@ -1661,7 +1727,7 @@ static void* s_kem_task_func(void *a_arg)
 }
 
 /**
- * @brief Structure for scheduling reactor callback from KEM worker thread
+ * @brief Owner-local arguments for consuming a completed KEM mailbox
  */
 typedef struct kem_reactor_callback_arg {
     stream_udp_session_t *session;
@@ -1688,12 +1754,11 @@ static void s_kem_reactor_callback(void *a_arg)
     kem_task_result_t *l_result = l_arg->result;
     
     if (!l_result) {
-        log_it(L_ERROR, "[KEM Reactor] No result");
-        DAP_DELETE(l_arg);
+        l_session->closing = true;
         return;
     }
     
-    // Validate session still exists
+    // Only the owner timer can consume this session's mailbox.
     if (!l_session || !l_session->base.base.stream_context || !l_session->base.listener_es) {
         log_it(L_WARNING, "[KEM Reactor] Session %p invalid or deleted (stream_ctx=%p listener=%p)",
                (void *)l_session,
@@ -1704,11 +1769,13 @@ static void s_kem_reactor_callback(void *a_arg)
     
     if (l_result->error_code != 0) {
         log_it(L_ERROR, "[KEM Reactor] KEM task failed with error %d", l_result->error_code);
+        l_session->closing = true;
         goto cleanup_reactor;
     }
     
     // Store handshake key in session (NOW SAFE - in reactor thread!)
     l_session->encryption_key = l_result->handshake_key;
+    l_result->handshake_key = NULL;
 
     log_it(L_NOTICE, "[KEM Reactor] HANDSHAKE ready for session 0x%" PRIx64 " (ciphertext=%zu)",
            l_session->session_id, l_result->bob_ciphertext_size);
@@ -1722,6 +1789,7 @@ static void s_kem_reactor_callback(void *a_arg)
                                               DOOF_PTR);
     if (!l_response) {
         log_it(L_ERROR, "[KEM Reactor] Failed to serialize handshake response");
+        l_session->closing = true;
         goto cleanup_reactor;
     }
 
@@ -1731,6 +1799,8 @@ static void s_kem_reactor_callback(void *a_arg)
                                   l_response, l_response_size);
 
     DAP_DELETE(l_response);
+    if (l_ret != 0)
+        l_session->closing = true;
 
     if (l_ret != 0)
         log_it(L_ERROR, "[KEM Reactor] HANDSHAKE response send failed (ret=%d) session=0x%" PRIx64,
@@ -1746,19 +1816,12 @@ cleanup_reactor:
         atomic_store(&l_session->kem_task_pending, false);
     }
     
-    // Free result
-    if (l_result) {
-        DAP_DELETE(l_result->bob_ciphertext);
-        DAP_DELETE(l_result);
-    }
-    DAP_DELETE(l_arg);
 }
 
 /**
  * @brief KEM task completion callback (called from worker thread)
  * 
- * This callback is executed in the thread pool worker context.
- * It schedules a reactor callback to complete the handshake.
+ * Publishes to the mailbox only; never touches reactor-owned objects.
  * 
  * @param a_pool Thread pool that executed the task
  * @param a_worker_thread Worker thread that executed the task
@@ -1777,79 +1840,33 @@ static void s_kem_task_callback(dap_thread_pool_t *a_pool,
              "[KEM Callback] Worker thread %lu (pool %p) completed KEM task",
              (unsigned long)a_worker_thread, a_pool);
     
-    if (!l_result || !l_ctx) {
-        log_it(L_ERROR, "[KEM Callback] Invalid arguments");
-        if (l_result) {
-            DAP_DELETE(l_result->bob_ciphertext);
-            DAP_DELETE(l_result);
-        }
-        if (l_ctx) {
-            DAP_DELETE(l_ctx->alice_pub_key);
-            DAP_DELETE(l_ctx);
-        }
-        return;
+    l_ctx->result = l_result;
+    atomic_store_explicit(&l_ctx->done, true, memory_order_release);
+    s_kem_task_release(l_ctx);
+}
+
+static bool s_udp_lifecycle_tick(void *a_arg)
+{
+    stream_udp_session_t *l_session = a_arg;
+    if (atomic_load(&l_session->base.base.server->is_deleting))
+        l_session->closing = true;
+    kem_task_ctx_t *l_task = l_session->kem_task;
+    if (!l_session->closing && l_task && atomic_load_explicit(&l_task->done, memory_order_acquire)) {
+        kem_reactor_callback_arg_t l_arg = {l_session, l_task->result};
+        s_kem_reactor_callback(&l_arg);
+        l_session->kem_task = NULL;
+        s_kem_task_release(l_task);
     }
-    
-    // Prepare argument for reactor callback
-    kem_reactor_callback_arg_t *l_reactor_arg = DAP_NEW_Z(kem_reactor_callback_arg_t);
-    if (!l_reactor_arg) {
-        log_it(L_CRITICAL, "[KEM Callback] Failed to allocate reactor callback arg");
-        DAP_DELETE(l_result->bob_ciphertext);
-        DAP_DELETE(l_result);
-        DAP_DELETE(l_ctx->alice_pub_key);
-        DAP_DELETE(l_ctx);
-        return;
+    /* Incoming traffic, not our own sends, keeps an established peer alive.
+     * Incomplete handshakes have a shorter, bounded resource lifetime. */
+    uint64_t l_timeout = l_session->session ? 120000000000ULL : 10000000000ULL;
+    if (l_session->closing || !l_session->stream ||
+        dap_nanotime_now() - (l_session->session ? l_session->last_rx_ns : l_session->created_ns) >= l_timeout) {
+        l_session->lifecycle_timer = NULL; /* Executing timer belongs to reactor. */
+        s_flow_ctrl_failed(&l_session->base.base, NULL);
+        return false;
     }
-    
-    l_reactor_arg->session = l_ctx->session;
-    l_reactor_arg->result = l_result;
-    
-    // Get session's OWNER worker (NOT listener's worker!)
-    // CRITICAL FIX: For Application-level LB, listener is on worker 0 but flow
-    // may be on any worker (determined by hash). Must use flow's owner_worker_id
-    // to avoid data race when modifying session fields.
-    stream_udp_session_t *l_session = l_ctx->session;
-    if (!l_session) {
-        log_it(L_ERROR, "[KEM Callback] Session invalid");
-        DAP_DELETE(l_result->bob_ciphertext);
-        DAP_DELETE(l_result);
-        DAP_DELETE(l_reactor_arg);
-        DAP_DELETE(l_ctx->alice_pub_key);
-        DAP_DELETE(l_ctx);
-        return;
-    }
-    
-    // Use flow's owner_worker_id instead of listener_es->worker
-    uint32_t l_owner_worker_id = l_session->base.base.owner_worker_id;
-    dap_worker_t *l_worker = dap_events_worker_get(l_owner_worker_id);
-    
-    // Fallback to listener's worker if owner worker not available (shouldn't happen)
-    if (!l_worker && l_session->base.listener_es && l_session->base.listener_es->worker) {
-        log_it(L_WARNING, "[KEM Callback] Owner worker %u not found, falling back to listener's worker",
-               l_owner_worker_id);
-        l_worker = l_session->base.listener_es->worker;
-    }
-    
-    if (!l_worker) {
-        log_it(L_ERROR, "[KEM Callback] No valid worker found for session");
-        DAP_DELETE(l_result->bob_ciphertext);
-        DAP_DELETE(l_result);
-        DAP_DELETE(l_reactor_arg);
-        DAP_DELETE(l_ctx->alice_pub_key);
-        DAP_DELETE(l_ctx);
-        return;
-    }
-    
-    // Schedule reactor callback on OWNER worker (thread-safe session modification)
-    dap_worker_exec_callback_on(l_worker, s_kem_reactor_callback, l_reactor_arg);
-    
-    debug_if(s_debug_more, L_DEBUG,
-             "[KEM Callback] Scheduled reactor callback for session %p on worker %p",
-             l_session, l_worker);
-    
-    // Cleanup context (result will be freed in reactor callback)
-    DAP_DELETE(l_ctx->alice_pub_key);
-    DAP_DELETE(l_ctx);
+    return true;
 }
 
 //===================================================================
@@ -1929,8 +1946,9 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
         return -2;
     }
     
-    l_ctx->session = a_session;
-    l_ctx->session_uuid = 0;  // UUID validation not needed - encryption_key check is sufficient
+    atomic_init(&l_ctx->refs, 2);
+    atomic_init(&l_ctx->done, false);
+    l_ctx->session_id = a_session->session_id;
     l_ctx->alice_pub_key_size = a_payload_size;
     l_ctx->alice_pub_key = DAP_NEW_SIZE(uint8_t, a_payload_size);
     
@@ -1963,6 +1981,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
              a_session, a_session->session_id);
     
     // Return immediately - response will be sent from callback
+    a_session->kem_task = l_ctx;
     return 0;
 }
 
@@ -1976,6 +1995,8 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
         log_it(L_ERROR, "Invalid arguments for SESSION_CREATE handler");
         return -1;
     }
+    if (a_session->session || !a_session->encryption_key)
+        return -1;
     
     debug_if(s_debug_more, L_DEBUG,
              "Processing SESSION_CREATE: payload_size=%zu (JSON plaintext)",
@@ -2034,6 +2055,8 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     json_object_put(l_json);
     
     // Derive session key from handshake key using KDF ratcheting
+    if (!a_session->session)
+        return -5;
     uint64_t l_kdf_counter = 1;  // Counter = 1 for first session
     
     debug_if(s_debug_more, L_DEBUG, "SERVER: Deriving session key with KDF counter=%" PRIu64, l_kdf_counter);
@@ -2400,6 +2423,43 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
         return -6;
     }
     
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
+    if (l_hdr.session_id != l_session->session_id ||
+        l_hdr.type < DAP_STREAM_UDP_PKT_DATA || l_hdr.type > DAP_STREAM_UDP_PKT_CLOSE ||
+        (l_hdr.fc_flags & ~(DAP_IO_FLOW_CTRL_HDR_FLAG_KEEPALIVE | DAP_IO_FLOW_CTRL_HDR_FLAG_RETRANSMIT)) ||
+        (l_payload_size && (!l_hdr.seq_num || l_hdr.type != DAP_STREAM_UDP_PKT_DATA ||
+                          (l_hdr.fc_flags & DAP_IO_FLOW_CTRL_HDR_FLAG_KEEPALIVE)))) {
+        DAP_DELETE(l_decrypted);
+        return -7;
+    }
+    if (l_hdr.seq_num && l_hdr.type == DAP_STREAM_UDP_PKT_DATA) {
+        size_t l_offset = sizeof(dap_stream_trans_udp_full_header_t);
+        if (!l_payload_size) {
+            DAP_DELETE(l_decrypted);
+            return -7;
+        }
+        while (l_offset < l_decrypted_size) {
+            dap_stream_pkt_hdr_t l_stream_hdr;
+            if (l_decrypted_size - l_offset < sizeof(l_stream_hdr)) {
+                DAP_DELETE(l_decrypted);
+                return -7;
+            }
+            memcpy(&l_stream_hdr, l_decrypted + l_offset, sizeof(l_stream_hdr));
+            if (memcmp(l_stream_hdr.sig, c_dap_stream_sig, sizeof(l_stream_hdr.sig)) ||
+                l_stream_hdr.size > DAP_STREAM_PKT_SIZE_MAX ||
+                l_stream_hdr.size > l_decrypted_size - l_offset - sizeof(l_stream_hdr) ||
+                (l_stream_hdr.type != STREAM_PKT_TYPE_DATA_PACKET &&
+                 l_stream_hdr.type != STREAM_PKT_TYPE_FRAGMENT_PACKET &&
+                 l_stream_hdr.type != STREAM_PKT_TYPE_SERVICE_PACKET &&
+                 l_stream_hdr.type != STREAM_PKT_TYPE_KEEPALIVE &&
+                 l_stream_hdr.type != STREAM_PKT_TYPE_ALIVE)) {
+                DAP_DELETE(l_decrypted);
+                return -7;
+            }
+            l_offset += sizeof(l_stream_hdr) + l_stream_hdr.size;
+        }
+    }
+
     // Fill metadata (FC fields)
     a_metadata->seq_num = l_hdr.seq_num;
     a_metadata->ack_seq = l_hdr.ack_seq;
@@ -2410,12 +2470,16 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
     // CRITICAL: Store l_decrypted for FC to free after delivery!
     a_metadata->private_ctx = l_decrypted;
     
-    // Store UDP-specific info in session (для payload_deliver callback)
-    atomic_store(&l_session->last_recv_type, l_hdr.type);
     
     // Payload starts after full header
     *a_payload_out = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
     *a_payload_size_out = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
+    /* Keep the type with each reordered payload, not in mutable session state. */
+    if (l_hdr.seq_num && !(l_hdr.fc_flags & DAP_IO_FLOW_CTRL_HDR_FLAG_KEEPALIVE)) {
+        l_decrypted[sizeof(dap_stream_trans_udp_full_header_t) - 1] = l_hdr.type;
+        *a_payload_out = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t) - 1;
+        ++*a_payload_size_out;
+    }
     
     // NOTE: l_decrypted will be freed by FC after delivery via metadata->private_ctx
     
@@ -2510,8 +2574,12 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
     
     debug_if(s_debug_more, L_DEBUG, "Delivering DECRYPTED reordered payload: size=%zu", a_payload_size);
     
-    // Get type from session (stored by parse_cb)
-    uint8_t l_type = atomic_load(&l_session->last_recv_type);
+    // The type travels with the payload through FC reordering.
+    if (!a_payload_size)
+        return -1;
+    uint8_t l_type = *(const uint8_t *)a_payload;
+    a_payload = (const uint8_t *)a_payload + 1;
+    --a_payload_size;
     
     debug_if(s_debug_more, L_DEBUG,
              "Delivering payload: type=%u, session=0x%" PRIx64 ", size=%zu",
