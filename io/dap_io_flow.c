@@ -373,21 +373,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     
     // Step 1: Cleanup all flows (user data)
     debug_if(s_debug_more, L_DEBUG, "Cleaning up flows for %u workers", l_worker_count);
-    for (uint32_t i = 0; i < l_worker_count; i++) {
-        pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[i]);
-        
-        dap_io_flow_t *l_flow, *l_tmp;
-        HASH_ITER(hh, a_server->flows_per_worker[i], l_flow, l_tmp) {
-            HASH_DEL(a_server->flows_per_worker[i], l_flow);
-            
-            // Call protocol's flow_destroy
-            if (a_server->ops->flow_destroy) {
-                a_server->ops->flow_destroy(l_flow);
-            }
-        }
-        
-        pthread_rwlock_unlock(&a_server->flow_locks_per_worker[i]);
-    }
+    dap_io_flow_delete_all_flows(a_server);
     debug_if(s_debug_more, L_DEBUG, "Flows cleanup complete");
     
     // Step 2: Intelligent drain - wait for natural completion of all queued operations
@@ -574,6 +560,32 @@ dap_io_flow_t* dap_io_flow_find(
  * @param a_server Server instance
  * @return Number of flows deleted, or -1 on error
  */
+typedef struct {
+    dap_io_flow_server_t *server;
+    uint32_t worker_id;
+    int count;
+} flow_cleanup_t;
+
+static void s_delete_worker_flows(void *a_arg)
+{
+    flow_cleanup_t *l_cleanup = a_arg;
+    dap_io_flow_server_t *l_server = l_cleanup->server;
+    uint32_t i = l_cleanup->worker_id;
+    /* Resolve and detach on the owner, never carry raw flow pointers across
+     * the synchronous dispatch. A preceding terminal timer may delete them. */
+    for (;;) {
+        pthread_rwlock_wrlock(&l_server->flow_locks_per_worker[i]);
+        dap_io_flow_t *l_flow = l_server->flows_per_worker[i];
+        if (l_flow)
+            HASH_DEL(l_server->flows_per_worker[i], l_flow);
+        pthread_rwlock_unlock(&l_server->flow_locks_per_worker[i]);
+        if (!l_flow)
+            break;
+        l_server->ops->flow_destroy(l_flow);
+        l_cleanup->count++;
+    }
+}
+
 int dap_io_flow_delete_all_flows(dap_io_flow_server_t *a_server)
 {
     if (!a_server) {
@@ -598,27 +610,13 @@ int dap_io_flow_delete_all_flows(dap_io_flow_server_t *a_server)
     
     // Iterate all workers and delete their flows
     for (uint32_t i = 0; i < l_worker_count; i++) {
-        pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[i]);
-        
-        dap_io_flow_t *l_flow = NULL;
-        dap_io_flow_t *l_tmp = NULL;
-        
-        // Use HASH_ITER for safe iteration with deletion
-        HASH_ITER(hh, a_server->flows_per_worker[i], l_flow, l_tmp) {
-            // Remove from hash table BEFORE destroying (flow_destroy may free memory)
-            HASH_DELETE(hh, a_server->flows_per_worker[i], l_flow);
-            
-            debug_if(s_debug_more, L_DEBUG,
-                     "Deleting flow on worker %u: remote=%s",
-                     i, dap_io_flow_socket_addr_to_string(&l_flow->remote_addr));
-            
-            // Call protocol-specific destructor
-            a_server->ops->flow_destroy(l_flow);
-            
-            l_total_deleted++;
-        }
-        
-        pthread_rwlock_unlock(&a_server->flow_locks_per_worker[i]);
+        flow_cleanup_t l_cleanup = {.server = a_server, .worker_id = i};
+        dap_worker_t *l_worker = dap_events_worker_get(i);
+        if (l_worker && l_worker != dap_worker_get_current())
+            dap_worker_exec_callback_on_sync(l_worker, s_delete_worker_flows, &l_cleanup);
+        else
+            s_delete_worker_flows(&l_cleanup);
+        l_total_deleted += l_cleanup.count;
     }
     
     log_it(L_INFO, "dap_io_flow_delete_all_flows: Deleted %d flows for server '%s'",
@@ -955,6 +953,7 @@ static void s_process_flow_packet_common(
                  dap_io_flow_socket_addr_to_string(a_remote_addr), l_target_worker_id);
     }
     
+    uint32_t l_owner_worker_id = l_flow ? l_flow->owner_worker_id : l_target_worker_id;
     pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_target_worker_id]);
     
     // If flow creation failed, drop packet
@@ -966,11 +965,11 @@ static void s_process_flow_packet_common(
     
     // After releasing lock, check if we need to forward packet
     // (flow exists but on different worker than current)
-    if (l_flow->owner_worker_id != l_worker->id) {
+    if (l_owner_worker_id != l_worker->id) {
         // Flow exists on different worker - must forward packet
         debug_if(s_debug_more, L_DEBUG,
                  "Flow on worker %u, current worker %u - forwarding packet size=%zu",
-                 l_flow->owner_worker_id, l_worker->id, a_data_size);
+                  l_owner_worker_id, l_worker->id, a_data_size);
         
         // Get refcounted cross-worker arena (fail-fast if not available)
         dap_arena_t *l_arena = s_get_cross_worker_arena();
@@ -1000,7 +999,7 @@ static void s_process_flow_packet_common(
         l_packet->server = a_server;  // Always set server
         l_packet->data = l_data_copy;
         l_packet->size = a_data_size;
-        l_packet->flow = l_flow;
+        l_packet->flow = NULL; /* Receiver resolves by address; never retain a foreign flow. */
         memcpy(&l_packet->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
         l_packet->remote_addr_len = a_remote_addr_len;
         l_packet->page_handle = l_packet_alloc.page_handle;  // Store page handle for unref
@@ -1014,10 +1013,10 @@ static void s_process_flow_packet_common(
         
         // Forward to correct worker
         int l_ret = s_forward_packet_to_worker(a_server, l_worker->id, 
-                                                l_flow->owner_worker_id, l_packet);
+                                                 l_owner_worker_id, l_packet);
         if (l_ret != 0) {
             log_it(L_WARNING, "Failed to forward packet to worker %u - releasing page", 
-                   l_flow->owner_worker_id);
+                   l_owner_worker_id);
             // Forward failed - decrement refcount to free page
             dap_arena_page_unref(l_packet->page_handle);
             return;
@@ -1411,4 +1410,3 @@ void* dap_io_flow_server_get_inheritor(dap_io_flow_server_t *a_server)
 {
     return a_server ? a_server->_inheritor : NULL;
 }
-

@@ -616,9 +616,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             // CLOSE
             log_it(L_INFO, "CLIENT FC deliver: CLOSE from server");
             l_stream->is_active = false;
-            if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->close) {
-                l_stream->trans->ops->close(l_stream);
-            }
+            dap_io_flow_ctrl_fail(l_ctx->flow_ctrl);
             break;
         }
         
@@ -664,6 +662,21 @@ static void s_client_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void 
  * @param a_udp_ctx UDP context
  * @return 0 on success (or already created), negative on error
  */
+static void s_client_flow_ctrl_failed(dap_io_flow_t *a_flow, void *a_arg)
+{
+    dap_net_trans_udp_ctx_t *l_udp = a_arg;
+    dap_stream_t *l_stream = l_udp ? l_udp->stream : NULL;
+    if (!l_stream || !l_stream->trans_ctx)
+        return;
+    dap_client_trans_ctx_t *l_client = l_stream->trans_ctx->_inheritor;
+    if (l_client) {
+        l_stream->is_active = false;
+        /* Preserve ownership for the FSM's ordinary cleanup/recovery. */
+        dap_client_fsm_notify(l_client->fsm_uuid, l_client->fsm_thread_idx,
+                             STAGE_STATUS_ERROR, ERROR_NETWORK_CONNECTION_TIMEOUT);
+    }
+}
+
 static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
 {
     if (!a_udp_ctx) {
@@ -712,6 +725,7 @@ static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
         .packet_free = s_client_flow_ctrl_packet_free_cb,
         .keepalive_timeout = s_client_flow_ctrl_keepalive_timeout_cb,
         .arg = a_udp_ctx,
+        .transport_failed = s_client_flow_ctrl_failed,
     };
     
     dap_io_flow_ctrl_flags_t l_fc_flags = DAP_IO_FLOW_CTRL_RETRANSMIT | 

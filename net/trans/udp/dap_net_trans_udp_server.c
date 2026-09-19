@@ -216,6 +216,7 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
                                            const void *a_payload, size_t a_payload_size,
                                            void *a_arg);
 static void s_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void *a_arg);
+static void s_flow_ctrl_failed(dap_io_flow_t *a_flow, void *a_arg);
 
 // Session/Stream integration callbacks
 static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_session_params);
@@ -250,6 +251,7 @@ static const dap_io_flow_ctrl_callbacks_t s_flow_ctrl_callbacks = {
     .packet_free = s_flow_ctrl_packet_free_cb,
     .payload_deliver = s_flow_ctrl_payload_deliver_cb,
     .keepalive_timeout = s_flow_ctrl_keepalive_timeout_cb,
+    .transport_failed = s_flow_ctrl_failed,
     .arg = NULL,  // Not used, session is passed via protocol_ctx
 };
 
@@ -722,6 +724,9 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
         return -2;
     }
     
+    if (!l_session->stream)
+        return -2; /* Terminal flow: never fall back to unreliable delivery. */
+
     // CRITICAL: Filter localhost loopback packets!
     // When SERVER sends via listener socket on localhost, kernel may deliver packets back to sender.
     // Check if source port == listener port (our own echo coming back)
@@ -747,7 +752,7 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
      * session_id is assigned on the FIRST successful deobfuscation, before
      * KEM finishes; client retransmits then hit "Invalid packet type" if we
      * skip deobfuscation. s_handle_handshake ignores true duplicates. */
-    if (dap_transport_is_obfuscated_handshake_size(a_size)) {
+    if (!l_session->base.base.flow_ctrl && dap_transport_is_obfuscated_handshake_size(a_size)) {
         uint8_t *l_handshake = NULL;
         size_t l_handshake_size = 0;
 
@@ -991,12 +996,35 @@ static void s_udp_protocol_destroy_cb(dap_io_flow_datagram_t *a_flow)
     }
     
     if (l_session->stream) {
-        DAP_DELETE(l_session->stream);
+        /* Preserve the borrowed listener; channels still see their live session. */
+        while (l_session->stream->channel_count)
+            dap_stream_ch_delete(l_session->stream->channel[l_session->stream->channel_count - 1]);
+        DAP_DEL_Z(l_session->stream->buf_fragments);
+        DAP_DEL_Z(l_session->stream->pkt_cache);
+        DAP_DEL_Z(l_session->stream);
+    }
+    l_session->base.base.stream_context = NULL;
+    if (l_session->session) {
+        l_session->session->key = NULL;
+        dap_stream_session_close_mt(l_session->session->id);
+        l_session->session = NULL;
+        l_session->base.base.session_context = NULL;
     }
     
     if (l_session->encryption_key) {
         dap_enc_key_delete(l_session->encryption_key);
+        l_session->encryption_key = NULL;
     }
+}
+
+static void s_flow_ctrl_failed(dap_io_flow_t *a_flow, void *a_arg)
+{
+    dap_io_flow_server_t *l_server = a_flow->server;
+    uint32_t l_owner = a_flow->owner_worker_id;
+    pthread_rwlock_wrlock(&l_server->flow_locks_per_worker[l_owner]);
+    HASH_DEL(l_server->flows_per_worker[l_owner], a_flow);
+    pthread_rwlock_unlock(&l_server->flow_locks_per_worker[l_owner]);
+    l_server->ops->flow_destroy(a_flow);
 }
 
 static bool s_stream_udp_should_forward(dap_io_flow_t *a_flow)
@@ -1098,7 +1126,8 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     
     if (!l_flow_ctrl) {
         log_it(L_ERROR, "Failed to create Flow Control for session");
-        // Continue without flow control (fallback to unreliable UDP)
+        s_udp_protocol_destroy_cb(&l_session->base);
+        return NULL;
     } else {
         debug_if(s_debug_more, L_DEBUG, "Flow Control enabled for session (RELIABLE mode: retransmit + reorder)");
     }
@@ -1995,7 +2024,10 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
             dap_net_session_params_t l_params = {0};
             l_params.channels = l_channels_str;
             
-            s_stream_udp_session_create_cb(&a_session->base.base, &l_params);
+            if (!s_stream_udp_session_create_cb(&a_session->base.base, &l_params)) {
+                json_object_put(l_json);
+                return -5;
+            }
         }
     }
     
@@ -2127,7 +2159,10 @@ static int s_handle_close(stream_udp_session_t *a_session)
     
     // Close session
     if (a_session->session && a_session->base.base.session_context) {
-        s_stream_udp_session_close_cb(&a_session->base.base, a_session->base.base.session_context);
+        if (a_session->base.base.flow_ctrl)
+            dap_io_flow_ctrl_fail(a_session->base.base.flow_ctrl);
+        else
+            s_stream_udp_session_close_cb(&a_session->base.base, a_session->base.base.session_context);
     }
     
     return 0;
@@ -2532,6 +2567,3 @@ static void s_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void *a_arg)
     // For DAP Stream: do nothing, stream handles its own keep-alive
     // For other protocols: might close connection, reconnect, or notify upper layer
 }
-
-
-

@@ -110,6 +110,9 @@ struct dap_io_flow_ctrl {
     // Lifecycle management (prevents use-after-free in multithreaded scenarios)
     _Atomic(int32_t) active_ops;        // Count of active operations (send/recv)
     _Atomic(bool) deleting;             // Flag: deletion in progress
+    _Atomic(bool) failed;
+    bool failure_notified;
+    dap_worker_t *owner_worker;
     pthread_mutex_t lifecycle_mutex;    // Mutex for lifecycle synchronization
     pthread_cond_t lifecycle_cond;      // Condition: wait for operations to complete
     
@@ -147,6 +150,12 @@ static bool s_inited = false;
 // Forward declarations
 static bool s_retransmit_timer_callback(void *a_arg);
 static bool s_keepalive_timer_callback(void *a_arg);
+
+void dap_io_flow_ctrl_fail(dap_io_flow_ctrl_t *a_ctrl)
+{
+    if (a_ctrl)
+        atomic_store(&a_ctrl->failed, true);
+}
 
 /**
  * @brief Delete a timerfd on its own worker thread.
@@ -195,7 +204,7 @@ static void s_flow_ctrl_timer_stop(dap_timerfd_t *a_timer)
 static inline bool s_op_begin(dap_io_flow_ctrl_t *a_ctrl)
 {
     // Fast path: check if already deleting
-    if (atomic_load_explicit(&a_ctrl->deleting, memory_order_acquire)) {
+    if (atomic_load_explicit(&a_ctrl->deleting, memory_order_acquire) || atomic_load(&a_ctrl->failed)) {
         return false;
     }
     
@@ -312,6 +321,7 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
              l_ctrl, a_flow, a_callbacks->payload_deliver, a_callbacks->arg);
     
     l_ctrl->flow = a_flow;
+    l_ctrl->owner_worker = dap_worker_get_current();
     l_ctrl->flags = a_flags;
     l_ctrl->callbacks = *a_callbacks;
     
@@ -323,11 +333,20 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
     }
     
     // Initialize send window if retransmission enabled
+    if (((a_flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && !l_ctrl->config.send_window_size) ||
+        ((a_flags & DAP_IO_FLOW_CTRL_REORDER) && !l_ctrl->config.recv_window_size)) {
+        pthread_cond_destroy(&l_ctrl->lifecycle_cond);
+        pthread_mutex_destroy(&l_ctrl->lifecycle_mutex);
+        DAP_DELETE(l_ctrl);
+        return NULL;
+    }
     if (a_flags & DAP_IO_FLOW_CTRL_RETRANSMIT) {
         l_ctrl->send_window_size = l_ctrl->config.send_window_size;
         l_ctrl->send_window = DAP_NEW_Z_COUNT(send_window_entry_t, l_ctrl->send_window_size);
         if (!l_ctrl->send_window) {
             log_it(L_ERROR, "Failed to allocate send window");
+            pthread_cond_destroy(&l_ctrl->lifecycle_cond);
+            pthread_mutex_destroy(&l_ctrl->lifecycle_mutex);
             DAP_DELETE(l_ctrl);
             return NULL;
         }
@@ -345,6 +364,8 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
                 pthread_mutex_destroy(&l_ctrl->send_mutex);
                 DAP_DELETE(l_ctrl->send_window);
             }
+            pthread_cond_destroy(&l_ctrl->lifecycle_cond);
+            pthread_mutex_destroy(&l_ctrl->lifecycle_mutex);
             DAP_DELETE(l_ctrl);
             return NULL;
         }
@@ -386,6 +407,10 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
     }
     
     // Start keep-alive timer if enabled
+    if (a_callbacks->transport_failed && !l_ctrl->retransmit_timer) {
+        dap_io_flow_ctrl_delete(l_ctrl);
+        return NULL;
+    }
     if (a_flags & DAP_IO_FLOW_CTRL_KEEPALIVE) {
         dap_worker_t *l_worker = dap_worker_get_current();
         if (l_worker) {
@@ -414,8 +439,9 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
  * to complete before freeing resources. This prevents use-after-free in
  * multithreaded scenarios where multiple workers may be using the same flow control.
  */
-void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
+static void s_delete_on_owner(void *a_arg)
 {
+    dap_io_flow_ctrl_t *a_ctrl = a_arg;
     if (!a_ctrl) {
         return;
     }
@@ -497,6 +523,16 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     DAP_DELETE(a_ctrl);
 }
 
+void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
+{
+    if (!a_ctrl)
+        return;
+    if (a_ctrl->owner_worker && a_ctrl->owner_worker != dap_worker_get_current())
+        dap_worker_exec_callback_on_sync(a_ctrl->owner_worker, s_delete_on_owner, a_ctrl);
+    else
+        s_delete_on_owner(a_ctrl);
+}
+
 /**
  * @brief Get default configuration
  */
@@ -528,6 +564,8 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
     }
     
     dap_io_flow_ctrl_flags_t l_old_flags = a_ctrl->flags;
+    if (a_ctrl->callbacks.transport_failed && a_flags != l_old_flags)
+        return -1; /* Reliable transport lifetime cannot lose its failure timer. */
     a_ctrl->flags = a_flags;
     
     // Handle timer changes based on flag transitions
@@ -603,7 +641,13 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
     // Assign sequence number (lock-free: single-writer on worker thread)
     uint64_t l_seq_num = 0;
     if (a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) {
-        l_seq_num = a_ctrl->send_seq_next++;
+        l_seq_num = a_ctrl->send_seq_next;
+        if (!a_ctrl->send_window_size || l_seq_num == UINT64_MAX ||
+                a_ctrl->send_window[(l_seq_num - 1) % a_ctrl->send_window_size].packet) {
+            atomic_store(&a_ctrl->failed, true);
+            s_op_end(a_ctrl);
+            return -4;
+        }
         
         debug_if(s_debug_more, L_DEBUG,
                  "FC send: assigned seq=%"PRIu64" (flags=0x%02x, send_seq_next=%"PRIu64")",
@@ -639,13 +683,16 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
                                                   &l_packet, &l_packet_size, a_ctrl->callbacks.arg);
     if (l_ret != 0 || !l_packet) {
         log_it(L_ERROR, "Failed to prepare packet: ret=%d", l_ret);
+        if (l_packet)
+            a_ctrl->callbacks.packet_free(l_packet, a_ctrl->callbacks.arg);
+        atomic_store(&a_ctrl->failed, true);
         s_op_end(a_ctrl);  // LIFECYCLE: End operation
         return -2;
     }
     
     // Send packet
     l_ret = a_ctrl->callbacks.packet_send(a_ctrl->flow, l_packet, l_packet_size, a_ctrl->callbacks.arg);
-    if (l_ret != 0) {
+    if (l_ret != 0 && !(a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT)) {
         log_it(L_WARNING, "Failed to send packet: ret=%d", l_ret);
         a_ctrl->callbacks.packet_free(l_packet, a_ctrl->callbacks.arg);
         s_op_end(a_ctrl);  // LIFECYCLE: End operation
@@ -681,6 +728,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         a_ctrl->send_window[l_idx].timestamp_ns = dap_nanotime_now();
         a_ctrl->send_window[l_idx].retransmit_count = 0;
         a_ctrl->send_window[l_idx].acked = false;
+        a_ctrl->send_seq_next++;
     } else {
         // No retransmission tracking - free immediately
         a_ctrl->callbacks.packet_free(l_packet, a_ctrl->callbacks.arg);
@@ -725,6 +773,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     
     if (l_ret != 0) {
         debug_if(s_debug_more, L_WARNING, "Failed to parse packet: ret=%d", l_ret);
+        DAP_DEL_Z(l_metadata.private_ctx);
         s_op_end(a_ctrl);  // LIFECYCLE: End operation
         return -2;
     }
@@ -738,9 +787,13 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     
     
     // Process ACK if retransmission enabled (single-writer on worker thread)
-    if ((a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && l_metadata.ack_seq > 0) {
+    if ((a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) &&
+            l_metadata.ack_seq > a_ctrl->send_seq_acked && l_metadata.ack_seq < a_ctrl->send_seq_next) {
         // Mark all packets up to ack_seq as acknowledged
-        for (uint64_t seq = a_ctrl->send_seq_acked + 1; seq <= l_metadata.ack_seq; seq++) {
+        uint64_t l_first = a_ctrl->send_seq_acked + 1;
+        if (l_metadata.ack_seq - l_first >= a_ctrl->send_window_size)
+            l_first = l_metadata.ack_seq - a_ctrl->send_window_size + 1;
+        for (uint64_t seq = l_first; seq <= l_metadata.ack_seq; seq++) {
             size_t l_idx = (seq - 1) % a_ctrl->send_window_size;
             if (a_ctrl->send_window[l_idx].seq_num == seq && !a_ctrl->send_window[l_idx].acked) {
                 a_ctrl->send_window[l_idx].acked = true;
@@ -762,6 +815,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     // Handle keep-alive packet
     if (l_metadata.is_keepalive) {
         debug_if(true, L_DEBUG, "Received keep-alive packet");
+        DAP_DEL_Z(l_metadata.private_ctx);
         s_op_end(a_ctrl);  // LIFECYCLE: End operation
         return 0;
     }
@@ -792,7 +846,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 // Free packet buffer after immediate delivery
                 // packet_parse stored buffer pointer in metadata->private_ctx
                 if (l_metadata.private_ctx) {
-                    DAP_DELETE(l_metadata.private_ctx);
+                    DAP_DEL_Z(l_metadata.private_ctx);
                 }
                 
                 a_ctrl->recv_seq_expected++;
@@ -822,7 +876,8 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                         break;  // No more consecutive packets
                     }
                 }
-            } else if (l_seq > a_ctrl->recv_seq_expected) {
+            } else if (l_seq > a_ctrl->recv_seq_expected &&
+                       l_seq - a_ctrl->recv_seq_expected < a_ctrl->recv_window_size) {
                 // OUT-OF-ORDER: Buffer for later delivery
                 debug_if(s_debug_more, L_INFO, "FC recv: BUFFERING OUT-OF-ORDER seq=%"PRIu64" (expected=%"PRIu64")", 
                        l_seq, a_ctrl->recv_seq_expected);
@@ -836,11 +891,12 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 } else {
                     // Buffer packet
                     if (a_ctrl->recv_window[l_idx].payload) {
-                        DAP_DELETE(a_ctrl->recv_window[l_idx].payload);
+                        DAP_DEL_Z(a_ctrl->recv_window[l_idx].payload);
                     }
                     if (a_ctrl->recv_window[l_idx].packet_buffer) {
-                        DAP_DELETE(a_ctrl->recv_window[l_idx].packet_buffer);
+                        DAP_DEL_Z(a_ctrl->recv_window[l_idx].packet_buffer);
                     }
+                    a_ctrl->recv_window[l_idx].received = false;
                     
                     a_ctrl->recv_window[l_idx].payload = DAP_NEW_SIZE(uint8_t, l_payload_size);
                     if (a_ctrl->recv_window[l_idx].payload) {
@@ -849,6 +905,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                         a_ctrl->recv_window[l_idx].seq_num = l_seq;
                         a_ctrl->recv_window[l_idx].received = true;
                         a_ctrl->recv_window[l_idx].packet_buffer = l_metadata.private_ctx;  // Save buffer for later free
+                        l_metadata.private_ctx = NULL;
                         
                         if (l_seq > a_ctrl->recv_seq_highest) {
                             a_ctrl->recv_seq_highest = l_seq;
@@ -861,7 +918,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                         log_it(L_ERROR, "Failed to allocate buffer for out-of-order packet");
                         // Free packet buffer since we can't buffer
                         if (l_metadata.private_ctx) {
-                            DAP_DELETE(l_metadata.private_ctx);
+                            DAP_DEL_Z(l_metadata.private_ctx);
                         }
                     }
                 }
@@ -879,13 +936,15 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             
             // Free packet buffer after delivery
             if (l_metadata.private_ctx) {
-                DAP_DELETE(l_metadata.private_ctx);
+                DAP_DEL_Z(l_metadata.private_ctx);
             }
             
             atomic_fetch_add(&a_ctrl->stats_recv, 1);
         }
     }
     
+    DAP_DEL_Z(l_metadata.private_ctx);
+
     // Send ACK ONLY if RETRANSMIT enabled AND we have valid data to acknowledge
     if ((a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && l_metadata.seq_num > 0 && !l_metadata.is_keepalive) {
         // Determine if we should send ACK and what ack_seq to use
@@ -1014,17 +1073,18 @@ static bool s_retransmit_timer_callback(void *a_arg)
     uint64_t l_now = dap_nanotime_now();
     uint64_t l_timeout_ns = l_ctrl->config.retransmit_timeout_ms * 1000000ULL;
     
+    // A rejected stream write may contain only part of a framed packet. Retire
+    // the connection rather than continuing with a syntactically broken stream.
+    if (atomic_load(&l_ctrl->failed))
+        goto terminal;
+
     // Scan send window for packets needing retransmission
-    for (uint64_t seq = l_ctrl->send_seq_acked + 1; seq < l_ctrl->send_seq_next; seq++) {
-        size_t l_idx = (seq - 1) % l_ctrl->send_window_size;
+    for (size_t l_idx = 0; l_idx < l_ctrl->send_window_size; l_idx++) {
         send_window_entry_t *l_entry = &l_ctrl->send_window[l_idx];
+        uint64_t seq = l_entry->seq_num;
         
         if (!l_entry->packet || l_entry->acked) {
             continue;  // Skip empty or acked slots
-        }
-        
-        if (l_entry->seq_num != seq) {
-            continue;  // Slot overwritten
         }
         
         // Check if timeout expired
@@ -1040,7 +1100,8 @@ static bool s_retransmit_timer_callback(void *a_arg)
                 l_ctrl->callbacks.packet_free(l_entry->packet, l_ctrl->callbacks.arg);
                 l_entry->packet = NULL;
                 l_entry->acked = true;  // Mark as done (lost)
-                continue;
+                atomic_store(&l_ctrl->failed, true);
+                goto terminal;
             }
             
             // RETRANSMIT
@@ -1067,6 +1128,23 @@ static bool s_retransmit_timer_callback(void *a_arg)
     pthread_mutex_unlock(&l_ctrl->send_mutex);
 
     return true;  // Continue timer
+
+terminal:
+    /* The reactor still owns the currently executing timer. Detach it before
+     * notifying an owner that may synchronously delete FC and its flow. */
+    l_ctrl->retransmit_timer = NULL;
+    if (l_ctrl->failure_notified) {
+        pthread_mutex_unlock(&l_ctrl->send_mutex);
+        return false;
+    }
+    l_ctrl->failure_notified = true;
+    dap_io_flow_ctrl_keepalive_timeout_cb_t l_failed = l_ctrl->callbacks.transport_failed;
+    dap_io_flow_t *l_flow = l_ctrl->flow;
+    void *l_arg = l_ctrl->callbacks.arg;
+    pthread_mutex_unlock(&l_ctrl->send_mutex);
+    if (l_failed)
+        l_failed(l_flow, l_arg);
+    return false;
 }
 
 /**
@@ -1134,4 +1212,3 @@ static bool s_keepalive_timer_callback(void *a_arg)
     
     return true;  // Continue timer
 }
-

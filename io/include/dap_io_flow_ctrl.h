@@ -255,6 +255,9 @@ typedef struct dap_io_flow_ctrl_callbacks {
     dap_io_flow_ctrl_payload_deliver_cb_t payload_deliver;   ///< Deliver to upper layer
     dap_io_flow_ctrl_keepalive_timeout_cb_t keepalive_timeout; ///< Keep-alive timeout
     void *arg;                                                 ///< User argument for all callbacks
+    /* One-shot terminal failure, on the FC timer worker, outside FC locks.
+     * May delete FC. Packet callbacks must not destroy their owner synchronously. */
+    dap_io_flow_ctrl_keepalive_timeout_cb_t transport_failed;
 } dap_io_flow_ctrl_callbacks_t;
 
 /**
@@ -310,6 +313,8 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
  * @param a_ctrl Flow control to destroy
  */
 void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl);
+/* Mark terminal from a packet callback; notification occurs on the next timer tick. */
+void dap_io_flow_ctrl_fail(dap_io_flow_ctrl_t *a_ctrl);
 
 /**
  * @brief Set flow control flags (dynamic enable/disable)
@@ -332,6 +337,10 @@ dap_io_flow_ctrl_flags_t dap_io_flow_ctrl_get_flags(dap_io_flow_ctrl_t *a_ctrl);
 
 /**
  * @brief Send payload with flow control
+ * Reliable success means accepted for retry, including a failed first send.
+ * Prepare/window failure is terminal; no sequence or live slot is discarded.
+ * Send/recv/configuration are serialized by the owner worker. Owners must stop
+ * submitting operations before delete; arbitrary concurrent pointer use is invalid.
  * 
  * Flow control will:
  * 1. Call packet_prepare callback to add header
