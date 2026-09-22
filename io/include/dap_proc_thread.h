@@ -59,7 +59,8 @@ typedef struct dap_proc_thread {
 #ifdef DAP_OS_WINDOWS
     HANDLE wakeup_event;                                                    /* auto-reset event for cross-thread wakeup */
 #else
-    int wakeup_fd;                                                          /* eventfd for cross-thread wakeup */
+    int wakeup_fd;                                                          /* eventfd (Linux) or pipe read end for cross-thread wakeup */
+    int wakeup_fd_w;                                                        /* pipe write end, -1 on eventfd platforms */
 #endif
     dap_context_t *context;
 } dap_proc_thread_t;
@@ -70,6 +71,7 @@ int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id);
 int dap_proc_thread_init(uint32_t a_threads_count);
 void dap_proc_thread_deinit();
 int dap_proc_thread_loop(dap_context_t *a_context);
+void dap_proc_thread_wakeup_signal(dap_proc_thread_t *a_thread);
 
 dap_proc_thread_t *dap_proc_thread_get(uint32_t a_thread_number);
 dap_proc_thread_t *dap_proc_thread_get_auto();
