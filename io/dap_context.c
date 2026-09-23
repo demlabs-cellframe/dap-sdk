@@ -952,8 +952,17 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
                 //log_it(L_DEBUG, "Comes connection with type %d", l_cur->type);
                 if(l_cur->buf_in_size_max && l_cur->buf_in_size >= l_cur->buf_in_size_max ) {
-                    log_it(L_WARNING, "Buffer is full when there is smth to read. Its dropped! esocket %p (%"DAP_FORMAT_SOCKET")", l_cur, l_cur->socket);
+                    // Was silently dropping the buffered bytes and continuing to read more into
+                    // it at offset 0 (P.7): for any client-fed protocol (cli-server request
+                    // header/body, HTTP) that desynchronizes the byte stream instead of failing
+                    // it - the rest of the still-incoming data is then parsed as if it were the
+                    // start of a fresh request, and the peer gets no error, just a hang until the
+                    // unrelated 60s inactivity timeout. Fail closed instead: drop the corrupted
+                    // buffer and signal close so the peer gets an honest disconnect right away.
+                    log_it(L_WARNING, "Buffer is full when there is smth to read. Its dropped, closing esocket %p (%"DAP_FORMAT_SOCKET")", l_cur, l_cur->socket);
                     l_cur->buf_in_size = 0;
+                    if (!l_cur->no_close)
+                        l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                 }
 
                 bool l_must_read_smth = false;
