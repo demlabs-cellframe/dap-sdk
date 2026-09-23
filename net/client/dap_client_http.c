@@ -1232,7 +1232,10 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
     if(l_es){
         dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
         assert(l_client_http);
-        if ( time(NULL)- l_client_http->ts_last_read >= (time_t) s_client_timeout_read_after_connect_ms){
+        // s_client_timeout_read_after_connect_ms is milliseconds (config value * 1000),
+        // but ts_last_read/time(NULL) are whole seconds - comparing them directly made the
+        // default 5s timeout effectively ~83 minutes (5000 "seconds"). Convert to seconds.
+        if ( time(NULL) - l_client_http->ts_last_read >= (time_t) (s_client_timeout_read_after_connect_ms / 1000) ){
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path ? l_client_http->path : "");
                    

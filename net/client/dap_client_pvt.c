@@ -209,8 +209,10 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
 
     *l_es_uuid_ptr = a_client_pvt->stream_es->uuid;
 
+    // dap_timerfd_start_on_worker() takes milliseconds; s_client_timeout_active_after_connect_seconds
+    // is in seconds, so the multiplier must be 1000, not 1024 (typo).
     if( dap_timerfd_start_on_worker(a_client_pvt->stream_es->worker,
-                                    s_client_timeout_active_after_connect_seconds * 1024,
+                                    s_client_timeout_active_after_connect_seconds * 1000,
                                     s_stream_timer_timeout_after_connected_check,
                                     l_es_uuid_ptr) == NULL) {
         log_it(L_ERROR,"Can't run timer for stream after connect check for esocket uuid %"DAP_UINT64_FORMAT_U, *l_es_uuid_ptr);

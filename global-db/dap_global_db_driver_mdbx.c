@@ -1466,13 +1466,25 @@ safe_ret:
     return l_obj_arr;
 }
 
+// s_txn is a single static handle, not stack-based: a naive nested txn_start (BUSY,
+// silently ignored by every caller) followed by that inner call's own txn_end(true)
+// would commit/null the *outer* transaction early, losing isolation for the rest of
+// the outer batch - a latent bug for any future/rare call path that opens a txn while
+// one is already active. Track nesting depth so only the outermost start/end actually
+// begins/commits the mdbx transaction; inner start/end calls are no-ops that just
+// adjust the depth.
+static unsigned s_txn_depth = 0;
+
 static int s_db_mdbx_txn_start()
 {
-    if (s_txn)
-        return MDBX_BUSY;
+    if (s_txn) {
+        ++s_txn_depth;
+        return MDBX_SUCCESS;
+    }
     int rc;
     if (MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &s_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), rc;
+    s_txn_depth = 1;
     return rc;
 
 }
@@ -1481,13 +1493,19 @@ static int s_db_mdbx_txn_end(bool a_commit)
 {
     if (!s_txn)
         return MDBX_BAD_TXN;
+    if (s_txn_depth > 1) {
+        --s_txn_depth;
+        return MDBX_SUCCESS;
+    }
     int rc;
     if (!a_commit) {
         if ( MDBX_SUCCESS != (rc = mdbx_txn_abort(s_txn)) )
             log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc));
     } else if ( MDBX_SUCCESS != (rc = mdbx_txn_commit(s_txn)) )
         log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
-    if (MDBX_SUCCESS == rc)
+    if (MDBX_SUCCESS == rc) {
         s_txn = NULL;
+        s_txn_depth = 0;
+    }
     return rc;
 }

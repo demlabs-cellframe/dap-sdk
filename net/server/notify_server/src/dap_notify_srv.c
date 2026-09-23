@@ -164,7 +164,11 @@ int dap_notify_server_send_mt(const char *a_data)
  */
 int dap_notify_server_send_f_mt(const char *a_format, ...)
 {
-    if (!s_notify_data_user_callback && s_notify_server_queue)
+    // Was "!callback && queue" - bailed out whenever the queue *was* initialized but no
+    // user callback was set, i.e. the common case, making this function effectively dead
+    // (per dap_notify_server_send_mt's own "nothing to notify" check just above, the
+    // correct bail-out condition is simply no queue to send to).
+    if (!s_notify_server_queue)
         return 0;
 
     va_list ap, ap_copy;
