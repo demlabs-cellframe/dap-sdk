@@ -371,19 +371,24 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     dap_store_obj_t *l_read_obj = NULL;
     bool l_existed_obj_pinned = false;
     int l_ret = 0;
-    if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
-        l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL, true);
-        if (l_read_obj) { // Need to rewrite existed value
-            l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
-            if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
-                l_existed_obj_pinned = true;
-            }
-        } else {
-            log_it(L_ERROR, "Existed object with group %s and key %s is broken and will be erased",
-                                                        a_obj->group, a_obj->key);
-            dap_store_obj_t l_to_delete = (dap_store_obj_t) { .group = a_obj->group, .key = a_obj->key };
-            dap_global_db_driver_delete(&l_to_delete, 1);
+    // Was dap_global_db_driver_is() (existence check, its own RO txn) followed by a
+    // dap_global_db_driver_read() (another RO txn) using the exact same with_holes==true
+    // presence criterion (P.4: "3 RO + 1 RW txn на запись") - the two driver backends
+    // (mdbx/sqlite) look the key up the same way for both calls, so just read once and use
+    // a non-NULL result as the existence check, dropping one full extra transaction per
+    // single-object write.
+    l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL, true);
+    if (l_read_obj) { // Need to rewrite existed value
+        l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
+        if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
+            l_existed_obj_pinned = true;
         }
+    } else if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
+        // Key exists but couldn't be read back - genuinely broken record, erase it.
+        log_it(L_ERROR, "Existed object with group %s and key %s is broken and will be erased",
+                                                    a_obj->group, a_obj->key);
+        dap_store_obj_t l_to_delete = (dap_store_obj_t) { .group = a_obj->group, .key = a_obj->key };
+        dap_global_db_driver_delete(&l_to_delete, 1);
     }
     if (l_read_obj && l_cluster->owner_root_access &&
             a_obj->sign && (!l_read_obj->sign ||
