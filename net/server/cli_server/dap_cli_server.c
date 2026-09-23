@@ -30,6 +30,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #ifndef DAP_OS_WINDOWS
 #include <poll.h>
 #endif
@@ -57,6 +58,107 @@ static dap_server_t *s_cli_server = NULL;
 static bool s_debug_cli = false;
 static int s_cli_version = 1;
 
+// Bounded concurrency guard for the per-request detached thread model: not a
+// full executor yet, just a hard cap turning runaway parallel requests into
+// an immediate 429 instead of unbounded pthread/heap growth. Commands flagged
+// DAP_CLI_CMD_FLAG_HEAVY by their own service (see dap_cli_server_cmd_flags_set)
+// get a tighter cap of their own: the dispatcher has no built-in notion of
+// which service is "heavy" — any service's command can end up being the one
+// a crawler hits hard enough to exhaust node resources, so the classification
+// lives with the service that registered the command, not here.
+static _Atomic int s_cli_inflight = 0;
+static _Atomic int s_cli_inflight_heavy = 0;
+static int s_cli_max_inflight = 32;
+static int s_cli_max_inflight_heavy = 4;
+
+// Per-source rate limiting: a crawler is rarely a single address. Production
+// incidents were driven by many hosts inside the same /16 (see
+// cellframe_node_rpc_overload_research_2026_09, sec. 12), so limiting by
+// exact IPv4 address alone does nothing — the bucket key is the /16 prefix.
+// A plain token bucket refilled continuously (fractional tokens tracked as
+// nanotime-scaled units) keeps the check O(1) and lock-scope tiny.
+typedef struct dap_cli_rate_bucket {
+    uint32_t subnet_key;      // top 16 bits of the source IPv4 address
+    int64_t tokens_scaled;    // current tokens * DAP_NSEC_PER_SEC, may exceed burst only via cap below
+    dap_nanotime_t ts_last;   // last refill timestamp
+    UT_hash_handle hh;
+} dap_cli_rate_bucket_t;
+
+static dap_cli_rate_bucket_t *s_cli_rate_buckets = NULL;
+static pthread_mutex_t s_cli_rate_lock = PTHREAD_MUTEX_INITIALIZER;
+static bool s_cli_rate_limit_enabled = false;
+static int s_cli_rate_limit_rps = 20;     // sustained requests/sec per /16
+static int s_cli_rate_limit_burst = 40;   // burst allowance per /16
+#define DAP_CLI_RATE_BUCKETS_MAX 65536    // hard cap: one entry per possible /16, never grows past it
+
+// Dead-client registry: tracks esocket uuids that still have a live
+// connection, so the detached command thread can check — right before doing
+// any real work — whether the requesting client is still there. Without
+// this, a client that times out or disconnects while a command is queued
+// still gets its command executed to completion; for a mutating command
+// (tx_create_json et al.) that means the transaction lands in mempool with
+// nobody left to receive the "hash" reply — exactly the production report
+// "API call timed out, but the transaction was still sent". Entries are
+// added when a command is scheduled and removed exactly once, by the
+// framework's delete_callback (s_cli_cmd_delete), which fires when the
+// esocket is actually torn down — never earlier, never twice.
+typedef struct dap_cli_live_client {
+    dap_events_socket_uuid_t es_uuid;
+    UT_hash_handle hh;
+} dap_cli_live_client_t;
+static dap_cli_live_client_t *s_cli_live_clients = NULL;
+static pthread_mutex_t s_cli_live_clients_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void s_cli_live_client_add(dap_events_socket_uuid_t a_uuid) {
+    dap_cli_live_client_t *l_c = DAP_NEW_Z(dap_cli_live_client_t);
+    l_c->es_uuid = a_uuid;
+    pthread_mutex_lock(&s_cli_live_clients_lock);
+    HASH_ADD(hh, s_cli_live_clients, es_uuid, sizeof(a_uuid), l_c);
+    pthread_mutex_unlock(&s_cli_live_clients_lock);
+}
+
+static void s_cli_live_client_remove(dap_events_socket_uuid_t a_uuid) {
+    pthread_mutex_lock(&s_cli_live_clients_lock);
+    dap_cli_live_client_t *l_c = NULL;
+    HASH_FIND(hh, s_cli_live_clients, &a_uuid, sizeof(a_uuid), l_c);
+    if (l_c) {
+        HASH_DEL(s_cli_live_clients, l_c);
+        DAP_DELETE(l_c);
+    }
+    pthread_mutex_unlock(&s_cli_live_clients_lock);
+}
+
+// Returns false once the client's esocket has been destroyed. Checked once,
+// right before running the command: it catches the client-already-gone case
+// (early disconnect, upstream timeout) but — being a point-in-time check,
+// not cooperative cancellation — does not abort a command already in
+// flight if the client disconnects mid-execution. That residual window is
+// unavoidable without threading a cancellation signal through every command
+// handler, which is out of scope here.
+static bool s_cli_live_client_check(dap_events_socket_uuid_t a_uuid) {
+    pthread_mutex_lock(&s_cli_live_clients_lock);
+    dap_cli_live_client_t *l_c = NULL;
+    HASH_FIND(hh, s_cli_live_clients, &a_uuid, sizeof(a_uuid), l_c);
+    pthread_mutex_unlock(&s_cli_live_clients_lock);
+    return l_c != NULL;
+}
+
+// Cooperative cancellation: the uuid of the client a command thread is
+// currently working for, one slot per thread since exactly one command runs
+// per detached CLI thread. Set right before calling into the command's
+// handler, cleared right after — a zero value (no live esocket ever has
+// uuid 0, see dap_new_es_id()) means "not a CLI command thread" and makes
+// dap_cli_server_client_is_alive() a safe no-op true from any other context
+// (HTTP /exec_cmd proc thread, tests, dap_app_cli's own dap_cli_cmd_exec()
+// calls).
+static _Thread_local dap_events_socket_uuid_t s_cli_cmd_current_client_uuid = 0;
+
+bool dap_cli_server_client_is_alive(void) {
+    return s_cli_cmd_current_client_uuid
+        ? s_cli_live_client_check(s_cli_cmd_current_client_uuid)
+        : true;
+}
+
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 
@@ -71,6 +173,7 @@ typedef struct cli_cmd_arg {
     char *buf, status;
     time_t time_start;
     bool restricted;
+    bool is_heavy;
 } cli_cmd_arg_t;
 
 static void* s_cli_cmd_exec(void *a_arg);
@@ -96,11 +199,96 @@ static bool s_allowed_cmd_check(char *a_buf) {
     return l_allowed;
 }
 
+// Look up whether the requested command was flagged HEAVY by its own service
+// (dap_cli_server_cmd_flags_set). This is the only place the generic dispatcher
+// consults command-specific state for backpressure purposes; it never hardcodes
+// a service name.
+static bool s_cmd_is_heavy(const char *a_buf) {
+    enum json_tokener_error jterr;
+    json_object *jobj = json_tokener_parse_verbose(a_buf, &jterr), *jobj_method = NULL;
+    if (jterr != json_tokener_success)
+        return false;
+    bool l_heavy = false;
+    if (json_object_object_get_ex(jobj, "method", &jobj_method)) {
+        dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(json_object_get_string(jobj_method));
+        l_heavy = l_cmd && (l_cmd->flags & DAP_CLI_CMD_FLAG_HEAVY);
+    }
+    json_object_put(jobj);
+    return l_heavy;
+}
+
+// Token-bucket check for the source /16. Returns true if the request is
+// allowed and consumes one token; false if the subnet is over its budget.
+// a_subnet_key == 0 (unknown/non-IPv4 family) always passes — this limiter
+// only targets the IPv4 crawler pattern seen in production, not local/unix
+// sockets or IPv6 traffic.
+static bool s_cli_rate_limit_check(uint32_t a_subnet_key) {
+    if (!s_cli_rate_limit_enabled || !a_subnet_key)
+        return true;
+    dap_nanotime_t l_now = dap_nanotime_now();
+    bool l_allow;
+    pthread_mutex_lock(&s_cli_rate_lock);
+    dap_cli_rate_bucket_t *l_b = NULL;
+    HASH_FIND(hh, s_cli_rate_buckets, &a_subnet_key, sizeof(a_subnet_key), l_b);
+    if (!l_b) {
+        // Bounded growth: with the table full, fail open rather than leak
+        // memory or stall the CLI accept path on eviction bookkeeping.
+        if (HASH_CNT(hh, s_cli_rate_buckets) >= DAP_CLI_RATE_BUCKETS_MAX) {
+            pthread_mutex_unlock(&s_cli_rate_lock);
+            return true;
+        }
+        l_b = DAP_NEW_Z(dap_cli_rate_bucket_t);
+        l_b->subnet_key = a_subnet_key;
+        l_b->tokens_scaled = (int64_t)s_cli_rate_limit_burst * DAP_NSEC_PER_SEC;
+        l_b->ts_last = l_now;
+        HASH_ADD(hh, s_cli_rate_buckets, subnet_key, sizeof(l_b->subnet_key), l_b);
+    } else {
+        dap_nanotime_t l_dt = l_now > l_b->ts_last ? l_now - l_b->ts_last : 0;
+        l_b->ts_last = l_now;
+        int64_t l_refill = (int64_t)l_dt * s_cli_rate_limit_rps;
+        int64_t l_cap = (int64_t)s_cli_rate_limit_burst * DAP_NSEC_PER_SEC;
+        l_b->tokens_scaled = dap_min(l_cap, l_b->tokens_scaled + l_refill);
+    }
+    l_allow = l_b->tokens_scaled >= DAP_NSEC_PER_SEC;
+    if (l_allow)
+        l_b->tokens_scaled -= DAP_NSEC_PER_SEC;
+    pthread_mutex_unlock(&s_cli_rate_lock);
+    return l_allow;
+}
+
+// Shared with dap_json_rpc.c's /exec_cmd handler: that path used to call
+// dap_cli_cmd_exec() directly, bypassing every backpressure mechanism above
+// (HEAVY classification, inflight caps) simply because it runs on a proc
+// thread instead of going through s_cli_cmd_schedule. Both entry points now
+// funnel through this single acquire/release pair so a signed /exec_cmd
+// caller is subject to the exact same limits as an unauthenticated CLI-port
+// caller.
+bool dap_cli_server_backpressure_acquire(const char *a_req_str, bool *a_out_is_heavy) {
+    bool l_heavy = a_req_str && s_cmd_is_heavy(a_req_str);
+    if (a_out_is_heavy)
+        *a_out_is_heavy = l_heavy;
+    _Atomic int *l_counter = l_heavy ? &s_cli_inflight_heavy : &s_cli_inflight;
+    int l_limit = l_heavy ? s_cli_max_inflight_heavy : s_cli_max_inflight;
+    if (atomic_fetch_add(l_counter, 1) >= l_limit) {
+        atomic_fetch_sub(l_counter, 1);
+        return false;
+    }
+    return true;
+}
+
+void dap_cli_server_backpressure_release(bool a_is_heavy) {
+    atomic_fetch_sub(a_is_heavy ? &s_cli_inflight_heavy : &s_cli_inflight, 1);
+}
+
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
     cli_cmd_arg_t *l_arg = a_arg ? (cli_cmd_arg_t*)a_arg : DAP_NEW_Z(cli_cmd_arg_t);
     switch (l_arg->status) {
     case 0: {
         a_es->callbacks.arg = l_arg;
+        // Registered exactly once per esocket lifetime (status only ever
+        // passes through 0 once); removed exactly once by s_cli_cmd_delete
+        // when the framework actually tears the esocket down.
+        s_cli_live_client_add(a_es->uuid);
         ++l_arg->status;
     }
     case 1: {
@@ -132,25 +320,56 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
 
-        l_arg->restricted = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
+        bool l_is_loopback = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
+        l_arg->restricted = !l_is_loopback
 #ifdef DAP_OS_UNIX
             && a_es->addr_storage.ss_family != AF_UNIX
 #endif
             && !s_allowed_cmd_check(l_arg->buf);
-                
+
+        // Rate-limit by source /16 before doing any further work: the
+        // production crawlers were spread across many hosts in a handful of
+        // /16 ranges, so per-IP limiting alone would not have helped.
+        // Loopback and unix-socket callers (local tooling, node-cli) bypass
+        // this — they are not the threat model.
+        if (!l_is_loopback && a_es->addr_storage.ss_family == AF_INET) {
+            uint32_t l_subnet_key = ntohl(((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr) >> 16;
+            if (!s_cli_rate_limit_check(l_subnet_key)) {
+                dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 429 Too Many Requests\r\n"
+                                                  "Retry-After: 1\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                DAP_DELETE(l_arg);
+                a_es->buf_in_size = 0;
+                a_es->callbacks.arg = NULL;
+                return;
+            }
+        }
+
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
         l_arg->es_uid = a_es->uuid;
         l_arg->time_start = dap_nanotime_now();
 
-        
+        if (!dap_cli_server_backpressure_acquire(l_arg->buf, &l_arg->is_heavy)) {
+            dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 429 Too Many Requests\r\n"
+                                              "Retry-After: 1\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            DAP_DEL_MULTY(l_arg->buf, l_arg);
+            a_es->buf_in_size = 0;
+            a_es->callbacks.arg = NULL;
+            return;
+        }
+
         pthread_t l_tid;
         pthread_attr_t attr;
         pthread_attr_init(&attr);
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-        pthread_create(&l_tid, &attr, s_cli_cmd_exec, l_arg);
-
-        //dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
+        int l_rc = pthread_create(&l_tid, &attr, s_cli_cmd_exec, l_arg);
+        if (l_rc) {
+            log_it(L_ERROR, "Can't create CLI command thread, error %d", l_rc);
+            dap_cli_server_backpressure_release(l_arg->is_heavy);
+            DAP_DEL_MULTY(l_arg->buf, l_arg);
+        }
         a_es->buf_in_size = 0;
         a_es->callbacks.arg = NULL;
     } return;
@@ -164,7 +383,19 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
 }
 
 DAP_STATIC_INLINE void s_cli_cmd_delete(dap_events_socket_t *a_es, void UNUSED_ARG *a_arg) {
+    s_cli_live_client_remove(a_es->uuid);
     DAP_DELETE(a_es->callbacks.arg);
+}
+
+// The CLI/RPC protocol is strictly request-response with no keep-alive
+// semantics of its own; the node only ever wrote a "Connection: close"
+// header without actually closing anything, so a client that does not close
+// its side itself would sit in the worker's esocket table (and eventually
+// CLOSE_WAIT after a peer-side close) until the 60s inactivity timeout. Once
+// the full reply has been flushed to the socket, tear the connection down
+// immediately instead of waiting on that timeout.
+static void s_cli_client_write_finished(dap_events_socket_t *a_es, void UNUSED_ARG *a_arg) {
+    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
 }
 
 /**
@@ -178,14 +409,22 @@ DAP_STATIC_INLINE void s_cli_cmd_delete(dap_events_socket_t *a_es, void UNUSED_A
 int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
 {
     s_debug_cli = a_debug_more;
-    dap_events_socket_callbacks_t l_callbacks = { .read_callback = s_cli_cmd_schedule, .delete_callback = s_cli_cmd_delete };
+    dap_events_socket_callbacks_t l_callbacks = { .read_callback = s_cli_cmd_schedule, .delete_callback = s_cli_cmd_delete,
+                                                   .write_finished_callback = s_cli_client_write_finished };
     if (!( s_cli_server = dap_server_new(a_cfg_section, NULL, &l_callbacks) )) {
         log_it(L_ERROR, "CLI server not initialized");
         return -2;
     }
     s_cli_version = dap_config_get_item_int32_default(g_config, a_cfg_section, "version", s_cli_version);
+    s_cli_max_inflight = dap_config_get_item_int32_default(g_config, a_cfg_section, "max_inflight", s_cli_max_inflight);
+    s_cli_max_inflight_heavy = dap_config_get_item_int32_default(g_config, a_cfg_section, "max_inflight_heavy", s_cli_max_inflight_heavy);
+    s_cli_rate_limit_enabled = dap_config_get_item_bool_default(g_config, a_cfg_section, "rate_limit", s_cli_rate_limit_enabled);
+    s_cli_rate_limit_rps = dap_config_get_item_int32_default(g_config, a_cfg_section, "rate_limit_rps", s_cli_rate_limit_rps);
+    s_cli_rate_limit_burst = dap_config_get_item_int32_default(g_config, a_cfg_section, "rate_limit_burst", s_cli_rate_limit_burst);
     dap_cli_http_docs_init(a_cfg_section);
-    log_it(L_INFO, "CLI server initialized with protocol version %d", s_cli_version);
+    log_it(L_INFO, "CLI server initialized with protocol version %d, max_inflight %d (heavy %d), rate_limit %s (%d rps, burst %d per /16)",
+           s_cli_version, s_cli_max_inflight, s_cli_max_inflight_heavy,
+           s_cli_rate_limit_enabled ? "on" : "off", s_cli_rate_limit_rps, s_cli_rate_limit_burst);
     return 0;
 }
 
@@ -196,6 +435,20 @@ void dap_cli_server_deinit()
 {
     dap_cli_http_docs_deinit();
     dap_server_delete(s_cli_server);
+    pthread_mutex_lock(&s_cli_rate_lock);
+    dap_cli_rate_bucket_t *l_b, *l_tmp;
+    HASH_ITER(hh, s_cli_rate_buckets, l_b, l_tmp) {
+        HASH_DEL(s_cli_rate_buckets, l_b);
+        DAP_DELETE(l_b);
+    }
+    pthread_mutex_unlock(&s_cli_rate_lock);
+    pthread_mutex_lock(&s_cli_live_clients_lock);
+    dap_cli_live_client_t *l_c, *l_c_tmp;
+    HASH_ITER(hh, s_cli_live_clients, l_c, l_c_tmp) {
+        HASH_DEL(s_cli_live_clients, l_c);
+        DAP_DELETE(l_c);
+    }
+    pthread_mutex_unlock(&s_cli_live_clients_lock);
 }
 
 /**
@@ -449,6 +702,21 @@ void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_serve
 }
 
 /**
+ * @brief dap_cli_server_cmd_flags_set
+ * Let a service classify its own command for dispatcher-level backpressure
+ * (see DAP_CLI_CMD_FLAG_HEAVY) without the dispatcher having to know the
+ * service or command name in advance.
+ * @param a_name
+ * @param a_flags
+ */
+void dap_cli_server_cmd_flags_set(const char *a_name, uint32_t a_flags)
+{
+    dap_cli_cmd_t *l_cmd_item = dap_cli_server_cmd_find(a_name);
+    if (l_cmd_item)
+        l_cmd_item->flags |= a_flags;
+}
+
+/**
  * @brief dap_cli_server_cmd_get_first
  * @return
  */
@@ -498,8 +766,30 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
 
 static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
-    char    *l_ret = s_cli_cmd_exec_ex(l_arg->buf, l_arg->restricted),
-            *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
+
+    // Dead-client check: the request sat in the pthread-create/scheduling
+    // path for some amount of time; if the caller has already disconnected
+    // there is nobody left to deliver the reply to, so running the command
+    // at all would be pure waste — and, for a mutating command like
+    // tx_create_json, would place a transaction in mempool whose "hash"
+    // reply nobody will ever receive (the exact production symptom this
+    // fixes). No output is produced or sent in that case.
+    if (!s_cli_live_client_check(l_arg->es_uid)) {
+        debug_if(s_debug_cli, L_INFO, "Client for es "DAP_FORMAT_ESOCKET_UUID" disconnected before command execution, skipping", l_arg->es_uid);
+        dap_cli_server_backpressure_release(l_arg->is_heavy);
+        DAP_DEL_MULTY(l_arg->buf, l_arg);
+        return NULL;
+    }
+
+    // Cooperative cancellation: publish the client uuid this thread is
+    // working for, so a HEAVY command's hot loop can poll
+    // dap_cli_server_client_is_alive() deep inside shared helper code (DEX
+    // history/OHLCV, ledger UTXO scans, block dump/list, tx_history -all)
+    // without threading a uuid parameter through every call in between.
+    s_cli_cmd_current_client_uuid = l_arg->es_uid;
+    char    *l_ret = s_cli_cmd_exec_ex(l_arg->buf, l_arg->restricted);
+    s_cli_cmd_current_client_uuid = 0;
+    char    *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                             "Content-Length: %zu\r\n"
                                             "Content-Type: application/json\r\n"
                                             "Access-Control-Allow-Origin: *\r\n"
@@ -517,6 +807,7 @@ static void *s_cli_cmd_exec(void *a_arg) {
                                              l_ret);
     DAP_DELETE(l_ret);
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
+    dap_cli_server_backpressure_release(l_arg->is_heavy);
     // TODO: pagination
     DAP_DEL_MULTY(l_arg->buf, /* l_full_ret, */ l_arg);
     return NULL;
