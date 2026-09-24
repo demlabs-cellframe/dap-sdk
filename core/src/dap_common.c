@@ -1278,9 +1278,18 @@ void dap_digit_from_string2(const char *num_str, void *raw, size_t raw_len)
  * \param a_cmd command line
  * \return 0 if success, -1 otherwise
  */
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 int exec_silent(const char * a_cmd) {
 
-#ifdef _WIN32
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    /* iOS has no supported shell execution API. Report failure rather than
+     * pretending the requested operation succeeded. */
+    (void)a_cmd;
+    return -1;
+#elif defined(_WIN32)
     PROCESS_INFORMATION p_info;
     STARTUPINFOA s_info;
 
