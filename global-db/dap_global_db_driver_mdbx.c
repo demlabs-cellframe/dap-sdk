@@ -1473,7 +1473,7 @@ safe_ret:
 // one is already active. Track nesting depth so only the outermost start/end actually
 // begins/commits the mdbx transaction; inner start/end calls are no-ops that just
 // adjust the depth.
-static unsigned s_txn_depth = 0;
+static _Thread_local unsigned s_txn_depth = 0;
 
 static int s_db_mdbx_txn_start()
 {
