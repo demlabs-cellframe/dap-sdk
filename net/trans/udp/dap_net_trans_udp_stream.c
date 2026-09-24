@@ -996,6 +996,12 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
 /**
  * @brief Register UDP trans adapter
  */
+int dap_net_trans_udp_stream_register_client(void)
+{
+    return dap_net_trans_register("UDP", DAP_NET_TRANS_UDP_BASIC,
+                                 &s_udp_ops, DAP_NET_TRANS_SOCKET_UDP, NULL);
+}
+
 int dap_net_trans_udp_stream_register(void)
 {
     // Initialize UDP server module first (registers server operations)
