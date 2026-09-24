@@ -335,9 +335,13 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if (!l_is_loopback && a_es->addr_storage.ss_family == AF_INET) {
             uint32_t l_subnet_key = ntohl(((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr) >> 16;
             if (!s_cli_rate_limit_check(l_subnet_key)) {
+                // Queue the response before signalling close. The reactor only
+                // honors a pending close once buf_out is empty/flushed; setting
+                // SIGNAL_CLOSE immediately after writing would prevent the
+                // 429 from reaching the peer. write_finished_callback already
+                // closes once the response leaves the buffer.
                 dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 429 Too Many Requests\r\n"
                                                   "Retry-After: 1\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
-                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
                 DAP_DELETE(l_arg);
                 a_es->buf_in_size = 0;
                 a_es->callbacks.arg = NULL;
@@ -351,9 +355,10 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         l_arg->time_start = dap_nanotime_now();
 
         if (!dap_cli_server_backpressure_acquire(l_arg->buf, &l_arg->is_heavy)) {
+            // Same deferred-close behavior as the rate-limit response above:
+            // write_finished_callback closes the socket after the 429 is sent.
             dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 429 Too Many Requests\r\n"
                                               "Retry-After: 1\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
-            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
             DAP_DEL_MULTY(l_arg->buf, l_arg);
             a_es->buf_in_size = 0;
             a_es->callbacks.arg = NULL;
