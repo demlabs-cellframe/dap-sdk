@@ -661,6 +661,7 @@ static void s_client_http_reset_for_redirect(dap_client_http_t *a_client_http, c
     // Clear response data
     a_client_http->response_size = 0;
     a_client_http->content_length = 0;
+    a_client_http->has_content_length = false;
     a_client_http->parse_state = DAP_HTTP_PARSE_HEADERS; // Reset state machine
     a_client_http->status_code = 0; // CRITICAL: Reset cached status code!
     
@@ -1423,7 +1424,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     }
                 }
                 
-                if (l_client_http->content_length > 0 && 
+                if (l_client_http->has_content_length &&
                     l_ctx->streamed_body_size >= l_client_http->content_length) {
                     log_it(L_DEBUG, "Zero-copy streaming complete: %zu bytes total", l_ctx->streamed_body_size);
                     if (a_es->buf_in_size > 0) {
@@ -1473,9 +1474,11 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     }
                 }
                 
-                // Check completion conditions
+                // Check completion conditions. An explicit "Content-Length: 0" (e.g. a 3xx that is
+                // not followed) is complete right after the headers - on a keep-alive connection the
+                // server won't close the socket, so waiting for EOF only ends in the read timeout.
                 if ((l_client_http->method == HTTP_HEAD) ||
-                    (l_client_http->content_length > 0 && 
+                    (l_client_http->has_content_length &&
                      l_client_http->response_size >= l_client_http->content_length) ||
                     (l_client_http->status_code >= 400 && 
                      !l_client_http->is_chunked &&
@@ -2416,6 +2419,7 @@ static int s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_clien
         dap_http_header_t *l_content_len = dap_http_header_find(a_client_http->response_headers, "Content-Length");
         if (l_content_len) {
             a_client_http->content_length = strtoul(l_content_len->value, NULL, 10);
+            a_client_http->has_content_length = true;
         }
     }
     
