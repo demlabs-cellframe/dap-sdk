@@ -25,7 +25,9 @@
 
 #pragma once
 
+#ifndef _WIN32
 #include <sys/socket.h>
+#endif
 #include "dap_events_socket.h"
 #include "dap_common.h"
 #include "dap_config.h"
