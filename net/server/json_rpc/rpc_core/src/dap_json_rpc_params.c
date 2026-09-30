@@ -44,9 +44,14 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
 
 void dap_json_rpc_params_add_param(dap_json_rpc_params_t *a_params, dap_json_rpc_param_t *a_param)
 {
-    dap_json_rpc_param_t **new_params = DAP_REALLOC_COUNT_RET_IF_FAIL(a_params->params, a_params->length + 1);
-    new_params[a_params->length] = a_param;
-    a_params->params = new_params;
+    // Grow geometrically: realloc-per-element made N-param requests O(N^2)
+    if (a_params->length >= a_params->capacity) {
+        uint32_t l_new_cap = a_params->capacity ? a_params->capacity * 2 : 4;
+        dap_json_rpc_param_t **new_params = DAP_REALLOC_COUNT_RET_IF_FAIL(a_params->params, l_new_cap);
+        a_params->params = new_params;
+        a_params->capacity = l_new_cap;
+    }
+    a_params->params[a_params->length] = a_param;
     ++a_params->length;
 }
 
@@ -105,9 +110,10 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
 
         switch (jobj_type) {
             case json_type_string: {
-                char * l_str_tmp = dap_strdup(json_object_get_string(jobj));
-                dap_json_rpc_params_add_data(params, l_str_tmp, TYPE_PARAM_STRING);
-                DAP_FREE(l_str_tmp);
+                // add_data() strdups the value itself, so handing it the
+                // json-owned string directly saves the extra copy (the
+                // temporary strdup'd buffer used to be freed right below).
+                dap_json_rpc_params_add_data(params, json_object_get_string(jobj), TYPE_PARAM_STRING);
                 break;
             }
             case json_type_boolean: {

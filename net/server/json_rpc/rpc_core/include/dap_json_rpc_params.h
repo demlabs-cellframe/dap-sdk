@@ -48,6 +48,7 @@ typedef struct dap_json_rpc_param
 typedef struct dap_json_rpc_params
 {
     uint32_t length;
+    uint32_t capacity;   /* allocated slots in params[]; growth is geometric, see dap_json_rpc_params_add_param */
     dap_json_rpc_param_t **params;
 }dap_json_rpc_params_t;
 

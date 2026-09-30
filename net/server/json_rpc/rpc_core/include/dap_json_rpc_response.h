@@ -96,6 +96,17 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *a_response);
 char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response);
 
 /**
+ * Build the JSON-RPC response envelope as a json_object, without serializing
+ * it to a string. Lets a caller embed the serialization directly into its own
+ * output buffer (e.g. the CLI HTTP reply) instead of going through
+ * dap_json_rpc_response_to_string()'s intermediate strdup.
+ *
+ * @return A newly created json_object (caller frees it with json_object_put),
+ *         or NULL on memory allocation failure.
+ */
+json_object *dap_json_rpc_response_to_json_object(const dap_json_rpc_response_t* response);
+
+/**
  * Convert a JSON string representation to a dap_json_rpc_response_t structure.
  *
  * @param json_string The JSON-formatted string.

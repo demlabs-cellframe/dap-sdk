@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <sys/socket.h>
 #include "dap_events_socket.h"
 #include "dap_common.h"
 #include "dap_config.h"
@@ -94,6 +95,17 @@ void dap_cli_server_cmd_flags_set(const char *a_name, uint32_t a_flags);
 // and error paths). a_out_is_heavy tells the caller which counter to
 // release; it is only meaningful when acquire returned true.
 bool dap_cli_server_backpressure_acquire(const char *a_req_str, bool *a_out_is_heavy);
+
+// Same gate, for callers that already extracted the request method (the CLI
+// port dispatcher parses the body once and reuses the method for both the
+// access check and this classification).
+bool dap_cli_server_backpressure_acquire_method(const char *a_method, bool *a_out_is_heavy);
+
+// Per-/16 rate-limit check for an arbitrary connection source (same budget as
+// the CLI port limiter). Intended for the signed HTTP /exec_cmd path, to run
+// before request decode. Non-IPv4 sources always pass.
+bool dap_cli_server_rate_limit_check_addr(const struct sockaddr_storage *a_addr);
+
 void dap_cli_server_backpressure_release(bool a_is_heavy);
 
 // Cooperative cancellation for long-running HEAVY commands. Call this

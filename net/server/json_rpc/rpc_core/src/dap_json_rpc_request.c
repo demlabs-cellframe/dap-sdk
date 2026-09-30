@@ -229,64 +229,73 @@ void dap_json_rpc_request_free(dap_json_rpc_request_t *request)
     DAP_DELETE(request);
 }
 
-dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a_version_default)
+dap_json_rpc_request_t *dap_json_rpc_request_from_json_object(json_object *a_jobj_owned, int a_version_default)
 {
-    if (!a_data)
+    if (!a_jobj_owned)
         return NULL;
     dap_json_rpc_request_t *request = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_request_t, NULL);
-    enum json_tokener_error jterr;
-    json_object *jobj = json_tokener_parse_verbose(a_data, &jterr),
-                *jobj_id = NULL,
+    json_object *jobj_id = NULL,
                 *jobj_version = NULL,
                 *jobj_method = NULL,
                 *jobj_params = NULL,
                 *jobj_subcmd = NULL,
                 *l_arguments_obj = NULL;
-    if (jterr == json_tokener_success)
-        do {
-            if (json_object_object_get_ex(jobj, "id", &jobj_id))
-                request->id = json_object_get_int64(jobj_id);
-            else {
-                log_it(L_ERROR, "Error parse JSON string, can't find request id");
-                break;
-            }
-            if (json_object_object_get_ex(jobj, "version", &jobj_version))
-                request->version = json_object_get_int64(jobj_version);
-            else {
-                log_it(L_DEBUG, "Can't find request version, apply version %d", a_version_default);
-                request->version = a_version_default;
-            }
+    do {
+        if (json_object_object_get_ex(a_jobj_owned, "id", &jobj_id))
+            request->id = json_object_get_int64(jobj_id);
+        else {
+            log_it(L_ERROR, "Error parse JSON string, can't find request id");
+            break;
+        }
+        if (json_object_object_get_ex(a_jobj_owned, "version", &jobj_version))
+            request->version = json_object_get_int64(jobj_version);
+        else {
+            log_it(L_DEBUG, "Can't find request version, apply version %d", a_version_default);
+            request->version = a_version_default;
+        }
 
-            if (json_object_object_get_ex(jobj, "method", &jobj_method))
-                request->method = dap_strdup(json_object_get_string(jobj_method));
-            else {
-                log_it(L_ERROR, "Error parse JSON string, can't find method for request with id: %" DAP_UINT64_FORMAT_U, request->id);
-                break;
-            }
+        if (json_object_object_get_ex(a_jobj_owned, "method", &jobj_method))
+            request->method = dap_strdup(json_object_get_string(jobj_method));
+        else {
+            log_it(L_ERROR, "Error parse JSON string, can't find method for request with id: %" DAP_UINT64_FORMAT_U, request->id);
+            break;
+        }
 
-            json_object_object_get_ex(jobj, "params", &jobj_params);
-            json_object_object_get_ex(jobj, "subcommand", &jobj_subcmd);
-            json_object_object_get_ex(jobj, "arguments", &l_arguments_obj);
+        json_object_object_get_ex(a_jobj_owned, "params", &jobj_params);
+        json_object_object_get_ex(a_jobj_owned, "subcommand", &jobj_subcmd);
+        json_object_object_get_ex(a_jobj_owned, "arguments", &l_arguments_obj);
 
-            if (jobj_params)
-                request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-            else
-                request->params = dap_json_rpc_params_create_from_subcmd_and_args(
-                    jobj_subcmd, l_arguments_obj, request->method);
+        if (jobj_params)
+            request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
+        else
+            request->params = dap_json_rpc_params_create_from_subcmd_and_args(
+                jobj_subcmd, l_arguments_obj, request->method);
 
-            json_object_put(jobj);
-            if (!request->params){
-                DAP_DEL_MULTY(request->method, request);
-                return NULL;
-            }
-            return request;
-        } while (0);
-    else
-        log_it(L_ERROR, "Error parse json tokener: %s", json_tokener_error_desc(jterr));
-    json_object_put(jobj);
+        if (!request->params){
+            DAP_DEL_MULTY(request->method, request);
+            break;
+        }
+        json_object_put(a_jobj_owned);
+        return request;
+    } while (0);
+    json_object_put(a_jobj_owned);
     dap_json_rpc_params_remove_all(request->params);
     DAP_DEL_MULTY(request->method, request);
     return NULL;
+}
+
+dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a_version_default)
+{
+    if (!a_data)
+        return NULL;
+    enum json_tokener_error jterr;
+    json_object *jobj = json_tokener_parse_verbose(a_data, &jterr);
+    if (jterr != json_tokener_success || !jobj) {
+        log_it(L_ERROR, "Error parse json tokener: %s", json_tokener_error_desc(jterr));
+        return NULL;
+    }
+    // from_json_object() takes ownership of the parsed tree
+    return dap_json_rpc_request_from_json_object(jobj, a_version_default);
 }
 
 char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_request)
