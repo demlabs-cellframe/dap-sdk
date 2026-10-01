@@ -143,6 +143,11 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_appe
 // begin() keep the ordinary array reply (dap_cli_cmd_reply_add() degrades to
 // json_object_array_add). Both are thread-local to the executing command.
 void dap_cli_cmd_reply_stream_begin(void);
+// Same, but the streamed rows become the first element of the reply array
+// (reply shape [ [rows...], ... ]): dap_cli_cmd_reply_stream_begin_nested()
+// until dap_cli_cmd_reply_stream_nested_end().
+void dap_cli_cmd_reply_stream_begin_nested(void);
+void dap_cli_cmd_reply_stream_nested_end(void);
 void dap_cli_cmd_reply_add(json_object **a_arr_reply, json_object *a_obj);
 
 //for json

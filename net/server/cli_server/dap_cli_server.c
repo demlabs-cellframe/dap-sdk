@@ -246,15 +246,45 @@ static void *s_cli_cmd_exec(void *a_arg);
 // "result" array. Thread-local: one command runs per executor thread.
 static _Thread_local dap_string_t *s_cli_reply_stream = NULL;
 static _Thread_local bool s_cli_reply_stream_used = false;
+static _Thread_local bool s_cli_reply_stream_nested = false;   /* rows are being streamed into the reply's first element */
+static _Thread_local size_t s_cli_reply_stream_elems = 0;      /* elements already written at the current level */
+
+static void s_cli_reply_stream_open(const char *a_prefix)
+{
+    s_cli_reply_stream_used = true;
+    s_cli_reply_stream_elems = 0;
+    if (s_cli_reply_stream)
+        DAP_DELETE(s_cli_reply_stream);
+    s_cli_reply_stream = dap_string_new(a_prefix);
+    if (!s_cli_reply_stream)
+        s_cli_reply_stream_used = false;
+}
 
 void dap_cli_cmd_reply_stream_begin(void)
 {
-    s_cli_reply_stream_used = true;
+    s_cli_reply_stream_nested = false;
+    s_cli_reply_stream_open("[");
+}
+
+// Nested flavour: the rows go into an array that becomes the first element of
+// the reply, so a command whose reply was [ [rows...], <trailing objects> ]
+// keeps exactly that shape while streaming.
+void dap_cli_cmd_reply_stream_begin_nested(void)
+{
+    s_cli_reply_stream_nested = true;
+    s_cli_reply_stream_open("[[");
+}
+
+// Closes the element opened by begin_nested(): further reply_add() calls are
+// appended to the outer reply array.
+void dap_cli_cmd_reply_stream_nested_end(void)
+{
+    if (!s_cli_reply_stream_used || !s_cli_reply_stream_nested)
+        return;
     if (s_cli_reply_stream)
-        DAP_DELETE(s_cli_reply_stream);
-    s_cli_reply_stream = dap_string_new("[");
-    if (!s_cli_reply_stream)
-        s_cli_reply_stream_used = false;
+        dap_string_append(s_cli_reply_stream, "]");
+    s_cli_reply_stream_nested = false;
+    s_cli_reply_stream_elems = 1;   /* the nested array is one element of the reply */
 }
 
 void dap_cli_cmd_reply_add(json_object **a_arr_reply, json_object *a_obj)
@@ -264,9 +294,10 @@ void dap_cli_cmd_reply_add(json_object **a_arr_reply, json_object *a_obj)
             json_object_put(a_obj);
             return;
         }
-        if (s_cli_reply_stream->len > 1)
+        if (s_cli_reply_stream_elems)
             dap_string_append(s_cli_reply_stream, ",");
         dap_string_append(s_cli_reply_stream, json_object_to_json_string_ext(a_obj, JSON_C_TO_STRING_PLAIN));
+        ++s_cli_reply_stream_elems;
         json_object_put(a_obj);
         return;
     }
@@ -284,6 +315,8 @@ static char *s_cli_reply_stream_take(void)
         return NULL;
     char *l_ret = NULL;
     if (s_cli_reply_stream) {
+        if (s_cli_reply_stream_nested)   // the caller never closed its listing element
+            dap_string_append(s_cli_reply_stream, "]");
         dap_string_append(s_cli_reply_stream, "]");
         // dap_string has no detach-buffer helper: copy, then release
         l_ret = dap_strdup(s_cli_reply_stream->str);
@@ -291,6 +324,8 @@ static char *s_cli_reply_stream_take(void)
     }
     s_cli_reply_stream = NULL;
     s_cli_reply_stream_used = false;
+    s_cli_reply_stream_nested = false;
+    s_cli_reply_stream_elems = 0;
     return l_ret ? l_ret : dap_strdup("[]");
 }
 static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted);
