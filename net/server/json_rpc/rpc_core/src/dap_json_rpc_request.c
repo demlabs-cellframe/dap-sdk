@@ -233,7 +233,12 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json_object(json_object *a_job
 {
     if (!a_jobj_owned)
         return NULL;
-    dap_json_rpc_request_t *request = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_request_t, NULL);
+    dap_json_rpc_request_t *request = DAP_NEW_Z(dap_json_rpc_request_t);
+    if (!request) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        json_object_put(a_jobj_owned);   /* contract: the tree is consumed on every path */
+        return NULL;
+    }
     json_object *jobj_id = NULL,
                 *jobj_version = NULL,
                 *jobj_method = NULL,
@@ -271,10 +276,8 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json_object(json_object *a_job
             request->params = dap_json_rpc_params_create_from_subcmd_and_args(
                 jobj_subcmd, l_arguments_obj, request->method);
 
-        if (!request->params){
-            DAP_DEL_MULTY(request->method, request);
-            break;
-        }
+        if (!request->params)
+            break;   /* the shared epilogue frees method/request; params is NULL here */
         json_object_put(a_jobj_owned);
         return request;
     } while (0);

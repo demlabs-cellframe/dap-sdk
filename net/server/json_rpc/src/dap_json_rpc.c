@@ -97,12 +97,12 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
 
     // Per-source /16 budget, shared with the CLI port: a signed caller must
     // not get an unthrottled request stream just because it went through
-    // /exec_cmd instead of the raw CLI port. Checked before any decode work.
+    // /exec_cmd instead of the raw CLI port. Loopback tooling is exempt, same
+    // as on the CLI port. Checked before any decode work; on refusal no body
+    // is produced - the 429 status set here is framed by the HTTP layer.
     if (a_http_simple->http_client && a_http_simple->http_client->esocket &&
         !dap_cli_server_rate_limit_check_addr(&a_http_simple->http_client->esocket->addr_storage)) {
         *return_code = Http_Status_TooManyRequests;
-        const char l_reply[] = "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
-        dap_http_simple_reply(a_http_simple, (void*)l_reply, sizeof(l_reply) - 1);
         return;
     }
 
