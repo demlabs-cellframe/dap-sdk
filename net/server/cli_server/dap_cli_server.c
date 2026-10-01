@@ -61,7 +61,8 @@ static int s_cli_version = 1;
 // Config values read once at init: each dap_config_get_item_* call walks the
 // config tree and allocates a key string, which is wasteful on the per-request
 // path where these never change (the node config is static while running).
-static const char **s_cli_allowed_cmd_list = NULL;   /* "allowed_cmd" array, pointer into config storage */
+static char **s_cli_allowed_cmd_owned = NULL;          /* deep copy of "allowed_cmd" (see init) */
+static const char **s_cli_allowed_cmd_list = NULL;   /* == s_cli_allowed_cmd_owned, kept for the lookup */
 static bool s_cli_node_type_public = false;          /* "allowed_cmd_control" */
 static bool s_cli_debug_more_cfg = false;            /* "debug-more" */
 
@@ -91,11 +92,14 @@ typedef struct dap_cli_rate_bucket {
     UT_hash_handle hh;
 } dap_cli_rate_bucket_t;
 
-static dap_cli_rate_bucket_t *s_cli_rate_buckets = NULL;
-// Sharded for the accept path: a single mutex here serialized every external
-// request from every IO worker on one lock. Buckets are keyed by /16, so
-// indexing the shard by the low bits of the key is collision-safe.
+// Sharded for the accept path: a single mutex (and a single uthash) here
+// serialized every external request from every IO worker. Each shard owns a
+// private uthash as well as its mutex - uthash is not safe for concurrent
+// mutation from different locks, so sharding the mutex alone would race on
+// the shared table. A bucket's shard is chosen from the low bits of the /16
+// key, so each key maps to exactly one shard.
 #define DAP_CLI_RATE_SHARDS 16
+static dap_cli_rate_bucket_t *s_cli_rate_buckets[DAP_CLI_RATE_SHARDS] = { NULL };
 static pthread_mutex_t s_cli_rate_locks[DAP_CLI_RATE_SHARDS] = {
     PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER,
     PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER,
@@ -184,6 +188,25 @@ static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 static inline dap_cli_cmd_t *s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
                                             void *a_arg_func, const char *a_doc, const char *a_doc_ex);
 
+// Parse exactly a_length bytes: the request body points into the shared
+// reactor input buffer, which is not NUL-terminated at the body end (and not
+// re-zeroed between requests), so the plain string parser must not scan past
+// the declared Content-Length.
+static json_object *s_parse_json_exact(const char *a_buf, size_t a_length)
+{
+    struct json_tokener *l_tok = json_tokener_new();
+    if (!l_tok)
+        return NULL;
+    json_object *l_jobj = json_tokener_parse_ex(l_tok, a_buf, (int)a_length);
+    enum json_tokener_error l_err = json_tokener_get_error(l_tok);
+    json_tokener_free(l_tok);
+    if (l_err != json_tokener_success) {
+        json_object_put(l_jobj);
+        return NULL;
+    }
+    return l_jobj;
+}
+
 typedef struct cli_cmd_arg {
     dap_worker_t *worker;
     dap_events_socket_uuid_t es_uid;
@@ -211,6 +234,65 @@ static bool s_cli_pool_shutdown = false;
 
 static void *s_cli_pool_worker(void *a_arg);
 static void s_cli_pool_enqueue(cli_cmd_arg_t *a_arg);
+static void *s_cli_cmd_exec(void *a_arg);
+
+// Streaming reply assembly: heavy listing commands (block list, tx_history,
+// mempool list, srv_stake list tx) used to build a full json_object tree of
+// every row and serialize it afterwards - for hundreds of thousands of rows
+// that is hundreds of thousands of allocations plus tree+string peak memory.
+// Such a command calls dap_cli_cmd_reply_stream_begin() and then pushes rows
+// through dap_cli_cmd_reply_add(), which serializes each row immediately and
+// frees it; the executor wraps the collected fragments as the JSON-RPC
+// "result" array. Thread-local: one command runs per executor thread.
+static _Thread_local dap_string_t *s_cli_reply_stream = NULL;
+static _Thread_local bool s_cli_reply_stream_used = false;
+
+void dap_cli_cmd_reply_stream_begin(void)
+{
+    s_cli_reply_stream_used = true;
+    if (s_cli_reply_stream)
+        DAP_DELETE(s_cli_reply_stream);
+    s_cli_reply_stream = dap_string_new("[");
+    if (!s_cli_reply_stream)
+        s_cli_reply_stream_used = false;
+}
+
+void dap_cli_cmd_reply_add(json_object **a_arr_reply, json_object *a_obj)
+{
+    if (s_cli_reply_stream_used) {
+        if (!s_cli_reply_stream || !a_obj) {
+            json_object_put(a_obj);
+            return;
+        }
+        if (s_cli_reply_stream->len > 1)
+            dap_string_append(s_cli_reply_stream, ",");
+        dap_string_append(s_cli_reply_stream, json_object_to_json_string_ext(a_obj, JSON_C_TO_STRING_PLAIN));
+        json_object_put(a_obj);
+        return;
+    }
+    if (a_arr_reply && *a_arr_reply)
+        json_object_array_add(*a_arr_reply, a_obj);
+    else
+        json_object_put(a_obj);
+}
+
+// Closes the stream and hands the "[...]" string to the caller; NULL when
+// streaming was never started. Always clears the thread-local state.
+static char *s_cli_reply_stream_take(void)
+{
+    if (!s_cli_reply_stream_used)
+        return NULL;
+    char *l_ret = NULL;
+    if (s_cli_reply_stream) {
+        dap_string_append(s_cli_reply_stream, "]");
+        // dap_string has no detach-buffer helper: copy, then release
+        l_ret = dap_strdup(s_cli_reply_stream->str);
+        DAP_DELETE(s_cli_reply_stream);
+    }
+    s_cli_reply_stream = NULL;
+    s_cli_reply_stream_used = false;
+    return l_ret ? l_ret : dap_strdup("[]");
+}
 static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted);
 static void s_cli_cmd_process(cli_cmd_arg_t *a_arg);
 
@@ -247,14 +329,16 @@ static bool s_cli_rate_limit_check(uint32_t a_subnet_key) {
         return true;
     dap_nanotime_t l_now = dap_nanotime_now();
     bool l_allow;
-    pthread_mutex_t *l_lock = &s_cli_rate_locks[a_subnet_key & (DAP_CLI_RATE_SHARDS - 1)];
+    size_t l_shard = a_subnet_key & (DAP_CLI_RATE_SHARDS - 1);
+    dap_cli_rate_bucket_t **l_table = &s_cli_rate_buckets[l_shard];
+    pthread_mutex_t *l_lock = &s_cli_rate_locks[l_shard];
     pthread_mutex_lock(l_lock);
     dap_cli_rate_bucket_t *l_b = NULL;
-    HASH_FIND(hh, s_cli_rate_buckets, &a_subnet_key, sizeof(a_subnet_key), l_b);
+    HASH_FIND(hh, *l_table, &a_subnet_key, sizeof(a_subnet_key), l_b);
     if (!l_b) {
         // Bounded growth: with the table full, fail open rather than leak
         // memory or stall the CLI accept path on eviction bookkeeping.
-        if (HASH_CNT(hh, s_cli_rate_buckets) >= DAP_CLI_RATE_BUCKETS_MAX) {
+        if (HASH_CNT(hh, *l_table) >= DAP_CLI_RATE_BUCKETS_MAX / DAP_CLI_RATE_SHARDS) {
             pthread_mutex_unlock(l_lock);
             return true;
         }
@@ -262,7 +346,7 @@ static bool s_cli_rate_limit_check(uint32_t a_subnet_key) {
         l_b->subnet_key = a_subnet_key;
         l_b->tokens_scaled = (int64_t)s_cli_rate_limit_burst * DAP_NSEC_PER_SEC;
         l_b->ts_last = l_now;
-        HASH_ADD(hh, s_cli_rate_buckets, subnet_key, sizeof(l_b->subnet_key), l_b);
+        HASH_ADD(hh, *l_table, subnet_key, sizeof(l_b->subnet_key), l_b);
     } else {
         dap_nanotime_t l_dt = l_now > l_b->ts_last ? l_now - l_b->ts_last : 0;
         l_b->ts_last = l_now;
@@ -335,6 +419,10 @@ bool dap_cli_server_backpressure_acquire(const char *a_req_str, bool *a_out_is_h
 // before paying for request decode/verify.
 bool dap_cli_server_rate_limit_check_addr(const struct sockaddr_storage *a_addr) {
     if (!a_addr || a_addr->ss_family != AF_INET)
+        return true;
+    // Loopback is not the threat model (local tooling, tests) and the CLI
+    // port exempts it explicitly - keep the two entry points consistent.
+    if (((const struct sockaddr_in *)a_addr)->sin_addr.s_addr == htonl(INADDR_LOOPBACK))
         return true;
     uint32_t l_subnet_key = ntohl(((const struct sockaddr_in *)a_addr)->sin_addr.s_addr) >> 16;
     return s_cli_rate_limit_check(l_subnet_key);
@@ -415,15 +503,14 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         // dap_json_rpc_request_t from it — previously the body was parsed
         // twice more (access check, heavy classification) with the first two
         // parses on the reactor loop.
-        enum json_tokener_error jterr = json_tokener_error_parse_eof;
-        json_object *l_jobj = json_tokener_parse_verbose(l_arg->buf, &jterr);
+        json_object *l_jobj = s_parse_json_exact(l_arg->buf, l_arg->buf_size);
         const char *l_method = NULL;
         if (l_jobj) {
             json_object *l_jobj_method = NULL;
             if (json_object_object_get_ex(l_jobj, "method", &l_jobj_method))
                 l_method = json_object_get_string(l_jobj_method);
         } else
-            log_it(L_ERROR, "Can't parse json command, error %s", json_tokener_error_desc(jterr));
+            log_it(L_ERROR, "Can't parse json command (body of %zu bytes)", l_arg->buf_size);
         if (l_jobj && !l_method)
             log_it(L_ERROR, "Invalid command request, dump it");
 
@@ -454,15 +541,15 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if (s_cli_pool_ready)
             s_cli_pool_enqueue(l_arg);
         else {
-            // Pool failed to start at init — legacy fallback.
+            // Pool failed to start at init — legacy fallback: a one-shot
+            // detached thread running the single job (it must NOT enter the
+            // pool's blocking loop: deinit only stops jobs it knows about).
             pthread_t l_tid;
             pthread_attr_t attr;
             pthread_attr_init(&attr);
             pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-            int l_rc = pthread_create(&l_tid, &attr, s_cli_pool_worker, NULL);
-            if (!l_rc) {
-                s_cli_pool_enqueue(l_arg);
-            } else {
+            int l_rc = pthread_create(&l_tid, &attr, s_cli_cmd_exec, l_arg);
+            if (l_rc) {
                 log_it(L_ERROR, "Can't create CLI command thread, error %d", l_rc);
                 dap_cli_server_backpressure_release(l_arg->is_heavy);
                 json_object_put(l_arg->jobj);
@@ -521,8 +608,26 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
     s_cli_rate_limit_rps = dap_config_get_item_int32_default(g_config, a_cfg_section, "rate_limit_rps", s_cli_rate_limit_rps);
     s_cli_rate_limit_burst = dap_config_get_item_int32_default(g_config, a_cfg_section, "rate_limit_burst", s_cli_rate_limit_burst);
     // Per-request config values, read once: dap_config_get_item_* walks the
-    // config tree and allocates a key string on every call.
-    s_cli_allowed_cmd_list = dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL);
+    // config tree and allocates a key string on every call. The allowed_cmd
+    // list is deep-copied: for a non-array config item get_array_str returns
+    // a thread-local single pointer, which is not a NUL-terminated array and
+    // would both be misread by dap_str_find and dangle after the init thread.
+    {
+        uint16_t l_allowed_count = 0;
+        const char **l_allowed_cfg = dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", &l_allowed_count);
+        if (l_allowed_cfg && *l_allowed_cfg) {
+            // Non-array single value reports count 1 but is not an array
+            size_t l_n = 0;
+            while (l_allowed_cfg[l_n])
+                ++l_n;
+            s_cli_allowed_cmd_owned = DAP_NEW_Z_COUNT(char *, l_n + 1);
+            if (s_cli_allowed_cmd_owned) {
+                for (size_t i = 0; i < l_n; ++i)
+                    s_cli_allowed_cmd_owned[i] = dap_strdup(l_allowed_cfg[i]);
+                s_cli_allowed_cmd_list = (const char **)s_cli_allowed_cmd_owned;
+            }
+        }
+    }
     s_cli_node_type_public = dap_config_get_item_bool_default(g_config, "cli-server", "allowed_cmd_control", false);
     s_cli_debug_more_cfg = dap_config_get_item_bool_default(g_config, "cli-server", "debug-more", false);
     dap_cli_http_docs_init(a_cfg_section);
@@ -580,8 +685,8 @@ void dap_cli_server_deinit()
     for (int i = 0; i < DAP_CLI_RATE_SHARDS; ++i) {
         pthread_mutex_lock(&s_cli_rate_locks[i]);
         dap_cli_rate_bucket_t *l_b, *l_tmp;
-        HASH_ITER(hh, s_cli_rate_buckets, l_b, l_tmp) {
-            HASH_DEL(s_cli_rate_buckets, l_b);
+        HASH_ITER(hh, s_cli_rate_buckets[i], l_b, l_tmp) {
+            HASH_DEL(s_cli_rate_buckets[i], l_b);
             DAP_DELETE(l_b);
         }
         pthread_mutex_unlock(&s_cli_rate_locks[i]);
@@ -593,6 +698,14 @@ void dap_cli_server_deinit()
         DAP_DELETE(l_c);
     }
     pthread_mutex_unlock(&s_cli_live_clients_lock);
+    // The allowed_cmd list is our own deep copy (see init), not config storage
+    if (s_cli_allowed_cmd_owned) {
+        for (char **l_p = s_cli_allowed_cmd_owned; *l_p; ++l_p)
+            DAP_DELETE(*l_p);
+        DAP_DELETE(s_cli_allowed_cmd_owned);
+        s_cli_allowed_cmd_owned = NULL;
+        s_cli_allowed_cmd_list = NULL;
+    }
 }
 
 /**
@@ -628,6 +741,7 @@ static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cm
         l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
         if (!l_cmd_item) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            pthread_rwlock_unlock(&s_cli_commands_rwlock);
             return NULL;
         }
         snprintf(l_cmd_item->name, sizeof(l_cmd_item->name), "%s", a_name);
@@ -866,9 +980,14 @@ int dap_cli_server_cmd_find_option_val( char** argv, int arg_start, int arg_end,
  */
 void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_server_cmd_override_t a_overrides)
 {
-    dap_cli_cmd_t *l_cmd_item = dap_cli_server_cmd_find(a_name);
-    if(l_cmd_item)
+    if (!a_name)
+        return;
+    pthread_rwlock_wrlock(&s_cli_commands_rwlock);
+    dap_cli_cmd_t *l_cmd_item = NULL;
+    HASH_FIND_STR(cli_commands, a_name, l_cmd_item);
+    if (l_cmd_item)
         l_cmd_item->overrides = a_overrides;
+    pthread_rwlock_unlock(&s_cli_commands_rwlock);
 }
 
 /**
@@ -881,9 +1000,14 @@ void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_serve
  */
 void dap_cli_server_cmd_flags_set(const char *a_name, uint32_t a_flags)
 {
-    dap_cli_cmd_t *l_cmd_item = dap_cli_server_cmd_find(a_name);
+    if (!a_name)
+        return;
+    pthread_rwlock_wrlock(&s_cli_commands_rwlock);
+    dap_cli_cmd_t *l_cmd_item = NULL;
+    HASH_FIND_STR(cli_commands, a_name, l_cmd_item);
     if (l_cmd_item)
         l_cmd_item->flags |= a_flags;
+    pthread_rwlock_unlock(&s_cli_commands_rwlock);
 }
 
 /**
@@ -1024,14 +1148,15 @@ static void s_cli_cmd_process(cli_cmd_arg_t *l_arg) {
                              "CellframeNode, " DAP_VERSION ", " BUILD_TS ", " BUILD_HASH);
     if (l_hdr_len > 0 && (size_t)l_hdr_len < sizeof(l_hdr)) {
         char *l_full_ret = DAP_NEW_SIZE(char, (size_t)l_hdr_len + l_body_len);
-        memcpy(l_full_ret, l_hdr, (size_t)l_hdr_len);
-        if (l_body_len)
-            memcpy(l_full_ret + l_hdr_len, l_ret, l_body_len);
-        DAP_DELETE(l_ret);
-        dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, l_hdr_len + l_body_len);
-    } else {
-        DAP_DELETE(l_ret);
+        if (l_full_ret) {
+            memcpy(l_full_ret, l_hdr, (size_t)l_hdr_len);
+            if (l_body_len)
+                memcpy(l_full_ret + l_hdr_len, l_ret, l_body_len);
+            dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, l_hdr_len + l_body_len);
+        } else
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
     }
+    DAP_DELETE(l_ret);
     dap_cli_server_backpressure_release(l_arg->is_heavy);
     // TODO: pagination
     DAP_DELETE(l_arg);
@@ -1044,6 +1169,8 @@ static void *s_cli_cmd_exec(void *a_arg) {
 
 static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
 {
+    // Any leftover state from a previous command on this executor thread
+    s_cli_reply_stream_take();
     // Takes ownership of a_jobj: the request builder frees the tree on every
     // exit path (it was parsed once in s_cli_cmd_schedule and handed over).
     dap_json_rpc_request_t *request = dap_json_rpc_request_from_json_object(a_jobj, s_cli_version);
@@ -1146,6 +1273,46 @@ static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
         }
     } else
         reply_body = str_reply;
+
+    // Streaming command: the result array was serialized row by row (see
+    // dap_cli_cmd_reply_add) - wrap the ready fragment as raw JSON, without
+    // ever materializing the row objects as a tree.
+    char *l_stream_result = s_cli_reply_stream_take();
+    if (l_stream_result) {
+        // Anything appended to the plain reply array (typically error objects
+        // added after the traversal started) must survive: prepend it to the
+        // streamed rows.
+        size_t l_pre_count = json_object_array_length(l_json_arr_reply);
+        char *l_final = l_stream_result;
+        if (l_pre_count) {
+            dap_string_t *l_sb = dap_string_new("[");
+            if (l_sb) {
+                for (size_t i = 0; i < l_pre_count; ++i) {
+                    if (i)
+                        dap_string_append(l_sb, ",");
+                    dap_string_append(l_sb, json_object_to_json_string_ext(json_object_array_get_idx(l_json_arr_reply, i),
+                                                                           JSON_C_TO_STRING_PLAIN));
+                }
+                if (strlen(l_stream_result) > 2)   // "[]" means the stream holds no rows
+                    dap_string_append(l_sb, ",");
+                dap_string_append(l_sb, l_stream_result + 1);   // skip the stream's own '['
+                // On any failure above keep the plain stream: a lost prefix
+                // entry is better than a malformed body or a double free.
+                char *l_merged = l_sb->str ? dap_strdup(l_sb->str) : NULL;
+                if (l_merged) {
+                    DAP_DELETE(l_stream_result);
+                    l_final = l_merged;
+                }
+                DAP_DELETE(l_sb);
+            }
+        }
+        char *l_env = dap_strdup_printf("{\"type\":%d,\"result\":%s,\"id\":%" DAP_UINT64_FORMAT_U ",\"version\":%d}",
+                                        TYPE_RESPONSE_JSON, l_final, request->id, request->version);
+        DAP_DELETE(l_final);
+        json_object_put(l_json_arr_reply);
+        dap_json_rpc_request_free(request);
+        return l_env ? l_env : dap_strdup("Error");
+    }
 
     // create response
     dap_json_rpc_response_t* response = reply_body

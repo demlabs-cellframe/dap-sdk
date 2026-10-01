@@ -136,6 +136,15 @@ dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name);
 dap_cli_cmd_aliases_t *dap_cli_server_alias_add(dap_cli_cmd_t *a_cmd, const char *a_pre_cmd, const char *a_alias);
 dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_append, char **a_ncmd);
 
+// Streaming reply assembly for heavy listing commands. dap_cli_cmd_reply_stream_begin()
+// switches the current command's reply to row-by-row serialization; every
+// dap_cli_cmd_reply_add() then serializes and frees one row immediately
+// instead of accumulating a full json_object tree. Commands that never call
+// begin() keep the ordinary array reply (dap_cli_cmd_reply_add() degrades to
+// json_object_array_add). Both are thread-local to the executing command.
+void dap_cli_cmd_reply_stream_begin(void);
+void dap_cli_cmd_reply_add(json_object **a_arr_reply, json_object *a_obj);
+
 //for json
 int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);
