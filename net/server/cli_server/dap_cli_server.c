@@ -1137,6 +1137,14 @@ static void s_cli_cmd_process(cli_cmd_arg_t *l_arg) {
     char    *l_ret = s_cli_cmd_exec_ex(l_arg->jobj, l_arg->restricted);   /* consumes l_arg->jobj */
     l_arg->jobj = NULL;
     s_cli_cmd_current_client_uuid = 0;
+    if (!l_ret) {
+        // The request builder rejected the body (no "method", OOM): there is
+        // no reply to frame, and treating the NULL as a body used to crash on
+        // dap_strlen(). Release the slot and the client keeps its socket.
+        dap_cli_server_backpressure_release(l_arg->is_heavy);
+        DAP_DELETE(l_arg);
+        return;
+    }
     // The JSON-RPC body is already serialized; assembling the HTTP envelope
     // with dap_strdup_printf("%s") used to copy the whole body again — for
     // MB-sized replies that is the single largest memcpy on the reply path.
