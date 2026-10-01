@@ -612,7 +612,7 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
     // list is deep-copied: for a non-array config item get_array_str returns
     // a thread-local single pointer, which is not a NUL-terminated array and
     // would both be misread by dap_str_find and dangle after the init thread.
-    {
+    if (!s_cli_allowed_cmd_owned) {
         uint16_t l_allowed_count = 0;
         const char **l_allowed_cfg = dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", &l_allowed_count);
         if (l_allowed_cfg && *l_allowed_cfg) {
@@ -634,28 +634,38 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
     // Start the persistent command executor pool: one worker per regular
     // inflight slot (capped — these are idle cond-waiting threads), so a
     // request never pays pthread_create inside the reactor loop.
-    s_cli_pool_shutdown = false;
-    int l_threads = s_cli_max_inflight > 0 ? s_cli_max_inflight : 1;
-    if (l_threads > 128)
-        l_threads = 128;
-    s_cli_pool_threads = DAP_NEW_Z_COUNT(pthread_t, l_threads);
-    if (!s_cli_pool_threads) {
-        log_it(L_ERROR, "Can't allocate CLI executor pool table, falling back to per-request threads");
-        l_threads = 0;
-    }
-    pthread_attr_t l_attr;
-    pthread_attr_init(&l_attr);
-    pthread_attr_setstacksize(&l_attr, 256 * 1024);
-    for (int i = 0; i < l_threads; ++i) {
-        if (pthread_create(&s_cli_pool_threads[i], &l_attr, s_cli_pool_worker, NULL)) {
-            log_it(L_ERROR, "Can't start CLI executor worker %d", i);
-            break;
+    // A repeated init (dap_chain_node_cli_init() calls this again, and tests
+    // call both) must keep the running pool: reallocating the thread table
+    // while s_cli_pool_thread_count keeps counting would both leak the old
+    // array and index the new one past its end, and deinit would then join
+    // thread ids that were never created.
+    if (s_cli_pool_ready) {
+        log_it(L_WARNING, "CLI executor pool is already running, keeping %d workers", s_cli_pool_thread_count);
+    } else {
+        s_cli_pool_shutdown = false;
+        s_cli_pool_thread_count = 0;
+        int l_threads = s_cli_max_inflight > 0 ? s_cli_max_inflight : 1;
+        if (l_threads > 128)
+            l_threads = 128;
+        s_cli_pool_threads = DAP_NEW_Z_COUNT(pthread_t, l_threads);
+        if (!s_cli_pool_threads) {
+            log_it(L_ERROR, "Can't allocate CLI executor pool table, falling back to per-request threads");
+            l_threads = 0;
         }
-        ++s_cli_pool_thread_count;
+        pthread_attr_t l_attr;
+        pthread_attr_init(&l_attr);
+        pthread_attr_setstacksize(&l_attr, 256 * 1024);
+        for (int i = 0; i < l_threads; ++i) {
+            if (pthread_create(&s_cli_pool_threads[i], &l_attr, s_cli_pool_worker, NULL)) {
+                log_it(L_ERROR, "Can't start CLI executor worker %d", i);
+                break;
+            }
+            ++s_cli_pool_thread_count;
+        }
+        pthread_attr_destroy(&l_attr);
+        s_cli_pool_ready = s_cli_pool_thread_count > 0;
+        log_it(L_INFO, "CLI executor pool: %d workers", s_cli_pool_thread_count);
     }
-    pthread_attr_destroy(&l_attr);
-    s_cli_pool_ready = s_cli_pool_thread_count > 0;
-    log_it(L_INFO, "CLI executor pool: %d workers", s_cli_pool_thread_count);
     log_it(L_INFO, "CLI server initialized with protocol version %d, max_inflight %d (heavy %d), rate_limit %s (%d rps, burst %d per /16)",
            s_cli_version, s_cli_max_inflight, s_cli_max_inflight_heavy,
            s_cli_rate_limit_enabled ? "on" : "off", s_cli_rate_limit_rps, s_cli_rate_limit_burst);
