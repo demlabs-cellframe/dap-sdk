@@ -403,6 +403,9 @@ void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_e
 
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(2, 3) ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...);
+// Ceiling for a single esocket's buf_out growth (default 8 * DAP_EVENTS_SOCKET_BUF_LIMIT).
+// A write that would exceed it is refused instead of growing the buffer without bound.
+void dap_events_socket_set_buf_out_max(size_t a_bytes);
 
 // MT variants less
 void dap_events_socket_set_readable_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);

@@ -2019,16 +2019,38 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
  * @param a_required_size Required additional space
  * @return Pointer to write position in buffer, or NULL on error
  */
+// Hard ceiling on a single esocket's output buffer. Without it a slow/dead
+// peer or an unbounded reply (e.g. a full "block dump", or a downstream
+// notify subscriber that stopped reading) makes this buffer grow by
+// max(1 MiB, required) forever — one such connection can pin gigabytes of
+// worker-thread heap and is a direct contributor to the swap/D-state
+// collapse under crawler load (see
+// cellframe_node_rpc_overload_research_2026_09, sec. 10.2 item 1). Once the
+// cap is hit the write is refused (returns NULL, caller treats it as a
+// failed write) rather than silently truncating data.
+static size_t s_events_socket_buf_out_max = DAP_EVENTS_SOCKET_BUF_LIMIT * 8;
+
+void dap_events_socket_set_buf_out_max(size_t a_bytes) {
+    s_events_socket_buf_out_max = a_bytes;
+}
+
 static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es, size_t a_required_size)
 {
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
     byte_t *l_buf_out;
-    
+
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_required_size) {
-        if (__builtin_add_overflow(a_es->buf_out_size_max, dap_max(l_basic_buf_size, a_required_size), &a_es->buf_out_size_max)) {
+        size_t l_new_size;
+        if (__builtin_add_overflow(a_es->buf_out_size_max, dap_max(l_basic_buf_size, a_required_size), &l_new_size)) {
             log_it(L_ERROR, "Integer overflow in buffer size calculation");
             return NULL;
         }
+        if (l_new_size > s_events_socket_buf_out_max) {
+            log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET": refusing to grow output buffer past %zu bytes (needed %zu), "
+                               "peer too slow or reply too large", a_es->fd, s_events_socket_buf_out_max, l_new_size);
+            return NULL;
+        }
+        a_es->buf_out_size_max = l_new_size;
         if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max))) {
             log_it(L_ERROR, "Can't increase capacity: OOM!");
             return NULL;

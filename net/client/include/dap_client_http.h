@@ -66,6 +66,7 @@ typedef struct dap_client_http {
     
     dap_http_parse_state_t parse_state; // HTTP parsing state machine
     size_t content_length;
+    bool has_content_length;            // Content-Length header present (distinguishes explicit 0 from absent)
     time_t ts_last_read;
     
     // Chunked transfer encoding support

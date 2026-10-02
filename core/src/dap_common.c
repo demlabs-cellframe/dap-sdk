@@ -1298,12 +1298,11 @@ typedef struct dap_timer_interface {
     UT_hash_handle hh;
 } dap_timer_interface_t;
 static dap_timer_interface_t *s_timers_map;
-static pthread_rwlock_t s_timers_rwlock;
+static pthread_rwlock_t s_timers_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
 void dap_interval_timer_init()
 {
     s_timers_map = NULL;
-    pthread_rwlock_init(&s_timers_rwlock, NULL);
 }
 
 void dap_interval_timer_deinit() {
@@ -1315,7 +1314,6 @@ void dap_interval_timer_deinit() {
         DAP_FREE(l_cur_timer);
     }
     pthread_rwlock_unlock(&s_timers_rwlock);
-    pthread_rwlock_destroy(&s_timers_rwlock);
 }
 
 #ifdef DAP_OS_LINUX

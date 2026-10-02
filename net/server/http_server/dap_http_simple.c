@@ -342,9 +342,20 @@ static bool s_proc_queue_callback(void *a_arg)
         log_it(L_ERROR, "[!] HTTP client is already deleted!");
         return false;
     }
+    // The reply buffer is allocated lazily here instead of at connection
+    // setup: most connections (crawler probes, scanners) never get a reply,
+    // and preallocating reply_size_max (24 KB zeroed for /exec_cmd) per
+    // connection was pure waste.
     if (!l_http_simple->reply_byte) {
-        log_it(L_ERROR, "[!] HTTP client is corrupted!");
-        return false;
+        if (!l_http_simple->reply_size_max) {
+            log_it(L_ERROR, "[!] HTTP client is corrupted!");
+            return false;
+        }
+        l_http_simple->reply_byte = DAP_NEW_Z_SIZE(uint8_t, l_http_simple->reply_size_max);
+        if (!l_http_simple->reply_byte) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return false;
+        }
     }
     http_status_code_t return_code = (http_status_code_t)0;
 
@@ -392,7 +403,7 @@ static void s_http_client_new(dap_http_client_t *a_http_client, UNUSED_ARG void 
         .worker         = a_http_client->esocket->worker,
         .http_client    = a_http_client,
         .esocket_uuid   = a_http_client->esocket->uuid,
-        .reply_byte     = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->reply_size_max),
+        .reply_byte     = NULL,   /* allocated lazily before the first reply, see s_proc_queue_callback */
         .reply_size_max = DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->reply_size_max,
         .generate_default_header = true,
         .close_after_write = false

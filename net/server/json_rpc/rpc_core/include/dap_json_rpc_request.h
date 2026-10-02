@@ -72,6 +72,19 @@ void dap_json_rpc_request_free(dap_json_rpc_request_t *request);
 dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a_version_default);
 
 /**
+ * Build a request from an already parsed JSON object.
+ *
+ * Takes ownership of @a a_jobj_owned: the object is freed on every return
+ * path. Used by the CLI dispatcher, which parses the request body once on the
+ * reactor thread (method extraction / access checks) and hands the same tree
+ * to the command executor thread instead of re-parsing the body per stage.
+ *
+ * @return A pointer to a dap_json_rpc_request_t structure,
+ *         or NULL on failure
+ */
+dap_json_rpc_request_t *dap_json_rpc_request_from_json_object(json_object *a_jobj_owned, int a_version_default);
+
+/**
  * Convert dap_json_rpc_request_t to JSON string representation.
  *
  * @param a_request The dap_json_rpc_request_t structure to be converted.
