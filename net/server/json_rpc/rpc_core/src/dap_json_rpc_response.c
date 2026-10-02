@@ -69,7 +69,7 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
     }
 }
 
-char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
+json_object *dap_json_rpc_response_to_json_object(const dap_json_rpc_response_t* response) {
     if (!response) {
         return NULL;
     }
@@ -108,7 +108,13 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
     json_object_object_add(jobj, "id", json_object_new_int64(response->id));
     // json version
     json_object_object_add(jobj, "version", json_object_new_int64(response->version));
+    return jobj;
+}
 
+char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
+    json_object* jobj = dap_json_rpc_response_to_json_object(response);
+    if (!jobj)
+        return NULL;
     // convert to string
     const char* json_string = json_object_to_json_string(jobj);
     if (!json_string) {

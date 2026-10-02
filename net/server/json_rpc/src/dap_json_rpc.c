@@ -5,6 +5,7 @@
 #include "dap_pkey.h"
 #include "dap_config.h"
 #include "dap_enc_http.h"
+#include "dap_cli_server.h"
 #include "dap_enc_msrln.h"
 #include "dap_stream_session.h"
 #include "dap_stream.h"
@@ -93,6 +94,17 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
     http_status_code_t *return_code = (http_status_code_t *)a_arg;
     dap_stream_session_t *l_stream_session = NULL;
     bool l_new_session = false;
+
+    // Per-source /16 budget, shared with the CLI port: a signed caller must
+    // not get an unthrottled request stream just because it went through
+    // /exec_cmd instead of the raw CLI port. Loopback tooling is exempt, same
+    // as on the CLI port. Checked before any decode work; on refusal no body
+    // is produced - the 429 status set here is framed by the HTTP layer.
+    if (a_http_simple->http_client && a_http_simple->http_client->esocket &&
+        !dap_cli_server_rate_limit_check_addr(&a_http_simple->http_client->esocket->addr_storage)) {
+        *return_code = Http_Status_TooManyRequests;
+        return;
+    }
 
     enc_http_delegate_t *l_dg = enc_http_request_decode(a_http_simple);
 

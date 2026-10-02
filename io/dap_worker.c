@@ -328,9 +328,12 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
             dap_context_poll_update(l_msg_es);
         }
 
-    if (l_msg->flags_set & DAP_SOCK_CONNECTING)
-        if (!  (l_msg_es->flags & DAP_SOCK_CONNECTING) ){
-            l_msg_es->flags ^= DAP_SOCK_CONNECTING;
+    // Was a duplicate of the block above (checked flags_set twice), so DAP_SOCK_CONNECTING
+    // could never be cleared via this cross-thread message - the second check must test
+    // flags_unset, matching the READY_TO_READ/READY_TO_WRITE pattern right below.
+    if (l_msg->flags_unset & DAP_SOCK_CONNECTING)
+        if (l_msg_es->flags & DAP_SOCK_CONNECTING) {
+            l_msg_es->flags &= ~DAP_SOCK_CONNECTING;
             dap_context_poll_update(l_msg_es);
         }
 

@@ -192,22 +192,69 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     DAP_DELETE(a_cluster);
 }
 
+// Fan-out task for one (shared_obj, notifier) pair queued to a proc thread (see below).
+// shared_obj/refcount are shared by every task spawned for the same event; each task only
+// owns its own callback/arg slice and releases its share of the refcount on completion.
+typedef struct dap_global_db_notify_task {
+    dap_store_obj_t *shared_obj;
+    atomic_int *refcount;
+    dap_store_obj_callback_notify_t callback_notify;
+    void *callback_arg;
+} dap_global_db_notify_task_t;
+
 static bool s_db_cluster_notify_on_proc_thread(void *a_arg)
 {
-    dap_store_obj_t *l_store_obj = a_arg;
-    dap_global_db_notifier_t l_notifier = *(dap_global_db_notifier_t *)l_store_obj->ext;
-    l_notifier.callback_notify(l_store_obj, l_notifier.callback_arg);
-    dap_store_obj_free_one(l_store_obj);
+    dap_global_db_notify_task_t *l_task = a_arg;
+    // Registered notifiers only ever read a_obj (group/key/value/sign/flags) - never verified
+    // to mutate it - so sharing one read-only copy across concurrently running notifier
+    // callbacks (each may land on a different proc thread) is safe; see dap_global_db_cluster_notify.
+    l_task->callback_notify(l_task->shared_obj, l_task->callback_arg);
+    if (atomic_fetch_sub(l_task->refcount, 1) == 1) {
+        dap_store_obj_free_one(l_task->shared_obj);
+        DAP_DELETE(l_task->refcount);
+    }
+    DAP_DELETE(l_task);
     return false;
 }
 
 void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
 {
+    // Was deep-copying (group/key/value/sign, i.e. potentially large datum payloads) the whole
+    // store_obj once *per notifier* via dap_store_obj_copy_ext() (P.2) - with N notifiers
+    // registered on one cluster (e.g. mempool: esbocs + mempool spent-index + none-consensus +
+    // wallet-shared, 4+ in practice), that's N independent heap allocations/deep copies for the
+    // very same event. Copy the object once and share it across all queued notifier tasks via a
+    // refcount, freeing it only after the last notifier has run.
     dap_global_db_notifier_t *l_notifier;
+    int l_notifiers_count = 0;
+    DL_COUNT(a_cluster->notifiers, l_notifier, l_notifiers_count);
+    if (!l_notifiers_count)
+        return;
+    dap_store_obj_t *l_shared_obj = dap_store_obj_copy(a_store_obj, 1);
+    if (!l_shared_obj)
+        return log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+    atomic_int *l_refcount = DAP_NEW_Z(atomic_int);
+    if (!l_refcount) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return dap_store_obj_free_one(l_shared_obj);
+    }
+    atomic_init(l_refcount, l_notifiers_count);
     DL_FOREACH(a_cluster->notifiers, l_notifier) {
         assert(l_notifier->callback_notify);
-        dap_store_obj_t *l_store_obj = dap_store_obj_copy_ext(a_store_obj, l_notifier, sizeof(*l_notifier));
-        dap_proc_thread_callback_add_pri(NULL, s_db_cluster_notify_on_proc_thread, l_store_obj, DAP_QUEUE_MSG_PRIORITY_LOW);
+        dap_global_db_notify_task_t *l_task = DAP_NEW_Z(dap_global_db_notify_task_t);
+        if (!l_task) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            if (atomic_fetch_sub(l_refcount, 1) == 1) {
+                dap_store_obj_free_one(l_shared_obj);
+                DAP_DELETE(l_refcount);
+            }
+            continue;
+        }
+        *l_task = (dap_global_db_notify_task_t) {
+            .shared_obj = l_shared_obj, .refcount = l_refcount,
+            .callback_notify = l_notifier->callback_notify, .callback_arg = l_notifier->callback_arg
+        };
+        dap_proc_thread_callback_add_pri(NULL, s_db_cluster_notify_on_proc_thread, l_task, DAP_QUEUE_MSG_PRIORITY_LOW);
     }
 }
 
