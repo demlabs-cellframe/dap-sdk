@@ -307,14 +307,22 @@ static int s_dns_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
     dap_stream_trans_dns_private_t *l_priv = s_get_private(a_stream->trans);
     if(!l_priv)
         return -1;
-    struct sockaddr_in *l_addr_in = (struct sockaddr_in *)&l_priv->remote_addr;
-    l_addr_in->sin_family = AF_INET;
-    l_addr_in->sin_port = htons(a_port);
-    if(inet_pton(AF_INET, a_host, &l_addr_in->sin_addr) != 1) {
-        log_it(L_ERROR, "Invalid IPv4 address: %s", a_host);
+    /* System resolver: an IPv4 literal on IPv6-only (NAT64) yields AF_INET6,
+     * matching the socket created in stage_prepare. IPv4 unchanged. */
+    struct sockaddr_storage l_resolved;
+    int l_family = AF_UNSPEC;
+    int l_len = dap_net_resolve_host(a_host, dap_itoa(a_port), false, &l_resolved, &l_family);
+    if(l_len <= 0 || (l_family != AF_INET && l_family != AF_INET6)) {
+        log_it(L_ERROR, "Invalid DNS tunnel remote address: %s", a_host);
         return -1;
     }
-    l_priv->remote_addr_len = sizeof(struct sockaddr_in);
+    if(a_stream->esocket && a_stream->esocket->addr_size &&
+            a_stream->esocket->addr_storage.ss_family != l_family) {
+        log_it(L_ERROR, "DNS tunnel remote %s family differs from socket family", a_host);
+        return -1;
+    }
+    memcpy(&l_priv->remote_addr, &l_resolved, (size_t)l_len);
+    l_priv->remote_addr_len = (socklen_t)l_len;
     l_priv->esocket = a_stream->esocket;
     if(l_priv->esocket) {
         memcpy(&l_priv->esocket->addr_storage, &l_priv->remote_addr,
@@ -869,8 +877,9 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     a_result->esocket = NULL;
     a_result->stream = NULL;
     a_result->error_code = 0;
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET,
-            SOCK_DGRAM, IPPROTO_UDP, a_params->callbacks);
+    /* Resolve first: socket family must match the address (IPv6/NAT64). */
+    dap_events_socket_t *l_es = dap_events_socket_create_resolved(a_params->host,
+            a_params->port, SOCK_DGRAM, IPPROTO_UDP, a_params->callbacks, NULL);
     if(!l_es) {
         a_result->error_code = -1;
         return -1;
@@ -882,12 +891,6 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
             sizeof(l_buf_size));
     setsockopt(l_es->fd, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buf_size,
             sizeof(l_buf_size));
-    if(dap_events_socket_resolve_and_set_addr(l_es, a_params->host,
-            a_params->port) < 0) {
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
 #ifdef DAP_OS_WINDOWS
     {
         struct sockaddr_in l_bind_addr = {

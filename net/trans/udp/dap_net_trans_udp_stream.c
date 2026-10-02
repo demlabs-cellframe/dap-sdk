@@ -1342,17 +1342,23 @@ static int s_udp_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
         return -1;
     }
 
-    // Parse address and store in remote_addr
-    struct sockaddr_in *l_addr_in = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
-    l_addr_in->sin_family = AF_INET;
-    l_addr_in->sin_port = htons(a_port);
-    
-    if (inet_pton(AF_INET, a_host, &l_addr_in->sin_addr) != 1) {
-        log_it(L_ERROR, "Invalid IPv4 address: %s", a_host);
+    // Resolve with the system resolver so an IPv4 literal on an IPv6-only
+    // (NAT64) network yields the synthesized AF_INET6 address; the family must
+    // match the socket created in stage_prepare. IPv4 results are unchanged.
+    struct sockaddr_storage l_resolved;
+    int l_family = AF_UNSPEC;
+    int l_len = dap_net_resolve_host(a_host, dap_itoa(a_port), false, &l_resolved, &l_family);
+    if (l_len <= 0 || (l_family != AF_INET && l_family != AF_INET6)) {
+        log_it(L_ERROR, "Invalid UDP remote address: %s", a_host);
         return -1;
     }
-
-    l_udp_ctx->remote_addr_len = sizeof(struct sockaddr_in);
+    if (l_udp_ctx->remote_addr_len && l_udp_ctx->remote_addr.ss_family != l_family) {
+        log_it(L_ERROR, "UDP remote %s family %d differs from socket family %d",
+               a_host, l_family, l_udp_ctx->remote_addr.ss_family);
+        return -1;
+    }
+    memcpy(&l_udp_ctx->remote_addr, &l_resolved, (size_t)l_len);
+    l_udp_ctx->remote_addr_len = (socklen_t)l_len;
     
     debug_if(s_debug_more, L_DEBUG, "UDP trans connected to %s:%u, calling callback %p", 
              a_host, a_port, a_callback);
@@ -2447,7 +2453,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
         debug_if(s_debug_more, L_DEBUG, "UDP write: remote_addr=%s:%u, addr_len=%u",
                l_addr_str, ntohs(l_sin->sin_port), l_udp_ctx->remote_addr_len);
-    } else {
+    } else if (l_udp_ctx->remote_addr.ss_family != AF_INET6) {
         log_it(L_WARNING, "UDP write: remote_addr has INVALID family: %d",
                l_udp_ctx->remote_addr.ss_family);
     }
@@ -2827,9 +2833,15 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_DGRAM, IPPROTO_UDP, a_params->callbacks);
+    // Resolve first: on IPv6-only (NAT64) networks the address is AF_INET6 and
+    // the socket must be created with the same family.
+    bool l_resolve_failed = false;
+    dap_events_socket_t *l_es = dap_events_socket_create_resolved(a_params->host, a_params->port,
+                                                                  SOCK_DGRAM, IPPROTO_UDP,
+                                                                  a_params->callbacks, &l_resolve_failed);
     if (!l_es) {
-        log_it(L_ERROR, "Failed to create UDP socket");
+        log_it(L_ERROR, "Failed to %s for UDP trans: %s:%u",
+               l_resolve_failed ? "resolve address" : "create UDP socket", a_params->host, a_params->port);
         a_result->error_code = -1;
         return -1;
     }
@@ -2841,14 +2853,6 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     l_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
     
     debug_if(s_debug_more, L_DEBUG, "Created UDP socket %p", l_es);
-    
-    // Resolve host and set address using centralized function
-    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
-        log_it(L_ERROR, "Failed to resolve address for UDP trans: %s:%u", a_params->host, a_params->port);
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
 
     debug_if(s_debug_more, L_DEBUG, "Resolved UDP address: family=%d, size=%zu", l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
 
@@ -2860,13 +2864,25 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     // CRITICAL: Bind UDP socket to get a local port BEFORE first send!
     // Without bind(), OS may not assign a port, breaking server responses!
     // MUST bind BEFORE dap_worker_add_events_socket so reactor monitors correct socket state!
-    struct sockaddr_in l_bind_addr;
+    // Wildcard bind address must match the socket family (IPv4 unchanged).
+    struct sockaddr_storage l_bind_addr;
+    socklen_t l_bind_len;
     memset(&l_bind_addr, 0, sizeof(l_bind_addr));
-    l_bind_addr.sin_family = AF_INET;
-    l_bind_addr.sin_addr.s_addr = INADDR_ANY;  // Bind to all interfaces
-    l_bind_addr.sin_port = 0;  // Let OS choose free port
+    if (l_es->addr_storage.ss_family == AF_INET6) {
+        struct sockaddr_in6 *l_b6 = (struct sockaddr_in6 *)&l_bind_addr;
+        l_b6->sin6_family = AF_INET6;
+        l_b6->sin6_addr = in6addr_any;
+        l_b6->sin6_port = 0;
+        l_bind_len = sizeof(struct sockaddr_in6);
+    } else {
+        struct sockaddr_in *l_b4 = (struct sockaddr_in *)&l_bind_addr;
+        l_b4->sin_family = AF_INET;
+        l_b4->sin_addr.s_addr = INADDR_ANY;  // Bind to all interfaces
+        l_b4->sin_port = 0;  // Let OS choose free port
+        l_bind_len = sizeof(struct sockaddr_in);
+    }
     
-    if (bind(l_es->socket, (struct sockaddr *)&l_bind_addr, sizeof(l_bind_addr)) < 0) {
+    if (bind(l_es->socket, (struct sockaddr *)&l_bind_addr, l_bind_len) < 0) {
         log_it(L_ERROR, "Failed to bind UDP socket: %s", strerror(errno));
         dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
@@ -2888,10 +2904,13 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     }
 
     // Get local port assigned by OS
-    struct sockaddr_in l_local_addr;
+    struct sockaddr_storage l_local_addr;
     socklen_t l_local_addr_len = sizeof(l_local_addr);
     if (getsockname(l_es->socket, (struct sockaddr *)&l_local_addr, &l_local_addr_len) == 0) {
-        debug_if(s_debug_more, L_DEBUG, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
+        uint16_t l_local_port = l_local_addr.ss_family == AF_INET6
+            ? ((struct sockaddr_in6 *)&l_local_addr)->sin6_port
+            : ((struct sockaddr_in *)&l_local_addr)->sin_port;
+        debug_if(s_debug_more, L_DEBUG, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_port));
     }
     
     // CRITICAL: Add socket to worker AFTER bind() so reactor monitors properly configured socket!

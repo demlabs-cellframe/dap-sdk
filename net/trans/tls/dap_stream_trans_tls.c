@@ -217,9 +217,13 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
     if (!a_params || !a_result) return -1;
 
     dap_events_socket_callbacks_t *l_cbs = a_params->callbacks;
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, l_cbs);
+    // Resolve first and create a socket of the resolved family (IPv6/NAT64-safe)
+    bool l_resolve_failed = false;
+    dap_events_socket_t *l_es = dap_events_socket_create_resolved(a_params->host, a_params->port,
+                                                                  SOCK_STREAM, 0, l_cbs, &l_resolve_failed);
     if (!l_es) {
-        log_it(L_ERROR, "Failed to create TCP socket for TLS mimicry transport");
+        log_it(L_ERROR, "Failed to %s for TLS mimicry transport",
+               l_resolve_failed ? "resolve address" : "create TCP socket");
         a_result->error_code = -1;
         return -1;
     }
@@ -237,7 +241,6 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
             log_it(L_WARNING, "TLS transport: failed to set TCP_NODELAY: %s", strerror(errno));
     }
 
-    dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port);
     l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE | DAP_SOCK_READY_TO_READ;
 #ifdef DAP_EVENTS_CAPS_IOCP
     l_es->flags &= ~DAP_SOCK_READY_TO_READ;

@@ -600,9 +600,13 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
         .arg                = l_ctx
     };
 
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, &l_cbs);
+    // Resolve first: socket family must match the address (IPv6-only/NAT64).
+    bool l_resolve_failed = false;
+    dap_events_socket_t *l_es = dap_events_socket_create_resolved(a_host, a_port, SOCK_STREAM, 0,
+                                                                  &l_cbs, &l_resolve_failed);
     if (!l_es) {
-        log_it(L_ERROR, "HTTP connect: failed to create TCP socket");
+        log_it(L_ERROR, "HTTP connect: failed to %s %s:%u",
+               l_resolve_failed ? "resolve" : "create TCP socket for", a_host, a_port);
         DAP_DELETE(l_ctx);
         return -1;
     }
@@ -610,13 +614,6 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
     l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
     l_es->_inheritor = l_client;
     l_es->no_close = true;
-
-    if (dap_events_socket_resolve_and_set_addr(l_es, a_host, a_port) < 0) {
-        log_it(L_ERROR, "HTTP connect: failed to resolve %s:%u", a_host, a_port);
-        dap_events_socket_delete_unsafe(l_es, true);
-        DAP_DELETE(l_ctx);
-        return -1;
-    }
 
     l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
 #ifdef DAP_EVENTS_CAPS_IOCP

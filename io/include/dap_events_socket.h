@@ -419,6 +419,11 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
 dap_events_socket_t * dap_events_socket_create_platform(int a_domain, int a_type, int a_protocol,
                                                           dap_events_socket_callbacks_t *a_callbacks);
 int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port);
+/* Resolve first, then create a socket of the resolved family (IPv6/NAT64-safe). */
+dap_events_socket_t *dap_events_socket_create_resolved(const char *a_host, uint16_t a_port,
+                                                        int a_type, int a_protocol,
+                                                        dap_events_socket_callbacks_t *a_callbacks,
+                                                        bool *a_resolve_failed);
 int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code);
 
 #if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)

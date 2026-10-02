@@ -716,6 +716,47 @@ dap_events_socket_t *dap_events_socket_create_platform(int a_domain, int a_type,
 }
 
 /**
+ * @brief Resolve a remote host first, then create a client socket of the
+ *        resolved address family with the address already set.
+ *
+ * Required for IPv6-only (NAT64/DNS64) networks, where the system synthesizes
+ * an AF_INET6 address even for an IPv4 literal. For IPv4 results the created
+ * socket is identical to dap_events_socket_create_platform(AF_INET, ...).
+ *
+ * @return Created socket (not yet added to a worker) or NULL; on resolve
+ *         failure *a_resolve_failed is set to true when provided.
+ */
+dap_events_socket_t *dap_events_socket_create_resolved(const char *a_host, uint16_t a_port,
+                                                        int a_type, int a_protocol,
+                                                        dap_events_socket_callbacks_t *a_callbacks,
+                                                        bool *a_resolve_failed)
+{
+    if (a_resolve_failed)
+        *a_resolve_failed = false;
+    if (!a_host || !a_callbacks)
+        return NULL;
+    struct sockaddr_storage l_addr;
+    int l_family = AF_UNSPEC;
+    int l_addrlen = dap_net_resolve_host(a_host, dap_itoa(a_port), false, &l_addr, &l_family);
+    if (l_addrlen <= 0 || (l_family != AF_INET && l_family != AF_INET6)) {
+        if (a_resolve_failed)
+            *a_resolve_failed = true;
+        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_host, a_port);
+        return NULL;
+    }
+    dap_events_socket_t *l_es = dap_events_socket_create_platform(l_family, a_type, a_protocol, a_callbacks);
+    if (!l_es)
+        return NULL;
+    memcpy(&l_es->addr_storage, &l_addr, (size_t)l_addrlen);
+    l_es->addr_size = (socklen_t)l_addrlen;
+    l_es->remote_port = a_port;
+    dap_strncpy(l_es->remote_addr_str, a_host, DAP_HOSTADDR_STRLEN);
+    if (l_family == AF_INET6)
+        log_it(L_INFO, "Remote '%s : %u' resolved to IPv6 (NAT64/IPv6 path)", a_host, a_port);
+    return l_es;
+}
+
+/**
  * @brief Resolve hostname and set address in events socket
  * 
  * Centralized function for resolving hostname/IP and setting address information
@@ -776,8 +817,13 @@ int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
     if(s_pre_connect_cb)
         s_pre_connect_cb((int)a_es->socket, s_pre_connect_ctx);
 #endif
-    // Initiate non-blocking connection
-    int l_err = connect(a_es->socket, (struct sockaddr *) &a_es->addr_storage, sizeof(struct sockaddr_in));
+    // Initiate non-blocking connection. The address length must match the
+    // resolved family: a fixed sizeof(sockaddr_in) makes IPv6 (NAT64) fail.
+    socklen_t l_addr_len = a_es->addr_size;
+    if (!l_addr_len)
+        l_addr_len = a_es->addr_storage.ss_family == AF_INET6
+            ? (socklen_t)sizeof(struct sockaddr_in6) : (socklen_t)sizeof(struct sockaddr_in);
+    int l_err = connect(a_es->socket, (struct sockaddr *) &a_es->addr_storage, l_addr_len);
     if (l_err == 0) {
         // Connected immediately - this is rare but possible
         if (a_error_code) *a_error_code = 0;

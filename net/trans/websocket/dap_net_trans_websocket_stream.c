@@ -1386,24 +1386,20 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     a_result->stream = NULL;
     a_result->error_code = 0;
     
-    // Create TCP socket using platform-independent function
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, a_params->callbacks);
+    // Resolve first and create a socket of the resolved family (IPv6/NAT64-safe)
+    bool l_resolve_failed = false;
+    dap_events_socket_t *l_es = dap_events_socket_create_resolved(a_params->host, a_params->port,
+                                                                  SOCK_STREAM, 0, a_params->callbacks,
+                                                                  &l_resolve_failed);
     if (!l_es) {
-        log_it(L_ERROR, "Failed to create WebSocket TCP socket");
+        log_it(L_ERROR, "Failed to %s for WebSocket trans",
+               l_resolve_failed ? "resolve address" : "create TCP socket");
         a_result->error_code = -1;
         return -1;
     }
     
     l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
     l_es->_inheritor = a_params->client_ctx;
-    
-    // Resolve host and set address using centralized function
-    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
-        log_it(L_ERROR, "Failed to resolve address for WebSocket trans");
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
     
     // Set CONNECTING flag and initiate connection
     l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
