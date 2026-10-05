@@ -149,6 +149,70 @@ static void s_test_add_multiple(void)
     dap_assert(dap_str_equals(l_channels, "CENXY"), "Channels are \"CENXY\"");
 }
 
+static void s_test_late_cluster_association_inherits_net_state(void)
+{
+    dap_print_module_name("dap_link_manager_late_cluster_association");
+
+    const uint64_t l_net_id = 0x1001;
+    dap_cluster_t *l_primary = dap_cluster_new("link-manager-test-primary",
+                                               dap_guuid_compose(l_net_id, 1),
+                                               DAP_CLUSTER_TYPE_AUTONOMIC);
+    dap_cluster_t *l_late = dap_cluster_new("link-manager-test-late",
+                                            dap_guuid_compose(l_net_id, 2),
+                                            DAP_CLUSTER_TYPE_AUTONOMIC);
+    dap_assert(l_primary && l_late, "Test clusters created");
+    dap_assert(dap_link_manager_add_net(l_net_id, l_primary, 1) == 0, "Test net added");
+
+    dap_link_manager_set_net_condition(l_net_id, true);
+    dap_assert(l_primary->status == DAP_CLUSTER_STATUS_ENABLED, "Primary cluster enabled");
+    dap_assert(l_late->status == DAP_CLUSTER_STATUS_DISABLED, "Late cluster initially disabled");
+
+    dap_assert(dap_link_manager_add_net_associate(l_net_id, l_late) == 0, "Late cluster associated");
+    dap_assert(l_late->status == DAP_CLUSTER_STATUS_ENABLED,
+               "Late cluster inherits active net status immediately");
+
+    dap_link_manager_set_net_condition(l_net_id, false);
+    dap_link_manager_remove_net(l_net_id);
+    dap_cluster_delete(l_late);
+    dap_cluster_delete(l_primary);
+}
+
+static void s_test_late_static_cluster_reconciles_live_link(void)
+{
+    dap_print_module_name("dap_link_manager_late_static_cluster_reconcile");
+
+    dap_stream_node_addr_t l_addr = { .uint64 = 0x2002 };
+    dap_cluster_t *l_existing = dap_cluster_new("link-manager-test-existing-link",
+                                                dap_guuid_compose(0x2002, 1),
+                                                DAP_CLUSTER_TYPE_AUTONOMIC);
+    dap_cluster_t *l_late = dap_cluster_new("link-manager-test-late-link",
+                                            dap_guuid_compose(0x2002, 2),
+                                            DAP_CLUSTER_TYPE_AUTONOMIC);
+    dap_assert(l_existing && l_late, "Runtime link clusters created");
+    l_existing->status = DAP_CLUSTER_STATUS_ENABLED;
+    l_late->status = DAP_CLUSTER_STATUS_ENABLED;
+    l_existing->members_add_callback = dap_link_manager_add_links_cluster;
+    l_existing->members_delete_callback = dap_link_manager_remove_links_cluster;
+    l_late->members_add_callback = dap_link_manager_add_links_cluster;
+    l_late->members_delete_callback = dap_link_manager_remove_links_cluster;
+
+    dap_cluster_member_t l_role_member = { .addr = l_addr };
+    dap_link_manager_add_static_links_cluster(&l_role_member, l_existing);
+    dap_assert(dap_cluster_member_add(l_existing, &l_addr, 0, NULL) != NULL,
+               "Existing live cluster membership added");
+
+    dap_link_manager_add_static_links_cluster(&l_role_member, l_late);
+    dap_assert(dap_cluster_member_find_unsafe(l_late, &l_addr) != NULL,
+               "Late static cluster immediately receives the live link");
+
+    dap_cluster_member_delete(l_late, &l_addr);
+    dap_cluster_member_delete(l_existing, &l_addr);
+    dap_link_manager_remove_static_links_cluster(&l_role_member, l_late);
+    dap_link_manager_remove_static_links_cluster(&l_role_member, l_existing);
+    dap_cluster_delete(l_late);
+    dap_cluster_delete(l_existing);
+}
+
 int main(void)
 {
     dap_log_level_set(L_ERROR);
@@ -176,6 +240,8 @@ int main(void)
     s_test_remove_first();
     s_test_remove_last();
     s_test_add_multiple();
+    s_test_late_cluster_association_inherits_net_state();
+    s_test_late_static_cluster_reconciles_live_link();
 
     printf("\nAll link manager active channels tests passed.\n");
     return 0;

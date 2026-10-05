@@ -69,6 +69,7 @@ static void s_links_wake_up(dap_link_manager_t *a_link_manager);
 static void s_links_request(dap_link_manager_t *a_link_manager);
 static void s_update_states(void *a_arg);
 static void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager);
+static size_t s_link_reconcile_static_clusters(dap_link_t *a_link, bool a_stream_known);
 
 static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
 {
@@ -403,19 +404,38 @@ int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster, u
 
 int dap_link_manager_add_net_associate(uint64_t a_net_id, dap_cluster_t *a_link_cluster)
 {
-    dap_return_val_if_pass(!s_link_manager || !a_net_id, -2);
+    dap_return_val_if_pass(!s_link_manager || !a_net_id || !a_link_cluster, -2);
+    pthread_rwlock_wrlock(&s_link_manager->nets_lock);
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
     if (!l_net) {
         log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " not managed yet. Add net first", a_net_id);
+        pthread_rwlock_unlock(&s_link_manager->nets_lock);
         return -3;
     }
     for (dap_list_t *it = l_net->link_clusters; it; it = it->next)
         if (it->data == a_link_cluster) {
             debug_if(s_debug_more, L_ERROR, "Cluster GUUID %s already associated with net ID 0x%" DAP_UINT64_FORMAT_x,
                                                         dap_guuid_to_hex_str(a_link_cluster->guuid), l_net->id);
+            pthread_rwlock_unlock(&s_link_manager->nets_lock);
             return -4;
         }
     l_net->link_clusters = dap_list_append(l_net->link_clusters, a_link_cluster);
+    bool l_net_active = l_net->active;
+    if (l_net_active)
+        a_link_cluster->status = DAP_CLUSTER_STATUS_ENABLED;
+    pthread_rwlock_unlock(&s_link_manager->nets_lock);
+
+    log_it(L_INFO, "Associated cluster %s with net ID 0x%016" DAP_UINT64_FORMAT_x ", status %s",
+           a_link_cluster->mnemonim ? a_link_cluster->mnemonim : "(unnamed)", a_net_id,
+           a_link_cluster->status == DAP_CLUSTER_STATUS_ENABLED ? "enabled" : "disabled");
+
+    if (l_net_active) {
+        pthread_rwlock_wrlock(&s_link_manager->links_lock);
+        dap_link_t *l_link = NULL, *l_tmp = NULL;
+        HASH_ITER(hh, s_link_manager->links, l_link, l_tmp)
+            s_link_reconcile_static_clusters(l_link, false);
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
+    }
     return 0;
 }
 
@@ -443,11 +463,17 @@ void dap_link_manager_remove_net(uint64_t a_net_id)
 void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
 {
 // sanity check
+    pthread_rwlock_wrlock(&s_link_manager->nets_lock);
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    dap_return_if_pass(!l_net);
-// func work
-    if (l_net->active == a_new_condition)
+    if (!l_net) {
+        pthread_rwlock_unlock(&s_link_manager->nets_lock);
         return;
+    }
+// func work
+    if (l_net->active == a_new_condition) {
+        pthread_rwlock_unlock(&s_link_manager->nets_lock);
+        return;
+    }
     l_net->active = a_new_condition;
     for (dap_list_t *it = l_net->link_clusters; it; it = it->next) {
         dap_cluster_t *l_cluster = it->data;
@@ -458,8 +484,15 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
             dap_cluster_delete_all_members(l_cluster);
         }
     }
-    if (a_new_condition)
+    pthread_rwlock_unlock(&s_link_manager->nets_lock);
+    if (a_new_condition) {
+        pthread_rwlock_wrlock(&s_link_manager->links_lock);
+        dap_link_t *l_link = NULL, *l_tmp = NULL;
+        HASH_ITER(hh, s_link_manager->links, l_link, l_tmp)
+            s_link_reconcile_static_clusters(l_link, false);
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
         return;
+    }
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link_it, *l_link_tmp;
     HASH_ITER(hh, s_link_manager->links, l_link_it, l_link_tmp) {
@@ -491,6 +524,37 @@ static dap_link_t *s_link_manager_link_find(dap_stream_node_addr_t *a_node_addr)
     dap_link_t *ret = NULL;
     HASH_FIND(hh, s_link_manager->links, a_node_addr, sizeof(*a_node_addr), ret);
     return ret;
+}
+
+/** Reconcile desired static memberships with runtime link clusters.
+ *  The caller must hold links_lock for writing.
+ */
+static size_t s_link_reconcile_static_clusters(dap_link_t *a_link, bool a_stream_known)
+{
+    if (!a_link || (!a_stream_known && !a_link->active_clusters &&
+                    !dap_stream_find_by_addr(&a_link->addr, NULL)))
+        return 0;
+
+    size_t l_added = 0;
+    for (dap_list_t *l_item = a_link->static_clusters; l_item; l_item = l_item->next) {
+        dap_cluster_t *l_cluster = l_item->data;
+        if (!l_cluster || l_cluster->status != DAP_CLUSTER_STATUS_ENABLED ||
+                dap_cluster_member_find_unsafe(l_cluster, &a_link->addr))
+            continue;
+        if (dap_cluster_member_add(l_cluster, &a_link->addr, 0, NULL)) {
+            ++l_added;
+            log_it(L_INFO, "Added live link " NODE_ADDR_FP_STR " to cluster %s",
+                   NODE_ADDR_FP_ARGS_S(a_link->addr),
+                   l_cluster->mnemonim ? l_cluster->mnemonim : "(unnamed)");
+        } else {
+            log_it(L_WARNING, "Can't add live link " NODE_ADDR_FP_STR " to cluster %s",
+                   NODE_ADDR_FP_ARGS_S(a_link->addr),
+                   l_cluster->mnemonim ? l_cluster->mnemonim : "(unnamed)");
+        }
+    }
+    if (l_added && a_link->link_manager->callbacks.link_count_changed)
+        a_link->link_manager->callbacks.link_count_changed();
+    return l_added;
 }
 
 /**
@@ -1060,22 +1124,14 @@ static bool s_stream_add_callback(void *a_arg)
         DAP_DELETE(l_args);
         return false;
     }
-    if (l_link->active_clusters) {
+    bool l_stream_already_active = l_link->active_clusters != NULL;
+    s_link_reconcile_static_clusters(l_link, true);
+    if (l_stream_already_active) {
         log_it(L_ERROR, "%s " NODE_ADDR_FP_STR " with existed link",
                         l_args->uplink ? "Set uplink to" : "Get dowlink from", NODE_ADDR_FP_ARGS(l_node_addr));
         pthread_rwlock_unlock(&s_link_manager->links_lock);
         DAP_DELETE(l_args);
         return false;
-    }
-    dap_list_t *l_item = NULL;
-    DL_FOREACH(l_link->static_clusters, l_item) {
-        dap_cluster_t *l_cluster = l_item->data;
-        if (l_cluster->status == DAP_CLUSTER_STATUS_ENABLED){
-            dap_cluster_member_add(l_cluster, l_node_addr, 0, NULL);       
-            if (l_link->link_manager->callbacks.link_count_changed){
-                l_link->link_manager->callbacks.link_count_changed();
-            }
-        }
     }
     if (l_args->uplink) {
         for (dap_list_t *it = l_link->uplink.associated_nets; it; it = it->next) {
@@ -1315,6 +1371,7 @@ void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, v
         return;
     }
     l_link->static_clusters = dap_list_append(l_link->static_clusters, l_cluster);
+    s_link_reconcile_static_clusters(l_link, false);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     s_debug_cluster_adding_removing(true, true, l_cluster, l_node_addr);
 }
