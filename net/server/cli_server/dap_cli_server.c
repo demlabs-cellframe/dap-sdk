@@ -261,7 +261,7 @@ static void s_cli_reply_stream_open(const char *a_prefix)
     s_cli_reply_stream_used = true;
     s_cli_reply_stream_elems = 0;
     if (s_cli_reply_stream)
-        DAP_DELETE(s_cli_reply_stream);
+        dap_string_free(s_cli_reply_stream, true);
     s_cli_reply_stream = dap_string_new(a_prefix);
     if (!s_cli_reply_stream)
         s_cli_reply_stream_used = false;
@@ -325,9 +325,8 @@ static char *s_cli_reply_stream_take(void)
         if (s_cli_reply_stream_nested)   // the caller never closed its listing element
             dap_string_append(s_cli_reply_stream, "]");
         dap_string_append(s_cli_reply_stream, "]");
-        // dap_string has no detach-buffer helper: copy, then release
-        l_ret = dap_strdup(s_cli_reply_stream->str);
-        DAP_DELETE(s_cli_reply_stream);
+        // Detach the buffer: the caller owns it from here on
+        l_ret = dap_string_free(s_cli_reply_stream, false);
     }
     s_cli_reply_stream = NULL;
     s_cli_reply_stream_used = false;
@@ -1481,12 +1480,11 @@ static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
                 dap_string_append(l_sb, l_stream_result + 1);   // skip the stream's own '['
                 // On any failure above keep the plain stream: a lost prefix
                 // entry is better than a malformed body or a double free.
-                char *l_merged = l_sb->str ? dap_strdup(l_sb->str) : NULL;
+                char *l_merged = dap_string_free(l_sb, false);
                 if (l_merged) {
                     DAP_DELETE(l_stream_result);
                     l_final = l_merged;
                 }
-                DAP_DELETE(l_sb);
             }
         }
         char *l_env = dap_strdup_printf("{\"type\":%d,\"result\":%s,\"id\":%" DAP_UINT64_FORMAT_U ",\"version\":%d}",

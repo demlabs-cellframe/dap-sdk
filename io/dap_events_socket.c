@@ -2034,6 +2034,10 @@ void dap_events_socket_set_buf_out_max(size_t a_bytes) {
     s_events_socket_buf_out_max = a_bytes;
 }
 
+size_t dap_events_socket_get_buf_out_max(void) {
+    return s_events_socket_buf_out_max;
+}
+
 static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es, size_t a_required_size)
 {
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
@@ -2046,9 +2050,15 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
             return NULL;
         }
         if (l_new_size > s_events_socket_buf_out_max) {
-            log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET": refusing to grow output buffer past %zu bytes (needed %zu), "
-                               "peer too slow or reply too large", a_es->fd, s_events_socket_buf_out_max, l_new_size);
-            return NULL;
+            // Room for a smaller step can still exist: a single write may need
+            // a buffer of up to the cap itself.
+            l_new_size = a_es->buf_out_size + a_required_size;
+            if (l_new_size > s_events_socket_buf_out_max) {
+                log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET": refusing to grow output buffer past %zu bytes (needed %zu), "
+                                   "peer too slow or reply too large", a_es->fd, s_events_socket_buf_out_max, l_new_size);
+                return NULL;
+            }
+            l_new_size = s_events_socket_buf_out_max;
         }
         a_es->buf_out_size_max = l_new_size;
         if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max))) {

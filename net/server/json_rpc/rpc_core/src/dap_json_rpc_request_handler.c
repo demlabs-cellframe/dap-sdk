@@ -95,7 +95,9 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
     bool l_is_heavy = false;
     char *l_response;
     if (!dap_cli_server_backpressure_acquire(l_data_str, &l_is_heavy)) {
-        dap_json_rpc_response_t *l_busy_res = dap_json_rpc_response_create("Node is busy, try again later", TYPE_RESPONSE_STRING, 0, 0);
+        // dap_json_rpc_response_free() frees result_string, so the text must be heap-owned
+        dap_json_rpc_response_t *l_busy_res = dap_json_rpc_response_create(dap_strdup("Node is busy, try again later"),
+                                                                           TYPE_RESPONSE_STRING, 0, 0);
         l_response = dap_json_rpc_response_to_string(l_busy_res);
         dap_json_rpc_response_free(l_busy_res);
     } else {

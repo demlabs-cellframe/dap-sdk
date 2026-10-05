@@ -138,8 +138,10 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
     }
     vsnprintf(l_str, l_str_size, a_format, ap_copy);
     va_end(ap_copy);
+    // The queue takes ownership of the pointer (s_notify_server_callback_queue frees it)
     int l_ret = dap_events_socket_queue_ptr_send_to_input(l_input, l_str);
-    DAP_DELETE(l_str);
+    if (l_ret)
+        DAP_DELETE(l_str);
     return l_ret;
 }
 
@@ -193,9 +195,11 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
 
     if (s_notify_data_user_callback)
         s_notify_data_user_callback(l_str);
-    
+
+    // The queue takes ownership of the pointer (s_notify_server_callback_queue frees it)
     int l_ret = dap_events_socket_queue_ptr_send(s_notify_server_queue, l_str);
-    DAP_DELETE(l_str);
+    if (l_ret)
+        DAP_DELETE(l_str);
     return l_ret;
 }
 
