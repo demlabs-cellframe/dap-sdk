@@ -1529,7 +1529,12 @@ static int s_db_mdbx_txn_end(bool a_commit)
         if (MDBX_SUCCESS != rc)
             log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
     }
-    if (MDBX_SUCCESS == rc)
+    // Any result but THREAD_MISMATCH means libmdbx has already terminated and
+    // freed the transaction (a failed commit is aborted): keeping the handle
+    // would route every later read/write of this thread into a dead txn.
+    if (rc != MDBX_THREAD_MISMATCH) {
         s_txn = NULL;
-    return rc;
+        s_txn_depth = 0;
+    }
+    return rc;;
 }

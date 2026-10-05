@@ -7,8 +7,6 @@
 
 #define LOG_TAG "dap_json_rpc_request_handler"
 
-static bool s_debug_more = false;
-
 static dap_json_rpc_request_handler_t *s_handler_hash_table = NULL;
 
 int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t *a_func)
@@ -50,7 +48,7 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
         log_it(L_ERROR, "Empty request");
         return NULL;
     }
-    debug_if(s_debug_more, L_INFO, "Processing exec_cmd request");
+    log_it(L_INFO, "Processing exec_cmd request");
     dap_json_rpc_http_request_t* l_http_request = dap_json_rpc_http_request_deserialize(a_request, a_request_size);
     if (!l_http_request) {
         log_it(L_ERROR, "Can't read request");
@@ -88,7 +86,24 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
         DAP_DEL_MULTY(l_sign);
         return l_no_rights_res_str;
     }
-    char* l_response = dap_cli_cmd_exec(l_data_str);
+    // Signed /exec_cmd runs the exact same command set as the unix/tcp CLI
+    // port and used to call dap_cli_cmd_exec() straight from this proc
+    // thread, bypassing that port's inflight caps entirely — a valid,
+    // signed but heavy call (e.g. srv_dex history) could still starve the
+    // shared proc-thread pool that also carries GlobalDB I/O. Route through
+    // the same acquire/release gate as dap_cli_server.c.
+    bool l_is_heavy = false;
+    char *l_response;
+    if (!dap_cli_server_backpressure_acquire(l_data_str, &l_is_heavy)) {
+        // dap_json_rpc_response_free() frees result_string, so the text must be heap-owned
+        dap_json_rpc_response_t *l_busy_res = dap_json_rpc_response_create(dap_strdup("Node is busy, try again later"),
+                                                                           TYPE_RESPONSE_STRING, 0, 0);
+        l_response = dap_json_rpc_response_to_string(l_busy_res);
+        dap_json_rpc_response_free(l_busy_res);
+    } else {
+        l_response = dap_cli_cmd_exec(l_data_str);
+        dap_cli_server_backpressure_release(l_is_heavy);
+    }
     dap_json_rpc_http_request_free(l_http_request);
     DAP_DEL_MULTY(l_data_str, l_sign);
     return l_response;
