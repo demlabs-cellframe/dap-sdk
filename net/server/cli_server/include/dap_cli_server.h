@@ -53,6 +53,14 @@ typedef struct dap_cli_server_cmd_override{
 // node resources.
 #define DAP_CLI_CMD_FLAG_HEAVY (1U << 0) /* subject to a tighter concurrency cap than regular commands */
 
+// Finer-grained classification for commands that mix cheap and expensive
+// subcommands (e.g. "wallet info" vs "wallet outputs"). Called on the reactor
+// thread with the already-parsed request: a_argv is the command line split on
+// ';' (a_argv[0] is the command name), a_argc its length. Must be cheap and
+// must not take any lock held by command handlers. Returns true for HEAVY.
+// When set, it replaces DAP_CLI_CMD_FLAG_HEAVY for this command.
+typedef bool (*dap_cli_server_cmd_heavy_check_t)(int a_argc, char **a_argv);
+
 typedef struct dap_cli_cmd{
     char name[32]; /* User printable name of the function. */
     union {
@@ -66,6 +74,7 @@ typedef struct dap_cli_cmd{
     char *doc_ex; /* Full documentation for this function.  */
     dap_cli_server_cmd_override_t overrides; /* Used to change default behaviour */
     uint32_t flags; /* DAP_CLI_CMD_FLAG_* bitmask, see above */
+    dap_cli_server_cmd_heavy_check_t heavy_check; /* optional per-subcommand classifier, see above */
     UT_hash_handle hh;
 } dap_cli_cmd_t;
 
@@ -88,6 +97,17 @@ int dap_cli_server_cmd_find_option_val( char** argv, int arg_start, int arg_end,
 int dap_cli_server_cmd_check_option( char** argv, int arg_start, int arg_end, const char *opt_name);
 void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_server_cmd_override_t a_overrides);
 void dap_cli_server_cmd_flags_set(const char *a_name, uint32_t a_flags);
+void dap_cli_server_cmd_heavy_check_set(const char *a_name, dap_cli_server_cmd_heavy_check_t a_check);
+
+// Readiness of the node's RPC surface for L7 gateways/balancers. The CLI port
+// answers "GET /health" itself (no executor slot, no command lookup) with
+// 200 when the callback reports ready and 503 otherwise; the callback fills
+// a_reason (NUL-terminated, may be left empty) with a short machine-readable
+// cause such as "net Backbone NET_STATE_SYNC_CHAINS". Without a registered
+// callback the node always reports ready. Called on the reactor thread: it
+// must only read already-maintained state, never scan data.
+typedef bool (*dap_cli_server_ready_callback_t)(char *a_reason, size_t a_reason_size);
+void dap_cli_server_ready_callback_set(dap_cli_server_ready_callback_t a_callback);
 
 // Shared backpressure gate for every entry point that ends up calling
 // dap_cli_cmd_exec() — the unix/tcp CLI port (dap_cli_server.c) and the
@@ -149,6 +169,13 @@ void dap_cli_cmd_reply_stream_begin(void);
 void dap_cli_cmd_reply_stream_begin_nested(void);
 void dap_cli_cmd_reply_stream_nested_end(void);
 void dap_cli_cmd_reply_add(json_object **a_arr_reply, json_object *a_obj);
+
+// Lets a command handler turn its reply into "HTTP/1.1 503 Service Unavailable"
+// with a Retry-After header (e.g. an index it depends on is still being built
+// and answering would mean a full scan instead). The JSON-RPC body is still
+// sent, so the client can tell the reason apart from an overload 429.
+// Thread-local to the executing command; ignored outside the CLI port path.
+void dap_cli_cmd_reply_set_unavailable(unsigned a_retry_after_sec);
 
 //for json
 int json_commands(const char * a_name);

@@ -48,6 +48,8 @@
 #include "dap_json_rpc_errors.h"
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_response.h"
+#include "dap_json_rpc_params.h"
+#include "dap_events.h"
 #include "dap_cli_http_docs.h"
 
 #define LOG_TAG "dap_cli_server"
@@ -76,8 +78,13 @@ static bool s_cli_debug_more_cfg = false;            /* "debug-more" */
 // lives with the service that registered the command, not here.
 static _Atomic int s_cli_inflight = 0;
 static _Atomic int s_cli_inflight_heavy = 0;
+// Defaults before init (unit tests use the gate without init); init derives
+// them from the CPU count unless [cli-server] max_inflight[_heavy] is set.
 static int s_cli_max_inflight = 32;
 static int s_cli_max_inflight_heavy = 4;
+
+static _Atomic(dap_cli_server_ready_callback_t) s_cli_ready_callback = NULL;
+static _Thread_local unsigned s_cli_reply_unavailable_retry_after = 0;
 
 // Per-source rate limiting: a crawler is rarely a single address. Production
 // incidents were driven by many hosts inside the same /16 (see
@@ -354,6 +361,55 @@ static bool s_cmd_is_heavy_method(const char *a_method) {
     return l_cmd && (l_cmd->flags & DAP_CLI_CMD_FLAG_HEAVY);
 }
 
+// Same, for a request whose body is at hand: a command with a per-subcommand
+// classifier gets it applied to the request's own command line, so "wallet
+// outputs" lands in the heavy class while "wallet info" stays regular. The
+// command line is rebuilt here exactly the way the executor will build it
+// (dap_json_rpc_params_create_from_* + split on ';'); that is a few small
+// allocations on the reactor thread, paid only for such commands.
+static bool s_cmd_is_heavy_request(const char *a_method, json_object *a_jobj) {
+    if (!a_method)
+        return false;
+    dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(a_method);
+    if (!l_cmd)
+        return false;
+    if (!l_cmd->heavy_check || !a_jobj)
+        return l_cmd->flags & DAP_CLI_CMD_FLAG_HEAVY;
+    json_object *l_params = NULL, *l_subcmd = NULL, *l_args = NULL;
+    json_object_object_get_ex(a_jobj, "params", &l_params);
+    json_object_object_get_ex(a_jobj, "subcommand", &l_subcmd);
+    json_object_object_get_ex(a_jobj, "arguments", &l_args);
+    dap_json_rpc_params_t *l_rpc_params = l_params
+            ? dap_json_rpc_params_create_from_array_list(l_params)
+            : dap_json_rpc_params_create_from_subcmd_and_args(l_subcmd, l_args, a_method);
+    const char *l_cmd_str = l_rpc_params ? dap_json_rpc_params_get(l_rpc_params, 0) : NULL;
+    // An unparsable command line cannot be classified: keep the static flag
+    // (the executor will reject the request anyway).
+    bool l_heavy = l_cmd->flags & DAP_CLI_CMD_FLAG_HEAVY;
+    if (l_cmd_str) {
+        char **l_argv = dap_strsplit(l_cmd_str, ";", -1);
+        if (l_argv) {
+            int l_argc = 0;
+            while (l_argv[l_argc])
+                ++l_argc;
+            l_heavy = l_cmd->heavy_check(l_argc, l_argv);
+            dap_strfreev(l_argv);
+        }
+    }
+    dap_json_rpc_params_remove_all(l_rpc_params);
+    return l_heavy;
+}
+
+static bool s_backpressure_acquire_class(bool a_heavy) {
+    _Atomic int *l_counter = a_heavy ? &s_cli_inflight_heavy : &s_cli_inflight;
+    int l_limit = a_heavy ? s_cli_max_inflight_heavy : s_cli_max_inflight;
+    if (atomic_fetch_add(l_counter, 1) >= l_limit) {
+        atomic_fetch_sub(l_counter, 1);
+        return false;
+    }
+    return true;
+}
+
 // Token-bucket check for the source /16. Returns true if the request is
 // allowed and consumes one token; false if the subnet is over its budget.
 // a_subnet_key == 0 (unknown/non-IPv4 family) always passes — this limiter
@@ -407,46 +463,26 @@ bool dap_cli_server_backpressure_acquire_method(const char *a_method, bool *a_ou
     bool l_heavy = s_cmd_is_heavy_method(a_method);
     if (a_out_is_heavy)
         *a_out_is_heavy = l_heavy;
-    _Atomic int *l_counter = l_heavy ? &s_cli_inflight_heavy : &s_cli_inflight;
-    int l_limit = l_heavy ? s_cli_max_inflight_heavy : s_cli_max_inflight;
-    if (atomic_fetch_add(l_counter, 1) >= l_limit) {
-        atomic_fetch_sub(l_counter, 1);
-        return false;
-    }
-    return true;
+    return s_backpressure_acquire_class(l_heavy);
 }
 
 bool dap_cli_server_backpressure_acquire(const char *a_req_str, bool *a_out_is_heavy) {
-    // Convenience wrapper for callers that only have the raw body: extract
-    // the method with a single parse. The CLI port path uses
-    // dap_cli_server_backpressure_acquire_method() with the method it already
-    // extracted from its own parse of the same body.
-    const char *l_method = NULL;
+    // Convenience wrapper for callers that only have the raw body (signed
+    // /exec_cmd): one parse, then the same per-subcommand classification as
+    // the CLI port, so neither entry point can be used to bypass the other's
+    // heavy class.
+    bool l_heavy = false;
     if (a_req_str) {
         enum json_tokener_error jterr;
         json_object *l_jobj = json_tokener_parse_verbose(a_req_str, &jterr), *l_jobj_method = NULL;
         if (jterr == json_tokener_success && l_jobj &&
             json_object_object_get_ex(l_jobj, "method", &l_jobj_method))
-            l_method = json_object_get_string(l_jobj_method);
-        bool l_heavy = s_cmd_is_heavy_method(l_method);
+            l_heavy = s_cmd_is_heavy_request(json_object_get_string(l_jobj_method), l_jobj);
         json_object_put(l_jobj);
-        if (a_out_is_heavy)
-            *a_out_is_heavy = l_heavy;
-        _Atomic int *l_counter = l_heavy ? &s_cli_inflight_heavy : &s_cli_inflight;
-        int l_limit = l_heavy ? s_cli_max_inflight_heavy : s_cli_max_inflight;
-        if (atomic_fetch_add(l_counter, 1) >= l_limit) {
-            atomic_fetch_sub(l_counter, 1);
-            return false;
-        }
-        return true;
     }
     if (a_out_is_heavy)
-        *a_out_is_heavy = false;
-    if (atomic_fetch_add(&s_cli_inflight, 1) >= s_cli_max_inflight) {
-        atomic_fetch_sub(&s_cli_inflight, 1);
-        return false;
-    }
-    return true;
+        *a_out_is_heavy = l_heavy;
+    return s_backpressure_acquire_class(l_heavy);
 }
 
 // Rate-limit check for an arbitrary connection source, exported so the signed
@@ -467,6 +503,52 @@ void dap_cli_server_backpressure_release(bool a_is_heavy) {
     atomic_fetch_sub(a_is_heavy ? &s_cli_inflight_heavy : &s_cli_inflight, 1);
 }
 
+void dap_cli_server_ready_callback_set(dap_cli_server_ready_callback_t a_callback) {
+    atomic_store(&s_cli_ready_callback, a_callback);
+}
+
+void dap_cli_cmd_reply_set_unavailable(unsigned a_retry_after_sec) {
+    s_cli_reply_unavailable_retry_after = a_retry_after_sec ? a_retry_after_sec : 1;
+}
+
+// "GET /health" on the CLI port: answered on the reactor thread, without an
+// executor slot or a backpressure slot, so a balancer can tell "node not
+// ready" (503) from "node busy" (429 on a real request) and from "node
+// dead" (no answer). Returns true if the request was a health probe.
+static bool s_cli_health_try_get(dap_events_socket_t *a_es) {
+    static const char l_probe[] = "GET /health";
+    if (a_es->buf_in_size < sizeof(l_probe) - 1 || memcmp(a_es->buf_in, l_probe, sizeof(l_probe) - 1))
+        return false;
+    char l_next = a_es->buf_in_size > sizeof(l_probe) - 1 ? (char)a_es->buf_in[sizeof(l_probe) - 1] : ' ';
+    if (l_next != ' ' && l_next != '?' && l_next != '\r' && l_next != '/')
+        return false;   // "/healthz" or any other path is not ours
+    char l_reason[128] = "";
+    dap_cli_server_ready_callback_t l_cb = atomic_load(&s_cli_ready_callback);
+    bool l_ready = l_cb ? l_cb(l_reason, sizeof(l_reason)) : true;
+    for (char *l_p = l_reason; *l_p; ++l_p)     // keep the JSON body well-formed
+        if (*l_p == '"' || *l_p == '\\' || (unsigned char)*l_p < 0x20)
+            *l_p = ' ';
+    char l_body[384];
+    int l_body_len = snprintf(l_body, sizeof(l_body),
+                              "{\"status\":\"%s\",\"reason\":\"%s\",\"inflight\":%d,\"max_inflight\":%d,"
+                              "\"inflight_heavy\":%d,\"max_inflight_heavy\":%d}",
+                              l_ready ? "ok" : "unavailable", l_reason,
+                              atomic_load(&s_cli_inflight), s_cli_max_inflight,
+                              atomic_load(&s_cli_inflight_heavy), s_cli_max_inflight_heavy);
+    if (l_body_len < 0 || (size_t)l_body_len >= sizeof(l_body))
+        l_body_len = snprintf(l_body, sizeof(l_body), "{\"status\":\"%s\"}", l_ready ? "ok" : "unavailable");
+    dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 %s\r\n"
+                                     "Content-Type: application/json\r\n"
+                                     "Cache-Control: no-store\r\n"
+                                     "%s"
+                                     "Connection: close\r\n"
+                                     "Content-Length: %d\r\n\r\n%s",
+                                     l_ready ? "200 OK" : "503 Service Unavailable",
+                                     l_ready ? "" : "Retry-After: 5\r\n",
+                                     l_body_len, l_body);
+    return true;
+}
+
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
     cli_cmd_arg_t *l_arg = a_arg ? (cli_cmd_arg_t*)a_arg : DAP_NEW_Z(cli_cmd_arg_t);
     switch (l_arg->status) {
@@ -479,6 +561,12 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         ++l_arg->status;
     }
     case 1: {
+        if (s_cli_health_try_get(a_es)) {
+            DAP_DELETE(l_arg);
+            a_es->buf_in_size = 0;
+            a_es->callbacks.arg = NULL;
+            return;
+        }
         if (dap_cli_http_docs_try_get(a_es, (void **)&l_arg)) {
             a_es->buf_in_size = 0;
             a_es->callbacks.arg = NULL;
@@ -561,7 +649,8 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         l_arg->es_uid = a_es->uuid;
         l_arg->time_start = dap_nanotime_now();
 
-        if (!dap_cli_server_backpressure_acquire_method(l_method, &l_arg->is_heavy)) {
+        l_arg->is_heavy = s_cmd_is_heavy_request(l_method, l_jobj);
+        if (!s_backpressure_acquire_class(l_arg->is_heavy)) {
             // Same deferred-close behavior as the rate-limit response above:
             // write_finished_callback closes the socket after the 429 is sent.
             dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 429 Too Many Requests\r\n"
@@ -637,8 +726,21 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
         return -2;
     }
     s_cli_version = dap_config_get_item_int32_default(g_config, a_cfg_section, "version", s_cli_version);
-    s_cli_max_inflight = dap_config_get_item_int32_default(g_config, a_cfg_section, "max_inflight", s_cli_max_inflight);
-    s_cli_max_inflight_heavy = dap_config_get_item_int32_default(g_config, a_cfg_section, "max_inflight_heavy", s_cli_max_inflight_heavy);
+    // Defaults scale with the CPUs actually available: the fixed 32/4 let a
+    // 4-vCPU RPC node run 32 concurrent ledger-scanning commands (every one
+    // of them faulting pages in), which is what pushed nodes into swap/IO
+    // collapse. ~2 regular commands per CPU, ~CPU/4 heavy ones, both bounded.
+    uint32_t l_cpus = dap_get_cpu_count();
+    if (!l_cpus)
+        l_cpus = 1;
+    int l_def_inflight = dap_max(4, dap_min(32, (int)l_cpus * 2));
+    int l_def_inflight_heavy = dap_max(1, dap_min(4, (int)l_cpus / 4));
+    s_cli_max_inflight = dap_config_get_item_int32_default(g_config, a_cfg_section, "max_inflight", l_def_inflight);
+    s_cli_max_inflight_heavy = dap_config_get_item_int32_default(g_config, a_cfg_section, "max_inflight_heavy", l_def_inflight_heavy);
+    if (s_cli_max_inflight < 1)
+        s_cli_max_inflight = 1;
+    if (s_cli_max_inflight_heavy < 1)
+        s_cli_max_inflight_heavy = 1;
     s_cli_rate_limit_enabled = dap_config_get_item_bool_default(g_config, a_cfg_section, "rate_limit", s_cli_rate_limit_enabled);
     s_cli_rate_limit_rps = dap_config_get_item_int32_default(g_config, a_cfg_section, "rate_limit_rps", s_cli_rate_limit_rps);
     s_cli_rate_limit_burst = dap_config_get_item_int32_default(g_config, a_cfg_section, "rate_limit_burst", s_cli_rate_limit_burst);
@@ -679,7 +781,9 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
     } else {
         s_cli_pool_shutdown = false;
         s_cli_pool_thread_count = 0;
-        int l_threads = s_cli_max_inflight > 0 ? s_cli_max_inflight : 1;
+        // Both classes run on this pool: size it for the sum, otherwise
+        // admitted regular requests queue behind running heavy ones.
+        int l_threads = s_cli_max_inflight + s_cli_max_inflight_heavy;
         if (l_threads > 128)
             l_threads = 128;
         s_cli_pool_threads = DAP_NEW_Z_COUNT(pthread_t, l_threads);
@@ -1056,6 +1160,23 @@ void dap_cli_server_cmd_flags_set(const char *a_name, uint32_t a_flags)
 }
 
 /**
+ * @brief dap_cli_server_cmd_heavy_check_set
+ * Per-subcommand cost classifier for a command (see
+ * dap_cli_server_cmd_heavy_check_t); NULL restores flag-only classification.
+ */
+void dap_cli_server_cmd_heavy_check_set(const char *a_name, dap_cli_server_cmd_heavy_check_t a_check)
+{
+    if (!a_name)
+        return;
+    pthread_rwlock_wrlock(&s_cli_commands_rwlock);
+    dap_cli_cmd_t *l_cmd_item = NULL;
+    HASH_FIND_STR(cli_commands, a_name, l_cmd_item);
+    if (l_cmd_item)
+        l_cmd_item->heavy_check = a_check;
+    pthread_rwlock_unlock(&s_cli_commands_rwlock);
+}
+
+/**
  * @brief dap_cli_server_cmd_get_first
  * @return
  */
@@ -1169,9 +1290,12 @@ static void s_cli_cmd_process(cli_cmd_arg_t *l_arg) {
     // history/OHLCV, ledger UTXO scans, block dump/list, tx_history -all)
     // without threading a uuid parameter through every call in between.
     s_cli_cmd_current_client_uuid = l_arg->es_uid;
+    s_cli_reply_unavailable_retry_after = 0;
     char    *l_ret = s_cli_cmd_exec_ex(l_arg->jobj, l_arg->restricted);   /* consumes l_arg->jobj */
     l_arg->jobj = NULL;
     s_cli_cmd_current_client_uuid = 0;
+    unsigned l_retry_after = s_cli_reply_unavailable_retry_after;
+    s_cli_reply_unavailable_retry_after = 0;
     if (!l_ret) {
         // The request builder rejected the body (no "method", OOM): there is
         // no reply to frame, and treating the NULL as a body used to crash on
@@ -1184,9 +1308,14 @@ static void s_cli_cmd_process(cli_cmd_arg_t *l_arg) {
     // with dap_strdup_printf("%s") used to copy the whole body again — for
     // MB-sized replies that is the single largest memcpy on the reply path.
     size_t l_body_len = dap_strlen(l_ret);
-    char l_hdr[512];
+    char l_status[96];
+    if (l_retry_after)
+        snprintf(l_status, sizeof(l_status), "503 Service Unavailable\r\nRetry-After: %u", l_retry_after);
+    else
+        snprintf(l_status, sizeof(l_status), "200 OK");
+    char l_hdr[576];
     int l_hdr_len = snprintf(l_hdr, sizeof(l_hdr),
-                             "HTTP/1.1 200 OK\r\n"
+                             "HTTP/1.1 %s\r\n"
                              "Content-Length: %zu\r\n"
                              "Content-Type: application/json\r\n"
                              "Access-Control-Allow-Origin: *\r\n"
@@ -1195,6 +1324,7 @@ static void s_cli_cmd_process(cli_cmd_arg_t *l_arg) {
                              "Processing-Time: %"DAP_UINT64_FORMAT_U"\r\n"
                              "Node-Type: %s\r\n"
                              "Node-Version: %s\r\n\r\n",
+                             l_status,
                              l_body_len,
                              (uint64_t)(dap_nanotime_now() - l_arg->time_start),
                              s_cli_node_type_public ? "Public" : "Private",
@@ -1388,7 +1518,11 @@ DAP_INLINE char *dap_cli_cmd_exec(char *a_req_str)
     json_object *l_jobj = json_tokener_parse_verbose(a_req_str, &jterr);
     if (jterr != json_tokener_success || !l_jobj)
         return NULL;
-    return s_cli_cmd_exec_ex(l_jobj, false);
+    char *l_ret = s_cli_cmd_exec_ex(l_jobj, false);
+    // No HTTP status to carry it on this path (the JSON body already tells
+    // the caller); don't let it leak into the next command on this thread.
+    s_cli_reply_unavailable_retry_after = 0;
+    return l_ret;
 }
 
 DAP_INLINE int dap_cli_server_get_version()
