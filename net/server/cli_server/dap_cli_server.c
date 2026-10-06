@@ -240,7 +240,7 @@ static bool s_cli_pool_ready = false;
 static bool s_cli_pool_shutdown = false;
 
 static void *s_cli_pool_worker(void *a_arg);
-static void s_cli_pool_enqueue(cli_cmd_arg_t *a_arg);
+static bool s_cli_pool_enqueue(cli_cmd_arg_t *a_arg);
 static void *s_cli_cmd_exec(void *a_arg);
 
 // Streaming reply assembly: heavy listing commands (block list, tx_history,
@@ -661,9 +661,15 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
             return;
         }
 
-        if (s_cli_pool_ready)
-            s_cli_pool_enqueue(l_arg);
-        else {
+        if (s_cli_pool_ready) {
+            if (!s_cli_pool_enqueue(l_arg)) {
+                // Pool stopped between the admission gate and here (deinit):
+                // same cleanup as the dead-client skip - no reply, slot back.
+                dap_cli_server_backpressure_release(l_arg->is_heavy);
+                json_object_put(l_arg->jobj);
+                DAP_DELETE(l_arg);
+            }
+        } else {
             // Pool failed to start at init — legacy fallback: a one-shot
             // detached thread running the single job (it must NOT enter the
             // pool's blocking loop: deinit only stops jobs it knows about).
@@ -828,6 +834,18 @@ void dap_cli_server_deinit()
         DAP_DEL_Z(s_cli_pool_threads);
         s_cli_pool_thread_count = 0;
         s_cli_pool_ready = false;
+        // The enqueue guard above makes a leak impossible; drain anyway so a
+        // stale entry can never be picked up by a re-created pool (tests re-init).
+        pthread_mutex_lock(&s_cli_pool_lock);
+        while (s_cli_pool_head) {
+            cli_cmd_arg_t *l_arg = s_cli_pool_head;
+            s_cli_pool_head = l_arg->next;
+            dap_cli_server_backpressure_release(l_arg->is_heavy);
+            json_object_put(l_arg->jobj);
+            DAP_DELETE(l_arg);
+        }
+        s_cli_pool_tail = NULL;
+        pthread_mutex_unlock(&s_cli_pool_lock);
     }
     dap_server_delete(s_cli_server);
     for (int i = 0; i < DAP_CLI_RATE_SHARDS; ++i) {
@@ -1236,9 +1254,16 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
     return l_alias->standard_command;
 }
 
-static void s_cli_pool_enqueue(cli_cmd_arg_t *a_arg) {
+static bool s_cli_pool_enqueue(cli_cmd_arg_t *a_arg) {
     a_arg->next = NULL;
     pthread_mutex_lock(&s_cli_pool_lock);
+    if (s_cli_pool_shutdown) {
+        // deinit race: workers may already be joined while the reactor still
+        // delivers a read event. A queued job nobody drains would leak the arg,
+        // its parsed body and the inflight slot (the latter survives re-init).
+        pthread_mutex_unlock(&s_cli_pool_lock);
+        return false;
+    }
     if (s_cli_pool_tail)
         s_cli_pool_tail->next = a_arg;
     else
@@ -1246,6 +1271,7 @@ static void s_cli_pool_enqueue(cli_cmd_arg_t *a_arg) {
     s_cli_pool_tail = a_arg;
     pthread_cond_signal(&s_cli_pool_cond);
     pthread_mutex_unlock(&s_cli_pool_lock);
+    return true;
 }
 
 static void *s_cli_pool_worker(void UNUSED_ARG *a_arg) {
