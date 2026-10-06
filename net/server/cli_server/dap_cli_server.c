@@ -83,7 +83,10 @@ static _Atomic int s_cli_inflight_heavy = 0;
 static int s_cli_max_inflight = 32;
 static int s_cli_max_inflight_heavy = 4;
 
-static _Atomic(dap_cli_server_ready_callback_t) s_cli_ready_callback = NULL;
+// _Atomic of a function-pointer type is not valid C and is rejected by
+// Linux clang/Android; store the callback as void* and cast at the edges
+// (registered once at init, read on GET /health).
+static _Atomic(void *) s_cli_ready_callback = NULL;
 static _Thread_local unsigned s_cli_reply_unavailable_retry_after = 0;
 
 // Per-source rate limiting: a crawler is rarely a single address. Production
@@ -503,7 +506,7 @@ void dap_cli_server_backpressure_release(bool a_is_heavy) {
 }
 
 void dap_cli_server_ready_callback_set(dap_cli_server_ready_callback_t a_callback) {
-    atomic_store(&s_cli_ready_callback, a_callback);
+    atomic_store(&s_cli_ready_callback, (void*)(uintptr_t)a_callback);
 }
 
 void dap_cli_cmd_reply_set_unavailable(unsigned a_retry_after_sec) {
@@ -522,7 +525,7 @@ static bool s_cli_health_try_get(dap_events_socket_t *a_es) {
     if (l_next != ' ' && l_next != '?' && l_next != '\r' && l_next != '/')
         return false;   // "/healthz" or any other path is not ours
     char l_reason[128] = "";
-    dap_cli_server_ready_callback_t l_cb = atomic_load(&s_cli_ready_callback);
+    dap_cli_server_ready_callback_t l_cb = (dap_cli_server_ready_callback_t)(uintptr_t)atomic_load(&s_cli_ready_callback);
     bool l_ready = l_cb ? l_cb(l_reason, sizeof(l_reason)) : true;
     for (char *l_p = l_reason; *l_p; ++l_p)     // keep the JSON body well-formed
         if (*l_p == '"' || *l_p == '\\' || (unsigned char)*l_p < 0x20)
