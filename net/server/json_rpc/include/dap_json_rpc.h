@@ -42,6 +42,37 @@ typedef enum dap_json_rpc_version{
 
 int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config);
 void dap_json_rpc_deinit();
+
+/*
+ * Standalone JSON-RPC service on the plain dap HTTP server - a separate listener with its own
+ * configuration section, next to the CLI port and the signed /exec_cmd endpoint.
+ *
+ * [rpc-server]
+ *   enable=true                 start the service (default: off)
+ *   listen-address=[0.0.0.0:12400]
+ *   allowed_cmd_control=true    true  - only the commands in allowed_cmd are callable from
+ *                                        non-loopback addresses, everything is callable from
+ *                                        loopback (127.0.0.1 / ::1, default)
+ *                               false - the whole command set is callable by anyone (open
+ *                                        endpoint, expose only behind your own gatekeeper)
+ *   allowed_cmd=[net,version]   the public command list
+ *   max_request_size=1048576    request body cap in bytes
+ *
+ * Requests are plain JSON-RPC over HTTP (no encryption/signature handshake, which is what makes it
+ * fast): POST a JSON object with "method" (the command name, as on the CLI) and its "params", e.g.
+ *   curl -s -H 'Content-Type: application/json' -d '{"method":"version","params":[],"id":1}' URL
+ * A GET without a body answers the command index - every registered command with its doc and
+ * whether this endpoint would run it for a non-loopback caller. GET /health reports readiness the
+ * same way the CLI port does (200/503 + Retry-After). Execution goes through the same
+ * inflight/heavy backpressure gate as the CLI port and the signed path, and the per-source budget
+ * is shared with them, so a busy node answers 429/503 instead of queueing.
+ */
+int dap_json_rpc_service_init(dap_config_t *a_config);
+void dap_json_rpc_service_deinit(void);
+void dap_json_rpc_http_plain_proc(dap_http_simple_t *a_http_simple, void *a_arg);
+// Whether a command name may be run by a restricted (non-loopback) caller of an endpoint whose
+// public list is a_allowed_cmds (NULL-terminated; NULL or empty = nothing is public).
+bool dap_json_rpc_method_is_public(const char *a_method, const char **a_allowed_cmds);
 void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg);
 void dap_json_rpc_add_proc_http(struct dap_http_server*sh, const char *URL);
 bool dap_check_node_pkey_in_map(dap_hash_fast_t *a_pkey);
