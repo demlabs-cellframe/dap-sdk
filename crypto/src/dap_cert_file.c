@@ -53,8 +53,9 @@ int dap_cert_file_save(dap_cert_t * a_cert, const char * a_cert_file_path)
     DAP_DELETE(l_file_dir);
     if ( l_err )
         return log_it(L_ERROR, "Can't create dir \"%s\"", a_cert_file_path), -1;
-    // Certificates carry the private key: create them owner-only
-    int l_fd = open(a_cert_file_path, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
+    // Certificates carry the private key: create them owner-only.
+    // O_BINARY keeps Windows from CR-translating the payload
+    int l_fd = open(a_cert_file_path, O_CREAT | O_WRONLY | O_TRUNC | O_BINARY, S_IRUSR | S_IWUSR);
     FILE *l_file = l_fd >= 0 ? fdopen(l_fd, "wb") : NULL;
     if (!l_file) {
         if (l_fd >= 0)
