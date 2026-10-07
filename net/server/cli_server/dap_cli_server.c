@@ -515,6 +515,52 @@ void dap_cli_server_backpressure_release(bool a_is_heavy) {
     atomic_fetch_sub(a_is_heavy ? &s_cli_inflight_heavy : &s_cli_inflight, 1);
 }
 
+bool dap_cli_server_ready_check(char *a_reason, size_t a_reason_size)
+{
+    if (a_reason && a_reason_size)
+        a_reason[0] = '\0';
+    dap_cli_server_ready_callback_t l_cb = (dap_cli_server_ready_callback_t)
+                                            (uintptr_t)atomic_load(&s_cli_ready_callback);
+    return l_cb ? l_cb(a_reason, a_reason_size) : true;
+}
+
+bool dap_cli_server_addr_is_loopback(const struct sockaddr_storage *a_addr)
+{
+    if (!a_addr)
+        return false;
+    if (a_addr->ss_family == AF_INET)
+        return ((const struct sockaddr_in *)a_addr)->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
+#ifdef AF_INET6
+    if (a_addr->ss_family == AF_INET6)
+        return IN6_IS_ADDR_LOOPBACK(&((const struct sockaddr_in6 *)a_addr)->sin6_addr);
+#endif
+    return false;
+}
+
+char *dap_cli_server_cmd_list_json(const char **a_allowed_cmds, bool a_all_public)
+{
+    json_object *l_arr = json_object_new_array();
+    dap_return_val_if_fail(l_arr, NULL);
+    pthread_rwlock_rdlock(&s_cli_commands_rwlock);
+    dap_cli_cmd_t *l_cmd = NULL, *l_tmp = NULL;
+    HASH_ITER(hh, cli_commands, l_cmd, l_tmp) {
+        json_object *l_obj = json_object_new_object();
+        if (!l_obj)
+            continue;
+        json_object_object_add(l_obj, "name", json_object_new_string(l_cmd->name));
+        if (l_cmd->doc)
+            json_object_object_add(l_obj, "doc", json_object_new_string(l_cmd->doc));
+        json_object_object_add(l_obj, "public",
+                               json_object_new_boolean(a_all_public ||
+                                       (a_allowed_cmds && !!dap_str_find(a_allowed_cmds, l_cmd->name))));
+        json_object_array_add(l_arr, l_obj);
+    }
+    pthread_rwlock_unlock(&s_cli_commands_rwlock);
+    char *l_ret = dap_strdup(json_object_to_json_string(l_arr));
+    json_object_put(l_arr);
+    return l_ret;
+}
+
 void dap_cli_server_ready_callback_set(dap_cli_server_ready_callback_t a_callback) {
     atomic_store(&s_cli_ready_callback, (void*)(uintptr_t)a_callback);
 }
@@ -607,13 +653,9 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
 
-        // Family-aware loopback check: the old blind cast to sockaddr_in treated
-        // an IPv6 ::1 caller as non-loopback (restricted + unrate-limited)
-        bool l_is_loopback = false;
-        if (a_es->addr_storage.ss_family == AF_INET)
-            l_is_loopback = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
-        else if (a_es->addr_storage.ss_family == AF_INET6)
-            l_is_loopback = IN6_IS_ADDR_LOOPBACK(&((struct sockaddr_in6*)&a_es->addr_storage)->sin6_addr);
+        // Family-aware loopback check (dap_cli_server_addr_is_loopback): the old blind cast to
+        // sockaddr_in treated an IPv6 ::1 caller as non-loopback (restricted + unrate-limited).
+        bool l_is_loopback = dap_cli_server_addr_is_loopback(&a_es->addr_storage);
 
         // Rate-limit by source /16 before any parsing: the check is O(1) and
         // needs no request body, so a flooding source pays a hash lookup

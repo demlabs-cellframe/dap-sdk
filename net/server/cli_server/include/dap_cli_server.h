@@ -109,6 +109,22 @@ void dap_cli_server_cmd_heavy_check_set(const char *a_name, dap_cli_server_cmd_h
 typedef bool (*dap_cli_server_ready_callback_t)(char *a_reason, size_t a_reason_size);
 void dap_cli_server_ready_callback_set(dap_cli_server_ready_callback_t a_callback);
 
+// Readiness of the node as reported by the callback above; true when no callback is registered.
+// Entry points that expose their own /health (the standalone RPC service) use this instead of
+// duplicating the readiness rules.
+bool dap_cli_server_ready_check(char *a_reason, size_t a_reason_size);
+
+// Whether a peer address is the loopback address a caller is trusted from. Same rule the CLI
+// port uses: exactly 127.0.0.1 and ::1 - the other 127.0.0.0/8 addresses count as remote, and
+// unix sockets are not loopback either (the CLI trusts them separately, by address family).
+bool dap_cli_server_addr_is_loopback(const struct sockaddr_storage *a_addr);
+
+// JSON array of the registered commands, for entry points that publish the command set to their
+// own clients: each element is {"name", "doc", "public"}. a_allowed_cmds (NULL-terminated) is the
+// set considered public - the same list the RPC service enforces; with a_all_public every command
+// is reported as public (an endpoint that runs the whole set). Caller frees the returned string.
+char *dap_cli_server_cmd_list_json(const char **a_allowed_cmds, bool a_all_public);
+
 // Shared backpressure gate for every entry point that ends up calling
 // dap_cli_cmd_exec() — the unix/tcp CLI port (dap_cli_server.c) and the
 // signed HTTP /exec_cmd path (dap_json_rpc.c) both execute the exact same

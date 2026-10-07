@@ -88,6 +88,231 @@ void dap_json_rpc_deinit()
     dap_json_rpc_map_deinit();
 }
 
+/* *** Standalone plain-HTTP JSON-RPC service ([rpc-server]) *** */
+
+static dap_server_t *s_rpc_service_server = NULL;
+static char **s_rpc_allowed_cmds_owned = NULL;          /* ownership of the strings below */
+static const char **s_rpc_allowed_cmds = NULL;          /* NULL-terminated public command list */
+static bool s_rpc_service_restricted = true;            /* allowed_cmd_control */
+static size_t s_rpc_max_request_size = 1024 * 1024;     /* max_request_size */
+
+bool dap_json_rpc_method_is_public(const char *a_method, const char **a_allowed_cmds)
+{
+    return a_method && *a_method && a_allowed_cmds && *a_allowed_cmds &&
+           !!dap_str_find(a_allowed_cmds, a_method);
+}
+
+// The command name of a JSON-RPC request body, or NULL when the body is not a JSON object with a
+// string "method". Only used for the access decision: the executor parses the body again itself.
+static char *s_rpc_service_request_method(const char *a_body)
+{
+    enum json_tokener_error l_err;
+    json_object *l_req = json_tokener_parse_verbose(a_body, &l_err);
+    if (l_err != json_tokener_success || !l_req)
+        return NULL;
+    char *l_method = NULL;
+    json_object *l_jobj_method = NULL;
+    if (json_object_object_get_ex(l_req, "method", &l_jobj_method) &&
+            json_object_is_type(l_jobj_method, json_type_string))
+        l_method = dap_strdup(json_object_get_string(l_jobj_method));
+    json_object_put(l_req);
+    return l_method;
+}
+
+// Small JSON body for replies that carry no command result (errors, the index, /health).
+static void s_rpc_service_reply_str(dap_http_simple_t *a_http_simple, const char *a_str)
+{
+    dap_http_simple_reply(a_http_simple, (void *)a_str, strlen(a_str));
+}
+
+static void s_rpc_service_reply_error(dap_http_simple_t *a_http_simple,
+                                      http_status_code_t *a_return_code, http_status_code_t a_status,
+                                      const char *a_message)
+{
+    *a_return_code = a_status;
+    json_object *l_arr = json_object_new_array();
+    if (l_arr) {
+        dap_json_rpc_error_add(l_arr, -1, "%s", a_message);
+        char *l_str = dap_strdup(json_object_to_json_string(l_arr));
+        if (l_str) {
+            s_rpc_service_reply_str(a_http_simple, l_str);
+            DAP_DELETE(l_str);
+        }
+        json_object_put(l_arr);
+    }
+}
+
+void dap_json_rpc_http_plain_proc(dap_http_simple_t *a_http_simple, void *a_arg)
+{
+    dap_return_if_fail(a_http_simple);
+    http_status_code_t *l_return_code = (http_status_code_t *)a_arg;
+    if (!l_return_code)                                   /* proc registered by the service itself */
+        return;
+    // Per-source budget, shared with the CLI port and the signed /exec_cmd path: a caller must not
+    // get an unthrottled stream just because it found the plain RPC port. Loopback is exempt.
+    if (a_http_simple->http_client && a_http_simple->http_client->esocket &&
+        !dap_cli_server_rate_limit_check_addr(&a_http_simple->http_client->esocket->addr_storage)) {
+        *l_return_code = Http_Status_TooManyRequests;
+        return;
+    }
+
+    // No body: the command index (GET) - nothing to execute, so no backpressure slot is taken.
+    if (!a_http_simple->request_size || !a_http_simple->request_str) {
+        bool l_all_public = !s_rpc_service_restricted;
+        char *l_index = dap_cli_server_cmd_list_json(l_all_public ? NULL : s_rpc_allowed_cmds, l_all_public);
+        if (!l_index) {
+            *l_return_code = Http_Status_InternalServerError;
+            return;
+        }
+        *l_return_code = Http_Status_OK;
+        s_rpc_service_reply_str(a_http_simple, l_index);
+        DAP_DELETE(l_index);
+        return;
+    }
+    if (a_http_simple->request_size > s_rpc_max_request_size) {
+        *l_return_code = Http_Status_PayloadTooLarge;
+        return;
+    }
+
+    // Access control for the plain endpoint: a non-loopback caller may only run the commands the
+    // configuration made public. Loopback tooling keeps the full command set, exactly like the
+    // CLI port. With allowed_cmd_control=false the whole set is public - an explicit opt-in.
+    bool l_loopback = dap_cli_server_addr_is_loopback(
+            a_http_simple->http_client && a_http_simple->http_client->esocket
+                ? &a_http_simple->http_client->esocket->addr_storage : NULL);
+    if (!l_loopback && s_rpc_service_restricted) {
+        char *l_method = s_rpc_service_request_method(a_http_simple->request_str);
+        bool l_allowed = dap_json_rpc_method_is_public(l_method, s_rpc_allowed_cmds);
+        if (!l_allowed) {
+            log_it(l_method ? L_WARNING : L_ERROR,
+                   "HTTP RPC: refused %s for a non-loopback caller",
+                   l_method ? l_method : "a malformed request");
+            DAP_DELETE(l_method);
+            s_rpc_service_reply_error(a_http_simple, l_return_code, Http_Status_Forbidden,
+                                      "Command is not exposed on this endpoint");
+            return;
+        }
+        DAP_DELETE(l_method);
+    }
+
+    // Same acquire/release gate as the CLI port and the signed path: a heavy command must not
+    // starve the shared proc-thread pool (GlobalDB I/O runs there too).
+    bool l_is_heavy = false;
+    if (!dap_cli_server_backpressure_acquire(a_http_simple->request_str, &l_is_heavy)) {
+        dap_http_header_add(&a_http_simple->ext_headers, "Retry-After", "1");
+        s_rpc_service_reply_error(a_http_simple, l_return_code, Http_Status_ServiceUnavailable,
+                                  "Node is busy, try again later");
+        return;
+    }
+    char *l_response = dap_cli_cmd_exec(a_http_simple->request_str);
+    dap_cli_server_backpressure_release(l_is_heavy);
+    if (!l_response) {
+        s_rpc_service_reply_error(a_http_simple, l_return_code, Http_Status_BadRequest,
+                                  "Wrong request");
+        return;
+    }
+    *l_return_code = Http_Status_OK;
+    s_rpc_service_reply_str(a_http_simple, l_response);
+    DAP_DELETE(l_response);
+}
+
+static void s_rpc_service_health_proc(dap_http_simple_t *a_http_simple, void *a_arg)
+{
+    http_status_code_t *l_return_code = (http_status_code_t *)a_arg;
+    if (!l_return_code)
+        return;
+    char l_reason[256] = { 0 };
+    bool l_ready = dap_cli_server_ready_check(l_reason, sizeof(l_reason));
+    *l_return_code = l_ready ? Http_Status_OK : Http_Status_ServiceUnavailable;
+    char *l_body = NULL;
+    if (l_ready)
+        l_body = dap_strdup("{\"status\":\"ok\"}");
+    else {
+        if (!l_reason[0])
+            dap_strncpy(l_reason, "not ready", sizeof(l_reason) - 1);
+        dap_http_header_add(&a_http_simple->ext_headers, "Retry-After", "5");
+        l_body = dap_strdup_printf("{\"status\":\"unavailable\",\"reason\":\"%s\"}", l_reason);
+    }
+    if (l_body) {
+        s_rpc_service_reply_str(a_http_simple, l_body);
+        DAP_DELETE(l_body);
+    }
+}
+
+static void s_rpc_service_allowed_cmds_free(void)
+{
+    if (s_rpc_allowed_cmds_owned) {
+        for (char **l_it = s_rpc_allowed_cmds_owned; *l_it; ++l_it)
+            DAP_DELETE(*l_it);
+        DAP_DELETE(s_rpc_allowed_cmds_owned);
+    }
+    s_rpc_allowed_cmds_owned = NULL;
+    s_rpc_allowed_cmds = NULL;
+}
+
+int dap_json_rpc_service_init(dap_config_t *a_config)
+{
+    if (!dap_config_get_item_bool_default(a_config, "rpc-server", "enable", false)) {
+        log_it(L_NOTICE, "HTTP RPC service is off ([rpc-server] enable)");
+        return 0;
+    }
+    // allowed_cmd_control: true (default) = restricted, non-loopback callers run only
+    // allowed_cmd; false = the whole set is public. Mirrors the CLI port's option of the same
+    // name, so operators have one mental model for both entry points.
+    s_rpc_service_restricted = dap_config_get_item_bool_default(a_config, "rpc-server",
+                                                                "allowed_cmd_control", true);
+    s_rpc_max_request_size = dap_config_get_item_uint64_default(a_config, "rpc-server",
+                                                                "max_request_size", 1024 * 1024);
+    uint16_t l_allowed_count = 0;
+    const char **l_allowed_cfg = dap_config_get_array_str(a_config, "rpc-server", "allowed_cmd",
+                                                          &l_allowed_count);
+    if (l_allowed_cfg && *l_allowed_cfg) {
+        // A single non-array value reports count 1 but is not an array (same handling as the CLI
+        // port's allowed_cmd list).
+        size_t l_n = 0;
+        while (l_allowed_cfg[l_n])
+            ++l_n;
+        s_rpc_allowed_cmds_owned = DAP_NEW_Z_COUNT(char *, l_n + 1);
+        if (!s_rpc_allowed_cmds_owned) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return -1;
+        }
+        for (size_t i = 0; i < l_n; ++i)
+            s_rpc_allowed_cmds_owned[i] = dap_strdup(l_allowed_cfg[i]);
+        s_rpc_allowed_cmds = (const char **)s_rpc_allowed_cmds_owned;
+    }
+
+    dap_server_t *l_server = dap_http_server_new("rpc-server", dap_get_appname());
+    if (!l_server) {
+        log_it(L_CRITICAL, "Can't create the HTTP RPC server ([rpc-server] section)");
+        s_rpc_service_allowed_cmds_free();
+        return -2;
+    }
+    dap_http_server_t *l_http = DAP_HTTP_SERVER(l_server);
+    dap_http_simple_proc_add(l_http, "/", s_rpc_max_request_size, dap_json_rpc_http_plain_proc);
+    dap_http_simple_proc_add(l_http, "/rpc", s_rpc_max_request_size, dap_json_rpc_http_plain_proc);
+    dap_http_simple_proc_add(l_http, "/health", 512, s_rpc_service_health_proc);
+    s_rpc_service_server = l_server;
+    size_t l_public_count = 0;
+    while (s_rpc_allowed_cmds && s_rpc_allowed_cmds[l_public_count])
+        ++l_public_count;
+    log_it(L_NOTICE, "HTTP RPC service started on the [rpc-server] listen-address: %s, %zu public command(s), body limit %zu bytes",
+           s_rpc_service_restricted ? "restricted (loopback = all commands)" : "PUBLIC (all commands)",
+           l_public_count, s_rpc_max_request_size);
+    if (!s_rpc_service_restricted)
+        log_it(L_WARNING, "HTTP RPC service: allowed_cmd_control=false - every command is callable by anyone");
+    return 0;
+}
+
+void dap_json_rpc_service_deinit(void)
+{
+    if (s_rpc_service_server) {
+        dap_server_delete(s_rpc_service_server);
+        s_rpc_service_server = NULL;
+    }
+    s_rpc_service_allowed_cmds_free();
+}
+
 void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
 {
     log_it(L_DEBUG,"Proc enc http exec_cmd request");
