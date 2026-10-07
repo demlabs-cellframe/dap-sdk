@@ -390,13 +390,13 @@ static char *s_read_allowed_doc_file(const char *a_basename, size_t *a_size)
 static char *s_wrap_http_response(int a_status, const char *a_reason, const char *a_content_type,
                                   const char *a_body, size_t a_body_size)
 {
+    // No CORS headers on purpose: the docs front-end defaults to same-origin
+    // (location.origin), and the CLI port fully trusts loopback callers —
+    // a wildcard ACAO would let any web page on the node host read RPC replies.
     return dap_strdup_printf("HTTP/1.1 %d %s\r\n"
                              "Content-Type: %s\r\n"
                              "Content-Length: %zu\r\n"
                              "Connection: close\r\n"
-                             "Access-Control-Allow-Origin: *\r\n"
-                             "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-                             "Access-Control-Allow-Headers: Content-Type\r\n"
                              "\r\n%.*s",
                              a_status, a_reason, a_content_type, a_body_size,
                              (int)a_body_size, a_body ? a_body : "");
@@ -434,9 +434,6 @@ static void s_send_response(dap_events_socket_t *a_es, void **a_arg, int a_statu
                                 "Content-Type: %s\r\n"
                                 "Content-Length: 0\r\n"
                                 "Connection: close\r\n"
-                                "Access-Control-Allow-Origin: *\r\n"
-                                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-                                "Access-Control-Allow-Headers: Content-Type\r\n"
                                 "\r\n",
                                 a_status, a_reason, a_content_type);
     if (l_response) {

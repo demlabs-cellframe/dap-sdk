@@ -491,13 +491,23 @@ bool dap_cli_server_backpressure_acquire(const char *a_req_str, bool *a_out_is_h
 // HTTP /exec_cmd path can apply the very same per-/16 budget as the CLI port
 // before paying for request decode/verify.
 bool dap_cli_server_rate_limit_check_addr(const struct sockaddr_storage *a_addr) {
-    if (!a_addr || a_addr->ss_family != AF_INET)
+    if (!a_addr)
         return true;
-    // Loopback is not the threat model (local tooling, tests) and the CLI
+    // Loopback (v4 and v6) is not the threat model (local tooling, tests) and the CLI
     // port exempts it explicitly - keep the two entry points consistent.
-    if (((const struct sockaddr_in *)a_addr)->sin_addr.s_addr == htonl(INADDR_LOOPBACK))
+    uint32_t l_subnet_key = 0;
+    if (a_addr->ss_family == AF_INET6) {
+        if (IN6_IS_ADDR_LOOPBACK(&((const struct sockaddr_in6 *)a_addr)->sin6_addr))
+            return true;
+        uint64_t l_hi = 0;
+        memcpy(&l_hi, ((const struct sockaddr_in6 *)a_addr)->sin6_addr.s6_addr, sizeof(l_hi));
+        l_subnet_key = (uint32_t)(l_hi >> 48);
+    } else if (a_addr->ss_family == AF_INET) {
+        if (((const struct sockaddr_in *)a_addr)->sin_addr.s_addr == htonl(INADDR_LOOPBACK))
+            return true;
+        l_subnet_key = ntohl(((const struct sockaddr_in *)a_addr)->sin_addr.s_addr) >> 16;
+    } else
         return true;
-    uint32_t l_subnet_key = ntohl(((const struct sockaddr_in *)a_addr)->sin_addr.s_addr) >> 16;
     return s_cli_rate_limit_check(l_subnet_key);
 }
 
@@ -597,7 +607,13 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
 
-        bool l_is_loopback = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
+        // Family-aware loopback check: the old blind cast to sockaddr_in treated
+        // an IPv6 ::1 caller as non-loopback (restricted + unrate-limited)
+        bool l_is_loopback = false;
+        if (a_es->addr_storage.ss_family == AF_INET)
+            l_is_loopback = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
+        else if (a_es->addr_storage.ss_family == AF_INET6)
+            l_is_loopback = IN6_IS_ADDR_LOOPBACK(&((struct sockaddr_in6*)&a_es->addr_storage)->sin6_addr);
 
         // Rate-limit by source /16 before any parsing: the check is O(1) and
         // needs no request body, so a flooding source pays a hash lookup
@@ -606,8 +622,16 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         // per-IP limiting alone would not have helped. Loopback and
         // unix-socket callers (local tooling, node-cli) bypass this — they
         // are not the threat model.
-        if (!l_is_loopback && a_es->addr_storage.ss_family == AF_INET) {
-            uint32_t l_subnet_key = ntohl(((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr) >> 16;
+        if (!l_is_loopback
+                && (a_es->addr_storage.ss_family == AF_INET || a_es->addr_storage.ss_family == AF_INET6)) {
+            uint32_t l_subnet_key = 0;
+            if (a_es->addr_storage.ss_family == AF_INET)
+                l_subnet_key = ntohl(((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr) >> 16;
+            else { // fold the v6 address into the same /16-style bucket space
+                uint64_t l_hi = 0;
+                memcpy(&l_hi, ((struct sockaddr_in6*)&a_es->addr_storage)->sin6_addr.s6_addr, sizeof(l_hi));
+                l_subnet_key = (uint32_t)(l_hi >> 48);
+            }
             if (!s_cli_rate_limit_check(l_subnet_key)) {
                 // Queue the response before signalling close. The reactor only
                 // honors a pending close once buf_out is empty/flushed; setting
@@ -1342,13 +1366,13 @@ static void s_cli_cmd_process(cli_cmd_arg_t *l_arg) {
     else
         snprintf(l_status, sizeof(l_status), "200 OK");
     char l_hdr[576];
+    // No CORS headers here on purpose: the CLI port fully trusts loopback/unix
+    // callers, so a wildcard Access-Control-Allow-Origin would let any web page
+    // opened on the node host drive the RPC via fetch() and read the replies.
     int l_hdr_len = snprintf(l_hdr, sizeof(l_hdr),
                              "HTTP/1.1 %s\r\n"
                              "Content-Length: %zu\r\n"
                              "Content-Type: application/json\r\n"
-                             "Access-Control-Allow-Origin: *\r\n"
-                             "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-                             "Access-Control-Allow-Headers: Content-Type\r\n"
                              "Processing-Time: %"DAP_UINT64_FORMAT_U"\r\n"
                              "Node-Type: %s\r\n"
                              "Node-Version: %s\r\n\r\n",
@@ -1419,7 +1443,12 @@ static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
             char *l_str_cmd = dap_strdup(str_cmd);
             char *l_ptr = strstr(l_str_cmd, "-password");
             if (l_ptr) {
-                l_ptr += 10;
+                // "-password" is 9 chars; skip it and one optional delimiter.
+                // The old +=10 could jump past the NUL of a command ending with
+                // a bare "-password" and then write '*' out of bounds.
+                l_ptr += strlen("-password");
+                if (l_ptr[0] == ' ' || l_ptr[0] == '=')
+                    l_ptr++;
                 while(l_ptr[0] != '\0' && l_ptr[0] != ';') {
                     *l_ptr = '*';
                     l_ptr +=1;
@@ -1443,10 +1472,10 @@ static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
             if (l_append_cmd) {
                 l_argc++;
                 char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
-                al_argv[1] = l_ncmd;
-                al_argv[1] = l_append_cmd;
-                for (int i = 1; i < l_argc; i++)
-                    al_argv[i + 1] = l_argv[i];
+                al_argv[0] = l_ncmd;       // argv[0] must carry the command name
+                al_argv[1] = l_append_cmd;  // the alias addition comes right after it
+                for (int i = 2; i < l_argc; i++)
+                    al_argv[i] = l_argv[i - 1];
                 DAP_DEL_Z(l_argv);
                 l_argv = al_argv;
             }
