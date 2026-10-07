@@ -136,6 +136,8 @@ static const char *s_msg_opcode_to_str(enum queue_io_msg_opcode a_opcode);
 
 // Queue i/o processing callback
 static bool s_queue_io_callback(void *a_arg);
+static int s_io_msg_enqueue(struct queue_io_msg *a_msg);
+static void s_io_queue_drain(uint32_t a_timeout_ms);
 
 // Queue i/o message processing functions
 static void s_msg_opcode_get(struct queue_io_msg * a_msg);
@@ -270,6 +272,9 @@ inline dap_global_db_instance_t *dap_global_db_instance_get_default()
  * @brief dap_global_db_deinit, after fix ticket 9030 need add dap_global_db_instance_deinit()
  */
 void dap_global_db_deinit() {
+    // Let queued writes reach the driver before it is closed (bounded wait;
+    // a stuck queue must not hang shutdown forever).
+    s_io_queue_drain(10000);
     dap_global_db_clean_deinit();
     // CRITICAL: cluster_deinit MUST be called BEFORE instance_deinit
     // because cluster_deinit accesses instance memory that instance_deinit will free
@@ -535,7 +540,7 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
     l_msg->callback_result = a_callback;
     l_msg->callback_arg = a_arg;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec get request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -608,7 +613,7 @@ int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_
     l_msg->callback_result_raw = a_callback;
     l_msg->callback_arg = a_arg;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec get request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -678,7 +683,7 @@ int dap_global_db_get_del_ts(const char *a_group, const char *a_key, dap_global_
     l_msg->callback_result = a_callback;
     l_msg->callback_arg = a_arg;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec get_del_ts request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -759,7 +764,7 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec get_last request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -823,7 +828,7 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
     l_msg->callback_arg = a_arg;
     l_msg->callback_result_raw = a_callback;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec get_last request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -886,7 +891,7 @@ int dap_global_db_get_all(const char *a_group, size_t a_results_page_size, dap_g
     l_msg->values_page_size = a_results_page_size;
     l_msg->last_hash = c_dap_global_db_driver_hash_blank;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
 
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec get_all request, code %d", l_ret);
@@ -985,7 +990,7 @@ int dap_global_db_get_all_raw(const char *a_group, size_t a_results_page_size, d
     l_msg->callback_results_raw = a_callback;
     l_msg->last_hash = c_dap_global_db_driver_hash_blank;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec get_all_raw request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -1115,7 +1120,7 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec set request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -1209,7 +1214,7 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     }
     l_msg->values_raw_total = a_store_objs_count;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec set_raw request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -1266,7 +1271,7 @@ int dap_global_db_set_multiple_zc(const char *a_group, dap_global_db_obj_t *a_va
     l_msg->callback_arg = a_arg;
     l_msg->callback_results = a_callback;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec set_multiple request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -1364,7 +1369,7 @@ int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callba
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "%s \"%s\" group \"%s\" key from pinned groups",
                                                     a_pin ? "Add" : "Remove", a_group, a_key);
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec %s request, code %d", a_pin ? "pin" : "unpin", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -1494,7 +1499,7 @@ int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a
         l_msg->value_length = a_value_len;
     }
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec del request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -1578,7 +1583,7 @@ int dap_global_db_flush(dap_global_db_callback_result_t a_callback, void * a_arg
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
 
-    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
+    int l_ret = s_io_msg_enqueue(l_msg);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec flush request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -1687,6 +1692,36 @@ static const char *s_msg_opcode_to_str(enum queue_io_msg_opcode a_opcode)
  * @param a_es
  * @param a_arg
  */
+// Depth of queued-but-unfinished GlobalDB I/O messages. Every enqueue goes
+// through s_io_msg_enqueue() and every final completion decrements it, so
+// dap_global_db_deinit() can drain the queue before the storage driver is
+// closed - previously pending writes simply crashed against (or were lost
+// with) a dead driver when the process finished while they were in flight.
+static _Atomic(uint32_t) s_gdb_io_depth = 0;
+
+static int s_io_msg_enqueue(struct queue_io_msg *a_msg)
+{
+    atomic_fetch_add(&s_gdb_io_depth, 1);
+    int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, a_msg);
+    if (l_ret != 0)
+        atomic_fetch_sub(&s_gdb_io_depth, 1);
+    return l_ret;
+}
+
+static void s_io_queue_drain(uint32_t a_timeout_ms)
+{
+    uint32_t l_waited = 0;
+    while (atomic_load(&s_gdb_io_depth) && l_waited < a_timeout_ms) {
+        dap_usleep(1000);
+        ++l_waited;
+    }
+    uint32_t l_left = atomic_load(&s_gdb_io_depth);
+    if (l_left)
+        log_it(L_WARNING, "GlobalDB: %u queued I/O operation(s) still pending after %u ms at deinit", l_left, a_timeout_ms);
+    else
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "GlobalDB: I/O queue drained");
+}
+
 static bool s_queue_io_callback(void * a_arg)
 {
     struct queue_io_msg *l_msg = (struct queue_io_msg *) a_arg;
@@ -1713,6 +1748,7 @@ static bool s_queue_io_callback(void * a_arg)
                l_msg->opcode);
     }
     s_queue_io_msg_delete(l_msg);
+    atomic_fetch_sub(&s_gdb_io_depth, 1);
     return false;
 }
 
