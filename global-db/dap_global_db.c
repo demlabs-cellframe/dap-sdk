@@ -72,6 +72,18 @@ struct queue_io_msg{
     };
     // Custom argument passed to the callback
     void *callback_arg;
+    // Addressing fields, shared by every opcode that names a record. They live outside the
+    // opcode payload union on purpose: on 32-bit ABIs pointers shrink to 4 bytes while uint64_t
+    // keeps 8-byte alignment, so the arms no longer share the 64-bit offsets - a payload field
+    // of one arm silently aliased an addressing field of another. That is exactly how a GET_ALL
+    // request used to lose its group name: `last_hash` (bytes 8..15) overwrote `group`
+    // (offset 12 on 32-bit), the worker then asked for a group that was never named and every
+    // read came back empty. Only 64-bit builds were unaffected.
+    void *value;            // Value for single request
+    size_t value_length;
+    bool value_is_pinned;
+    char *group;            // Group
+    char *key;              // Key
     union {
         struct { // Get all request
             dap_global_db_driver_hash_t last_hash;
@@ -87,13 +99,6 @@ struct queue_io_msg{
         struct { // Set multiply zero-copy
             dap_global_db_obj_t *values;
             uint64_t values_count;
-        };
-        struct { // Value for singe request
-            void *value;
-            size_t value_length;
-            bool value_is_pinned;
-            char *group;  // Group
-            char *key; // Key
         };
     };
     dap_global_db_instance_t *dbi;
