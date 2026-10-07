@@ -2133,15 +2133,29 @@ int dap_client_http_init()
     }
 #ifndef DAP_NET_CLIENT_NO_SSL
     wolfSSL_Init();
-    wolfSSL_Debugging_ON ();
+    if (s_debug_more) // TLS internals/secrets must not hit the logs unconditionally
+        wolfSSL_Debugging_ON ();
     if ((s_ctx = wolfSSL_CTX_new(wolfTLSv1_2_client_method())) == NULL)
         return -1;
+    // Outbound HTTPS (geoip, balancer, uplink RPC) must verify peers by default:
+    // VERIFY_NONE on missing config made every fetch trivially MITM-able
+    wolfSSL_CTX_set_verify(s_ctx, WOLFSSL_VERIFY_PEER, 0);
     const char *l_ssl_cert_path = dap_config_get_item_str(g_config, "dap_client", "ssl_cert_path");
     if (l_ssl_cert_path) {
         if (wolfSSL_CTX_load_verify_locations(s_ctx, l_ssl_cert_path, 0) != SSL_SUCCESS)
         return -2;
-    } else
-        wolfSSL_CTX_set_verify(s_ctx, WOLFSSL_VERIFY_NONE, 0);
+    } else {
+        // Common system CA locations (hashed dirs); keep VERIFY_PEER when any loads
+        static const char *l_ca_dirs[] = { "/etc/ssl/certs", "/etc/ssl", "/etc/certs", "/usr/local/etc/ssl/certs" };
+        bool l_ca_loaded = false;
+        for (size_t i = 0; i < sizeof(l_ca_dirs)/sizeof(l_ca_dirs[0]) && !l_ca_loaded; i++)
+            l_ca_loaded = wolfSSL_CTX_load_verify_locations(s_ctx, NULL, l_ca_dirs[i]) == SSL_SUCCESS;
+        if (!l_ca_loaded) {
+            log_it(L_ERROR, "No system CA bundle found for outbound HTTPS: peer verification is DISABLED. "
+                            "Install ca-certificates or set [dap_client] ssl_cert_path");
+            wolfSSL_CTX_set_verify(s_ctx, WOLFSSL_VERIFY_NONE, 0);
+        }
+    }
     if (wolfSSL_CTX_UseSupportedCurve(s_ctx, WOLFSSL_ECC_SECP256R1) != SSL_SUCCESS) {
         log_it(L_ERROR, "WolfSSL UseSupportedCurve() handle error");
     }
