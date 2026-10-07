@@ -64,8 +64,6 @@
 
 #include "mdbx.h"                                                           /* LibMDBX API */
 #define LOG_TAG "dap_global_db_mdbx"
-
-static bool s_debug_more = false;
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_MDBX
 
 /** Struct for a MDBX DB context */
@@ -73,6 +71,7 @@ typedef struct __db_ctx__ {
         size_t  namelen;                                                    /* Group name length */
         char name[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX + 1];                   /* Group's name */
         MDBX_dbi    dbi;                                                    /* MDBX's internal context id */
+        struct __db_ctx__ *pending_next;                                    /* link while the creating txn runs */
         UT_hash_handle hh;
 } dap_db_ctx_t;
 
@@ -122,14 +121,27 @@ static char s_db_master_tbl [] = "MDBX$MASTER";                             /* A
                                                                               to keep and maintains application level information */
 static MDBX_dbi s_db_master_dbi;                                            /* A handle of the MDBX' DBI of the master subDB */
 static _Thread_local MDBX_txn *s_txn = NULL;
-/**
- * Serialize mdbx_dbi_open AND mdbx_txn_commit when new DBIs are created.
- * mdbx's internal dbi_update() runs during commit and touches env-global
- * DBI array that mdbx_dbi_open also reads/writes — not thread-safe.
- * Lock must be held from dbi_open through txn_commit for CREATE,
- * and around every dbi_open (even read-only) to avoid racing with commits.
+
+/*
+ * dbi registry: group name -> shared MDBX dbi handle.
+ *
+ * libmdbx forbids mdbx_dbi_open() from concurrent transactions, and a handle
+ * opened inside a transaction is only private to that transaction until it
+ * commits. The driver used to call mdbx_dbi_open() on every operation from
+ * every thread with its own transaction, which corrupted the DBI table -
+ * observed as MDBX_BAD_DBI ("changed by another thread/transaction") and
+ * groups silently receiving each other's records. Now:
+ *   - reads/lookups only consult this registry (never dbi_open);
+ *   - a group is opened exactly once, inside the write transaction that
+ *     creates it (a dedicated transaction when there is none), and enters
+ *     the registry when that transaction commits;
+ *   - concurrent creators of the same new group wait for the first one
+ *     instead of racing their own mdbx_dbi_open().
  */
-static pthread_mutex_t s_dbi_mutex = PTHREAD_MUTEX_INITIALIZER;
+static dap_db_ctx_t *s_dbi_registry = NULL;
+static pthread_mutex_t s_dbi_registry_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s_dbi_registry_cond = PTHREAD_COND_INITIALIZER;
+static _Thread_local dap_db_ctx_t *s_dbi_pending = NULL;   /* opened by the current txn, not yet committed */
 
 /*
  *   DESCRIPTION: A kind of replacement of the C RTL assert()
@@ -150,7 +162,8 @@ int     buflen;
         return;
 
     buflen = snprintf(buf, sizeof(buf), "\n[%s:%d] <%s> expresion return false\n", a_file, a_line, a_expr);
-    write(STDOUT_FILENO, buf, buflen);
+    if (buflen > 0 && write(STDOUT_FILENO, buf, (size_t)buflen) < 0)
+        (void)0;
     abort();
 }
 
@@ -370,6 +383,72 @@ char    l_buf[1024] = {0};
  *      NULL in case of error
  *
  */
+// Returns a per-call copy of a registered context, or NULL when the group
+// has no committed handle yet.
+static dap_db_ctx_t *s_dbi_registry_get_locked(const char *a_group)
+{
+    dap_db_ctx_t *l_reg = NULL;
+    HASH_FIND_STR(s_dbi_registry, a_group, l_reg);
+    if (!l_reg)
+        return NULL;
+    dap_db_ctx_t *l_copy = DAP_NEW_Z(dap_db_ctx_t);
+    if (l_copy) {
+        l_copy->namelen = l_reg->namelen;
+        memcpy(l_copy->name, l_reg->name, l_reg->namelen);
+        l_copy->dbi = l_reg->dbi;
+    }
+    return l_copy;
+}
+
+static bool s_dbi_pending_contains(const char *a_group)
+{
+    for (dap_db_ctx_t *l_it = s_dbi_pending; l_it; l_it = l_it->pending_next)
+        if (!strcmp(l_it->name, a_group))
+            return true;
+    return false;
+}
+
+// Called from s_db_mdbx_txn_end() on a successful commit: the handles opened
+// by this transaction are shared now and may serve every thread.
+static void s_dbi_registry_commit_pending(void)
+{
+    if (!s_dbi_pending)
+        return;
+    pthread_mutex_lock(&s_dbi_registry_lock);
+    dap_db_ctx_t *l_it = s_dbi_pending;
+    s_dbi_pending = NULL;
+    while (l_it) {
+        dap_db_ctx_t *l_next = l_it->pending_next;
+        l_it->pending_next = NULL;
+        dap_db_ctx_t *l_exist = NULL;
+        HASH_FIND_STR(s_dbi_registry, l_it->name, l_exist);
+        if (l_exist) {                       // someone won the race; keep theirs
+            DAP_DELETE(l_it);
+        } else {
+            HASH_ADD_STR(s_dbi_registry, name, l_it);
+        }
+        l_it = l_next;
+    }
+    pthread_cond_broadcast(&s_dbi_registry_cond);
+    pthread_mutex_unlock(&s_dbi_registry_lock);
+}
+
+// Aborted transaction: libmdbx closes the private handles itself, the
+// descriptors with them.
+static void s_dbi_registry_drop_pending(void)
+{
+    dap_db_ctx_t *l_it = s_dbi_pending;
+    s_dbi_pending = NULL;
+    while (l_it) {
+        dap_db_ctx_t *l_next = l_it->pending_next;
+        DAP_DELETE(l_it);
+        l_it = l_next;
+    }
+    pthread_mutex_lock(&s_dbi_registry_lock);
+    pthread_cond_broadcast(&s_dbi_registry_cond);
+    pthread_mutex_unlock(&s_dbi_registry_lock);
+}
+
 static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags, MDBX_txn *a_txn)
 {
 int rc;
@@ -377,11 +456,27 @@ dap_db_ctx_t *l_db_ctx = NULL;
 size_t l_name_len;
 MDBX_val    l_key_iov, l_data_iov;
 
-    dap_return_val_if_fail(s_mdbx_env, NULL);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Init group/table '%s', flags: %#x ...", a_group, a_flags);
 
     if ( (l_name_len = strlen(a_group)) >(int) DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX )
         return  log_it(L_ERROR, "Group name '%s' is too long (%zu>%lu)", a_group, l_name_len, DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX), NULL;
+
+    // A committed handle may already exist (registry), or a concurrent write
+    // transaction may be opening this very group right now: wait for it
+    // instead of racing a second mdbx_dbi_open() (see the registry comment).
+    pthread_mutex_lock(&s_dbi_registry_lock);
+    l_db_ctx = s_dbi_registry_get_locked(a_group);
+    for (int l_spin = 0; !l_db_ctx && s_dbi_pending_contains(a_group) && l_spin < 100; ++l_spin) {
+        struct timespec l_ts;
+        clock_gettime(CLOCK_REALTIME, &l_ts);
+        l_ts.tv_nsec += 50 * 1000 * 1000;
+        if (l_ts.tv_nsec >= 1000000000) { l_ts.tv_sec++; l_ts.tv_nsec -= 1000000000; }
+        pthread_cond_timedwait(&s_dbi_registry_cond, &s_dbi_registry_lock, &l_ts);
+        l_db_ctx = s_dbi_registry_get_locked(a_group);
+    }
+    pthread_mutex_unlock(&s_dbi_registry_lock);
+    if (l_db_ctx)
+        return l_db_ctx;
 
     if ( !(l_db_ctx = DAP_NEW_Z(dap_db_ctx_t)) )
         return  log_it(L_ERROR, "Cannot allocate DB context for '%s', errno=%d", a_group, errno), NULL;
@@ -394,16 +489,9 @@ MDBX_val    l_key_iov, l_data_iov;
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
-    /* Hold s_dbi_mutex from dbi_open through txn_commit: mdbx's internal
-       dbi_update() runs at commit time and touches the same env-global DBI
-       array that mdbx_dbi_open reads, so both must be serialized. */
-    pthread_mutex_lock(&s_dbi_mutex);
-
-    if  ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) ) {
-        pthread_mutex_unlock(&s_dbi_mutex);
+    rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi);
+    if  ( MDBX_SUCCESS != rc ) {
         DAP_DEL_Z(l_db_ctx);
-        if (!a_txn)
-            mdbx_txn_abort(l_txn);
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
@@ -414,23 +502,44 @@ MDBX_val    l_key_iov, l_data_iov;
          && (rc != MDBX_KEYEXIST)) {
         log_it (L_ERROR, "mdbx_put: (%d) %s", rc, mdbx_strerror(rc));
         if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) ) {
-            pthread_mutex_unlock(&s_dbi_mutex);
             DAP_DEL_Z(l_db_ctx);
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc)), NULL;
         }
-        pthread_mutex_unlock(&s_dbi_mutex);
         DAP_DEL_Z(l_db_ctx);
         return NULL;
     }
 
-    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) ) {
-        pthread_mutex_unlock(&s_dbi_mutex);
-        DAP_DEL_Z(l_db_ctx);
-        return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+    if (!a_txn) {
+        // Own transaction: after the commit the handle is shared - register it
+        // right away and hand out a per-call copy.
+        if (MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) ) {
+            DAP_DEL_Z(l_db_ctx);
+            return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+        }
+        pthread_mutex_lock(&s_dbi_registry_lock);
+        dap_db_ctx_t *l_exist = NULL;
+        HASH_FIND_STR(s_dbi_registry, l_db_ctx->name, l_exist);
+        if (!l_exist)
+            HASH_ADD_STR(s_dbi_registry, name, l_db_ctx);
+        else
+            DAP_DELETE(l_db_ctx);
+        dap_db_ctx_t *l_copy = s_dbi_registry_get_locked(a_group);
+        pthread_cond_broadcast(&s_dbi_registry_cond);
+        pthread_mutex_unlock(&s_dbi_registry_lock);
+        return l_copy;
     }
 
-    pthread_mutex_unlock(&s_dbi_mutex);
-    return l_db_ctx;
+    // Caller's transaction: the handle becomes shared when that transaction
+    // commits (s_db_mdbx_txn_end moves it into the registry).
+    l_db_ctx->pending_next = s_dbi_pending;
+    s_dbi_pending = l_db_ctx;
+    dap_db_ctx_t *l_copy = DAP_NEW_Z(dap_db_ctx_t);
+    if (l_copy) {
+        l_copy->namelen = l_db_ctx->namelen;
+        memcpy(l_copy->name, l_db_ctx->name, l_db_ctx->namelen);
+        l_copy->dbi = l_db_ctx->dbi;
+    }
+    return l_copy;
 }
 
 /*
@@ -450,11 +559,16 @@ MDBX_val    l_key_iov, l_data_iov;
 
 static  int s_db_mdbx_deinit(void)
 {
-    if (s_mdbx_env) {
-        mdbx_env_sync(s_mdbx_env);
-        mdbx_env_close(s_mdbx_env);
-        s_mdbx_env = NULL;
+    s_dbi_registry_drop_pending();
+    pthread_mutex_lock(&s_dbi_registry_lock);
+    dap_db_ctx_t *l_reg_ctx = NULL, *l_reg_tmp = NULL;
+    HASH_ITER(hh, s_dbi_registry, l_reg_ctx, l_reg_tmp) {
+        HASH_DEL(s_dbi_registry, l_reg_ctx);
+        DAP_DELETE(l_reg_ctx);
     }
+    pthread_mutex_unlock(&s_dbi_registry_lock);
+    if (s_mdbx_env)
+        mdbx_env_close(s_mdbx_env);
 
     return 0;
 }
@@ -547,10 +661,7 @@ size_t     l_upper_limit_of_db_size = 16;
     if ( MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
 
-    pthread_mutex_lock(&s_dbi_mutex);
-    rc = mdbx_dbi_open(l_txn, s_db_master_tbl, MDBX_CREATE, &s_db_master_dbi);
-    pthread_mutex_unlock(&s_dbi_mutex);
-    if ( MDBX_SUCCESS != rc )
+    if ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, s_db_master_tbl, MDBX_CREATE, &s_db_master_dbi)) )
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
 
     dap_assert ( MDBX_SUCCESS == (rc = mdbx_txn_commit (l_txn)) );
@@ -644,28 +755,18 @@ size_t     l_upper_limit_of_db_size = 16;
  */
 static  dap_db_ctx_t  *s_get_db_ctx_for_group(const char *a_group, MDBX_txn *a_txn)
 {
-    dap_db_ctx_t *l_db_ctx = NULL;
-    size_t l_name_len;
-    int rc;
-
-    if ( (l_name_len = strlen(a_group)) > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX )
-        return log_it(L_ERROR, "Group name '%s' is too long (%zu>%lu)", a_group, l_name_len, DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX), NULL;
-
-    if ( !(l_db_ctx = DAP_NEW_Z(dap_db_ctx_t)) )
-        return log_it(L_ERROR, "Cannot allocate DB context for '%s', errno=%d", a_group, errno), NULL;
-
-    memcpy(l_db_ctx->name, a_group, l_db_ctx->namelen = l_name_len);
-
-    pthread_mutex_lock(&s_dbi_mutex);
-    rc = mdbx_dbi_open(a_txn, a_group, 0, &l_db_ctx->dbi);
-    pthread_mutex_unlock(&s_dbi_mutex);
-    if ( MDBX_SUCCESS != rc ) {
-        if (rc != MDBX_NOTFOUND)
-            log_it(L_ERROR, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc));
-        DAP_DEL_Z(l_db_ctx);
+    (void) a_txn;   // lookups no longer need the caller's transaction
+    if ( !a_group )
         return NULL;
-    }
+    if ( strlen(a_group) > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX )
+        return log_it(L_ERROR, "Group name '%s' is too long", a_group), NULL;
 
+    // Registry only - never mdbx_dbi_open() from a lookup (see the registry
+    // comment): reopened handles from concurrent transactions corrupt the
+    // MDBX DBI table and made groups receive each other's records.
+    pthread_mutex_lock(&s_dbi_registry_lock);
+    dap_db_ctx_t *l_db_ctx = s_dbi_registry_get_locked(a_group);
+    pthread_mutex_unlock(&s_dbi_registry_lock);
     return l_db_ctx;
 }
 
@@ -684,7 +785,7 @@ static  dap_db_ctx_t  *s_get_db_ctx_for_group(const char *a_group, MDBX_txn *a_t
  */
 static  int s_db_mdbx_flush(void)
 {
-    return  debug_if(s_debug_more, L_DEBUG, "Flushing resident part of the MDBX to disk"), 0;
+    return  log_it(L_DEBUG, "Flushing resident part of the MDBX to disk"), 0;
 }
 
 /*
@@ -813,7 +914,7 @@ MDBX_cursor *l_cursor = NULL;
 dap_store_obj_t *l_obj = NULL;
 
      /* Sanity check for group/table */
-    dap_return_val_if_fail(a_group && s_mdbx_env, NULL);
+    dap_return_val_if_fail(a_group, NULL);
 
     MDBX_txn *l_txn = s_txn;
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
@@ -887,7 +988,7 @@ bool s_db_mdbx_is_obj(const char *a_group, const char *a_key)
     MDBX_val l_key, l_data;
     bool l_ret = false;
 
-    dap_return_val_if_fail(a_group && a_key && s_mdbx_env, false)
+    dap_return_val_if_fail(a_group && a_key, NULL)
 
     MDBX_txn *l_txn = s_txn;
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
@@ -908,7 +1009,7 @@ cleanup:
 
 static bool s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash)
 {
-    dap_return_val_if_fail(a_group && s_mdbx_env, false);
+    dap_return_val_if_fail(a_group, NULL);
     int rc;
     bool l_ret = false;
     dap_db_ctx_t *l_db_ctx = NULL;
@@ -937,14 +1038,15 @@ cleanup:
 
 static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
 {
-    dap_return_val_if_fail(a_group && a_count && s_mdbx_env, NULL);
+    dap_return_val_if_fail(a_group && a_count, NULL);
     int rc;
     dap_db_ctx_t *l_db_ctx = NULL;
     MDBX_txn *l_txn = s_txn;
+    dap_global_db_pkt_pack_t *l_ret = NULL;
 
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
-    dap_global_db_pkt_pack_t *l_ret = NULL;
+
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group, l_txn)) )
         goto cleanup;
     MDBX_val l_key, l_data;
@@ -1034,7 +1136,7 @@ cleanup:
  */
 static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev)
 {
-    dap_return_val_if_fail(a_group && *a_group && s_mdbx_env, NULL);
+    dap_return_val_if_fail(a_group && *a_group, NULL);
     dap_db_ctx_t *l_db_ctx = NULL;
     size_t l_element_size = a_keys_only_read ? sizeof(dap_global_db_driver_hash_t) : sizeof(dap_store_obj_t);
     size_t l_count_current = 0,
@@ -1097,7 +1199,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
             if (a_with_holes || !s_is_hole(l_data.iov_base)) {
                 if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
                     rc = MDBX_PROBLEM;
-                    continue;
+                    break;
                 }
                 ++l_count_current;
             }
@@ -1127,7 +1229,7 @@ safe_ret:
     DAP_DELETE(l_db_ctx);
     if (l_cursor)
         mdbx_cursor_close(l_cursor);
-    if (!s_txn && l_txn)
+    if (l_txn)
         mdbx_txn_commit(l_txn);
     if (a_count_out)
         *a_count_out = l_count_current;
@@ -1143,7 +1245,7 @@ safe_ret:
  */
 static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
 {
-    dap_return_val_if_fail(a_group && s_mdbx_env, 0);
+    dap_return_val_if_fail(a_group, 0);
     dap_db_ctx_t *l_db_ctx = NULL;
     int rc = 0;
     size_t l_ret = 0;
@@ -1171,7 +1273,8 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
     MDBX_cursor *l_cursor = NULL;
     if ( MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
         log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
-        goto cleanup;
+        mdbx_txn_commit(l_txn);
+        return 0;
     }
     MDBX_val l_key = { .iov_base = &a_hash_from, .iov_len = sizeof(a_hash_from) },
              l_data = {};
@@ -1218,7 +1321,7 @@ static dap_list_t  *s_db_mdbx_get_groups_by_mask(const char *a_group_mask)
     MDBX_cursor *l_cursor;
     MDBX_val l_key_iov, l_data_iov;
 
-    dap_return_val_if_fail(a_group_mask && s_mdbx_env, NULL);
+    dap_return_val_if_fail(a_group_mask, NULL);
 
     if ( MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
@@ -1348,7 +1451,6 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
 
 static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
-    dap_return_val_if_fail(s_mdbx_env, -EINVAL);
     if (s_txn)
         return s_db_mdbx_apply_store_obj_with_txn(a_store_obj, s_txn);
 
@@ -1357,18 +1459,11 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
     if (MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), rc;
     rc = s_db_mdbx_apply_store_obj_with_txn(a_store_obj, l_txn);
-    if ( rc != MDBX_SUCCESS ) {
+    if ( rc != MDBX_SUCCESS ) {                                      /* Check result of mdbx_drop/del */
         if ( MDBX_SUCCESS != (rc2 = mdbx_txn_abort(l_txn)) )
             log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc2, mdbx_strerror(rc2));
-    } else {
-        /* dbi_update inside mdbx_txn_commit touches env-global DBI array —
-           serialize with mdbx_dbi_open calls on other threads */
-        pthread_mutex_lock(&s_dbi_mutex);
-        rc2 = mdbx_txn_commit(l_txn);
-        pthread_mutex_unlock(&s_dbi_mutex);
-        if (MDBX_SUCCESS != rc2)
-            log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc2, mdbx_strerror(rc2));
-    }
+    } else if ( MDBX_SUCCESS != (rc2 = mdbx_txn_commit(l_txn)) )
+        log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc2, mdbx_strerror(rc2));
     return rc;
 }
 
@@ -1399,7 +1494,7 @@ MDBX_stat   l_stat;
 MDBX_cursor *l_cursor = NULL;
 MDBX_txn *l_txn = s_txn;
 
-    dap_return_val_if_fail(a_group && s_mdbx_env, NULL);
+    dap_return_val_if_fail(a_group, NULL);
 
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) ) {
         log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc));
@@ -1501,15 +1596,25 @@ safe_ret:
     return l_obj_arr;
 }
 
+// s_txn is a single static handle, not stack-based: a naive nested txn_start (BUSY,
+// silently ignored by every caller) followed by that inner call's own txn_end(true)
+// would commit/null the *outer* transaction early, losing isolation for the rest of
+// the outer batch - a latent bug for any future/rare call path that opens a txn while
+// one is already active. Track nesting depth so only the outermost start/end actually
+// begins/commits the mdbx transaction; inner start/end calls are no-ops that just
+// adjust the depth.
+static _Thread_local unsigned s_txn_depth = 0;
+
 static int s_db_mdbx_txn_start()
 {
-    if (s_txn)
-        return MDBX_BUSY;
-    if (!s_mdbx_env)
-        return MDBX_PANIC;
+    if (s_txn) {
+        ++s_txn_depth;
+        return MDBX_SUCCESS;
+    }
     int rc;
     if (MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &s_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), rc;
+    s_txn_depth = 1;
     return rc;
 
 }
@@ -1518,16 +1623,24 @@ static int s_db_mdbx_txn_end(bool a_commit)
 {
     if (!s_txn)
         return MDBX_BAD_TXN;
+    if (s_txn_depth > 1) {
+        --s_txn_depth;
+        return MDBX_SUCCESS;
+    }
     int rc;
     if (!a_commit) {
         if ( MDBX_SUCCESS != (rc = mdbx_txn_abort(s_txn)) )
             log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc));
+        s_dbi_registry_drop_pending();
     } else {
-        pthread_mutex_lock(&s_dbi_mutex);
-        rc = mdbx_txn_commit(s_txn);
-        pthread_mutex_unlock(&s_dbi_mutex);
-        if (MDBX_SUCCESS != rc)
+        if ( MDBX_SUCCESS != (rc = mdbx_txn_commit(s_txn)) )
             log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
+        // A failed commit means libmdbx aborted the transaction and closed its
+        // private dbi handles.
+        if (rc == MDBX_SUCCESS)
+            s_dbi_registry_commit_pending();
+        else
+            s_dbi_registry_drop_pending();
     }
     // Any result but THREAD_MISMATCH means libmdbx has already terminated and
     // freed the transaction (a failed commit is aborted): keeping the handle
@@ -1536,5 +1649,5 @@ static int s_db_mdbx_txn_end(bool a_commit)
         s_txn = NULL;
         s_txn_depth = 0;
     }
-    return rc;;
+    return rc;
 }
