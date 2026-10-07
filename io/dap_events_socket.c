@@ -339,7 +339,9 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_so
     l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
     l_es->buf_out_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
 
-    l_es->buf_in     = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
+    // +1 byte: the reactor keeps buf_in NUL-terminated for string-function consumers
+    // (strstr/strlen/log %s) — see the terminator writes in dap_context.c
+    l_es->buf_in     = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max + 1);
     l_es->buf_out    = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
 
 #ifdef   DAP_SYS_DEBUG
@@ -2191,7 +2193,8 @@ size_t dap_events_socket_pop_from_buf_in(dap_events_socket_t *a_es, void *a_data
         memcpy(a_data, a_es->buf_in, a_es->buf_in_size);
         a_data_size = a_es->buf_in_size;
         a_es->buf_in_size = 0;
-    }    
+    }
+    a_es->buf_in[a_es->buf_in_size] = '\0'; // keep buf_in NUL-terminated for string consumers
     return a_data_size;
 }
 
@@ -2212,6 +2215,7 @@ void dap_events_socket_shrink_buf_in(dap_events_socket_t * a_es, size_t shrink_s
         //log_it(WARNING,"Shrinking size of input buffer on amount bigger than actual buffer's size");
         a_es->buf_in_size = 0;
     }
+    a_es->buf_in[a_es->buf_in_size] = '\0'; // keep buf_in NUL-terminated for string consumers
 }
 
 

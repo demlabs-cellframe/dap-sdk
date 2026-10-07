@@ -548,8 +548,11 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                     l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;                        
                             }
                             break;
-                        } else //if (ev_signaled)
+                        } else { //if (ev_signaled)
                             l_cur->buf_in_size += l_bytes;
+                            if (l_cur->buf_in) // keep buf_in NUL-terminated for string consumers
+                                l_cur->buf_in[l_cur->buf_in_size] = '\0';
+                        }
                     }
                     if (l_cur->callbacks.read_callback) {
                         l_cur->last_time_active = time(NULL);
@@ -911,6 +914,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 log_it(L_WARNING, "NVAL flag armed for socket %p (%"DAP_FORMAT_SOCKET")", l_cur, l_cur->socket);
                 l_cur->buf_out_size = 0;
                 l_cur->buf_in_size = 0;
+                if (l_cur->buf_in)
+                    l_cur->buf_in[0] = '\0';
                 l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                 if (l_cur->callbacks.error_callback)
                     l_cur->callbacks.error_callback(l_cur, l_sock_err); // Call callback to process error event
@@ -961,6 +966,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     // buffer and signal close so the peer gets an honest disconnect right away.
                     log_it(L_WARNING, "Buffer is full when there is smth to read. Its dropped, closing esocket %p (%"DAP_FORMAT_SOCKET")", l_cur, l_cur->socket);
                     l_cur->buf_in_size = 0;
+                    if (l_cur->buf_in)
+                        l_cur->buf_in[0] = '\0';
                     if (!l_cur->no_close)
                         l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                 }
@@ -1098,6 +1105,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             l_cur->last_time_active = l_cur_time;
                         }
                         l_cur->buf_in_size += l_bytes_read;
+                        if (l_cur->buf_in) // keep buf_in NUL-terminated for string consumers
+                            l_cur->buf_in[l_cur->buf_in_size] = '\0';
                         if(g_debug_reactor)
                             log_it(L_DEBUG, "Received %zd bytes for fd %d ", l_bytes_read, l_cur->fd);
                         if (l_cur->callbacks.read_callback) {
