@@ -25,6 +25,9 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 #include "dap_common.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
@@ -50,8 +53,12 @@ int dap_cert_file_save(dap_cert_t * a_cert, const char * a_cert_file_path)
     DAP_DELETE(l_file_dir);
     if ( l_err )
         return log_it(L_ERROR, "Can't create dir \"%s\"", a_cert_file_path), -1;
-    FILE *l_file = fopen(a_cert_file_path, "wb");
+    // Certificates carry the private key: create them owner-only
+    int l_fd = open(a_cert_file_path, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
+    FILE *l_file = l_fd >= 0 ? fdopen(l_fd, "wb") : NULL;
     if (!l_file) {
+        if (l_fd >= 0)
+            close(l_fd);
 #ifdef DAP_OS_WINDOWS
         l_err = GetLastError();
 #else
