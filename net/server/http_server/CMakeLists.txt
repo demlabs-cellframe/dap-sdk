@@ -65,3 +65,9 @@ INSTALL(TARGETS ${PROJECT_NAME}
         PUBLIC_HEADER DESTINATION include/dap/net/server/http_server/
 )
 endif()
+
+if(BUILD_TESTS OR BUILD_DAP_SDK_TESTS OR DAPSDK_MODULES MATCHES "test-framework")
+    add_executable(dap_http_header_parse_test test/dap_http_header_parse_test.c)
+    target_link_libraries(dap_http_header_parse_test dap_http_server dap_test)
+    add_test(NAME dap_http_header_parse_test COMMAND dap_http_header_parse_test)
+endif()
