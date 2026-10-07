@@ -75,8 +75,11 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
     dap_hash_fast_t l_sign_pkey_hash;
     bool l_sign_correct = false;
     dap_sign_t * l_sign = (dap_sign_t*)DAP_DUP_SIZE(l_http_request->request_n_signs + l_http_request->header.data_size, l_http_request->header.signs_size);
-    dap_sign_get_pkey_hash(l_sign, &l_sign_pkey_hash);
-    l_sign_correct =  dap_check_node_pkey_in_map(&l_sign_pkey_hash);
+    // Pre-auth path: the sign header is attacker-controlled, hash the pkey only
+    // through the bounds-checked variant (old code could read far past signs_size)
+    l_sign_correct = l_sign && dap_sign_get_pkey_hash_sized(l_sign, &l_sign_pkey_hash, l_http_request->header.signs_size);
+    if (l_sign_correct)
+        l_sign_correct =  dap_check_node_pkey_in_map(&l_sign_pkey_hash);
     if (l_sign_correct)
         l_sign_correct = !dap_sign_verify_all(l_sign, l_http_request->header.signs_size, l_data_str, strlen(l_data_str));
     if (!l_sign_correct) {

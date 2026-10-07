@@ -363,7 +363,30 @@ uint8_t *dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
  */
 bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash)
 {
+    return dap_sign_get_pkey_hash_sized(a_sign, a_sign_hash, (size_t)-1);
+}
+
+/**
+ * @brief get SHA3 hash of the embedded pubkey, bounded by the actual sign buffer size
+ *
+ * @param a_sign input buffer
+ * @param a_sign_hash output buffer
+ * @param a_sign_size size of the buffer a_sign points to; the header's
+ *        sign_pkey_size/sign_size fields are validated against it before any read
+ * @return true
+ * @return false
+ */
+bool dap_sign_get_pkey_hash_sized(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash, size_t a_sign_size)
+{
     dap_return_val_if_fail(a_sign && a_sign->header.sign_pkey_size, false);
+    // Attacker-controlled header fields must fit the buffer before we hash
+    if (a_sign_size < sizeof(dap_sign_hdr_t)
+            || (uint64_t)a_sign->header.sign_pkey_size + a_sign->header.sign_size + sizeof(dap_sign_hdr_t)
+               > (uint64_t)a_sign_size) {
+        log_it(L_WARNING, "Sign header doesn't fit the provided buffer (%zu), pkey %u, sign %u",
+               a_sign_size, a_sign->header.sign_pkey_size, a_sign->header.sign_size);
+        return false;
+    }
     if (DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type)) {
         if (a_sign->header.sign_pkey_size > DAP_HASH_FAST_SIZE) {
             log_it(L_ERROR, "Error in pkey size check, expected <= %zu, in sign %u", sizeof(dap_chain_hash_fast_t), a_sign->header.sign_pkey_size);

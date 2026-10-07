@@ -150,6 +150,9 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
 uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size);
 uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out);
 bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash);
+// Bounds-checked variant for signs coming from untrusted buffers: validates the
+// header's size fields against a_sign_size before reading/hashing the pkey
+bool dap_sign_get_pkey_hash_sized(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash, size_t a_sign_size);
 bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2);
 
 dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t *a_pkey);
