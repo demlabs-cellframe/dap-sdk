@@ -38,7 +38,6 @@
 
 #define LOG_TAG "dap_global_db"
 
-static bool s_debug_more = false;
 int g_dap_global_db_debug_more = false;                                         /* Enable extensible debug output */
 
 // Queue I/O message op code
@@ -83,6 +82,7 @@ struct queue_io_msg{
         struct { // Raw set request
             dap_store_obj_t *values_raw;
             uint64_t values_raw_total;
+            bool sign_if_unsigned;  // Objects without a signature get one on the worker thread
         };
         struct { // Set multiply zero-copy
             dap_global_db_obj_t *values;
@@ -308,7 +308,21 @@ static void s_store_obj_update_timestamp(dap_store_obj_t *a_obj, dap_global_db_i
     a_obj->sign = dap_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
 }
 
-static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj)
+// Used by s_db_set_raw_sync() (P.3) to postpone gossip broadcast/notifier fan-out for a
+// multi-object batch until *after* the enclosing driver write txn is closed, instead of firing
+// them synchronously for every object while the MDBX/SQLite write txn is still held open.
+typedef struct dap_global_db_deferred_notify {
+    dap_global_db_cluster_t *cluster;
+    dap_store_obj_t *obj;
+    bool do_broadcast;
+} dap_global_db_deferred_notify_t;
+
+/**
+ * @param a_deferred_notifies When NULL, broadcast/notify are fired synchronously, as before.
+ * When non-NULL, any due broadcast/notify for a_obj is queued onto *a_deferred_notifies instead
+ * (a_obj itself, not a copy, so it must stay valid until the caller drains the list).
+ */
+static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj, dap_list_t **a_deferred_notifies)
 {
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(a_dbi, a_obj->group);
     if (!l_cluster) {
@@ -363,19 +377,24 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     dap_store_obj_t *l_read_obj = NULL;
     bool l_existed_obj_pinned = false;
     int l_ret = 0;
-    if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
-        l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL, true);
-        if (l_read_obj) { // Need to rewrite existed value
-            l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
-            if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
-                l_existed_obj_pinned = true;
-            }
-        } else {
-            log_it(L_ERROR, "Existed object with group %s and key %s is broken and will be erased",
-                                                        a_obj->group, a_obj->key);
-            dap_store_obj_t l_to_delete = (dap_store_obj_t) { .group = a_obj->group, .key = a_obj->key };
-            dap_global_db_driver_delete(&l_to_delete, 1);
+    // Was dap_global_db_driver_is() (existence check, its own RO txn) followed by a
+    // dap_global_db_driver_read() (another RO txn) using the exact same with_holes==true
+    // presence criterion (P.4: "3 RO + 1 RW txn на запись") - the two driver backends
+    // (mdbx/sqlite) look the key up the same way for both calls, so just read once and use
+    // a non-NULL result as the existence check, dropping one full extra transaction per
+    // single-object write.
+    l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL, true);
+    if (l_read_obj) { // Need to rewrite existed value
+        l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
+        if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
+            l_existed_obj_pinned = true;
         }
+    } else if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
+        // Key exists but couldn't be read back - genuinely broken record, erase it.
+        log_it(L_ERROR, "Existed object with group %s and key %s is broken and will be erased",
+                                                    a_obj->group, a_obj->key);
+        dap_store_obj_t l_to_delete = (dap_store_obj_t) { .group = a_obj->group, .key = a_obj->key };
+        dap_global_db_driver_delete(&l_to_delete, 1);
     }
     if (l_read_obj && l_cluster->owner_root_access &&
             a_obj->sign && (!l_read_obj->sign ||
@@ -435,12 +454,29 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
 
         if (l_obj_type != DAP_GLOBAL_DB_OPTYPE_DEL || l_read_obj) {
             // Do not notify for delete if deleted record not exists
-            if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
-                // Notify sync cluster first
-                dap_global_db_cluster_broadcast(l_cluster, a_obj);
-            if (l_cluster->notifiers)
-                // Notify others
-                dap_global_db_cluster_notify(l_cluster, a_obj);
+            bool l_do_broadcast = a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW;
+            bool l_do_notify = l_cluster->notifiers != NULL;
+            if (a_deferred_notifies) {
+                // Postpone until the enclosing write txn (if any) is closed - see
+                // s_db_set_raw_sync() and the P.3 comment on dap_global_db_deferred_notify_t.
+                if (l_do_broadcast || l_do_notify) {
+                    dap_global_db_deferred_notify_t *l_deferred = DAP_NEW_Z(dap_global_db_deferred_notify_t);
+                    if (l_deferred) {
+                        *l_deferred = (dap_global_db_deferred_notify_t) {
+                            .cluster = l_cluster, .obj = a_obj, .do_broadcast = l_do_broadcast
+                        };
+                        *a_deferred_notifies = dap_list_append(*a_deferred_notifies, l_deferred);
+                    } else
+                        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                }
+            } else {
+                if (l_do_broadcast)
+                    // Notify sync cluster first
+                    dap_global_db_cluster_broadcast(l_cluster, a_obj);
+                if (l_do_notify)
+                    // Notify others
+                    dap_global_db_cluster_notify(l_cluster, a_obj);
+            }
         }
     }
 free_n_exit:
@@ -1026,7 +1062,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         log_it(L_ERROR, "Can't sign new global DB object group %s key %s", a_group, a_key);
         return DAP_GLOBAL_DB_RC_ERROR;
     }
-    int l_res = s_store_obj_apply(a_dbi, &l_store_data);
+    int l_res = s_store_obj_apply(a_dbi, &l_store_data, NULL);
     DAP_DELETE(l_store_data.sign);
     return l_res;
 }
@@ -1117,25 +1153,52 @@ static void s_msg_opcode_set(struct queue_io_msg * a_msg)
 
 /* *** Set_raw functions group *** */
 
-int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
+int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_objs, size_t a_store_objs_count,
+                      bool a_report_failures)
 {
     int l_ret = DAP_GLOBAL_DB_RC_ERROR;
-    if (a_store_objs_count > 1)
+    bool l_in_txn = a_store_objs_count > 1;
+    if (l_in_txn)
         dap_global_db_driver_txn_start();
+    // While a batch write txn is open, gossip broadcast (pthread_rwlock_wrlock(&s_gossip_lock)
+    // + dap_cluster_broadcast()'s members_lock, then a synchronous send on the calling thread)
+    // and notifier fan-out used to fire per object, synchronously, right here, inside the open
+    // MDBX/SQLite write txn (P.3) - stalling every other writer thread for as long as gossip
+    // serialization/socket send/notifier dispatch takes, once per object in the whole batch.
+    // Collect the deferred notifies while the txn is open and fire them only after it's closed.
+    dap_list_t *l_deferred_notifies = NULL;
     for (size_t i = 0; i < a_store_objs_count; i++) {
-        l_ret = s_store_obj_apply(a_dbi, a_store_objs + i);
-        if (l_ret)
-            debug_if(g_dap_global_db_debug_more, L_ERROR, "Can't save raw gdb data to %s/%s, code %d", (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
+        l_ret = s_store_obj_apply(a_dbi, a_store_objs + i, l_in_txn ? &l_deferred_notifies : NULL);
+        if (l_ret) {
+            // A rejected object is a record silently lost for the caller (the raw path returns
+            // no per-object result), so report it loudly when the caller asked for that.
+            // -12/-17/-18 are the regular "this exact object / a newer one is already stored"
+            // outcomes of the dedup-by-timestamp check, not a failure.
+            if (a_report_failures && l_ret != -12 && l_ret != -17 && l_ret != -18)
+                log_it(L_WARNING, "Can't save raw gdb data to %s/%s, code %d",
+                       (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
+            else
+                debug_if(g_dap_global_db_debug_more, L_ERROR, "Can't save raw gdb data to %s/%s, code %d",
+                         (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
+        }
     }
-    if (a_store_objs_count > 1)
+    if (l_in_txn)
         dap_global_db_driver_txn_end(!l_ret);
+    for (dap_list_t *it = l_deferred_notifies; it; it = it->next) {
+        dap_global_db_deferred_notify_t *l_deferred = it->data;
+        if (l_deferred->do_broadcast)
+            dap_global_db_cluster_broadcast(l_deferred->cluster, l_deferred->obj);
+        if (l_deferred->cluster->notifiers)
+            dap_global_db_cluster_notify(l_deferred->cluster, l_deferred->obj);
+    }
+    dap_list_free_full(l_deferred_notifies, NULL);
     return l_ret;
 }
 
 int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
     dap_return_val_if_fail(s_dbi && a_store_objs && a_store_objs_count, DAP_GLOBAL_DB_RC_ERROR);
-    return s_db_set_raw_sync(s_dbi, a_store_objs, a_store_objs_count);
+    return s_db_set_raw_sync(s_dbi, a_store_objs, a_store_objs_count, false);
 }
 
 /**
@@ -1146,7 +1209,9 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
  * @param a_arg
  * @return
  */
-int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+static int s_set_raw_async(dap_store_obj_t *a_store_objs, size_t a_store_objs_count,
+                           dap_global_db_callback_results_raw_t a_callback, void *a_arg,
+                           bool a_sign_if_unsigned)
 {
     dap_return_val_if_fail(s_dbi && a_store_objs && a_store_objs_count, DAP_GLOBAL_DB_RC_ERROR);
     struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
@@ -1154,6 +1219,7 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     l_msg->opcode = MSG_OPCODE_SET_RAW;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
+    l_msg->sign_if_unsigned = a_sign_if_unsigned;
 
     l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count);
     if (!l_msg->values_raw) {
@@ -1171,7 +1237,16 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     } else
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent set_raw request for %zu objects", a_store_objs_count);
     return l_ret;
+}
 
+int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+{
+    return s_set_raw_async(a_store_objs, a_store_objs_count, a_callback, a_arg, false);
+}
+
+int dap_global_db_set_raw_signed(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+{
+    return s_set_raw_async(a_store_objs, a_store_objs_count, a_callback, a_arg, true);
 }
 
 /**
@@ -1182,8 +1257,27 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
 static void s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
 {
     int l_ret = -1;
-    if (a_msg->values_raw_total > 0)
-        l_ret = s_db_set_raw_sync(a_msg->dbi, a_msg->values_raw, a_msg->values_raw_total);
+    if (a_msg->values_raw_total > 0) {
+        if (a_msg->sign_if_unsigned) {
+            // Records of local caches are handed over unsigned: signing them on the writer's
+            // hot path is exactly what set_raw() exists to avoid, but the cluster role check in
+            // s_store_obj_apply() rejects records without a sign. Sign them here, on the GDB
+            // worker thread, with the instance key - the signer is this node, a ROOT member of
+            // the local cluster these caches live in.
+            for (size_t i = 0; i < a_msg->values_raw_total; ++i) {
+                dap_store_obj_t *l_obj = a_msg->values_raw + i;
+                if (l_obj->sign)
+                    continue;
+                l_obj->sign = dap_store_obj_sign(l_obj, a_msg->dbi->signing_key, &l_obj->crc);
+                if (!l_obj->sign) {
+                    log_it(L_ERROR, "Can't sign local gdb object, group %s, key %s", l_obj->group, l_obj->key);
+                    break;
+                }
+            }
+        }
+        l_ret = s_db_set_raw_sync(a_msg->dbi, a_msg->values_raw, a_msg->values_raw_total,
+                                  a_msg->sign_if_unsigned);
+    }
     if (a_msg->callback_results_raw)
         a_msg->callback_results_raw(a_msg->dbi,
                                     l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
@@ -1395,7 +1489,7 @@ static int s_del_sync_with_dbi_ex(dap_global_db_instance_t *a_dbi, const char *a
 
     int l_res = -1;
     if (a_key) {
-        l_res = s_store_obj_apply(a_dbi, &l_store_obj);
+        l_res = s_store_obj_apply(a_dbi, &l_store_obj, NULL);
         DAP_DELETE(l_store_obj.sign);
     } else {
         // Drop the whole table
@@ -1768,7 +1862,7 @@ static void s_clean_old_obj_gdb_callback() {
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
         size_t l_ret_count = 0;
         dap_store_obj_t *l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
-        debug_if(s_debug_more, L_DEBUG, "Start clean gdb group %s, %zu records will check", (char*)l_list->data, l_ret_count);
+        log_it(L_DEBUG, "Start clean gdb group %s, %zu records will check", (char*)l_list->data, l_ret_count);
         while (l_ret_count > 0 && l_ret && l_ret->group) {
             for(size_t i = 0; i < l_ret_count; i++) {
                 if (!(l_ret[i].flags & DAP_GLOBAL_DB_RECORD_PINNED)) {
@@ -2207,7 +2301,7 @@ size_t dap_global_db_clear_table(const char *a_group, bool a_pinned)
         l_obj_count = 0,
         l_ret = 0;
     dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(a_group, &l_obj_count);
-    debug_if(s_debug_more, L_DEBUG, "Start clear gdb group %s, %zu records will check", a_group, l_obj_count);
+    log_it(L_DEBUG, "Start clear gdb group %s, %zu records will check", a_group, l_obj_count);
     for(size_t i = 0; i < l_obj_count; ++i) {
         if (l_objs[i].flags & DAP_GLOBAL_DB_RECORD_DEL && (a_pinned || !(l_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED))) {       
             debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from empty local global_db obj %s group, %s key", l_objs[i].group, l_objs[i].key);
