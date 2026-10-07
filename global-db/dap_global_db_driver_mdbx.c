@@ -873,7 +873,11 @@ static int s_get_obj_by_text_key(MDBX_txn *a_txn, MDBX_dbi a_dbi, MDBX_val *a_ke
     size_t l_key_len = strlen(a_text_key) + 1;
     do {
         struct driver_record *l_record = a_data->iov_base;
-        if (a_data->iov_len > sizeof(struct driver_record) + l_key_len &&
+        // >=, not >: a record with an empty value and no sign - a hole left by a delete, or a
+        // record written with an empty value - is exactly sizeof(driver_record) + key_len long.
+        // Those are the records a with_holes read and a delete have to find; skipping them left
+        // the key looking "present but unreadable", and the next write erased it as broken.
+        if (a_data->iov_len >= sizeof(struct driver_record) + l_key_len &&
                 l_key_len == l_record->key_len &&
                 !memcmp(l_record->key_n_value_n_sign, a_text_key, l_key_len)) {
             mdbx_cursor_close(l_cursor);
