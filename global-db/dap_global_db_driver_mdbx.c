@@ -1462,8 +1462,15 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
     if ( rc != MDBX_SUCCESS ) {                                      /* Check result of mdbx_drop/del */
         if ( MDBX_SUCCESS != (rc2 = mdbx_txn_abort(l_txn)) )
             log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc2, mdbx_strerror(rc2));
-    } else if ( MDBX_SUCCESS != (rc2 = mdbx_txn_commit(l_txn)) )
+        s_dbi_registry_drop_pending();
+    } else if ( MDBX_SUCCESS != (rc2 = mdbx_txn_commit(l_txn)) ) {
         log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc2, mdbx_strerror(rc2));
+        s_dbi_registry_drop_pending();
+    } else {
+        // Single-object writes commit here (not via s_db_mdbx_txn_end), so a
+        // group opened by this transaction must move into the registry now.
+        s_dbi_registry_commit_pending();
+    }
     return rc;
 }
 

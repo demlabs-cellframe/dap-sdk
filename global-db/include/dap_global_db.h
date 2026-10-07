@@ -139,6 +139,15 @@ int dap_global_db_get_all_raw(const char *a_group, size_t l_results_page_size, d
 int dap_global_db_set(const char *a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg);
 
+/**
+ * @brief Same as dap_global_db_set_raw(), except that objects arriving without a signature of
+ * their own get one, with the instance signing key, on the GDB worker thread right before they
+ * are applied. Intended for in-process writers of local (non-synced) caches: such records still
+ * have to pass the cluster role check, which rejects unsigned records, but signing them on the
+ * writer's hot path is what set_raw() exists to avoid.
+ */
+int dap_global_db_set_raw_signed(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg);
+
 int dap_global_db_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_del(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);

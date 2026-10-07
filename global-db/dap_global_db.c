@@ -82,6 +82,7 @@ struct queue_io_msg{
         struct { // Raw set request
             dap_store_obj_t *values_raw;
             uint64_t values_raw_total;
+            bool sign_if_unsigned;  // Objects without a signature get one on the worker thread
         };
         struct { // Set multiply zero-copy
             dap_global_db_obj_t *values;
@@ -1152,7 +1153,8 @@ static void s_msg_opcode_set(struct queue_io_msg * a_msg)
 
 /* *** Set_raw functions group *** */
 
-int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
+int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_objs, size_t a_store_objs_count,
+                      bool a_report_failures)
 {
     int l_ret = DAP_GLOBAL_DB_RC_ERROR;
     bool l_in_txn = a_store_objs_count > 1;
@@ -1167,8 +1169,18 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
     dap_list_t *l_deferred_notifies = NULL;
     for (size_t i = 0; i < a_store_objs_count; i++) {
         l_ret = s_store_obj_apply(a_dbi, a_store_objs + i, l_in_txn ? &l_deferred_notifies : NULL);
-        if (l_ret)
-            debug_if(g_dap_global_db_debug_more, L_ERROR, "Can't save raw gdb data to %s/%s, code %d", (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
+        if (l_ret) {
+            // A rejected object is a record silently lost for the caller (the raw path returns
+            // no per-object result), so report it loudly when the caller asked for that.
+            // -12/-17/-18 are the regular "this exact object / a newer one is already stored"
+            // outcomes of the dedup-by-timestamp check, not a failure.
+            if (a_report_failures && l_ret != -12 && l_ret != -17 && l_ret != -18)
+                log_it(L_WARNING, "Can't save raw gdb data to %s/%s, code %d",
+                       (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
+            else
+                debug_if(g_dap_global_db_debug_more, L_ERROR, "Can't save raw gdb data to %s/%s, code %d",
+                         (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
+        }
     }
     if (l_in_txn)
         dap_global_db_driver_txn_end(!l_ret);
@@ -1186,7 +1198,7 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
 int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
     dap_return_val_if_fail(s_dbi && a_store_objs && a_store_objs_count, DAP_GLOBAL_DB_RC_ERROR);
-    return s_db_set_raw_sync(s_dbi, a_store_objs, a_store_objs_count);
+    return s_db_set_raw_sync(s_dbi, a_store_objs, a_store_objs_count, false);
 }
 
 /**
@@ -1197,7 +1209,9 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
  * @param a_arg
  * @return
  */
-int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+static int s_set_raw_async(dap_store_obj_t *a_store_objs, size_t a_store_objs_count,
+                           dap_global_db_callback_results_raw_t a_callback, void *a_arg,
+                           bool a_sign_if_unsigned)
 {
     dap_return_val_if_fail(s_dbi && a_store_objs && a_store_objs_count, DAP_GLOBAL_DB_RC_ERROR);
     struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
@@ -1205,6 +1219,7 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     l_msg->opcode = MSG_OPCODE_SET_RAW;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
+    l_msg->sign_if_unsigned = a_sign_if_unsigned;
 
     l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count);
     if (!l_msg->values_raw) {
@@ -1222,7 +1237,16 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     } else
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent set_raw request for %zu objects", a_store_objs_count);
     return l_ret;
+}
 
+int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+{
+    return s_set_raw_async(a_store_objs, a_store_objs_count, a_callback, a_arg, false);
+}
+
+int dap_global_db_set_raw_signed(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+{
+    return s_set_raw_async(a_store_objs, a_store_objs_count, a_callback, a_arg, true);
 }
 
 /**
@@ -1233,8 +1257,27 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
 static void s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
 {
     int l_ret = -1;
-    if (a_msg->values_raw_total > 0)
-        l_ret = s_db_set_raw_sync(a_msg->dbi, a_msg->values_raw, a_msg->values_raw_total);
+    if (a_msg->values_raw_total > 0) {
+        if (a_msg->sign_if_unsigned) {
+            // Records of local caches are handed over unsigned: signing them on the writer's
+            // hot path is exactly what set_raw() exists to avoid, but the cluster role check in
+            // s_store_obj_apply() rejects records without a sign. Sign them here, on the GDB
+            // worker thread, with the instance key - the signer is this node, a ROOT member of
+            // the local cluster these caches live in.
+            for (size_t i = 0; i < a_msg->values_raw_total; ++i) {
+                dap_store_obj_t *l_obj = a_msg->values_raw + i;
+                if (l_obj->sign)
+                    continue;
+                l_obj->sign = dap_store_obj_sign(l_obj, a_msg->dbi->signing_key, &l_obj->crc);
+                if (!l_obj->sign) {
+                    log_it(L_ERROR, "Can't sign local gdb object, group %s, key %s", l_obj->group, l_obj->key);
+                    break;
+                }
+            }
+        }
+        l_ret = s_db_set_raw_sync(a_msg->dbi, a_msg->values_raw, a_msg->values_raw_total,
+                                  a_msg->sign_if_unsigned);
+    }
     if (a_msg->callback_results_raw)
         a_msg->callback_results_raw(a_msg->dbi,
                                     l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
