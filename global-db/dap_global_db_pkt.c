@@ -205,6 +205,13 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
 
     size_t l_sign_size_expected = a_pkt->data_len - a_pkt->group_len - a_pkt->key_len - a_pkt->value_len;
     if (l_sign_size_expected) {
+        if (l_sign_size_expected < sizeof(dap_sign_t)) { // dap_sign_get_size reads the full header
+            log_it(L_ERROR, "Broken GDB element: sign size %zu is too small", l_sign_size_expected);
+            DAP_DELETE(a_obj->group);
+            DAP_DELETE(a_obj->key);
+            DAP_DEL_Z(a_obj->value);
+            return NULL;
+        }
         dap_sign_t *l_sign = (dap_sign_t *)l_data_ptr;
         size_t l_sign_size = dap_sign_get_size(l_sign);
         if (l_sign_size != l_sign_size_expected) {

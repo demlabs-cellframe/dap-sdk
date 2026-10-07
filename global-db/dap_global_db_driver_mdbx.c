@@ -142,6 +142,20 @@ static dap_db_ctx_t *s_dbi_registry = NULL;
 static pthread_mutex_t s_dbi_registry_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t s_dbi_registry_cond = PTHREAD_COND_INITIALIZER;
 static _Thread_local dap_db_ctx_t *s_dbi_pending = NULL;   /* opened by the current txn, not yet committed */
+/* Process-wide set of group names with an open-but-uncommitted handle. The old
+ * _Thread_local-only pending check could not see another thread's in-flight
+ * creation, so two threads could race mdbx_dbi_open() for the same group —
+ * the exact DBI-table corruption this registry exists to prevent. */
+typedef struct dap_db_pending_name {
+    char name[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX + 1];
+    UT_hash_handle hh;
+} dap_db_pending_name_t;
+static dap_db_pending_name_t *s_dbi_pending_names = NULL;  /* guarded by s_dbi_registry_lock */
+/* Serializes group creation entry-to-exit so at most one thread runs
+ * mdbx_dbi_open() for any group at a time. Never taken together with
+ * s_dbi_registry_lock in the reverse order (registry lock is only acquired
+ * while already holding this one). */
+static pthread_mutex_t s_dbi_create_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  *   DESCRIPTION: A kind of replacement of the C RTL assert()
@@ -400,12 +414,34 @@ static dap_db_ctx_t *s_dbi_registry_get_locked(const char *a_group)
     return l_copy;
 }
 
-static bool s_dbi_pending_contains(const char *a_group)
+static bool s_dbi_pending_contains(const char *a_group) /* s_dbi_registry_lock must be held */
 {
-    for (dap_db_ctx_t *l_it = s_dbi_pending; l_it; l_it = l_it->pending_next)
-        if (!strcmp(l_it->name, a_group))
-            return true;
-    return false;
+    dap_db_pending_name_t *l_p = NULL;
+    HASH_FIND_STR(s_dbi_pending_names, a_group, l_p);
+    return l_p != NULL;
+}
+
+static void s_dbi_pending_add(const char *a_group) /* s_dbi_registry_lock must be held */
+{
+    dap_db_pending_name_t *l_p = NULL;
+    HASH_FIND_STR(s_dbi_pending_names, a_group, l_p);
+    if (l_p)
+        return;
+    l_p = DAP_NEW_Z(dap_db_pending_name_t);
+    if (!l_p)
+        return;
+    snprintf(l_p->name, sizeof(l_p->name), "%s", a_group);
+    HASH_ADD_STR(s_dbi_pending_names, name, l_p);
+}
+
+static void s_dbi_pending_del(const char *a_group) /* s_dbi_registry_lock must be held */
+{
+    dap_db_pending_name_t *l_p = NULL;
+    HASH_FIND_STR(s_dbi_pending_names, a_group, l_p);
+    if (l_p) {
+        HASH_DEL(s_dbi_pending_names, l_p);
+        DAP_DELETE(l_p);
+    }
 }
 
 // Called from s_db_mdbx_txn_end() on a successful commit: the handles opened
@@ -420,6 +456,7 @@ static void s_dbi_registry_commit_pending(void)
     while (l_it) {
         dap_db_ctx_t *l_next = l_it->pending_next;
         l_it->pending_next = NULL;
+        s_dbi_pending_del(l_it->name);       // visible to waiting creators no more
         dap_db_ctx_t *l_exist = NULL;
         HASH_FIND_STR(s_dbi_registry, l_it->name, l_exist);
         if (l_exist) {                       // someone won the race; keep theirs
@@ -439,12 +476,13 @@ static void s_dbi_registry_drop_pending(void)
 {
     dap_db_ctx_t *l_it = s_dbi_pending;
     s_dbi_pending = NULL;
+    pthread_mutex_lock(&s_dbi_registry_lock);
     while (l_it) {
         dap_db_ctx_t *l_next = l_it->pending_next;
+        s_dbi_pending_del(l_it->name);
         DAP_DELETE(l_it);
         l_it = l_next;
     }
-    pthread_mutex_lock(&s_dbi_registry_lock);
     pthread_cond_broadcast(&s_dbi_registry_cond);
     pthread_mutex_unlock(&s_dbi_registry_lock);
 }
@@ -461,12 +499,21 @@ MDBX_val    l_key_iov, l_data_iov;
     if ( (l_name_len = strlen(a_group)) >(int) DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX )
         return  log_it(L_ERROR, "Group name '%s' is too long (%zu>%lu)", a_group, l_name_len, DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX), NULL;
 
+    // One creator at a time process-wide; the previous TLS-only pending check
+    // let two threads race mdbx_dbi_open() for the same new group
+    pthread_mutex_lock(&s_dbi_create_lock);
+
     // A committed handle may already exist (registry), or a concurrent write
     // transaction may be opening this very group right now: wait for it
     // instead of racing a second mdbx_dbi_open() (see the registry comment).
     pthread_mutex_lock(&s_dbi_registry_lock);
     l_db_ctx = s_dbi_registry_get_locked(a_group);
-    for (int l_spin = 0; !l_db_ctx && s_dbi_pending_contains(a_group) && l_spin < 100; ++l_spin) {
+    int l_wait_spins = 0;
+    while (!l_db_ctx && s_dbi_pending_contains(a_group)) {
+        if (++l_wait_spins > 600) {          // ~30s: a creator's txn is stuck
+            log_it(L_CRITICAL, "Pending DBI creation for '%s' stuck, proceed on own risk", a_group);
+            break;
+        }
         struct timespec l_ts;
         clock_gettime(CLOCK_REALTIME, &l_ts);
         l_ts.tv_nsec += 50 * 1000 * 1000;
@@ -475,23 +522,29 @@ MDBX_val    l_key_iov, l_data_iov;
         l_db_ctx = s_dbi_registry_get_locked(a_group);
     }
     pthread_mutex_unlock(&s_dbi_registry_lock);
-    if (l_db_ctx)
+    if (l_db_ctx) {
+        pthread_mutex_unlock(&s_dbi_create_lock);
         return l_db_ctx;
+    }
 
-    if ( !(l_db_ctx = DAP_NEW_Z(dap_db_ctx_t)) )
+    if ( !(l_db_ctx = DAP_NEW_Z(dap_db_ctx_t)) ) {
+        pthread_mutex_unlock(&s_dbi_create_lock);
         return  log_it(L_ERROR, "Cannot allocate DB context for '%s', errno=%d", a_group, errno), NULL;
+    }
 
     memcpy(l_db_ctx->name, a_group, l_db_ctx->namelen = l_name_len);
 
     MDBX_txn *l_txn = a_txn;
     if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) ) {
         DAP_DEL_Z(l_db_ctx);
+        pthread_mutex_unlock(&s_dbi_create_lock);
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
     rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi);
     if  ( MDBX_SUCCESS != rc ) {
         DAP_DEL_Z(l_db_ctx);
+        pthread_mutex_unlock(&s_dbi_create_lock);
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
@@ -503,9 +556,11 @@ MDBX_val    l_key_iov, l_data_iov;
         log_it (L_ERROR, "mdbx_put: (%d) %s", rc, mdbx_strerror(rc));
         if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) ) {
             DAP_DEL_Z(l_db_ctx);
+            pthread_mutex_unlock(&s_dbi_create_lock);
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc)), NULL;
         }
         DAP_DEL_Z(l_db_ctx);
+        pthread_mutex_unlock(&s_dbi_create_lock);
         return NULL;
     }
 
@@ -514,6 +569,7 @@ MDBX_val    l_key_iov, l_data_iov;
         // right away and hand out a per-call copy.
         if (MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) ) {
             DAP_DEL_Z(l_db_ctx);
+            pthread_mutex_unlock(&s_dbi_create_lock);
             return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc)), NULL;
         }
         pthread_mutex_lock(&s_dbi_registry_lock);
@@ -526,11 +582,16 @@ MDBX_val    l_key_iov, l_data_iov;
         dap_db_ctx_t *l_copy = s_dbi_registry_get_locked(a_group);
         pthread_cond_broadcast(&s_dbi_registry_cond);
         pthread_mutex_unlock(&s_dbi_registry_lock);
+        pthread_mutex_unlock(&s_dbi_create_lock);
         return l_copy;
     }
 
     // Caller's transaction: the handle becomes shared when that transaction
-    // commits (s_db_mdbx_txn_end moves it into the registry).
+    // commits (s_db_mdbx_txn_end moves it into the registry). Publish the
+    // in-flight group name process-wide so concurrent creators wait for it.
+    pthread_mutex_lock(&s_dbi_registry_lock);
+    s_dbi_pending_add(a_group);
+    pthread_mutex_unlock(&s_dbi_registry_lock);
     l_db_ctx->pending_next = s_dbi_pending;
     s_dbi_pending = l_db_ctx;
     dap_db_ctx_t *l_copy = DAP_NEW_Z(dap_db_ctx_t);
@@ -539,6 +600,7 @@ MDBX_val    l_key_iov, l_data_iov;
         memcpy(l_copy->name, l_db_ctx->name, l_db_ctx->namelen);
         l_copy->dbi = l_db_ctx->dbi;
     }
+    pthread_mutex_unlock(&s_dbi_create_lock);
     return l_copy;
 }
 
@@ -822,8 +884,11 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
     a_obj->crc = be64toh(l_driver_key->becrc);
 
     struct driver_record *l_record = a_data->iov_base;
-    if (a_data->iov_len < sizeof(*l_record) || // Do not intersect bounds of read array, check it twice
-            a_data->iov_len < sizeof(*l_record) + l_record->sign_len + l_record->value_len + l_record->key_len) {
+    uint64_t l_sum = 0; // the three uint64 length fields can wrap a plain sum
+    if (a_data->iov_len < sizeof(*l_record) ||
+            __builtin_add_overflow(l_record->key_len, l_record->value_len, &l_sum) ||
+            __builtin_add_overflow(l_sum, l_record->sign_len, &l_sum) ||
+            l_sum > a_data->iov_len - sizeof(*l_record)) {
         DAP_DELETE(a_obj->group);
         return log_it(L_ERROR, "Corrupted global DB record internal value"), -6;
     }
@@ -1060,8 +1125,11 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
         rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data);
         if (MDBX_SUCCESS == rc) {
             struct driver_record *l_record = l_data.iov_base;
-            if (l_data.iov_len < sizeof(*l_record) || // Do not intersect bounds of read array, check it twice
-                    l_data.iov_len < sizeof(*l_record) + l_record->sign_len + l_record->value_len + l_record->key_len) {
+            uint64_t l_sum = 0; // the three uint64 length fields can wrap a plain sum
+            if (l_data.iov_len < sizeof(*l_record) ||
+                    __builtin_add_overflow(l_record->key_len, l_record->value_len, &l_sum) ||
+                    __builtin_add_overflow(l_sum, l_record->sign_len, &l_sum) ||
+                    l_sum > l_data.iov_len - sizeof(*l_record)) {
                 log_it(L_ERROR, "Corrupted global DB record internal value");
                 rc = MDBX_PROBLEM;
                 continue;
