@@ -2180,8 +2180,21 @@ int dap_client_http_init()
     if (l_ssl_cert_path) {
         if (wolfSSL_CTX_load_verify_locations(s_ctx, l_ssl_cert_path, 0) != SSL_SUCCESS)
         return -2;
-    } else
+    } else if (dap_config_get_item_bool_default(g_config, "dap_client", "ssl_verify_none", false)) {
+        /* Explicit opt-out only (e.g. self-signed test nodes). Never the
+         * silent default: an unverified TLS peer can be impersonated. */
+        log_it(L_WARNING, "TLS certificate verification DISABLED by dap_client.ssl_verify_none");
         wolfSSL_CTX_set_verify(s_ctx, WOLFSSL_VERIFY_NONE, 0);
+    } else {
+        /* Verify against the system trust store; fail closed if none. */
+        wolfSSL_CTX_set_verify(s_ctx, WOLFSSL_VERIFY_PEER, 0);
+#ifdef WOLFSSL_SYS_CA_CERTS
+        if (wolfSSL_CTX_load_system_CA_certs(s_ctx) != WOLFSSL_SUCCESS)
+            log_it(L_WARNING, "TLS: cannot load system CA certificates; HTTPS peers will fail verification");
+#else
+        log_it(L_WARNING, "TLS: no CA bundle configured (dap_client.ssl_cert_path); HTTPS peers will fail verification");
+#endif
+    }
     if (wolfSSL_CTX_UseSupportedCurve(s_ctx, WOLFSSL_ECC_SECP256R1) != SSL_SUCCESS) {
         log_it(L_ERROR, "WolfSSL UseSupportedCurve() handle error");
     }
