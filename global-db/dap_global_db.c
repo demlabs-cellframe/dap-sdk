@@ -856,7 +856,14 @@ static void s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
 
 dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count)
 {
-    dap_return_val_if_fail(s_dbi && a_group, NULL);
+    // Spelled out instead of dap_return_val_if_fail: a caller passing nothing (or calling before
+    // the instance exists) otherwise shows up as an empty result, which is hard to tell apart
+    // from an empty group.
+    if (!s_dbi || !a_group) {
+        log_it(L_WARNING, "dap_global_db_get_all_sync: invalid arguments (instance %p, group %p)",
+               (void *)s_dbi, (const void *)a_group);
+        return NULL;
+    }
     size_t l_values_count = 0;
     dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count, false);
     debug_if(g_dap_global_db_debug_more, L_DEBUG,
