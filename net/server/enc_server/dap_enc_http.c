@@ -98,6 +98,10 @@ void dap_enc_http_set_acl_callback(dap_enc_acl_callback_t a_callback)
  * @param cl_st HTTP Simple client instance
  * @param arg Pointer to bool with okay status (true if everything is ok, by default)
  */
+// The KEX message is MSRLN_PKA_BYTES + optional sign(s); anything much larger
+// is abuse. Caps the heap allocation for the decoded handshake body.
+#define DAP_ENC_HTTP_KEX_REQUEST_MAX (64 * 1024)
+
 void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 {
     log_it(L_DEBUG,"Proc enc http request");
@@ -115,8 +119,28 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 
         log_it(L_DEBUG, "Stream encryption: %s\t public key exchange: %s",dap_enc_get_type_name(l_enc_block_type),
                dap_enc_get_type_name(l_pkey_exchange_type));
+        // Query-string parameters are attacker-controlled: this endpoint speaks
+        // MSRLN only, so anything else in pkey_exchange_type/pkey_exchange_size
+        // is an attempt to skew the offsets below
+        if (l_pkey_exchange_type != DAP_ENC_KEY_TYPE_MSRLN || l_pkey_exchange_size != MSRLN_PKA_BYTES) {
+            log_it(L_WARNING, "Wrong KEX parameters: type %d, size %zu", (int)l_pkey_exchange_type, l_pkey_exchange_size);
+            *return_code = Http_Status_BadRequest;
+            return;
+        }
         size_t l_decode_len = DAP_ENC_BASE64_DECODE_SIZE(cl_st->request_size);
-        uint8_t alice_msg[l_decode_len + 1];
+        if (l_decode_len > DAP_ENC_HTTP_KEX_REQUEST_MAX) {
+            log_it(L_WARNING, "KEX request body %zu exceeds the cap %d", l_decode_len, DAP_ENC_HTTP_KEX_REQUEST_MAX);
+            *return_code = Http_Status_PayloadTooLarge;
+            return;
+        }
+        // Heap instead of a stack VLA: the old code sized it straight from the
+        // (uncapped) request body and could blow the proc-thread stack
+        uint8_t *alice_msg = DAP_NEW_Z_SIZE(uint8_t, l_decode_len + 1);
+        if (!alice_msg) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            *return_code = Http_Status_InternalServerError;
+            return;
+        }
         l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, alice_msg, DAP_ENC_DATA_TYPE_B64);
         alice_msg[l_decode_len] = '\0';
         dap_chain_hash_fast_t l_sign_hash = {0};
@@ -127,6 +151,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                 /* No sign inside */
                 log_it(L_WARNING, "Wrong message size, without a valid sign must be = %zu", l_pkey_exchange_size);
                 *return_code = Http_Status_BadRequest;
+                DAP_DELETE(alice_msg);
                 return;
             }
         }
@@ -141,6 +166,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             if (l_verify_ret) {
                 log_it(L_ERROR, "Can't authorize, sign verification didn't pass (err %d)", l_verify_ret);
                 *return_code = Http_Status_Unauthorized;
+                DAP_DELETE(alice_msg);
                 return;
             }
             l_bias += dap_sign_get_size(l_sign);
@@ -148,12 +174,14 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             if (dap_http_ban_list_client_check(dap_stream_node_addr_to_str_static(l_client_pkey_node_addr), NULL, NULL)) {
                 log_it(L_ERROR, "Client %s is banned.", dap_stream_node_addr_to_str_static(l_client_pkey_node_addr));
                 *return_code = Http_Status_Forbidden;
+                DAP_DELETE(alice_msg);
                 return;
             }
         }
         if (l_sign_validated_count != l_sign_count) {
             log_it(L_ERROR, "Can't authorize all %zu signs", l_sign_count);
             *return_code = Http_Status_Unauthorized;
+            DAP_DELETE(alice_msg);
             return;
         }
 
@@ -161,6 +189,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         if(! l_pkey_exchange_key){
             log_it(L_WARNING, "Wrong http_enc request. Can't init PKey exchange with type %s", dap_enc_get_type_name(l_pkey_exchange_type) );
             *return_code = Http_Status_BadRequest;
+            DAP_DELETE(alice_msg);
             return;
         }
         if(l_pkey_exchange_key->gen_bob_shared_key) {
@@ -169,7 +198,12 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         }
 
         dap_enc_ks_key_t *l_enc_key_ks = dap_enc_ks_new();
-        dap_return_if_pass(!l_enc_key_ks);
+        if (!l_enc_key_ks) {
+            DAP_DELETE(alice_msg);
+            dap_enc_key_delete(l_pkey_exchange_key);
+            *return_code = Http_Status_InternalServerError;
+            return;
+        }
         if (s_acl_callback) {
             l_enc_key_ks->acl_list = s_acl_callback(&l_sign_hash);
         } else {
@@ -198,10 +232,17 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             l_enc_key_ks->node_addr = dap_stream_node_addr_from_sign(l_sign);
 
             dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+            if (!l_node_cert) {
+                log_it(L_ERROR, "Node address certificate '%s' not found", DAP_STREAM_NODE_ADDR_CERT_NAME);
+                *return_code = Http_Status_InternalServerError;
+                DAP_DELETE(alice_msg);
+                return;
+            }
             dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size);
             if (!l_node_sign) {
                 dap_enc_key_delete(l_pkey_exchange_key);
                 DAP_DELETE(encrypt_msg);
+                DAP_DELETE(alice_msg);
                 *return_code = Http_Status_InternalServerError;
                 return;
             }
@@ -215,6 +256,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                 *return_code = Http_Status_InternalServerError;
                 DAP_DELETE(encrypt_msg);
                 DAP_DELETE(l_node_sign);
+                DAP_DELETE(alice_msg);
                 return;
             }
             l_node_msg_len = (int)dap_enc_base64_encode(l_node_sign, l_node_sign_size, l_node_sign_msg, DAP_ENC_DATA_TYPE_B64);
@@ -223,6 +265,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 
         _enc_http_write_reply(cl_st, encrypt_id, l_enc_id_len, encrypt_msg, l_enc_msg_len, l_node_sign_msg, l_node_msg_len);
         DAP_DELETE(encrypt_msg);
+        DAP_DELETE(alice_msg);
         dap_enc_key_delete(l_pkey_exchange_key);
         DAP_DEL_Z(l_node_sign_msg);
 
