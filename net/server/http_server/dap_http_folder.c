@@ -212,6 +212,12 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
     goto err;
   }
   fclose(l_temp_file);
+  // Serve regular files only: fopen() on a directory succeeds on POSIX and
+  // the fread loop on such a handle never reached feof
+  if (!S_ISREG(file_stat.st_mode)) {
+    log_it(L_WARNING, "Refusing to serve non-regular path %s", cl_ht_file->local_path);
+    goto err;
+  }
 
   cl_ht->out_last_modified  = file_stat.st_mtime;
   cl_ht->out_content_length = file_stat.st_size;
@@ -301,7 +307,9 @@ bool dap_http_folder_data_write(dap_http_client_t * cl_ht, void * arg)
 {
     (void) arg;
     dap_http_file_t * cl_ht_file= DAP_HTTP_FILE(cl_ht);
-    cl_ht->esocket->buf_out_size=fread(cl_ht->esocket->buf_out, 1, cl_ht->esocket->buf_out_size_max + 1, cl_ht_file->fd);
+    // Read exactly buf_out_size bytes: the old size_max + 1 wrote one byte
+    // past the buffer for files larger than a single buffer
+    cl_ht->esocket->buf_out_size=fread(cl_ht->esocket->buf_out, 1, cl_ht->esocket->buf_out_size_max, cl_ht_file->fd);
     cl_ht_file->position+=cl_ht->esocket->buf_out_size;
     dap_events_socket_set_writable_unsafe(cl_ht->esocket, true);
 

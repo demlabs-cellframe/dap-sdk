@@ -52,6 +52,8 @@
 
 int s_debug_http = 1;                                                       /* Non-static, can be used in other modules */
 
+static size_t s_max_request_size = DAP_HTTP_IN_CONTENT_LENGTH_MAX;          /* Body size cap, [server] max_request_size */
+
 #define	CR      '\r'
 #define	LF      '\n'
 #define	CRLF    "\r\n"
@@ -66,6 +68,13 @@ int dap_http_client_init( )
 {
     log_it(L_NOTICE,"Initialized HTTP client module");
     s_debug_http = dap_config_get_item_bool_default(g_config,"general","debug_http",false);
+    int64_t l_max = dap_config_get_item_int64_default(g_config, "server", "max_request_size",
+                                                      (int64_t)DAP_HTTP_IN_CONTENT_LENGTH_MAX);
+    if (l_max < 1024)
+        l_max = 1024;
+    if ((uint64_t)l_max > DAP_HTTP_IN_CONTENT_LENGTH_MAX)
+        l_max = (int64_t)DAP_HTTP_IN_CONTENT_LENGTH_MAX;
+    s_max_request_size = (size_t)l_max;
     return 0;
 }
 
@@ -278,7 +287,8 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
     l_cp_start = l_cp_end;
     for ( ; isspace(*l_cp_start) && l_buf_len; l_cp_start++, l_buf_len--);      /* Skip possible anti-DPI whitespaces */
     if ( memcmp(l_cp_start, ht_ver, sizeof(ht_ver) -1) )
-        return  log_it(L_WARNING, "This ('%s') is not HTTP/1.x like start-line, so ...", l_cp_start), -EINVAL;
+        return  log_it(L_WARNING, "This ('%.*s') is not HTTP/1.x like start-line, so ...",
+                       (int)HTTP$SZ_HTLINE, l_cp_start), -EINVAL;
 
     return  0;  /* SUCCESS */
 }
@@ -451,7 +461,8 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         debug_if(s_debug_http, L_DEBUG, "May be incomplete request in buffer, wait another part");
                         return;
                     }
-                    log_it( L_ERROR, "Line with size %zu is not terminated by CRLF pair: %s", a_esocket->buf_in_size, a_esocket->buf_in);
+                    log_it( L_ERROR, "Line with size %zu is not terminated by CRLF pair: %.*s", a_esocket->buf_in_size,
+                            (int)a_esocket->buf_in_size, a_esocket->buf_in);
                     s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
                     break;
                 }
@@ -463,6 +474,14 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     log_it( L_WARNING, "Input: not a valid header '%.*s'", (int)l_len, a_esocket->buf_in );
                 }else if ( l_ret == 1 ) {
                     log_it( L_INFO, "Input: HTTP headers are over" );
+
+                    if ( l_http_client->in_content_length_bad
+                            || l_http_client->in_content_length > s_max_request_size ) {
+                        log_it( L_WARNING, "Input: Content-Length %zu is invalid or exceeds maximum %zu, reject with 413",
+                                l_http_client->in_content_length, s_max_request_size );
+                        s_report_error_and_restart( a_esocket, l_http_client, Http_Status_PayloadTooLarge );
+                        break;
+                    }
 
                     if ( l_http_client->proc->access_callback )
                     {

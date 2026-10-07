@@ -55,6 +55,7 @@ typedef struct dap_http_client
         in_cookie[1024];
     size_t in_content_length,
         in_cookie_len;
+    bool in_content_length_bad;                                             /* Content-Length failed strict parsing or exceeded the cap */
 
     struct dap_http_header *out_headers;
 
@@ -84,6 +85,10 @@ typedef struct dap_http_client
 } dap_http_client_t;
 
 #define DAP_HTTP_CLIENT(a)  ((dap_http_client_t *) (a)->_inheritor )
+
+/* Hard ceiling for Content-Length accepted by the header parser; the effective limit
+ * can be lowered via the [server] max_request_size config key */
+#define DAP_HTTP_IN_CONTENT_LENGTH_MAX (16ull * 1024 * 1024)
 
 #ifdef __cplusplus
 extern "C" {
