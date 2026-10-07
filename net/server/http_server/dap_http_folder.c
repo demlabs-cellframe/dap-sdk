@@ -21,12 +21,25 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <stdio.h>
+#include <unistd.h>
+#include <dirent.h>
 #include <errno.h>
+
+#ifndef _WIN32
+#include <sys/types.h>
+#include <sys/stat.h>
+#else
+#include <winsock2.h>
+#include <windows.h>
+#include <mswsock.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#endif
+
 #include <pthread.h>
 
 #include "dap_common.h"
 #include "dap_events_socket.h"
-#include "dap_file_utils.h"
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_folder.h"
@@ -55,7 +68,6 @@ bool dap_http_folder_data_write( dap_http_client_t *cl_ht, void *arg );
 
 #define LOG_TAG "dap_http_folder"
 
-static bool s_debug_more = false;
 int dap_http_folder_init( )
 {
     return 0;
@@ -82,10 +94,24 @@ int dap_http_folder_add(dap_http_server_t *sh, const char *url_path, const char 
 
   log_it( L_DEBUG, "Checking url path %s", local_path );
 
-  if ( !dap_dir_test( local_path ) ) {
+#ifndef _WIN32
+  DIR *dirptr = opendir( local_path );
+  if ( dirptr == NULL ) {
     log_it( L_ERROR, "Directory Not Found!" );
     return -11;
   }
+  else {
+    closedir( dirptr );
+  }
+#else // WIN32
+
+  DWORD attr = GetFileAttributesA( local_path );
+  if ( attr == INVALID_FILE_ATTRIBUTES || !(attr & FILE_ATTRIBUTE_DIRECTORY) ) {
+    log_it( L_ERROR, "Directory Not Found!" );
+    return -11;
+  }
+
+#endif
 
   log_it( L_NOTICE, "File service for %s => %s ", url_path, local_path );
 
@@ -141,6 +167,18 @@ void dap_http_folder_headers_read(dap_http_client_t * cl_ht, void * arg)
     dap_events_socket_set_readable_unsafe(cl_ht->esocket, cl_ht->keep_alive);
 }
 
+#ifdef _WIN32
+time_t FileTimeToUnixTime( FILETIME ft )
+{
+  ULARGE_INTEGER ull;
+ 
+  ull.LowPart = ft.dwLowDateTime;
+  ull.HighPart = ft.dwHighDateTime;
+ 
+  return ull.QuadPart / 10000000ULL - 11644473600ULL;
+}
+#endif
+
 /**
  * @brief dap_http_folder_headers Prepare response HTTP headers for file folder request
  * @param cl_ht HTTP client instane
@@ -160,19 +198,59 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
 
   // Produce local path for file to open
   snprintf(cl_ht_file->local_path,sizeof(cl_ht_file->local_path),"%s/%s", up_folder->local_path, cl_ht->url_path );
-  debug_if(s_debug_more, L_DEBUG, "Check %s file", cl_ht_file->local_path);
+  log_it(L_DEBUG, "Check %s file", cl_ht_file->local_path);
 
-  dap_file_stat_t file_stat;
-  if (dap_file_stat(cl_ht_file->local_path, &file_stat) != 0) {
+#ifndef _WIN32
+
+  FILE *l_temp_file = fopen(cl_ht_file->local_path, "rb");
+  if (!l_temp_file)
+    goto err;
+  
+  struct stat file_stat;
+  if (fstat(fileno(l_temp_file), &file_stat) != 0) {
+    fclose(l_temp_file);
+    goto err;
+  }
+  fclose(l_temp_file);
+  // Serve regular files only: fopen() on a directory succeeds on POSIX and
+  // the fread loop on such a handle never reached feof
+  if (!S_ISREG(file_stat.st_mode)) {
+    log_it(L_WARNING, "Refusing to serve non-regular path %s", cl_ht_file->local_path);
     goto err;
   }
 
-  if (!file_stat.is_file) {
-    goto err;
-  }
+  cl_ht->out_last_modified  = file_stat.st_mtime;
+  cl_ht->out_content_length = file_stat.st_size;
 
-  cl_ht->out_last_modified  = file_stat.mtime;
-  cl_ht->out_content_length = file_stat.size;
+#else
+
+  FILETIME CreationTime;
+  FILETIME LastAccessTime;
+  FILETIME LastWriteTime;
+
+  HANDLE fileh = CreateFileA( cl_ht_file->local_path, 
+                              GENERIC_READ, 
+                              FILE_SHARE_READ, 
+                              NULL, 
+                              OPEN_EXISTING, 
+                              FILE_ATTRIBUTE_ARCHIVE, 
+                              NULL 
+                 );
+
+  if ( fileh == INVALID_HANDLE_VALUE ) 
+    goto err;
+
+  GetFileTime( fileh,
+               &CreationTime,
+               &LastAccessTime,
+               &LastWriteTime );
+
+  cl_ht->out_last_modified  = FileTimeToUnixTime( LastWriteTime );
+  cl_ht->out_content_length = GetFileSize( fileh, NULL );
+
+  CloseHandle( fileh );
+
+#endif
 
   cl_ht_file->fd = fopen( cl_ht_file->local_path, "rb" );
 
@@ -229,12 +307,14 @@ bool dap_http_folder_data_write(dap_http_client_t * cl_ht, void * arg)
 {
     (void) arg;
     dap_http_file_t * cl_ht_file= DAP_HTTP_FILE(cl_ht);
-    cl_ht->esocket->buf_out_size=fread(cl_ht->esocket->buf_out, 1, cl_ht->esocket->buf_out_size_max + 1, cl_ht_file->fd);
+    // Read exactly buf_out_size bytes: the old size_max + 1 wrote one byte
+    // past the buffer for files larger than a single buffer
+    cl_ht->esocket->buf_out_size=fread(cl_ht->esocket->buf_out, 1, cl_ht->esocket->buf_out_size_max, cl_ht_file->fd);
     cl_ht_file->position+=cl_ht->esocket->buf_out_size;
     dap_events_socket_set_writable_unsafe(cl_ht->esocket, true);
 
     if(feof(cl_ht_file->fd)!=0){
-        debug_if(s_debug_more, L_INFO, "All the file %s is sent out",cl_ht_file->local_path);
+        log_it(L_INFO, "All the file %s is sent out",cl_ht_file->local_path);
         //strncat(cl_ht->client->buf_out+cl_ht->client->buf_out_size,"\r\n",sizeof(cl_ht->client->buf_out));
         fclose(cl_ht_file->fd);
         dap_events_socket_set_writable_unsafe(cl_ht->esocket,false);

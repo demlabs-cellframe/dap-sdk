@@ -136,9 +136,19 @@ struct ht_field *l_ht;
             cl_ht->in_content_type[dap_min(l_valuelen, sizeof(cl_ht->in_content_type) - 1)] = '\0';
             break;
 
-        case    HTTP_FLD$K_CONTENT_LEN:
-            cl_ht->in_content_length = atoi( l_value );
+        case    HTTP_FLD$K_CONTENT_LEN: {
+            // Attacker-controlled: strict parse, no negatives/wrap, hard cap
+            char *l_end = NULL;
+            long long l_cl = strtoll(l_value, &l_end, 10);
+            if (l_end == l_value || (l_end && *l_end) || l_cl < 0
+                    || (unsigned long long)l_cl > DAP_HTTP_IN_CONTENT_LENGTH_MAX) {
+                log_it(L_WARNING, "Invalid Content-Length '%s' in request, it will be rejected", l_value);
+                cl_ht->in_content_length = 0;
+                cl_ht->in_content_length_bad = true;
+            } else
+                cl_ht->in_content_length = (size_t)l_cl;
             break;
+        }
 
         case    HTTP_FLD$K_COOKIE:
             memcpy(cl_ht->in_cookie, l_value, dap_min(l_valuelen, sizeof(cl_ht->in_cookie) - 1) );
