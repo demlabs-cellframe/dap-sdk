@@ -237,8 +237,8 @@ dap_cert_t * dap_cert_generate_mem_with_seed(const char * a_cert_name, dap_enc_k
     if (l_enc_key) {
         dap_cert_t * l_cert = dap_cert_new(a_cert_name);
         l_cert->enc_key = l_enc_key;
-        if (a_seed && a_seed_size)
-            log_it(L_DEBUG, "Certificate generated with seed hash %s", dap_get_data_hash_str(a_seed, a_seed_size).s);
+        // No seed hashing in logs: the seed restores the private key, and the
+        // hash is an offline brute-force oracle for low-entropy seeds
         return l_cert;
     } else {
         log_it(L_ERROR,"Can't generate key in memory!");

@@ -230,8 +230,10 @@ int dap_mkdir_with_parents(const char *a_dir_path)
 #ifdef DAP_OS_WINDOWS
             int result = mkdir(path);
 #else
-            int result = mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO);
-                         chmod(path, S_IRWXU | S_IRWXG | S_IRWXO);
+            // Private by default: these dirs carry certs/keys/wallets/global-db.
+            // The old 0777-with-explicit-chmod made every created dir
+            // world-writable regardless of umask.
+            int result = mkdir(path, S_IRWXU);
 #endif
             if(result == -1) {
                 errno = ENOTDIR;
@@ -1938,7 +1940,7 @@ bool dap_tar_directory(const char *a_inputdir, const char *a_output_tar_filename
     char outfile[strlen(a_output_tar_filename) + 1];
     memcpy(outfile, a_output_tar_filename, sizeof(outfile));
     dap_path_to_native_inplace(outfile);
-    int l_outfile = open(outfile, O_CREAT | O_WRONLY | O_BINARY, 0644);
+    int l_outfile = open(outfile, O_CREAT | O_WRONLY | O_BINARY, 0600); // backups may carry key material
     if(l_outfile < 0) {
         log_it(L_ERROR, "Failed to open output file");
         return false;

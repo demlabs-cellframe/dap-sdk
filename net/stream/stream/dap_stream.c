@@ -78,7 +78,9 @@ static dap_cluster_t        *s_global_links_cluster = NULL;
 static pthread_rwlock_t     s_streams_lock = PTHREAD_RWLOCK_INITIALIZER;    // Lock for all tables and list under
 static dap_stream_t         *s_authorized_streams = NULL;                   // Authorized streams hashtable by addr
 static dap_stream_t         *s_streams = NULL;                              // Double-linked list
-static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
+// GOST-OFB prepends a fresh random IV to every message; IAES keeps a fixed IV
+// for the whole session which leaks plaintext-prefix equality
+static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_GOST_OFB;
 
 static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
 

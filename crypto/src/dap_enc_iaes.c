@@ -137,7 +137,7 @@ size_t dap_enc_iaes256_cbc_decrypt_fast(struct dap_enc_key * a_key, const void *
 
     size_t l_padding_size = ((uint8_t *)data)[a_in_size - 1];
     if(l_padding_size > a_in_size){
-        log_it(L_CRITICAL, "Padding size is %zu while whole message is just %zu", l_padding_size, a_in_size);
+        log_it(L_CRITICAL, "Bad padding in the decrypted message"); // no size details: padding-oracle signal
         return 0;
     }else{
         return a_in_size - l_padding_size;
