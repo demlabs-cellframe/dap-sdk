@@ -102,23 +102,6 @@ bool dap_json_rpc_method_is_public(const char *a_method, const char **a_allowed_
            !!dap_str_find(a_allowed_cmds, a_method);
 }
 
-// The command name of a JSON-RPC request body, or NULL when the body is not a JSON object with a
-// string "method". Only used for the access decision: the executor parses the body again itself.
-static char *s_rpc_service_request_method(const char *a_body)
-{
-    enum json_tokener_error l_err;
-    json_object *l_req = json_tokener_parse_verbose(a_body, &l_err);
-    if (l_err != json_tokener_success || !l_req)
-        return NULL;
-    char *l_method = NULL;
-    json_object *l_jobj_method = NULL;
-    if (json_object_object_get_ex(l_req, "method", &l_jobj_method) &&
-            json_object_is_type(l_jobj_method, json_type_string))
-        l_method = dap_strdup(json_object_get_string(l_jobj_method));
-    json_object_put(l_req);
-    return l_method;
-}
-
 // Small JSON body for replies that carry no command result (errors, the index, /health).
 static void s_rpc_service_reply_str(dap_http_simple_t *a_http_simple, const char *a_str)
 {
@@ -174,6 +157,18 @@ void dap_json_rpc_http_plain_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         return;
     }
 
+    // The body is parsed exactly once: the same tree drives the access check, the heavy
+    // classification and the execution (the executor consumes it).
+    enum json_tokener_error l_jterr;
+    json_object *l_req = json_tokener_parse_verbose(a_http_simple->request_str, &l_jterr);
+    if (l_jterr != json_tokener_success || !l_req ||
+            !json_object_is_type(l_req, json_type_object)) {
+        json_object_put(l_req);
+        s_rpc_service_reply_error(a_http_simple, l_return_code, Http_Status_BadRequest,
+                                  "Wrong request");
+        return;
+    }
+
     // Access control for the plain endpoint: a non-loopback caller may only run the commands the
     // configuration made public. Loopback tooling keeps the full command set, exactly like the
     // CLI port. With allowed_cmd_control=false the whole set is public - an explicit opt-in.
@@ -181,30 +176,32 @@ void dap_json_rpc_http_plain_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             a_http_simple->http_client && a_http_simple->http_client->esocket
                 ? &a_http_simple->http_client->esocket->addr_storage : NULL);
     if (!l_loopback && s_rpc_service_restricted) {
-        char *l_method = s_rpc_service_request_method(a_http_simple->request_str);
-        bool l_allowed = dap_json_rpc_method_is_public(l_method, s_rpc_allowed_cmds);
-        if (!l_allowed) {
+        json_object *l_jobj_method = NULL;
+        const char *l_method = json_object_object_get_ex(l_req, "method", &l_jobj_method) &&
+                               json_object_is_type(l_jobj_method, json_type_string)
+                                   ? json_object_get_string(l_jobj_method) : NULL;
+        if (!dap_json_rpc_method_is_public(l_method, s_rpc_allowed_cmds)) {
             log_it(l_method ? L_WARNING : L_ERROR,
                    "HTTP RPC: refused %s for a non-loopback caller",
-                   l_method ? l_method : "a malformed request");
-            DAP_DELETE(l_method);
+                   l_method ? l_method : "a request without a method");
+            json_object_put(l_req);
             s_rpc_service_reply_error(a_http_simple, l_return_code, Http_Status_Forbidden,
                                       "Command is not exposed on this endpoint");
             return;
         }
-        DAP_DELETE(l_method);
     }
 
     // Same acquire/release gate as the CLI port and the signed path: a heavy command must not
     // starve the shared proc-thread pool (GlobalDB I/O runs there too).
     bool l_is_heavy = false;
-    if (!dap_cli_server_backpressure_acquire(a_http_simple->request_str, &l_is_heavy)) {
+    if (!dap_cli_server_backpressure_acquire_json(l_req, &l_is_heavy)) {
+        json_object_put(l_req);
         dap_http_header_add(&a_http_simple->ext_headers, "Retry-After", "1");
         s_rpc_service_reply_error(a_http_simple, l_return_code, Http_Status_ServiceUnavailable,
                                   "Node is busy, try again later");
         return;
     }
-    char *l_response = dap_cli_cmd_exec(a_http_simple->request_str);
+    char *l_response = dap_cli_cmd_exec_json(l_req);   // consumes l_req
     dap_cli_server_backpressure_release(l_is_heavy);
     if (!l_response) {
         s_rpc_service_reply_error(a_http_simple, l_return_code, Http_Status_BadRequest,

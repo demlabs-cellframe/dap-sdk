@@ -88,6 +88,9 @@ static int s_cli_max_inflight_heavy = 4;
 // (registered once at init, read on GET /health).
 static _Atomic(void *) s_cli_ready_callback = NULL;
 static _Thread_local unsigned s_cli_reply_unavailable_retry_after = 0;
+// A command's pre-serialized reply (see dap_cli_cmd_reply_set_raw_json): consumed by the
+// executor's tail, dropped when the next command starts on this thread.
+static _Thread_local char *s_cli_reply_raw_json = NULL;
 
 // Per-source rate limiting: a crawler is rarely a single address. Production
 // incidents were driven by many hosts inside the same /16 (see
@@ -468,18 +471,30 @@ bool dap_cli_server_backpressure_acquire_method(const char *a_method, bool *a_ou
     return s_backpressure_acquire_class(l_heavy);
 }
 
+bool dap_cli_server_backpressure_acquire_json(json_object *a_jobj, bool *a_out_is_heavy) {
+    // Classification from an already-parsed body (plain RPC service, CLI port): the same
+    // per-subcommand decision as the raw-string wrapper, without a second json_tokener pass.
+    bool l_heavy = false;
+    if (a_jobj) {
+        json_object *l_jobj_method = NULL;
+        if (json_object_object_get_ex(a_jobj, "method", &l_jobj_method))
+            l_heavy = s_cmd_is_heavy_request(json_object_get_string(l_jobj_method), a_jobj);
+    }
+    if (a_out_is_heavy)
+        *a_out_is_heavy = l_heavy;
+    return s_backpressure_acquire_class(l_heavy);
+}
+
 bool dap_cli_server_backpressure_acquire(const char *a_req_str, bool *a_out_is_heavy) {
-    // Convenience wrapper for callers that only have the raw body (signed
-    // /exec_cmd): one parse, then the same per-subcommand classification as
-    // the CLI port, so neither entry point can be used to bypass the other's
-    // heavy class.
+    // Convenience wrapper for callers that only have the raw body (signed /exec_cmd): one parse,
+    // then the same per-subcommand classification as the CLI port, so neither entry point can be
+    // used to bypass the other's heavy class.
     bool l_heavy = false;
     if (a_req_str) {
         enum json_tokener_error jterr;
-        json_object *l_jobj = json_tokener_parse_verbose(a_req_str, &jterr), *l_jobj_method = NULL;
-        if (jterr == json_tokener_success && l_jobj &&
-            json_object_object_get_ex(l_jobj, "method", &l_jobj_method))
-            l_heavy = s_cmd_is_heavy_request(json_object_get_string(l_jobj_method), l_jobj);
+        json_object *l_jobj = json_tokener_parse_verbose(a_req_str, &jterr);
+        if (jterr == json_tokener_success)
+            dap_cli_server_backpressure_acquire_json(l_jobj, &l_heavy);
         json_object_put(l_jobj);
     }
     if (a_out_is_heavy)
@@ -563,6 +578,11 @@ char *dap_cli_server_cmd_list_json(const char **a_allowed_cmds, bool a_all_publi
 
 void dap_cli_server_ready_callback_set(dap_cli_server_ready_callback_t a_callback) {
     atomic_store(&s_cli_ready_callback, (void*)(uintptr_t)a_callback);
+}
+
+void dap_cli_cmd_reply_set_raw_json(char *a_json) {
+    DAP_DEL_Z(s_cli_reply_raw_json);
+    s_cli_reply_raw_json = a_json;
 }
 
 void dap_cli_cmd_reply_set_unavailable(unsigned a_retry_after_sec) {
@@ -1447,6 +1467,7 @@ static void *s_cli_cmd_exec(void *a_arg) {
 static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
 {
     // Any leftover state from a previous command on this executor thread
+    DAP_DEL_Z(s_cli_reply_raw_json);
     s_cli_reply_stream_take();
     // Takes ownership of a_jobj: the request builder frees the tree on every
     // exit path (it was parsed once in s_cli_cmd_schedule and handed over).
@@ -1556,6 +1577,19 @@ static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
     } else
         reply_body = str_reply;
 
+    // Raw-result channel: the command handed over a ready JSON result (a serialized cache hit)
+    // - embed it verbatim instead of serializing a tree that would be byte-identical.
+    if (s_cli_reply_raw_json) {
+        char *l_raw = s_cli_reply_raw_json;
+        s_cli_reply_raw_json = NULL;
+        char *l_env = dap_strdup_printf("{\"type\":%d,\"result\":%s,\"id\":%" DAP_UINT64_FORMAT_U ",\"version\":%d}",
+                                        TYPE_RESPONSE_JSON, l_raw, request->id, request->version);
+        DAP_DELETE(l_raw);
+        json_object_put(l_json_arr_reply);
+        dap_json_rpc_request_free(request);
+        return l_env ? l_env : dap_strdup("Error");
+    }
+
     // Streaming command: the result array was serialized row by row (see
     // dap_cli_cmd_reply_add) - wrap the ready fragment as raw JSON, without
     // ever materializing the row objects as a tree.
@@ -1606,6 +1640,20 @@ static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
     return response_string ? response_string : dap_strdup("Error");
 }
 
+char *dap_cli_cmd_exec_json(json_object *a_jobj)
+{
+    // Executor for entry points that parse the body once (plain RPC service, signed /exec_cmd
+    // after decode): the tree is consumed here. Unrestricted - the caller did its own access
+    // control, like the signed path's signature check.
+    if (!a_jobj)
+        return NULL;
+    char *l_ret = s_cli_cmd_exec_ex(a_jobj, false);
+    // No HTTP status to carry it on this path (the JSON body already tells
+    // the caller); don't let it leak into the next command on this thread.
+    s_cli_reply_unavailable_retry_after = 0;
+    return l_ret;
+}
+
 DAP_INLINE char *dap_cli_cmd_exec(char *a_req_str)
 {
     // External callers (signed /exec_cmd, tests) only have the raw body —
@@ -1616,11 +1664,7 @@ DAP_INLINE char *dap_cli_cmd_exec(char *a_req_str)
     json_object *l_jobj = json_tokener_parse_verbose(a_req_str, &jterr);
     if (jterr != json_tokener_success || !l_jobj)
         return NULL;
-    char *l_ret = s_cli_cmd_exec_ex(l_jobj, false);
-    // No HTTP status to carry it on this path (the JSON body already tells
-    // the caller); don't let it leak into the next command on this thread.
-    s_cli_reply_unavailable_retry_after = 0;
-    return l_ret;
+    return dap_cli_cmd_exec_json(l_jobj);
 }
 
 DAP_INLINE int dap_cli_server_get_version()

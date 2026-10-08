@@ -213,13 +213,46 @@ void dap_http_simple_set_pass_unknown_user_agents(int pass)
     is_unknown_user_agents_pass = pass;
 }
 
+// Per-request state of a keep-alive connection is dropped and the read side is re-armed, so the
+// next request on this socket is served without a new TCP handshake. The request and reply
+// buffers are deliberately kept: they are capped by the proc's reply_size_max / the body cap and
+// are reused by the next request (the response of a crawler's hundredth poll costs no mallocs).
+static void s_http_simple_request_reset(dap_http_simple_t *a_simple)
+{
+    dap_http_client_t *l_http_client = a_simple->http_client;
+    a_simple->request_size = 0;
+    if (a_simple->request_str)
+        a_simple->request_str[0] = '\0';
+    a_simple->reply_size = 0;
+    a_simple->reply_mime[0] = '\0';
+    while (a_simple->ext_headers)
+        dap_http_header_remove(&a_simple->ext_headers, a_simple->ext_headers);
+    if (l_http_client) {
+        while (l_http_client->in_headers)
+            dap_http_header_remove(&l_http_client->in_headers, l_http_client->in_headers);
+        l_http_client->in_content_length = 0;
+        l_http_client->in_content_length_bad = false;
+        l_http_client->out_content_length = 0;
+        l_http_client->out_connection_close = 0;
+        // The next request's start line and Connection header re-classify this (a client may
+        // also send `Connection: close` and be answered with a closing connection).
+        l_http_client->keep_alive = l_http_client->http_11;
+        l_http_client->state_read = DAP_HTTP_CLIENT_STATE_START;
+    }
+    dap_events_socket_set_readable_unsafe(a_simple->esocket, true);
+}
+
 static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
 {
     dap_http_simple_t *l_http_simple = (dap_http_simple_t *)a_arg;
-    if (l_http_simple && l_http_simple->close_after_write) {
+    if (!l_http_simple)
+        return;
+    if (l_http_simple->close_after_write) {
         log_it(L_INFO, "All HTTP data transmitted, closing connection");
         a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return;
     }
+    s_http_simple_request_reset(l_http_simple);
 }
 
 static void s_esocket_worker_write_callback(void *a_arg)
@@ -285,8 +318,13 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
 
     if (l_http_simple->reply_sent >= a_http_client->out_content_length) {
         if (!l_http_simple->close_after_write) {
-          log_it(L_INFO, "All reply data (%zu) queued for sending", a_http_client->out_content_length);
-          l_http_simple->close_after_write = true;
+          // Keep-alive (HTTP/1.1 by default; an explicit `Connection: close` or a proc's
+          // close_after_write still closes): s_http_client_write_finished re-arms the connection
+          // once the socket drains.
+          if (!a_http_client->keep_alive || a_http_client->out_connection_close) {
+            log_it(L_INFO, "All reply data (%zu) queued for sending", a_http_client->out_content_length);
+            l_http_simple->close_after_write = true;
+          }
         }
         return false;
     }
@@ -396,6 +434,27 @@ static bool s_proc_queue_callback(void *a_arg)
 
 static void s_http_client_new(dap_http_client_t *a_http_client, UNUSED_ARG void *arg)
 {
+    // This constructor runs for every request on the connection (dap_http_client_read, START
+    // state). On a kept-alive connection the previous request's simple - with its reusable
+    // request/reply buffers - is still attached to the esocket and was reset after its reply:
+    // keep it instead of orphaning it.
+    dap_http_simple_t *l_http_simple_prev = (dap_http_simple_t *)a_http_client->esocket->callbacks.arg;
+    if (l_http_simple_prev && l_http_simple_prev->http_client == a_http_client) {
+        // The per-request reply cap belongs to the URL's proc, not to the connection (a client
+        // may switch between procs with different caps on one kept-alive connection).
+        l_http_simple_prev->reply_size_max = DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->reply_size_max;
+        return;
+    }
+    if (l_http_simple_prev) {
+        // A different module's proc took the connection: our per-request state would never be
+        // visited again - drop it here instead of leaking it.
+        DAP_DEL_Z(l_http_simple_prev->request);
+        DAP_DEL_Z(l_http_simple_prev->reply_byte);
+        while (l_http_simple_prev->ext_headers)
+            dap_http_header_remove(&l_http_simple_prev->ext_headers, l_http_simple_prev->ext_headers);
+        DAP_DEL_Z(l_http_simple_prev);
+        a_http_client->esocket->callbacks.arg = NULL;
+    }
     a_http_client->_inheritor = DAP_NEW_Z(dap_http_simple_t);
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
     *l_http_simple = (dap_http_simple_t) {
@@ -440,8 +499,16 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
     if( a_http_client->in_content_length ) {
         // dbg if( a_http_client->in_content_length < 3){
         if( a_http_client->in_content_length > 0){
-            l_http_simple->request_size_max = a_http_client->in_content_length + 1;
-            l_http_simple->request = DAP_NEW_Z_SIZE(void, l_http_simple->request_size_max);
+            // Keep-alive: reuse the previous request's buffer when it fits (the body is
+            // NUL-terminated when the proc is queued); otherwise grow once.
+            if (l_http_simple->request_size_max < a_http_client->in_content_length + 1) {
+                DAP_DEL_Z(l_http_simple->request);
+                l_http_simple->request_size_max = a_http_client->in_content_length + 1;
+                l_http_simple->request = DAP_NEW_Z_SIZE(void, l_http_simple->request_size_max);
+            } else {
+                l_http_simple->request_str[0] = '\0';
+            }
+            l_http_simple->request_size = 0;
             if(!l_http_simple->request){
                 l_http_simple->request_size_max = 0;
                 log_it(L_ERROR, "Too big content-length %zu in request", a_http_client->in_content_length);
@@ -496,6 +563,10 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
     *ret = (int) a_http_client->esocket->buf_in_size;
     if( l_http_simple->request_size >= a_http_client->in_content_length ) {
 
+        // The request buffer is reused across keep-alive requests, so terminate explicitly
+        // instead of relying on the fresh-allocation zeroes.
+        if (l_http_simple->request_str)
+            l_http_simple->request_str[l_http_simple->request_size] = '\0';
         // bool isOK=true;
         log_it( L_INFO,"Data for http_simple_request collected" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);

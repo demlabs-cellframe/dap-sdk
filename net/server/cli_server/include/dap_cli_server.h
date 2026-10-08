@@ -193,7 +193,22 @@ void dap_cli_cmd_reply_add(json_object **a_arr_reply, json_object *a_obj);
 // Thread-local to the executing command; ignored outside the CLI port path.
 void dap_cli_cmd_reply_set_unavailable(unsigned a_retry_after_sec);
 
+// A command that already holds its reply as a JSON string (a serialized cache hit) hands it over
+// here instead of building a json tree the executor would immediately serialize back: the string
+// is embedded into the response verbatim and freed. Ownership passes to the executor; any
+// unreleased value is dropped when the next command starts on this thread.
+void dap_cli_cmd_reply_set_raw_json(char *a_json);
+
 //for json
 int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);
+
+// The same executor for a caller that has already parsed the request body: no second
+// json_tokener pass. Takes ownership of a_jobj (frees it on every exit path). Unrestricted -
+// the caller did its own access control (the CLI port's restricted variant is internal).
+char *dap_cli_cmd_exec_json(json_object *a_jobj);
+
+// Backpressure classification from an already-parsed request body: same inflight/heavy decision
+// as the raw-string variant, minus the second json_tokener pass. Does not take ownership.
+bool dap_cli_server_backpressure_acquire_json(json_object *a_jobj, bool *a_out_is_heavy);
 int dap_cli_server_get_version();
