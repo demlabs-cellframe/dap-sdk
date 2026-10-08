@@ -471,9 +471,9 @@ bool dap_cli_server_backpressure_acquire_method(const char *a_method, bool *a_ou
     return s_backpressure_acquire_class(l_heavy);
 }
 
-bool dap_cli_server_backpressure_acquire_json(json_object *a_jobj, bool *a_out_is_heavy) {
-    // Classification from an already-parsed body (plain RPC service, CLI port): the same
-    // per-subcommand decision as the raw-string wrapper, without a second json_tokener pass.
+// Classify and acquire one slot for a request whose body is already parsed. Shared by both
+// public wrappers - this is the only place that touches the counters here.
+static bool s_backpressure_acquire_json(json_object *a_jobj, bool *a_out_is_heavy) {
     bool l_heavy = false;
     if (a_jobj) {
         json_object *l_jobj_method = NULL;
@@ -485,21 +485,29 @@ bool dap_cli_server_backpressure_acquire_json(json_object *a_jobj, bool *a_out_i
     return s_backpressure_acquire_class(l_heavy);
 }
 
+bool dap_cli_server_backpressure_acquire_json(json_object *a_jobj, bool *a_out_is_heavy) {
+    // Classification + slot acquisition from an already-parsed body (plain RPC service, CLI
+    // port): the same decision as the raw-string wrapper, without a second json_tokener pass.
+    return s_backpressure_acquire_json(a_jobj, a_out_is_heavy);
+}
+
 bool dap_cli_server_backpressure_acquire(const char *a_req_str, bool *a_out_is_heavy) {
     // Convenience wrapper for callers that only have the raw body (signed /exec_cmd): one parse,
     // then the same per-subcommand classification as the CLI port, so neither entry point can be
-    // used to bypass the other's heavy class.
-    bool l_heavy = false;
+    // used to bypass the other's heavy class. The slot is acquired exactly once - inside the
+    // classify helper.
+    bool l_ok = true, l_heavy = false;
     if (a_req_str) {
         enum json_tokener_error jterr;
         json_object *l_jobj = json_tokener_parse_verbose(a_req_str, &jterr);
-        if (jterr == json_tokener_success)
-            dap_cli_server_backpressure_acquire_json(l_jobj, &l_heavy);
+        if (jterr == json_tokener_success && l_jobj)
+            l_ok = s_backpressure_acquire_json(l_jobj, &l_heavy);
         json_object_put(l_jobj);
-    }
+    } else
+        l_ok = s_backpressure_acquire_class(false);
     if (a_out_is_heavy)
         *a_out_is_heavy = l_heavy;
-    return s_backpressure_acquire_class(l_heavy);
+    return l_ok;
 }
 
 // Rate-limit check for an arbitrary connection source, exported so the signed
