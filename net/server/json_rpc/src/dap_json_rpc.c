@@ -91,6 +91,7 @@ void dap_json_rpc_deinit()
 /* *** Standalone plain-HTTP JSON-RPC service ([rpc-server]) *** */
 
 static dap_server_t *s_rpc_service_server = NULL;
+static char *s_rpc_service_index_cache = NULL;          /* GET / answer, built once */
 static char **s_rpc_allowed_cmds_owned = NULL;          /* ownership of the strings below */
 static const char **s_rpc_allowed_cmds = NULL;          /* NULL-terminated public command list */
 static bool s_rpc_service_restricted = true;            /* allowed_cmd_control */
@@ -140,16 +141,20 @@ void dap_json_rpc_http_plain_proc(dap_http_simple_t *a_http_simple, void *a_arg)
     }
 
     // No body: the command index (GET) - nothing to execute, so no backpressure slot is taken.
+    // The command set is registered at startup and static afterwards: build the index once and
+    // reuse it for the lifetime of the service.
     if (!a_http_simple->request_size || !a_http_simple->request_str) {
-        bool l_all_public = !s_rpc_service_restricted;
-        char *l_index = dap_cli_server_cmd_list_json(l_all_public ? NULL : s_rpc_allowed_cmds, l_all_public);
-        if (!l_index) {
+        if (!s_rpc_service_index_cache) {
+            bool l_all_public = !s_rpc_service_restricted;
+            s_rpc_service_index_cache =
+                dap_cli_server_cmd_list_json(l_all_public ? NULL : s_rpc_allowed_cmds, l_all_public);
+        }
+        if (!s_rpc_service_index_cache) {
             *l_return_code = Http_Status_InternalServerError;
             return;
         }
         *l_return_code = Http_Status_OK;
-        s_rpc_service_reply_str(a_http_simple, l_index);
-        DAP_DELETE(l_index);
+        s_rpc_service_reply_str(a_http_simple, s_rpc_service_index_cache);
         return;
     }
     if (a_http_simple->request_size > s_rpc_max_request_size) {
@@ -307,6 +312,7 @@ void dap_json_rpc_service_deinit(void)
         dap_server_delete(s_rpc_service_server);
         s_rpc_service_server = NULL;
     }
+    DAP_DEL_Z(s_rpc_service_index_cache);
     s_rpc_service_allowed_cmds_free();
 }
 

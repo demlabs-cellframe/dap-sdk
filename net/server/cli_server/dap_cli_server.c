@@ -1510,7 +1510,9 @@ static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
     } else {
         if(l_cmd->overrides.log_cmd_call)
             l_cmd->overrides.log_cmd_call(str_cmd);
-        else {
+        else if (s_cli_debug_more_cfg) {
+            // The masked copy exists only for the debug line above: building it for every
+            // request (strdup + scan) was pure overhead when debug logging was off.
             char *l_str_cmd = dap_strdup(str_cmd);
             char *l_ptr = strstr(l_str_cmd, "-password");
             if (l_ptr) {
@@ -1525,8 +1527,7 @@ static char *s_cli_cmd_exec_ex(json_object *a_jobj, bool a_restricted)
                     l_ptr +=1;
                 }
             }
-            debug_if( s_cli_debug_more_cfg,
-                      L_DEBUG, "execute command=%s", l_str_cmd );
+            log_it( L_DEBUG, "execute command=%s", l_str_cmd );
             DAP_DELETE(l_str_cmd);
         }
 
