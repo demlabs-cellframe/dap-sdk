@@ -95,16 +95,21 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
     // signed but heavy call (e.g. srv_dex history) could still starve the
     // shared proc-thread pool that also carries GlobalDB I/O. Route through
     // the same acquire/release gate as dap_cli_server.c.
+    // The payload is parsed once: the same tree drives the heavy classification and the
+    // execution (the executor consumes it).
+    enum json_tokener_error l_jterr;
+    json_object *l_req = json_tokener_parse_verbose(l_data_str, &l_jterr);
     bool l_is_heavy = false;
     char *l_response;
-    if (!dap_cli_server_backpressure_acquire(l_data_str, &l_is_heavy)) {
+    if (l_jterr != json_tokener_success || !l_req ||
+            !dap_cli_server_backpressure_acquire_json(l_req, &l_is_heavy)) {
         // dap_json_rpc_response_free() frees result_string, so the text must be heap-owned
         dap_json_rpc_response_t *l_busy_res = dap_json_rpc_response_create(dap_strdup("Node is busy, try again later"),
                                                                            TYPE_RESPONSE_STRING, 0, 0);
         l_response = dap_json_rpc_response_to_string(l_busy_res);
         dap_json_rpc_response_free(l_busy_res);
     } else {
-        l_response = dap_cli_cmd_exec(l_data_str);
+        l_response = dap_cli_cmd_exec_json(l_req);   // consumes l_req
         dap_cli_server_backpressure_release(l_is_heavy);
     }
     dap_json_rpc_http_request_free(l_http_request);

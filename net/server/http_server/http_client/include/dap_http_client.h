@@ -46,6 +46,7 @@ typedef struct dap_http_client
     uint32_t action_len, url_path_len, in_query_string_len;
 
     int     keep_alive;                                                     /* Connection: Keep-Alive */
+    int     http_11;                                                        /* Request line said HTTP/1.1: persistent connection by default */
 
     dap_http_client_state_t state_read;
 

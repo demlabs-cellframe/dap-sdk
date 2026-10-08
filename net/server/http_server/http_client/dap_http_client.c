@@ -286,6 +286,11 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
         return  log_it(L_WARNING, "This ('%.*s') is not HTTP/1.x like start-line, so ...",
                        (int)HTTP$SZ_HTLINE, l_cp_start), -EINVAL;
 
+    /* RFC 7230 6.3: HTTP/1.1 connections are persistent by default; a Connection header parsed
+     * later may still turn keep_alive off. HTTP/1.0 needs an explicit Connection: Keep-Alive. */
+    a_http_client->http_11 = (l_cp_start[ sizeof(ht_ver) - 1 ] == '1');
+    a_http_client->keep_alive = a_http_client->http_11;
+
     return  0;  /* SUCCESS */
 }
 
