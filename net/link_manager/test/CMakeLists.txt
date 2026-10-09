@@ -17,6 +17,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
     ${CMAKE_SOURCE_DIR}/io/include
     ${CMAKE_SOURCE_DIR}/core/include
+    ${CMAKE_SOURCE_DIR}/net/stream/ch/include
+    ${CMAKE_SOURCE_DIR}/net/stream/stream/include
 )
 
 if(NOT ANDROID)
