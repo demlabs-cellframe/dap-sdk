@@ -24,6 +24,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/net/server/http_server
     ${CMAKE_SOURCE_DIR}/net/common/http/include
     ${CMAKE_SOURCE_DIR}/net/common/server/include
+    ${CMAKE_SOURCE_DIR}/net/stream/session/include
+    ${CMAKE_SOURCE_DIR}/io/src
+    ${CMAKE_SOURCE_DIR}/net/client/include
+    ${CMAKE_SOURCE_DIR}/global-db/include
+    ${CMAKE_SOURCE_DIR}/3rdparty/uthash/src
 )
 
 if(NOT ANDROID)
