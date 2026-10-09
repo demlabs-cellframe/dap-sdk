@@ -29,6 +29,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/net/client/include
     ${CMAKE_SOURCE_DIR}/global-db/include
     ${CMAKE_SOURCE_DIR}/3rdparty/uthash/src
+    ${CMAKE_SOURCE_DIR}/crypto/include
+    ${CMAKE_SOURCE_DIR}/net/server/enc_server/include
+    ${CMAKE_SOURCE_DIR}/net/link_manager/include
 )
 
 if(NOT ANDROID)
