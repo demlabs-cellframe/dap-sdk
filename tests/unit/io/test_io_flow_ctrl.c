@@ -80,8 +80,8 @@ static bool s_wait_for_retransmits(dap_io_flow_ctrl_t *a_ctrl, uint64_t a_min_re
     uint64_t l_timeout_ns = (uint64_t)a_timeout_ms * 1000000ULL;
     
     while ((dap_nanotime_now() - l_start) < l_timeout_ns) {
-        uint64_t l_sent, l_retrans, (unsigned long)l_recv, (unsigned long)l_ooo, (unsigned long)l_dup, l_lost;
-        dap_io_flow_ctrl_get_stats(a_ctrl, &l_sent, &l_retrans, &(unsigned long)l_recv, &(unsigned long)l_ooo, &(unsigned long)l_dup, &(unsigned long)l_lost);
+        uint64_t l_sent, l_retrans, l_recv, l_ooo, l_dup, l_lost;
+        dap_io_flow_ctrl_get_stats(a_ctrl, &l_sent, &l_retrans, &l_recv, &l_ooo, &l_dup, &l_lost);
         if (l_retrans >= a_min_retrans) {
             return true;
         }
@@ -408,8 +408,8 @@ static void test_flow_ctrl_basic(void)
     s_process_pending(l_receiver_ctx, l_sender);
     
     // Verify stats
-    uint64_t l_sent, l_retrans, (unsigned long)l_recv, (unsigned long)l_ooo, (unsigned long)l_dup, l_lost;
-    dap_io_flow_ctrl_get_stats(l_sender, &l_sent, &l_retrans, &(unsigned long)l_recv, &(unsigned long)l_ooo, &(unsigned long)l_dup, &(unsigned long)l_lost);
+    uint64_t l_sent, l_retrans, l_recv, l_ooo, l_dup, l_lost;
+    dap_io_flow_ctrl_get_stats(l_sender, &l_sent, &l_retrans, &l_recv, &l_ooo, &l_dup, &l_lost);
     dap_assert(l_sent == 5, "Sender sent 5");
     dap_assert(l_lost == 0, "No packets lost");
     
@@ -551,8 +551,8 @@ static void test_flow_ctrl_retransmit_regression(void)
     bool l_timer_fired = s_wait_for_retransmits(l_sender, 1, l_config.retransmit_timeout_ms * 5);
     
     // Check retransmissions via flow_ctrl stats
-    uint64_t (unsigned long)l_sent_stats, (unsigned long)l_retrans_stats, (unsigned long)l_recv, (unsigned long)l_ooo, (unsigned long)l_dup, l_lost;
-    dap_io_flow_ctrl_get_stats(l_sender, &(unsigned long)l_sent_stats, &(unsigned long)l_retrans_stats, &(unsigned long)l_recv, &(unsigned long)l_ooo, &(unsigned long)l_dup, &(unsigned long)l_lost);
+    uint64_t l_sent_stats, l_retrans_stats, l_recv, l_ooo, l_dup, l_lost;
+    dap_io_flow_ctrl_get_stats(l_sender, &l_sent_stats, &l_retrans_stats, &l_recv, &l_ooo, &l_dup, &l_lost);
     
     uint64_t l_packets_after_wait = atomic_load(&l_sender_ctx->packets_sent);
     dap_test_msg("After wait: packets_sent=%lu (was 20), retrans_stats=%lu, timer_fired=%d", 
@@ -572,9 +572,9 @@ static void test_flow_ctrl_retransmit_regression(void)
     
     // Step 5: Record current state (via flow_ctrl stats)
     uint64_t l_retrans_after_ack;
-    dap_io_flow_ctrl_get_stats(l_sender, &(unsigned long)l_sent_stats, &l_retrans_after_ack, &(unsigned long)l_recv, &(unsigned long)l_ooo, &(unsigned long)l_dup, &(unsigned long)l_lost);
+    dap_io_flow_ctrl_get_stats(l_sender, &l_sent_stats, &l_retrans_after_ack, &l_recv, &l_ooo, &l_dup, &l_lost);
     uint64_t l_packets_after_ack = atomic_load(&l_sender_ctx->packets_sent);
-    dap_test_msg("After ACK: packets_sent=%lu, retrans_stats=%lu", l_packets_after_ack, l_retrans_after_ack);
+    dap_test_msg("After ACK: packets_sent=%lu, retrans_stats=%lu", (unsigned long)l_packets_after_ack, (unsigned long)l_retrans_after_ack);
     
     // Step 6: Wait for multiple timer cycles AFTER ACK (polling, checking no new retrans)
     dap_test_msg("Step 6: Waiting for timer cycles after ACK...");
@@ -587,14 +587,14 @@ static void test_flow_ctrl_retransmit_regression(void)
     
     // Step 7: Check for new retransmissions (SHOULD BE ZERO!)
     uint64_t l_retrans_final;
-    dap_io_flow_ctrl_get_stats(l_sender, &(unsigned long)l_sent_stats, &l_retrans_final, &(unsigned long)l_recv, &(unsigned long)l_ooo, &(unsigned long)l_dup, &(unsigned long)l_lost);
+    dap_io_flow_ctrl_get_stats(l_sender, &l_sent_stats, &l_retrans_final, &l_recv, &l_ooo, &l_dup, &l_lost);
     uint64_t l_packets_final = atomic_load(&l_sender_ctx->packets_sent);
     
     uint64_t l_new_retrans = l_retrans_final - l_retrans_after_ack;
     uint64_t l_new_packets = l_packets_final - l_packets_after_ack;
     
     dap_test_msg("Final: retrans_stats=%lu (was %lu), packets_sent=%lu (was %lu)", 
-                 l_retrans_final, l_retrans_after_ack, l_packets_final, l_packets_after_ack);
+                 (unsigned long)l_retrans_final, (unsigned long)l_retrans_after_ack, (unsigned long)l_packets_final, (unsigned long)l_packets_after_ack);
     dap_test_msg("NEW after ACK: retrans=%lu, packets=%lu (both expected 0)", 
                  l_new_retrans, l_new_packets);
     

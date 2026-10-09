@@ -147,7 +147,7 @@ static void test_application_basic_transfer(void)
     dap_assert(l_ctx->packets_received == l_num_sizes, "Received packet count should match");
     dap_assert(l_ctx->errors == 0, "No errors should occur");
     
-    dap_test_msg("Total transferred: %lu bytes in %zu packets", 
+    dap_test_msg("Total transferred: %lu bytes in %zu packets",
                  (unsigned long)l_total, l_num_sizes);
     
     dap_io_flow_test_context_delete(l_ctx);
