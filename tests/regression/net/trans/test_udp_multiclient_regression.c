@@ -116,7 +116,7 @@ static int s_init_all(void)
     dap_enc_init();
     
     log_it(L_INFO, "Init: cert_init...");
-    ret = dap_cert_init(NULL);
+    ret = dap_cert_init();
     if (ret != 0) {
         log_it(L_CRITICAL, "Cert init failed: %d", ret);
         return -3;
@@ -150,7 +150,7 @@ static int s_init_all(void)
     }
     
     log_it(L_INFO, "Init: global_db_init...");
-    ret = dap_global_db_init(NULL);
+    ret = dap_global_db_init();
     if (ret != 0) {
         log_it(L_WARNING, "Global DB init: %d (may be OK)", ret);
     }

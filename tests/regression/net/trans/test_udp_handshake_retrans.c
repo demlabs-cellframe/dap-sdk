@@ -234,7 +234,7 @@ static int s_init_sdk(void)
     
     dap_enc_init();
     
-    ret = dap_cert_init(NULL);
+    ret = dap_cert_init();
     if (ret != 0) {
         log_it(L_ERROR, "Cert init failed: %d", ret);
         return -3;
@@ -259,7 +259,7 @@ static int s_init_sdk(void)
     }
     
     dap_link_manager_init(NULL);
-    dap_global_db_init(NULL);
+    dap_global_db_init();
     dap_client_init();
     dap_module_init_all();
     
