@@ -57,6 +57,13 @@ void dap_http_header_remove(dap_http_header_t **a_top, dap_http_header_t *a_hdr)
 dap_http_header_t *dap_http_headers_dup(dap_http_header_t *a_top);
 
 // Simple universal header parser
+/**
+ * @brief Parse an HTTP header block line-by-line into the client's header set.
+ * Strict variant: rejects malformed Content-Length etc. (see dap_http_header.c).
+ */
+struct dap_http_client; // the full type lives in the http client header (which includes this one)
+int dap_http_header_parse(struct dap_http_client *cl_ht, const char *ht_line, size_t ht_line_len);
+
 int dap_http_header_parse_line(const char *a_line, size_t a_line_len, 
                                char *a_name_out, size_t a_name_max,
                                char *a_value_out, size_t a_value_max);
