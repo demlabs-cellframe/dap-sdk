@@ -453,10 +453,12 @@ static void test_05_server_invalid_type(void)
 {
     TEST_INFO("Testing UDP trans server with invalid trans type");
     
-    // Try to create server with invalid type
-    dap_net_trans_server_t *l_server = 
-        dap_net_trans_server_new(DAP_NET_TRANS_TLS_DIRECT, "test_server");
-    
+    // Try to create server with an unregistered type. TLS_DIRECT (like every
+    // built-in type) gets registered by dap_net_trans_init() in the full-sdk
+    // build, so use a value beyond DAP_NET_TRANS_MAX - no ops can exist there.
+    dap_net_trans_server_t *l_server =
+        dap_net_trans_server_new((dap_net_trans_type_t)(DAP_NET_TRANS_MAX + 1), "test_server");
+
     TEST_ASSERT_NULL(l_server, "Server should not be created for unregistered trans type");
     
     TEST_SUCCESS("Invalid trans type handling verified");
