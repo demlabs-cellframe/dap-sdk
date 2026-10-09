@@ -242,6 +242,64 @@ void dap_json_rpc_request_free(dap_json_rpc_request_t *request)
     DAP_DELETE(request);
 }
 
+dap_json_rpc_request_t *dap_json_rpc_request_from_json_object(json_object *a_jobj_owned, int a_version_default)
+{
+    if (!a_jobj_owned)
+        return NULL;
+    dap_json_rpc_request_t *request = DAP_NEW_Z(dap_json_rpc_request_t);
+    if (!request) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        json_object_put(a_jobj_owned);   /* contract: the tree is consumed on every path */
+        return NULL;
+    }
+    json_object *jobj_id = NULL,
+                *jobj_version = NULL,
+                *jobj_method = NULL,
+                *jobj_params = NULL,
+                *jobj_subcmd = NULL,
+                *l_arguments_obj = NULL;
+    do {
+        if (json_object_object_get_ex(a_jobj_owned, "id", &jobj_id))
+            request->id = json_object_get_int64(jobj_id);
+        else {
+            log_it(L_ERROR, "Error parse JSON string, can't find request id");
+            break;
+        }
+        if (json_object_object_get_ex(a_jobj_owned, "version", &jobj_version))
+            request->version = json_object_get_int64(jobj_version);
+        else {
+            log_it(L_DEBUG, "Can't find request version, apply version %d", a_version_default);
+            request->version = a_version_default;
+        }
+
+        if (json_object_object_get_ex(a_jobj_owned, "method", &jobj_method))
+            request->method = dap_strdup(json_object_get_string(jobj_method));
+        else {
+            log_it(L_ERROR, "Error parse JSON string, can't find method for request with id: %" DAP_UINT64_FORMAT_U, request->id);
+            break;
+        }
+
+        json_object_object_get_ex(a_jobj_owned, "params", &jobj_params);
+        json_object_object_get_ex(a_jobj_owned, "subcommand", &jobj_subcmd);
+        json_object_object_get_ex(a_jobj_owned, "arguments", &l_arguments_obj);
+
+        if (jobj_params)
+            request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
+        else
+            request->params = dap_json_rpc_params_create_from_subcmd_and_args(
+                jobj_subcmd, l_arguments_obj, request->method);
+
+        if (!request->params)
+            break;   /* the shared epilogue frees method/request; params is NULL here */
+        json_object_put(a_jobj_owned);
+        return request;
+    } while (0);
+    json_object_put(a_jobj_owned);
+    dap_json_rpc_params_remove_all(request->params);
+    DAP_DEL_MULTY(request->method, request);
+    return NULL;
+}
+
 dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a_version_default)
 {
     if (!a_data)

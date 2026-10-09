@@ -5,6 +5,7 @@
 #include "dap_pkey.h"
 #include "dap_config.h"
 #include "dap_enc_http.h"
+#include "dap_cli_server.h"
 #include "dap_enc_msrln.h"
 #include "dap_stream_session.h"
 #include "dap_stream.h"

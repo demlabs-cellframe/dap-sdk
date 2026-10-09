@@ -85,6 +85,19 @@ char * dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_reques
 void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request);
 char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size, const char *a_cert_path);
 
+/**
+ * Build a request from an already parsed JSON object.
+ *
+ * Takes ownership of @a a_jobj_owned: the object is freed on every return
+ * path. Used by the CLI dispatcher, which parses the request body once on the
+ * reactor thread (method extraction / access checks) and hands the same tree
+ * to the command executor thread instead of re-parsing the body per stage.
+ *
+ * @return A pointer to a dap_json_rpc_request_t structure,
+ *         or NULL on failure
+ */
+dap_json_rpc_request_t *dap_json_rpc_request_from_json_object(json_object *a_jobj_owned, int a_version_default);
+
 char * dap_json_rpc_enc_request(dap_client_trans_ctx_t* a_client_ctx, char * a_request_data_str, size_t a_request_data_size,
                                 char ** a_path, size_t * a_enc_request_size, char ** a_custom_header);
 
