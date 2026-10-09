@@ -32,6 +32,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/crypto/include
     ${CMAKE_SOURCE_DIR}/net/server/enc_server/include
     ${CMAKE_SOURCE_DIR}/net/link_manager/include
+    ${CMAKE_SOURCE_DIR}/net/trans/include
+    ${CMAKE_SOURCE_DIR}/net/trans/http/include
+    ${CMAKE_SOURCE_DIR}/net/trans/udp/include
+    ${CMAKE_SOURCE_DIR}/net/trans/websocket/include
+    ${CMAKE_SOURCE_DIR}/net/trans/dns/include
+    ${CMAKE_SOURCE_DIR}/net/trans/tls/include
+    ${CMAKE_SOURCE_DIR}/net/common/server/include
 )
 
 if(NOT ANDROID)
