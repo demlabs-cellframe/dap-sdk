@@ -15,6 +15,8 @@ dap_test_link_libraries(${PROJECT_NAME})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    ${CMAKE_SOURCE_DIR}/io/include
+    ${CMAKE_SOURCE_DIR}/core/include
 )
 
 if(NOT ANDROID)
