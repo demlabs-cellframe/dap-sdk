@@ -79,6 +79,7 @@ add_subdirectory(io)
 add_subdirectory(net/client)
 add_subdirectory(net/stream)
 add_subdirectory(net/server)
+add_subdirectory(link_manager)
 add_subdirectory(net/trans)
 
 # ============================================================================

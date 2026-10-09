@@ -36,10 +36,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 # All dependency include directories (including dap_core with 3rdparty/uthash/src) are automatically propagated via dap_link_libraries
 
-if(BUILD_DAP_SDK_TESTS)
-    enable_testing()
-    add_subdirectory(test)
-endif()
+# The test target is registered from the tests/ subtree instead: at this
+# point the ${MODULE}_static libraries the test helper links do not exist
+# yet (they are created in the root CMakeLists after all modules register),
+# so linking here silently produced an executable with no SDK symbols.
+
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_LINK_MANAGER_HEADERS}")
