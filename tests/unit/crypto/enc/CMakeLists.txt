@@ -19,6 +19,12 @@ if(UNIX)
     target_link_libraries(${PROJECT_NAME} PRIVATE m pthread)
 endif()
 
+# Newer Apple clang rejects folded VLA extensions under -Werror in this
+# 5.8-native test; keep the warning but non-fatal.
+if(APPLE)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-error=vla-cast-extension)
+endif()
+
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures
