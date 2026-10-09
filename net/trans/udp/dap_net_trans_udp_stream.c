@@ -68,6 +68,9 @@
 #include "dap_enc_ks.h"
 #include "dap_enc_base64.h"
 #include "dap_string.h"
+#include "dap_client.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_net_trans_ctx.h"
 #include <json-c/json.h>  // For JSON parsing
 
@@ -414,14 +417,16 @@ static int s_client_flow_ctrl_packet_send_cb(
     (void)a_flow;
     dap_net_trans_udp_ctx_t *l_udp_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
     if (!l_udp_ctx || !l_udp_ctx->stream) {
-        log_it(L_ERROR, "CLIENT FC send: invalid UDP context");
+        /* Hot path during teardown / zombie FC — silence unless debug_more */
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: invalid UDP context");
         return -1;
     }
     
     // Get trans_ctx and esocket from stream
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)l_udp_ctx->stream->trans_ctx;
     if (!l_trans_ctx || !l_udp_ctx->stream->esocket) {
-        log_it(L_ERROR, "CLIENT FC send: no trans_ctx or esocket");
+        /* Hot path during teardown / zombie FC — silence unless debug_more */
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: no trans_ctx or esocket");
         return -1;
     }
     
@@ -611,9 +616,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             // CLOSE
             log_it(L_INFO, "CLIENT FC deliver: CLOSE from server");
             l_stream->is_active = false;
-            if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->close) {
-                l_stream->trans->ops->close(l_stream);
-            }
+            dap_io_flow_ctrl_fail(l_ctx->flow_ctrl);
             break;
         }
         
@@ -659,6 +662,21 @@ static void s_client_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void 
  * @param a_udp_ctx UDP context
  * @return 0 on success (or already created), negative on error
  */
+static void s_client_flow_ctrl_failed(dap_io_flow_t *a_flow, void *a_arg)
+{
+    dap_net_trans_udp_ctx_t *l_udp = a_arg;
+    dap_stream_t *l_stream = l_udp ? l_udp->stream : NULL;
+    if (!l_stream || !l_stream->trans_ctx)
+        return;
+    dap_client_trans_ctx_t *l_client = l_stream->trans_ctx->_inheritor;
+    if (l_client) {
+        l_stream->is_active = false;
+        /* Preserve ownership for the FSM's ordinary cleanup/recovery. */
+        dap_client_fsm_notify(l_client->fsm_uuid, l_client->fsm_thread_idx,
+                             STAGE_STATUS_ERROR, ERROR_NETWORK_CONNECTION_TIMEOUT);
+    }
+}
+
 static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
 {
     if (!a_udp_ctx) {
@@ -707,6 +725,7 @@ static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
         .packet_free = s_client_flow_ctrl_packet_free_cb,
         .keepalive_timeout = s_client_flow_ctrl_keepalive_timeout_cb,
         .arg = a_udp_ctx,
+        .transport_failed = s_client_flow_ctrl_failed,
     };
     
     dap_io_flow_ctrl_flags_t l_fc_flags = DAP_IO_FLOW_CTRL_RETRANSMIT | 
@@ -889,6 +908,10 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
              a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
 
+    a_es->last_time_active = time(NULL);
+    if (a_es->_inheritor)
+        dap_client_trans_ctx_touch((dap_client_t *)a_es->_inheritor);
+
     // Get trans_ctx from callbacks.arg (NOT _inheritor!)
     // _inheritor may point to client (dap_client_t), not trans_ctx!
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->callbacks.arg;
@@ -973,6 +996,12 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
 /**
  * @brief Register UDP trans adapter
  */
+int dap_net_trans_udp_stream_register_client(void)
+{
+    return dap_net_trans_register("UDP", DAP_NET_TRANS_UDP_BASIC,
+                                 &s_udp_ops, DAP_NET_TRANS_SOCKET_UDP, NULL);
+}
+
 int dap_net_trans_udp_stream_register(void)
 {
     // Initialize UDP server module first (registers server operations)
@@ -1313,17 +1342,23 @@ static int s_udp_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
         return -1;
     }
 
-    // Parse address and store in remote_addr
-    struct sockaddr_in *l_addr_in = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
-    l_addr_in->sin_family = AF_INET;
-    l_addr_in->sin_port = htons(a_port);
-    
-    if (inet_pton(AF_INET, a_host, &l_addr_in->sin_addr) != 1) {
-        log_it(L_ERROR, "Invalid IPv4 address: %s", a_host);
+    // Resolve with the system resolver so an IPv4 literal on an IPv6-only
+    // (NAT64) network yields the synthesized AF_INET6 address; the family must
+    // match the socket created in stage_prepare. IPv4 results are unchanged.
+    struct sockaddr_storage l_resolved;
+    int l_family = AF_UNSPEC;
+    int l_len = dap_net_resolve_host(a_host, dap_itoa(a_port), false, &l_resolved, &l_family);
+    if (l_len <= 0 || (l_family != AF_INET && l_family != AF_INET6)) {
+        log_it(L_ERROR, "Invalid UDP remote address: %s", a_host);
         return -1;
     }
-
-    l_udp_ctx->remote_addr_len = sizeof(struct sockaddr_in);
+    if (l_udp_ctx->remote_addr_len && l_udp_ctx->remote_addr.ss_family != l_family) {
+        log_it(L_ERROR, "UDP remote %s family %d differs from socket family %d",
+               a_host, l_family, l_udp_ctx->remote_addr.ss_family);
+        return -1;
+    }
+    memcpy(&l_udp_ctx->remote_addr, &l_resolved, (size_t)l_len);
+    l_udp_ctx->remote_addr_len = (socklen_t)l_len;
     
     debug_if(s_debug_more, L_DEBUG, "UDP trans connected to %s:%u, calling callback %p", 
              a_host, a_port, a_callback);
@@ -2132,11 +2167,24 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             // Process handshake response (Kyber shared secret derivation)
             int l_result = s_udp_handshake_response(a_stream, l_handshake, l_handshake_size);
             DAP_DELETE(l_handshake);
-            
+
+            /* UDP keeps session->key NULL until SESSION_CREATE installs the
+             * real stream key. The generic handshake_cb wrapper still requires
+             * stream_key or session->key for a_error==0 with empty body — same
+             * pattern as DNS. Promote handshake_key so FSM can proceed. */
+            if (l_result == 0 && l_ctx && l_udp_ctx->handshake_key) {
+                if (l_ctx->stream_key)
+                    dap_enc_key_delete(l_ctx->stream_key);
+                l_ctx->stream_key = dap_enc_key_dup(l_udp_ctx->handshake_key);
+                log_it(L_NOTICE, "CLIENT: UDP handshake OK, stream_key set (session_id=0x%" PRIx64 ")",
+                       l_udp_ctx->session_id);
+            }
+
             // Call handshake callback
             if (l_ctx && l_ctx->handshake_cb) {
                 debug_if(s_debug_more, L_DEBUG,
-                         "CLIENT: calling handshake_cb with result=%d", l_result);
+                         "CLIENT: calling handshake_cb with result=%d (stream_key=%p)",
+                         l_result, l_ctx ? (void *)l_ctx->stream_key : NULL);
                 l_ctx->handshake_cb(a_stream, NULL, 0, l_result);
             }
             
@@ -2405,7 +2453,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
         debug_if(s_debug_more, L_DEBUG, "UDP write: remote_addr=%s:%u, addr_len=%u",
                l_addr_str, ntohs(l_sin->sin_port), l_udp_ctx->remote_addr_len);
-    } else {
+    } else if (l_udp_ctx->remote_addr.ss_family != AF_INET6) {
         log_it(L_WARNING, "UDP write: remote_addr has INVALID family: %d",
                l_udp_ctx->remote_addr.ss_family);
     }
@@ -2449,9 +2497,16 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
             return -1;
         }
 
-        debug_if(s_debug_more, L_DEBUG,
-                 "Obfuscated HANDSHAKE sent: %zu → %zu bytes",
-                 a_size, l_obfuscated_size);
+        if (l_udp_ctx->remote_addr.ss_family == AF_INET) {
+            struct sockaddr_in *l_sin = (struct sockaddr_in *)&l_udp_ctx->remote_addr;
+            char l_ip[INET_ADDRSTRLEN] = {0};
+            inet_ntop(AF_INET, &l_sin->sin_addr, l_ip, sizeof(l_ip));
+            log_it(L_NOTICE, "Obfuscated HANDSHAKE sent: %zu → %zu bytes to %s:%u (sent=%zd)",
+                   a_size, l_obfuscated_size, l_ip, ntohs(l_sin->sin_port), l_sent);
+        } else {
+            log_it(L_NOTICE, "Obfuscated HANDSHAKE sent: %zu → %zu bytes (sent=%zd)",
+                   a_size, l_obfuscated_size, l_sent);
+        }
         return l_sent;
     }
     
@@ -2778,9 +2833,15 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_DGRAM, IPPROTO_UDP, a_params->callbacks);
+    // Resolve first: on IPv6-only (NAT64) networks the address is AF_INET6 and
+    // the socket must be created with the same family.
+    bool l_resolve_failed = false;
+    dap_events_socket_t *l_es = dap_events_socket_create_resolved(a_params->host, a_params->port,
+                                                                  SOCK_DGRAM, IPPROTO_UDP,
+                                                                  a_params->callbacks, &l_resolve_failed);
     if (!l_es) {
-        log_it(L_ERROR, "Failed to create UDP socket");
+        log_it(L_ERROR, "Failed to %s for UDP trans: %s:%u",
+               l_resolve_failed ? "resolve address" : "create UDP socket", a_params->host, a_params->port);
         a_result->error_code = -1;
         return -1;
     }
@@ -2792,14 +2853,6 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     l_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
     
     debug_if(s_debug_more, L_DEBUG, "Created UDP socket %p", l_es);
-    
-    // Resolve host and set address using centralized function
-    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
-        log_it(L_ERROR, "Failed to resolve address for UDP trans: %s:%u", a_params->host, a_params->port);
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
 
     debug_if(s_debug_more, L_DEBUG, "Resolved UDP address: family=%d, size=%zu", l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
 
@@ -2811,13 +2864,25 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     // CRITICAL: Bind UDP socket to get a local port BEFORE first send!
     // Without bind(), OS may not assign a port, breaking server responses!
     // MUST bind BEFORE dap_worker_add_events_socket so reactor monitors correct socket state!
-    struct sockaddr_in l_bind_addr;
+    // Wildcard bind address must match the socket family (IPv4 unchanged).
+    struct sockaddr_storage l_bind_addr;
+    socklen_t l_bind_len;
     memset(&l_bind_addr, 0, sizeof(l_bind_addr));
-    l_bind_addr.sin_family = AF_INET;
-    l_bind_addr.sin_addr.s_addr = INADDR_ANY;  // Bind to all interfaces
-    l_bind_addr.sin_port = 0;  // Let OS choose free port
+    if (l_es->addr_storage.ss_family == AF_INET6) {
+        struct sockaddr_in6 *l_b6 = (struct sockaddr_in6 *)&l_bind_addr;
+        l_b6->sin6_family = AF_INET6;
+        l_b6->sin6_addr = in6addr_any;
+        l_b6->sin6_port = 0;
+        l_bind_len = sizeof(struct sockaddr_in6);
+    } else {
+        struct sockaddr_in *l_b4 = (struct sockaddr_in *)&l_bind_addr;
+        l_b4->sin_family = AF_INET;
+        l_b4->sin_addr.s_addr = INADDR_ANY;  // Bind to all interfaces
+        l_b4->sin_port = 0;  // Let OS choose free port
+        l_bind_len = sizeof(struct sockaddr_in);
+    }
     
-    if (bind(l_es->socket, (struct sockaddr *)&l_bind_addr, sizeof(l_bind_addr)) < 0) {
+    if (bind(l_es->socket, (struct sockaddr *)&l_bind_addr, l_bind_len) < 0) {
         log_it(L_ERROR, "Failed to bind UDP socket: %s", strerror(errno));
         dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
@@ -2839,10 +2904,13 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     }
 
     // Get local port assigned by OS
-    struct sockaddr_in l_local_addr;
+    struct sockaddr_storage l_local_addr;
     socklen_t l_local_addr_len = sizeof(l_local_addr);
     if (getsockname(l_es->socket, (struct sockaddr *)&l_local_addr, &l_local_addr_len) == 0) {
-        debug_if(s_debug_more, L_DEBUG, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
+        uint16_t l_local_port = l_local_addr.ss_family == AF_INET6
+            ? ((struct sockaddr_in6 *)&l_local_addr)->sin6_port
+            : ((struct sockaddr_in *)&l_local_addr)->sin_port;
+        debug_if(s_debug_more, L_DEBUG, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_port));
     }
     
     // CRITICAL: Add socket to worker AFTER bind() so reactor monitors properly configured socket!

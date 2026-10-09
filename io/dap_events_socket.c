@@ -454,6 +454,220 @@ dap_events_socket_t * dap_events_socket_create_type_pipe_mt(dap_worker_t * a_w, 
 }
 
 /**
+ * @brief Create platform-independent socket with specified parameters
+ * 
+ * Creates a socket with the specified domain, type, and protocol,
+ * sets it to non-blocking mode, and wraps it in dap_events_socket_t.
+ * This function centralizes all platform-dependent socket creation logic.
+ * 
+ * @param a_domain Socket domain (AF_INET, AF_INET6, etc.)
+ * @param a_type Socket type (SOCK_STREAM, SOCK_DGRAM, etc.)
+ * @param a_protocol Protocol (IPPROTO_TCP, IPPROTO_UDP, etc.)
+ * @param a_callbacks Socket callbacks structure
+ * @return Created dap_events_socket_t or NULL on error
+ */
+dap_events_socket_t *dap_events_socket_create_platform(int a_domain, int a_type, int a_protocol,
+                                                         dap_events_socket_callbacks_t *a_callbacks)
+{
+    if (!a_callbacks) {
+        log_it(L_ERROR, "Callbacks are NULL");
+        return NULL;
+    }
+
+#ifdef DAP_OS_WINDOWS
+    SOCKET l_sock = socket(a_domain, a_type, a_protocol);
+    if (l_sock == INVALID_SOCKET) {
+        int l_err = WSAGetLastError();
+        log_it(L_ERROR, "Socket create error %d", l_err);
+        return NULL;
+    }
+    
+    // Set socket non-blocking
+    u_long l_socket_flags = 1;
+    if (ioctlsocket(l_sock, (long)FIONBIO, &l_socket_flags) == SOCKET_ERROR) {
+        log_it(L_ERROR, "Can't set socket %zu to nonblocking mode, error %d", l_sock, WSAGetLastError());
+        closesocket(l_sock);
+        return NULL;
+    }
+#else
+    int l_sock = socket(a_domain, a_type, a_protocol);
+    if (l_sock == INVALID_SOCKET) {
+        int l_err = errno;
+        log_it(L_ERROR, "Error %d with socket create", l_err);
+        return NULL;
+    }
+    
+    // Set socket non-blocking
+    int l_socket_flags = fcntl(l_sock, F_GETFL);
+    if (l_socket_flags == -1) {
+        log_it(L_ERROR, "Error %d can't get socket flags", errno);
+        close(l_sock);
+        return NULL;
+    }
+    if (fcntl(l_sock, F_SETFL, l_socket_flags | O_NONBLOCK) == -1) {
+        log_it(L_ERROR, "Error %d can't set socket flags", errno);
+        close(l_sock);
+        return NULL;
+    }
+#endif
+
+    // Wrap socket
+    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_sock, a_callbacks);
+    if (!l_es) {
+        log_it(L_ERROR, "Failed to wrap socket");
+#ifdef DAP_OS_WINDOWS
+        closesocket(l_sock);
+#else
+        close(l_sock);
+#endif
+        return NULL;
+    }
+
+    // Set correct descriptor type based on socket type
+    if (a_type == SOCK_DGRAM)
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+
+    return l_es;
+}
+
+/**
+ * @brief Resolve a remote host first, then create a client socket of the
+ *        resolved address family with the address already set.
+ *
+ * Required for IPv6-only (NAT64/DNS64) networks, where the system synthesizes
+ * an AF_INET6 address even for an IPv4 literal. For IPv4 results the created
+ * socket is identical to dap_events_socket_create_platform(AF_INET, ...).
+ *
+ * @return Created socket (not yet added to a worker) or NULL; on resolve
+ *         failure *a_resolve_failed is set to true when provided.
+ */
+dap_events_socket_t *dap_events_socket_create_resolved(const char *a_host, uint16_t a_port,
+                                                        int a_type, int a_protocol,
+                                                        dap_events_socket_callbacks_t *a_callbacks,
+                                                        bool *a_resolve_failed)
+{
+    if (a_resolve_failed)
+        *a_resolve_failed = false;
+    if (!a_host || !a_callbacks)
+        return NULL;
+    struct sockaddr_storage l_addr;
+    int l_family = AF_UNSPEC;
+    int l_addrlen = dap_net_resolve_host(a_host, dap_itoa(a_port), false, &l_addr, &l_family);
+    if (l_addrlen <= 0 || (l_family != AF_INET && l_family != AF_INET6)) {
+        if (a_resolve_failed)
+            *a_resolve_failed = true;
+        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_host, a_port);
+        return NULL;
+    }
+    dap_events_socket_t *l_es = dap_events_socket_create_platform(l_family, a_type, a_protocol, a_callbacks);
+    if (!l_es)
+        return NULL;
+    memcpy(&l_es->addr_storage, &l_addr, (size_t)l_addrlen);
+    l_es->addr_size = (socklen_t)l_addrlen;
+    l_es->remote_port = a_port;
+    dap_strncpy(l_es->remote_addr_str, a_host, DAP_HOSTADDR_STRLEN);
+    if (l_family == AF_INET6)
+        log_it(L_INFO, "Remote '%s : %u' resolved to IPv6 (NAT64/IPv6 path)", a_host, a_port);
+    return l_es;
+}
+
+/**
+ * @brief Resolve hostname and set address in events socket
+ * 
+ * Centralized function for resolving hostname/IP and setting address information
+ * in dap_events_socket_t structure.
+ * 
+ * @param a_es Events socket to set address in
+ * @param a_host Hostname or IP address
+ * @param a_port Port number
+ * @return 0 on success, negative error code on failure
+ */
+int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port)
+{
+    if (!a_es || !a_host) {
+        log_it(L_ERROR, "Invalid arguments for resolve_and_set_addr");
+        return -1;
+    }
+
+    // Resolve host
+    int l_addrlen = dap_net_resolve_host(a_host, dap_itoa(a_port), false, &a_es->addr_storage, NULL);
+    if (l_addrlen < 0) {
+        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_host, a_port);
+        return -1;
+    }
+    
+    // Set the address size (crucial for connect/sendto calls)
+    a_es->addr_size = (socklen_t)l_addrlen;
+    
+    a_es->remote_port = a_port;
+    dap_strncpy(a_es->remote_addr_str, a_host, DAP_HOSTADDR_STRLEN);
+    
+    return 0;
+}
+
+/**
+ * @brief Initiate non-blocking socket connection
+ * 
+ * Initiates a non-blocking connection for the socket. The socket must have
+ * address information set (via dap_events_socket_resolve_and_set_addr or manually).
+ * 
+ * @param a_es Events socket to connect
+ * @param a_error_code Output parameter for error code (0 on success, errno/WSAGetLastError on error)
+ * @return 0 on success (including EINPROGRESS/WSAEWOULDBLOCK), -1 on immediate failure
+ */
+int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
+{
+    if (!a_es) {
+        if (a_error_code) *a_error_code = EINVAL;
+        return -1;
+    }
+    
+    if (a_es->socket == INVALID_SOCKET || a_es->socket == -1) {
+        if (a_error_code) *a_error_code = EBADF;
+        log_it(L_ERROR, "Invalid socket in dap_events_socket_connect");
+        return -1;
+    }
+    
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
+    if(s_pre_connect_cb)
+        s_pre_connect_cb((int)a_es->socket, s_pre_connect_ctx);
+#endif
+    // Initiate non-blocking connection. The address length must match the
+    // resolved family: a fixed sizeof(sockaddr_in) makes IPv6 (NAT64) fail.
+    socklen_t l_addr_len = a_es->addr_size;
+    if (!l_addr_len)
+        l_addr_len = a_es->addr_storage.ss_family == AF_INET6
+            ? (socklen_t)sizeof(struct sockaddr_in6) : (socklen_t)sizeof(struct sockaddr_in);
+    int l_err = connect(a_es->socket, (struct sockaddr *) &a_es->addr_storage, l_addr_len);
+    if (l_err == 0) {
+        // Connected immediately - this is rare but possible
+        if (a_error_code) *a_error_code = 0;
+        debug_if(s_debug_more, L_DEBUG, "Connected immediately to %s:%u!", a_es->remote_addr_str, a_es->remote_port);
+        return 0;
+    }
+    
+    // Check if error is expected (EINPROGRESS/WSAEWOULDBLOCK)
+    int l_connect_errno;
+#ifdef DAP_OS_WINDOWS
+    l_connect_errno = WSAGetLastError();
+    if (l_connect_errno != WSAEWOULDBLOCK) {
+#else
+    l_connect_errno = errno;
+    if (l_connect_errno != EINPROGRESS) {
+#endif
+        // Real connection error - fail immediately
+        if (a_error_code) *a_error_code = l_connect_errno;
+        log_it(L_ERROR, "Remote address can't connect (%s:%hu) with sock_id %"DAP_FORMAT_SOCKET": \"%s\" (code %d)",
+               a_es->remote_addr_str, a_es->remote_port, a_es->socket, dap_strerror(l_connect_errno), l_connect_errno);
+        return -1;
+    }
+    
+    // EINPROGRESS/WSAEWOULDBLOCK is expected - connection will complete asynchronously
+    if (a_error_code) *a_error_code = 0;
+    return 0;
+}
+
+/**
  * @brief dap_events_socket_create
  * @param a_type
  * @param a_callbacks
@@ -1950,6 +2164,53 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
     int l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
     if ( l_ret ) {
         log_it(L_ERROR, "wite mt: wasn't send pointer to queue: code %d", l_ret);
+        DAP_DEL_MULTY(l_msg->data, l_msg);
+        return 0;
+    }
+    return a_data_size;
+#endif
+}
+
+/**
+ * @brief dap_events_socket_write_inter — cross-worker write taking ownership of data.
+ *
+ * Like write_mt but the caller transfers ownership of a_data (which must be
+ * heap-allocated) and must NOT free it afterward.  This saves one allocation
+ * compared to write_mt (no DAP_DUP_SIZE needed).  The target worker copies the
+ * data into the esocket buf_out and then frees a_data.
+ *
+ * On error (queue full) a_data is freed by this function.
+ */
+size_t dap_events_socket_write_inter(dap_worker_t *a_w, dap_events_socket_uuid_t a_es_uuid,
+                                     void *a_data, size_t a_data_size)
+{
+#ifdef DAP_EVENTS_CAPS_IOCP
+    dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
+    if (!ol) {
+        DAP_DELETE(a_data);
+        return 0;
+    }
+    *ol = (dap_overlapped_t){ .op = io_write };
+    if (a_data && a_data_size)
+        memcpy(ol->buf, a_data, a_data_size);
+    DAP_DELETE(a_data); /* took ownership from caller */
+    debug_if(g_debug_reactor, L_INFO, "Write inter %zu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]",
+             a_data_size, a_es_uuid, a_w->id);
+    return PostQueuedCompletionStatus(a_w->context->iocp, (DWORD)a_data_size, (ULONG_PTR)a_es_uuid, (OVERLAPPED *)ol)
+               ? a_data_size
+               : (DAP_DELETE(ol),
+                  log_it(L_ERROR, "Can't schedule write_inter to %" DAP_UINT64_FORMAT_U " in context #%d, error %d",
+                         a_es_uuid, a_w->context->id, GetLastError()),
+                  0);
+#else
+    dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
+    l_msg->esocket_uuid = a_es_uuid;
+    l_msg->data = a_data;       /* takes ownership */
+    l_msg->data_size = a_data_size;
+    l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
+
+    if (!dap_context_queue_push(a_w->queue_es_io, l_msg)) {
+        log_it(L_ERROR, "write inter: queue full, lost %zu bytes", a_data_size);
         DAP_DEL_MULTY(l_msg->data, l_msg);
         return 0;
     }

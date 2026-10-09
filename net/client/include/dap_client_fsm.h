@@ -28,7 +28,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdatomic.h>
+#include "dap_common.h"
 #include "dap_client.h"
 #include "dap_enc_key.h"
 #include "dap_net_trans.h"
@@ -67,8 +67,8 @@ typedef struct dap_client_fsm {
     dap_client_callback_t stage_status_done_callback;
 
     // Atomic copies for cross-thread reads (updated alongside stage/stage_status)
-    _Atomic int stage_readable;
-    _Atomic int stage_status_readable;
+    _Atomic(int) stage_readable;
+    _Atomic(int) stage_status_readable;
 
     // Reconnect state
     int reconnect_attempts;

@@ -222,12 +222,6 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     l_fsm->client = a_client;
     l_fsm->worker = dap_events_worker_get_auto();
 
-    log_it(L_ATT, "DIAG fsm_new: fsm=%p sizeof=%zu worker_off=%zu client_tc_off=%zu worker=%p uuid=0x%"PRIx64,
-           (void*)l_fsm, sizeof(dap_client_fsm_t),
-           __builtin_offsetof(dap_client_fsm_t, worker),
-           __builtin_offsetof(dap_client_fsm_t, client_trans_ctx),
-           (void*)l_fsm->worker, l_fsm->uuid);
-
     // Crypto defaults: legacy cellframe-node master uses MSRLN (type 11, pubkey 1824 B);
     // modern nodes use Kyber512 (type 23, pubkey 800 B).
     l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
@@ -756,8 +750,7 @@ static void s_worker_execute_stage(void *a_arg)
         }
 
         // Session start — pass a real callback so the transport can signal
-        // readiness asynchronously (WebSocket waits for 101 Switching Protocols).
-        // For HTTP the callback fires synchronously inside session_start.
+        // readiness asynchronously (WebSocket waits for 101; HTTP waits for 200).
         dap_net_trans_t *l_transport = l_tc->stream->trans;
         int l_start_ret = 0;
         bool l_has_session_start = (l_transport && l_transport->ops && l_transport->ops->session_start);
@@ -777,6 +770,7 @@ static void s_worker_execute_stage(void *a_arg)
         dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (l_es_uuid_ptr && l_tc->stream->esocket) {
             *l_es_uuid_ptr = l_tc->stream->esocket->uuid;
+            l_io->ts_last_active = dap_time_now();
             if (!dap_timerfd_start_on_worker(l_worker,
                                              s_client_timeout_active_after_connect_seconds * 1024,
                                              s_stream_timer_timeout_after_connected_check, l_es_uuid_ptr)) {
@@ -977,7 +971,15 @@ static bool s_stream_timer_timeout_after_connected_check(void *a_arg)
             return false;
         }
 
-        if (dap_time_now() - l_io->ts_last_active >= (dap_time_t)s_client_timeout_active_after_connect_seconds) {
+        /* UDP/DNS keep transport read_callback and often send via sendto(), so
+         * s_stream_es_callback_read/write never refresh ts_last_active. Honour
+         * esocket->last_time_active (updated by reactor on recvfrom/send). */
+        dap_time_t l_last = l_io->ts_last_active;
+        if ((dap_time_t)l_es->last_time_active > l_last)
+            l_last = (dap_time_t)l_es->last_time_active;
+        if (l_last == 0)
+            l_last = dap_time_now();
+        if (dap_time_now() - l_last >= (dap_time_t)s_client_timeout_active_after_connect_seconds) {
             log_it(L_WARNING, "Activity timeout for streaming uplink %s:%u",
                    l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_fsm->is_closed_by_timeout = true;

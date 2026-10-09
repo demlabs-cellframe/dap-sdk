@@ -88,44 +88,85 @@ static void _enc_http_write_reply(struct dap_http_simple *a_cl_st,
 
 void dap_enc_http_json_response_format_enable(bool);
 
-void dap_enc_http_set_acl_callback(dap_enc_acl_callback_t a_callback)
-{
-    s_acl_callback = a_callback;
-}
-
-/**
- * @brief enc_http_proc Enc http interface
- * @param cl_st HTTP Simple client instance
- * @param arg Pointer to bool with okay status (true if everything is ok, by default)
- */
-// The KEX message is MSRLN_PKA_BYTES + optional sign(s); anything much larger
-// is abuse. Caps the heap allocation for the decoded handshake body.
-#define DAP_ENC_HTTP_KEX_REQUEST_MAX (64 * 1024)
-
-void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
-{
-    log_it(L_DEBUG,"Proc enc http request");
-    http_status_code_t * return_code = (http_status_code_t*)arg;
-
-    if(!strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaagh")) {
-        dap_enc_key_type_t l_pkey_exchange_type =DAP_ENC_KEY_TYPE_MSRLN ;
-        dap_enc_key_type_t l_enc_block_type = DAP_ENC_KEY_TYPE_IAES;
-        size_t l_pkey_exchange_size = MSRLN_PKA_BYTES;
-        size_t l_block_key_size=32;
-        int l_protocol_version = 0;
-        size_t l_sign_count = 0;
-        sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-                                      &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size, &l_protocol_version, &l_sign_count);
-
-        log_it(L_DEBUG, "Stream encryption: %s\t public key exchange: %s",dap_enc_get_type_name(l_enc_block_type),
-               dap_enc_get_type_name(l_pkey_exchange_type));
-        // Query-string parameters are attacker-controlled: this endpoint speaks
-        // MSRLN only, so anything else in pkey_exchange_type/pkey_exchange_size
-        // is an attempt to skew the offsets below
-        if (l_pkey_exchange_type != DAP_ENC_KEY_TYPE_MSRLN || l_pkey_exchange_size != MSRLN_PKA_BYTES) {
-            log_it(L_WARNING, "Wrong KEX parameters: type %d, size %zu", (int)l_pkey_exchange_type, l_pkey_exchange_size);
-            *return_code = Http_Status_BadRequest;
-            return;
+    if(cl_st->http_client)
+    {
+        log_it(L_INFO, "[enc_init] %s from %s url_path='%s' query='%s' body_size=%zu",
+               cl_st->http_client->action,
+               cl_st->es_hostaddr,
+               cl_st->http_client->url_path,
+               cl_st->http_client->in_query_string,
+               cl_st->request_size);
+    }
+    else
+    {
+        log_it(L_INFO, "[enc_init] request from %s body_size=%zu (no http_client)",
+               cl_st->es_hostaddr, cl_st->request_size);
+    }
+    
+    // HTTP server extracts basename before calling processor
+    // So url_path should be basename (e.g., "gd4y5yh78w42aaagh"), not full path
+    // We accept any basename - it's just an identifier, not validated
+    debug_if(s_debug_more, L_DEBUG, "enc_http_proc: url_path='%s' (len=%u)", 
+           cl_st->http_client->url_path, 
+           cl_st->http_client->url_path_len);
+    
+    // Parse query string into request structure
+    dap_enc_server_request_t l_request = {0};
+    if (dap_enc_server_parse_query(cl_st->http_client->in_query_string, &l_request) != 0) {
+        log_it(L_ERROR, "Failed to parse query string");
+        *return_code = Http_Status_BadRequest;
+        return;
+    }
+    
+    // Decode Alice's message from Base64
+    if (!cl_st->request || cl_st->request_size == 0) {
+        log_it(L_ERROR, "Empty request body");
+        *return_code = Http_Status_BadRequest;
+        return;
+    }
+    
+    size_t l_decode_len = DAP_ENC_BASE64_DECODE_SIZE(cl_st->request_size);
+    uint8_t *alice_msg = DAP_NEW_Z_SIZE(uint8_t, l_decode_len + 1);
+    if (!alice_msg) {
+        log_it(L_CRITICAL, "Failed to allocate alice_msg buffer");
+        *return_code = Http_Status_InternalServerError;
+        return;
+    }
+    
+    l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, 
+                                         alice_msg, DAP_ENC_DATA_TYPE_B64);
+    alice_msg[l_decode_len] = '\0';
+    
+    // Fill request with decoded data
+    l_request.alice_msg = alice_msg;
+    l_request.alice_msg_size = l_decode_len;
+    
+    // Process encryption handshake via transport-independent API
+    dap_enc_server_response_t *l_response = NULL;
+    int l_ret = dap_enc_server_process_request(&l_request, &l_response);
+    
+    DAP_DELETE(alice_msg);
+    
+    // Handle response
+    if (l_ret != 0 || !l_response || !l_response->success) {
+        log_it(L_ERROR, "Encryption handshake failed: %s", 
+               l_response && l_response->error_message ? l_response->error_message : "unknown error");
+        
+        if (l_response) {
+            // Map error codes to HTTP status codes
+            switch (l_response->error_code) {
+                case -5:  // Signature verification failed
+                    *return_code = Http_Status_Unauthorized;
+                    break;
+                case -6:  // Client banned
+                    *return_code = Http_Status_Forbidden;
+                    break;
+                default:
+                    *return_code = Http_Status_BadRequest;
+            }
+            dap_enc_server_response_free(l_response);
+        } else {
+            *return_code = Http_Status_InternalServerError;
         }
         size_t l_decode_len = DAP_ENC_BASE64_DECODE_SIZE(cl_st->request_size);
         if (l_decode_len > DAP_ENC_HTTP_KEX_REQUEST_MAX) {

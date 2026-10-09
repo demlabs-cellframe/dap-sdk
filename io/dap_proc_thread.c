@@ -23,8 +23,13 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
-#include <unistd.h>
-#include <sys/eventfd.h>
+#ifndef DAP_OS_WINDOWS
+# include <unistd.h>
+# include <fcntl.h>
+#endif
+#if defined(DAP_OS_LINUX) || defined(DAP_OS_ANDROID)
+# include <sys/eventfd.h>
+#endif
 #include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
@@ -189,27 +194,57 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
     // Lock-free push to priority queue
     s_mpsc_push(&l_thread->queue_head[a_priority], l_item);
     atomic_fetch_add(&l_thread->proc_queue_size, 1);
-    // Wake up proc thread via eventfd
-    uint64_t l_one = 1;
-    if (write(l_thread->wakeup_fd, &l_one, sizeof(l_one)) != sizeof(l_one)) {
-        log_it(L_WARNING, "Failed to wakeup proc thread (errno=%d)", errno);
-    }
+    // Wake up proc thread
+    dap_proc_thread_wakeup_signal(l_thread);
     return 0;
 }
 
 /**
- * Block until another thread signals via eventfd (callback queued or shutdown).
- * wakeup_fd is blocking (no EFD_NONBLOCK): idle proc threads must sleep, not spin.
+ * @brief Signal wakeup primitive of the proc thread (eventfd on Linux, pipe elsewhere)
+ */
+void dap_proc_thread_wakeup_signal(dap_proc_thread_t *a_thread)
+{
+    if (!a_thread)
+        return;
+#ifdef DAP_OS_WINDOWS
+    if (a_thread->wakeup_event && !SetEvent(a_thread->wakeup_event))
+        log_it(L_WARNING, "Failed to wakeup proc thread (err=%lu)", (unsigned long)GetLastError());
+#elif defined(DAP_OS_LINUX) || defined(DAP_OS_ANDROID)
+    // Wake up proc thread via eventfd
+    uint64_t l_one = 1;
+    if (a_thread->wakeup_fd >= 0
+            && write(a_thread->wakeup_fd, &l_one, sizeof(l_one)) != sizeof(l_one)) {
+        log_it(L_WARNING, "Failed to wakeup proc thread (errno=%d)", errno);
+    }
+#else
+    // Wake up proc thread via pipe
+    uint8_t l_one = 1;
+    if (a_thread->wakeup_fd_w >= 0
+            && write(a_thread->wakeup_fd_w, &l_one, sizeof(l_one)) != sizeof(l_one)) {
+        log_it(L_WARNING, "Failed to wakeup proc thread (errno=%d)", errno);
+    }
+#endif
+}
+
+/**
+ * Block until another thread signals wakeup (callback queued or shutdown).
+ * Idle proc threads must sleep, not spin.
  */
 static void s_proc_thread_wait_wakeup(dap_proc_thread_t *a_thread)
 {
+#ifdef DAP_OS_WINDOWS
+    if (!a_thread->wakeup_event)
+        return;
+    if (WaitForSingleObject(a_thread->wakeup_event, INFINITE) == WAIT_FAILED)
+        log_it(L_ERROR, "Proc thread wakeup wait failed: err=%lu", (unsigned long)GetLastError());
+#else
     if (a_thread->wakeup_fd < 0)
         return;
 
     for (;;) {
         uint64_t l_val = 0;
         ssize_t l_rd = read(a_thread->wakeup_fd, &l_val, sizeof(l_val));
-        if (l_rd == (ssize_t)sizeof(l_val))
+        if (l_rd > 0)
             return;
         if (l_rd < 0) {
             if (errno == EINTR)
@@ -222,6 +257,7 @@ static void s_proc_thread_wait_wakeup(dap_proc_thread_t *a_thread)
         /* EOF: fd closed during shutdown */
         return;
     }
+#endif
 }
 
 /**
@@ -308,12 +344,36 @@ static int s_context_callback_started(dap_context_t UNUSED_ARG *a_context, void 
 {
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
+#ifdef DAP_OS_WINDOWS
+    /* Auto-reset event: each SetEvent wakes one WaitForSingleObject. */
+    l_thread->wakeup_event = CreateEventA(NULL, FALSE, FALSE, NULL);
+    if (!l_thread->wakeup_event) {
+        log_it(L_CRITICAL, "Failed to create wakeup event for proc thread: err=%lu",
+               (unsigned long)GetLastError());
+        return -1;
+    }
+#else
+#if defined(DAP_OS_LINUX) || defined(DAP_OS_ANDROID)
     // Blocking eventfd: idle proc threads sleep in read() instead of busy-looping.
     l_thread->wakeup_fd = eventfd(0, EFD_CLOEXEC);
+    l_thread->wakeup_fd_w = -1;
     if (l_thread->wakeup_fd < 0) {
         log_it(L_CRITICAL, "Failed to create eventfd for proc thread: errno=%d", errno);
         return -1;
     }
+#else
+    // Pipe-based wakeup (macOS/BSD have no eventfd)
+    int l_pipe_fds[2];
+    if (pipe(l_pipe_fds) < 0) {
+        log_it(L_CRITICAL, "Failed to create wakeup pipe for proc thread: errno=%d", errno);
+        return -1;
+    }
+    fcntl(l_pipe_fds[0], F_SETFD, FD_CLOEXEC);
+    fcntl(l_pipe_fds[1], F_SETFD, FD_CLOEXEC);
+    l_thread->wakeup_fd = l_pipe_fds[0];
+    l_thread->wakeup_fd_w = l_pipe_fds[1];
+#endif
+#endif
     // Init proc_queue for related worker
     dap_worker_t * l_worker_related = dap_events_worker_get(l_thread->context->cpu_id);
     assert(l_worker_related);
@@ -340,11 +400,22 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
             l_item = l_next;
         }
     }
-    // Close eventfd
+    // Close wakeup primitive
+#ifdef DAP_OS_WINDOWS
+    if (l_thread->wakeup_event) {
+        CloseHandle(l_thread->wakeup_event);
+        l_thread->wakeup_event = NULL;
+    }
+#else
     if (l_thread->wakeup_fd >= 0) {
         close(l_thread->wakeup_fd);
         l_thread->wakeup_fd = -1;
     }
+    if (l_thread->wakeup_fd_w >= 0) {
+        close(l_thread->wakeup_fd_w);
+        l_thread->wakeup_fd_w = -1;
+    }
+#endif
     return 0;
 }
 

@@ -61,6 +61,9 @@ void dap_client_trans_ctx_new(dap_client_trans_ctx_t *a_ctx);
 
 void dap_client_trans_ctx_get_stream_callbacks(dap_events_socket_callbacks_t *a_callbacks);
 
+/** Refresh activity timestamp (UDP/DNS keep their own read path and bypass stream callbacks). */
+void dap_client_trans_ctx_touch(dap_client_t *a_client);
+
 void dap_client_trans_ctx_queue_add(dap_client_trans_ctx_t *a_ctx,
                                      const char a_ch_id, uint8_t a_type,
                                      void *a_data, size_t a_data_size);

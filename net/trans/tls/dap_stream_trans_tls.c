@@ -21,8 +21,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <sys/socket.h>
-#include <netinet/tcp.h>
+#ifdef DAP_OS_WINDOWS
+# include <winsock2.h>
+# include <ws2tcpip.h>
+#else
+# include <sys/socket.h>
+# include <netinet/tcp.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_config.h"
@@ -97,6 +102,8 @@ static int s_tls_handshake_init(dap_stream_t *a_stream,
                                 dap_net_trans_handshake_cb_t a_callback);
 static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t *a_params,
                                 dap_net_trans_session_cb_t a_callback);
+static int s_tls_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
+                               dap_net_trans_ready_cb_t a_callback);
 
 static const dap_net_trans_ops_t s_tls_ops = {
     .init             = s_tls_init,
@@ -108,7 +115,7 @@ static const dap_net_trans_ops_t s_tls_ops = {
     .get_capabilities = s_tls_get_caps,
     .handshake_init   = s_tls_handshake_init,
     .session_create   = s_tls_session_create,
-    .session_start    = NULL
+    .session_start    = s_tls_session_start
 };
 
 /* ========================================================================== */
@@ -210,9 +217,13 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
     if (!a_params || !a_result) return -1;
 
     dap_events_socket_callbacks_t *l_cbs = a_params->callbacks;
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, l_cbs);
+    // Resolve first and create a socket of the resolved family (IPv6/NAT64-safe)
+    bool l_resolve_failed = false;
+    dap_events_socket_t *l_es = dap_events_socket_create_resolved(a_params->host, a_params->port,
+                                                                  SOCK_STREAM, 0, l_cbs, &l_resolve_failed);
     if (!l_es) {
-        log_it(L_ERROR, "Failed to create TCP socket for TLS mimicry transport");
+        log_it(L_ERROR, "Failed to %s for TLS mimicry transport",
+               l_resolve_failed ? "resolve address" : "create TCP socket");
         a_result->error_code = -1;
         return -1;
     }
@@ -226,11 +237,10 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
     {
         int l_nodelay = 1;
         if (setsockopt(l_es->socket, IPPROTO_TCP, TCP_NODELAY,
-                        &l_nodelay, sizeof(l_nodelay)) < 0)
+                        (const char *)&l_nodelay, sizeof(l_nodelay)) < 0)
             log_it(L_WARNING, "TLS transport: failed to set TCP_NODELAY: %s", strerror(errno));
     }
 
-    dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port);
     l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE | DAP_SOCK_READY_TO_READ;
 #ifdef DAP_EVENTS_CAPS_IOCP
     l_es->flags &= ~DAP_SOCK_READY_TO_READ;
@@ -320,10 +330,11 @@ static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             if (l_state == DAP_TLS_MIMICRY_STATE_CLIENT_HELLO_SENT) {
                 /* Expecting ServerHello + CCS + fake extensions from server */
                 void *l_response = NULL;
-                size_t l_response_size = 0;
+                size_t l_response_size = 0, l_hs_consumed = 0;
                 int l_rc = dap_tls_mimicry_process_server_hello(l_ctx->mimicry,
                                                                   l_es->buf_in, l_avail,
-                                                                  &l_response, &l_response_size);
+                                                                  &l_response, &l_response_size,
+                                                                  &l_hs_consumed);
                 if (l_rc == 0) {
                     /* ServerHello processed — state is now ESTABLISHED.
                      * Send client CCS + fake Finished back to server. */
@@ -332,9 +343,15 @@ static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                                                        l_response, l_response_size);
                         DAP_DELETE(l_response);
                     }
-                    /* Clear consumed data from buffer (entire handshake consumed) */
-                    l_es->buf_in_size = 0;
-                    l_avail = 0;
+                    /* Shrink only handshake bytes — keep pipelined APP_DATA */
+                    if (l_hs_consumed > 0 && l_hs_consumed < l_es->buf_in_size) {
+                        memmove(l_es->buf_in, l_es->buf_in + l_hs_consumed,
+                                l_es->buf_in_size - l_hs_consumed);
+                        l_es->buf_in_size -= l_hs_consumed;
+                    } else {
+                        l_es->buf_in_size = 0;
+                    }
+                    l_avail = l_es->buf_in_size;
                     l_state = dap_tls_mimicry_get_state(l_ctx->mimicry);
                     debug_if(s_debug_more, L_DEBUG, "TLS handshake: ServerHello processed, state=ESTABLISHED");
                     /* TLS handshake complete — notify FSM to proceed with enc_init */
@@ -544,6 +561,9 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
     if (!l_ctx || !l_ctx->mimicry) {
         /* Expected before handshake_init sets up transport_priv, or on
          * zombie esockets from a previous failed connection. */
+        log_it(L_WARNING, "TLS read: dropping %zu bytes (no mimicry ctx, phase unknown)",
+               a_es->buf_in_size);
+        a_es->buf_in_size = 0;
         return;
     }
 
@@ -552,10 +572,11 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
     /* === HANDSHAKE phase: ServerHello uses its own parser (not TLS unwrap) === */
     if (l_ctx->phase == TLS_PHASE_HANDSHAKE) {
         void *l_response = NULL;
-        size_t l_response_size = 0;
+        size_t l_response_size = 0, l_hs_consumed = 0;
         int l_rc = dap_tls_mimicry_process_server_hello(l_ctx->mimicry,
                                                           a_es->buf_in, a_es->buf_in_size,
-                                                          &l_response, &l_response_size);
+                                                          &l_response, &l_response_size,
+                                                          &l_hs_consumed);
         if (l_rc != 0) {
             /* Incomplete or error — wait for more data */
             DAP_DELETE(l_response);
@@ -566,16 +587,25 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
             dap_events_socket_write_unsafe(a_es, l_response, l_response_size);
             DAP_DELETE(l_response);
         }
-        a_es->buf_in_size = 0;
+        /* Keep any bytes after the handshake (pipelined enc_init reply) */
+        if (l_hs_consumed > 0 && l_hs_consumed < a_es->buf_in_size) {
+            memmove(a_es->buf_in, a_es->buf_in + l_hs_consumed,
+                    a_es->buf_in_size - l_hs_consumed);
+            a_es->buf_in_size -= l_hs_consumed;
+        } else {
+            a_es->buf_in_size = 0;
+        }
 
         log_it(L_NOTICE, "TLS handshake completed — sending enc_init through TLS channel");
-        if (s_tls_send_enc_init(l_stream, l_ctx, a_es) == 0)
+        if (s_tls_send_enc_init(l_stream, l_ctx, a_es) == 0) {
             l_ctx->phase = TLS_PHASE_ENC_INIT_WAIT;
+            /* Keep EPOLLIN armed; the reactor recv()s the enc_init reply. */
+            dap_events_socket_set_readable_unsafe(a_es, true);
+        }
 
-        /* If the enc_init reply is already in buf_in (CCS+Finished piggybacked
-         * or fast RTT), the buf_in_size is 0 here because we cleared it above.
-         * The next read event drives ENC_INIT_WAIT processing. No callback
-         * swap means no race to close. */
+        /* Pipelined enc_init reply already in buf_in — process without waiting */
+        if (a_es->buf_in_size > 0 && l_ctx->phase == TLS_PHASE_ENC_INIT_WAIT)
+            s_tls_read_cb(a_es, a_arg);
         return;
     }
 
@@ -595,13 +625,29 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
     }
 
     if (l_rc < 0) {
-        log_it(L_ERROR, "TLS read (phase %d): unwrap failed", (int)l_ctx->phase);
+        log_it(L_ERROR, "TLS read (phase %d): unwrap failed (buf_in=%zu)",
+               (int)l_ctx->phase, a_es->buf_in_size);
         DAP_DELETE(l_unwrapped);
         return;
     }
     if (l_rc == 1 || !l_unwrapped || l_unwrapped_size == 0) {
-        /* Incomplete TLS record — wait for more data */
         DAP_DELETE(l_unwrapped);
+        /* Skipped non-APP_DATA only — try again on remaining bytes */
+        if (l_rc == 0 && l_consumed > 0 && a_es->buf_in_size > 0) {
+            s_tls_read_cb(a_es, a_arg);
+            return;
+        }
+        if (a_es->buf_in_size >= 5) {
+            const uint8_t *b = a_es->buf_in;
+            log_it(L_DEBUG, "TLS read (phase %d): incomplete record, buf_in=%zu consumed=%zu "
+                   "hdr=%02x %02x %02x %02x %02x — waiting",
+                   (int)l_ctx->phase, a_es->buf_in_size, l_consumed,
+                   b[0], b[1], b[2], b[3], b[4]);
+        } else {
+            log_it(L_DEBUG, "TLS read (phase %d): incomplete record, buf_in=%zu consumed=%zu — waiting",
+                   (int)l_ctx->phase, a_es->buf_in_size, l_consumed);
+        }
+        dap_events_socket_set_readable_unsafe(a_es, true);
         return;
     }
 
@@ -610,13 +656,17 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
     case TLS_PHASE_ENC_INIT_WAIT:
         log_it(L_NOTICE, "TLS enc_init response received (%zu bytes)", l_unwrapped_size);
         if (l_ctx->handshake_cb) {
-            l_ctx->handshake_cb(l_stream, l_unwrapped, l_unwrapped_size, 0);
+            /* json_tokener_parse needs a NUL-terminated string */
+            char *l_json = DAP_NEW_Z_SIZE(char, l_unwrapped_size + 1);
+            if (l_json) {
+                memcpy(l_json, l_unwrapped, l_unwrapped_size);
+                l_ctx->handshake_cb(l_stream, l_json, l_unwrapped_size, 0);
+                DAP_DELETE(l_json);
+            } else {
+                l_ctx->handshake_cb(l_stream, l_unwrapped, l_unwrapped_size, 0);
+            }
             l_ctx->handshake_cb = NULL;
         }
-        /* Stay in ENC_INIT_WAIT until the FSM calls s_tls_session_create,
-         * which advances phase to STREAM_CTL_WAIT. Any data arriving before
-         * then would be an early/piggybacked stream_ctl reply — unwrap and
-         * let the next read iteration handle it once phase advances. */
         break;
 
     case TLS_PHASE_STREAM_CTL_WAIT:
@@ -850,9 +900,51 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
     if (l_ctx) {
         l_ctx->session_create_cb = a_callback;
         l_ctx->phase = TLS_PHASE_STREAM_CTL_WAIT;
+        if (a_stream->esocket)
+            dap_events_socket_set_readable_unsafe(a_stream->esocket, true);
     }
 
     log_it(L_NOTICE, "TLS session_create: stream_ctl sent (%zd bytes), awaiting response", l_sent);
+    return 0;
+}
+
+/**
+ * @brief Mark the direct TLS stream ready after stream_ctl
+ *
+ * The TLS server creates and binds the DAP stream while processing stream_ctl.
+ * Unlike HTTP and WebSocket, TLS continues on the same socket and must not
+ * issue a second GET /stream request.
+ */
+static int s_tls_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
+                               dap_net_trans_ready_cb_t a_callback)
+{
+    if(!a_stream || !a_stream->trans_ctx || !a_stream->esocket)
+    {
+        log_it(L_ERROR, "TLS session_start: stream is not attached");
+        return -1;
+    }
+
+    tls_mimicry_ctx_t *l_ctx =
+        (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
+    if(!l_ctx || !l_ctx->mimicry ||
+       dap_tls_mimicry_get_state(l_ctx->mimicry) != DAP_TLS_MIMICRY_STATE_ESTABLISHED ||
+       l_ctx->phase != TLS_PHASE_STREAMING)
+    {
+        log_it(L_ERROR, "TLS session_start: transport is not ready (phase=%d)",
+               l_ctx ? (int)l_ctx->phase : -1);
+        return -2;
+    }
+
+    if(a_session_id == 0)
+    {
+        log_it(L_ERROR, "TLS session_start: invalid session ID");
+        return -3;
+    }
+
+    debug_if(s_debug_more, L_DEBUG,
+             "TLS session_start: direct stream ready (session_id=%u)", a_session_id);
+    if(a_callback)
+        a_callback(a_stream, 0);
     return 0;
 }
 

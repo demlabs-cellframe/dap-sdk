@@ -31,21 +31,29 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_stream.h"
 #include "dap_stream_session.h"
 #include "uthash.h"
+#include <time.h>
 
 /**
- * @brief Per-client session for DNS server address-based routing
- *
- * DNS is connectionless — server distinguishes clients by remote address.
- * Each unique IP:port pair gets a session with its own encryption key
- * and a server-side stream for bidirectional data exchange.
+ * @brief Per-client session for DNS server cookie/nonce routing
  */
 typedef struct dns_server_client_session {
+    uint64_t cookie;
+    uint64_t nonce;
     struct sockaddr_storage remote_addr;
     socklen_t remote_addr_len;
     dap_enc_key_t *handshake_key;
     dap_stream_t *stream;
     dap_net_trans_ctx_t *trans_ctx;
     dap_stream_session_t *stream_session;
+    bool handshake_complete;
+    time_t last_active;
+    uint32_t next_down_id;
+    uint32_t last_up_msg;
+    uint16_t last_up_frag;
+    size_t down_count;
+    size_t down_pos;
+    void *down_queue;
+    void *reasm;
     UT_hash_handle hh;
 } dns_server_client_session_t;
 

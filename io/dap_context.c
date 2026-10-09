@@ -46,12 +46,14 @@
 #include <sys/types.h>
 #include <sys/select.h>
 #include <unistd.h>
+#include <sched.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #elif defined (DAP_OS_BSD)
 #include <sys/types.h>
 #include <sys/select.h>
 #include <unistd.h>
+#include <sched.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
@@ -262,11 +264,8 @@ void dap_context_stop_n_kill(dap_context_t * a_context)
     case DAP_CONTEXT_TYPE_PROC_THREAD: {
         dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
         a_context->signal_exit = true;
-        // Wake up proc thread via eventfd (replaces mutex+condvar)
-        uint64_t l_one = 1;
-        if (l_thread->wakeup_fd >= 0
-                && write(l_thread->wakeup_fd, &l_one, sizeof(l_one)) != sizeof(l_one))
-            log_it(L_WARNING, "Failed to wakeup proc thread (errno=%d)", errno);
+        // Wake up proc thread (eventfd on Linux, pipe on BSD/macOS)
+        dap_proc_thread_wakeup_signal(l_thread);
     }
     default:
         break;
@@ -742,7 +741,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
     int l_selected_sockets = 0;
     static _Thread_local uint64_t s_heartbeat_counter = 0;
     static _Thread_local uint64_t s_busy_count = 0;
+    static _Thread_local int s_busy_fd = -1;
     static _Thread_local time_t s_last_heartbeat_log = 0;
+    static _Thread_local time_t s_last_busy_log = 0;
     do {
 #ifdef DAP_EVENTS_CAPS_EPOLL
         struct epoll_event *l_epoll_events = a_context->epoll_events;
@@ -758,7 +759,18 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             }
         }
         if (l_selected_sockets > 0) {
-            s_busy_count++;
+            /* Count consecutive single-fd wakeups only. Multi-fd batches and fd
+             * switches are normal under VPN traffic and must not be treated as a
+             * busy-spin (the old counter incremented on every eventful epoll_wait
+             * and then disarmed the socket — that killed the stream under load). */
+            dap_events_socket_t *l_es_busy = (dap_events_socket_t *)l_epoll_events[0].data.ptr;
+            int l_fd_busy = l_es_busy ? s_es_io_fd(l_es_busy) : -1;
+            if (l_selected_sockets == 1 && l_fd_busy >= 0 && l_fd_busy == s_busy_fd)
+                s_busy_count++;
+            else {
+                s_busy_count = (l_selected_sockets == 1 && l_fd_busy >= 0) ? 1 : 0;
+                s_busy_fd = l_fd_busy;
+            }
             if (s_busy_count > 10000) {
                 bool l_forced_close = false;
                 for (ssize_t bi = 0; bi < l_sockets_max && bi < l_selected_sockets; bi++) {
@@ -783,29 +795,32 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }
                 }
                 if (!l_forced_close) {
-                    /* No HUP sockets found — log the first event for diagnosis */
-                    dap_events_socket_t *l_es0 = (dap_events_socket_t *)l_epoll_events[0].data.ptr;
-                    log_it(L_WARNING, "Worker ctx #%u busy loop: %"PRIu64" iters, fd=%d type=%u epoll_ev=0x%x n_events=%d sock_flags=0x%x buf_out=%zu has_write_cb=%d",
-                           a_context->id, s_busy_count,
-                           l_es0 ? s_es_io_fd(l_es0) : -1,
-                           l_es0 ? (unsigned)l_es0->type : 0,
-                           l_epoll_events[0].events, l_selected_sockets,
-                           l_es0 ? l_es0->flags : 0,
-                           l_es0 ? l_es0->buf_out_size : 0,
-                           l_es0 ? (l_es0->callbacks.write_callback != NULL) : 0);
-                    /* Break the spin: drop armed edge until explicitly re-enabled. */
-                    if (l_es0) {
-                        uint32_t l_ev0 = l_epoll_events[0].events;
-                        if ((l_ev0 & EPOLLIN) && l_es0->type != DESCRIPTOR_TYPE_EVENT)
-                            dap_events_socket_set_readable_unsafe(l_es0, false);
-                        if (l_ev0 & EPOLLOUT)
-                            dap_events_socket_set_writable_unsafe(l_es0, false);
+                    /* Never disarm here: set_readable/writable(false) permanently
+                     * stalls TUN/stream under load and triggers false reconnects.
+                     * Yield + rate-limited log only. */
+                    time_t l_now = time(NULL);
+                    if (l_now != s_last_busy_log) {
+                        s_last_busy_log = l_now;
+                        dap_events_socket_t *l_es0 = (dap_events_socket_t *)l_epoll_events[0].data.ptr;
+                        log_it(L_WARNING, "Worker ctx #%u busy loop (no disarm): %"PRIu64
+                               " iters, fd=%d type=%u epoll_ev=0x%x n_events=%d sock_flags=0x%x buf_out=%zu has_write_cb=%d",
+                               a_context->id, s_busy_count,
+                               l_es0 ? s_es_io_fd(l_es0) : -1,
+                               l_es0 ? (unsigned)l_es0->type : 0,
+                               l_epoll_events[0].events, l_selected_sockets,
+                               l_es0 ? l_es0->flags : 0,
+                               l_es0 ? l_es0->buf_out_size : 0,
+                               l_es0 ? (l_es0->callbacks.write_callback != NULL) : 0);
                     }
+#if defined(DAP_OS_UNIX)
+                    sched_yield();
+#endif
                 }
                 s_busy_count = 0;
             }
         } else {
             s_busy_count = 0;
+            s_busy_fd = -1;
         }
 #elif defined(DAP_EVENTS_CAPS_POLL)
         l_selected_sockets = poll(a_context->poll, a_context->poll_count, -1);
@@ -1070,12 +1085,21 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 }
 
                 if(l_cur->buf_in_size_max && l_cur->buf_in_size >= l_cur->buf_in_size_max ) {
-                    log_it(L_WARNING, "Buffer is full when there is smth to read. Its dropped! esocket %p (%"DAP_FORMAT_SOCKET")", l_cur, l_cur->socket);
-                    l_cur->buf_in_size = 0;
-                    if (l_cur->buf_in)
-                        l_cur->buf_in[0] = '\0';
-                    if (!l_cur->no_close)
-                        l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                    /* Buffer full — drain existing data via read callback before
+                     * reading more.  This prevents the old path that silently
+                     * dropped the entire buf_in, which caused VPN data loss
+                     * under medium load. */
+                    if (l_cur->buf_in_size > 0 && l_cur->callbacks.read_callback) {
+                        l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
+                        if (l_cur->context == NULL)
+                            continue;
+                    }
+                    if (l_cur->buf_in_size >= l_cur->buf_in_size_max) {
+                        log_it(L_WARNING, "Buffer still full after read callback (%zu/%zu), disabling read. esocket %p (%"DAP_FORMAT_SOCKET")",
+                               l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur, l_cur->socket);
+                        dap_events_socket_set_readable_unsafe(l_cur, false);
+                        continue;
+                    }
                 }
 
                 bool l_must_read_smth = false;
@@ -1291,22 +1315,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         }
 #if !defined(DAP_OS_WINDOWS)
                         else if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
-                            /* EPOLLIN armed but recv/read returned EAGAIN — level-triggered spin.
-                             * NOTE: DESCRIPTOR_TYPE_FILE (TUN) is intentionally excluded — it must
-                             * stay armed so the kernel re-notifies when the next packet arrives.
-                             * EAGAIN on a level-triggered fd means "not readable", so epoll will
-                             * stay silent until data arrives — no busy-spin.
-                             * NOTE: DESCRIPTOR_TYPE_SOCKET_UDP is excluded — it has its own drain
-                             * loop above and never reaches this path (l_must_read_smth=false). */
-                            switch (l_cur->type) {
-                            case DESCRIPTOR_TYPE_PIPE:
-                            case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-                            case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                                dap_events_socket_set_readable_unsafe(l_cur, false);
-                                break;
-                            default:
-                                break;
-                            }
+                            /* Keep EPOLLIN armed. On level-triggered sockets epoll
+                             * stays silent until data arrives again. Permanently
+                             * disarming here caused TLS/HTTP clients to miss the
+                             * next response (e.g. enc_init reply never processed). */
                         }
 #endif
 #ifndef DAP_NET_CLIENT_NO_SSL
@@ -1325,14 +1337,18 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         debug_if(s_debug_more, L_DEBUG, "EPOLLIN triggered but nothing to read: buf_in_size=%zu, max=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d",
                                l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur->socket, l_cur->type);
                         if (l_must_read_smth) {
-                            /* DESCRIPTOR_TYPE_FILE (TUN) and DESCRIPTOR_TYPE_SOCKET_UDP
-                             * are excluded: TUN must stay armed for next packets;
-                             * UDP uses a drain loop and never sets l_must_read_smth. */
+                            /* recv()==0 is peer FIN. Mark close; do NOT merely
+                             * drop EPOLLIN — that permanently stalls clients that
+                             * still expect a reply (TLS enc_init, HTTP, etc.). */
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_PIPE:
+                                dap_events_socket_set_readable_unsafe(l_cur, false);
+                                break;
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                                 dap_events_socket_set_readable_unsafe(l_cur, false);
+                                if (!l_cur->no_close)
+                                    l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                                 break;
                             default:
                                 break;
@@ -1619,6 +1635,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+                                /* Keep EPOLLOUT armed. send() EAGAIN means the kernel
+                                 * TX queue is full — we must wait for the next writable
+                                 * event to flush the remainder. Disarming here stalled
+                                 * TLS enc_init replies (~5 KB) on the wire forever. */
+                                l_bytes_sent = 0;
+                                break;
                             case DESCRIPTOR_TYPE_PIPE:
                                 /* FILE (TUN) handled above — keeps EPOLLOUT armed */
                                 dap_events_socket_set_writable_unsafe(l_cur, false);

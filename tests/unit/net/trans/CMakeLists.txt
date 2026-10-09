@@ -261,6 +261,29 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
 # ============================================================================
+# Test: DNS Tunnel Wire Codec
+# ============================================================================
+project(test_dns_tunnel_wire)
+
+add_executable(${PROJECT_NAME}
+    test_dns_tunnel_wire.c
+)
+
+dap_test_link_libraries(${PROJECT_NAME})
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${TRANSPORT_TEST_INCLUDE_DIRS})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;net;trans;dns;wire"
+)
+
+# ============================================================================
 # Test: UDP Trans Multi-Client Regression Test
 # Tests handshake + encryption with multiple concurrent clients
 # ============================================================================

@@ -183,7 +183,8 @@ size_t dap_enc_iaes256_cbc_decrypt_fast(struct dap_enc_key * a_key, const void *
     }
     for(size_t i = a_in_size - l_padding_size; i < a_in_size; i++){
         if(((uint8_t *)data)[i] != l_padding_size){
-            log_it(L_CRITICAL, "Invalid padding byte at position %zu, expected %zu", i, l_padding_size);
+            log_it(L_WARNING, "AES-CBC: invalid padding byte[%zu]=%u, expected %zu — possible client/server version mismatch",
+                   i, ((uint8_t *)data)[i], l_padding_size);
             return 0;
         }
     }

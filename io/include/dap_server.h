@@ -23,10 +23,9 @@
 #pragma once
 
 #include <pthread.h>
-#include <stdatomic.h>
 #include "uthash.h"
 #include "utlist.h"
-#include "dap_events_socket.h"
+#include "dap_events_socket.h" /* dap_common.h: C <stdatomic.h> / C++ <atomic> */
 #include "dap_list.h"
 #include "dap_cpu_monitor.h"
 

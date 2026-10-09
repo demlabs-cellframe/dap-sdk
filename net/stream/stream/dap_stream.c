@@ -97,7 +97,7 @@ static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY
 
 static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
 
-static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt);
+static bool s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt);
 
 // Callbacks for HTTP client
 static void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg); // Prepare stream when all headers are read
@@ -163,22 +163,17 @@ ssize_t dap_stream_trans_write_unsafe(dap_stream_t *a_stream, const void *a_data
         return 0;
     }
 
-    if (!a_stream->trans_ctx) {
-        log_it(L_ERROR, "Stream has no trans_ctx");
-        return 0;
-    }
-
-    if (!a_stream->trans_ctx->trans ||
-        !a_stream->trans_ctx->trans->ops ||
-        !a_stream->trans_ctx->trans->ops->write) {
-        log_it(L_WARNING, "Stream trans has no write callback (trans_ctx->trans may not be set yet)");
+    dap_net_trans_t *l_trans = a_stream->trans_ctx && a_stream->trans_ctx->trans
+            ? a_stream->trans_ctx->trans : a_stream->trans;
+    if (!l_trans || !l_trans->ops || !l_trans->ops->write) {
+        log_it(L_WARNING, "Stream trans has no write callback");
         return 0;
     }
 
     debug_if(s_debug, L_DEBUG,
              "dap_stream_trans_write_unsafe: writing %zu bytes via trans->ops->write", a_size);
 
-    ssize_t l_ret = a_stream->trans_ctx->trans->ops->write(
+    ssize_t l_ret = l_trans->ops->write(
         a_stream,  // stream
         a_data,    // data
         a_size     // size
@@ -241,9 +236,10 @@ ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_
      * datagram/stream paths.  Without this check, a DNS stream whose underlying socket
      * is SOCK_DGRAM would incorrectly fall into s_stream_send_datagram_unsafe which
      * requires a_stream->flow to be set. */
-    if (a_stream->trans_ctx && a_stream->trans_ctx->trans &&
-        a_stream->trans_ctx->trans->ops && a_stream->trans_ctx->trans->ops->write) {
-        return a_stream->trans_ctx->trans->ops->write(a_stream, a_data, a_size);
+    dap_net_trans_t *l_trans = a_stream->trans_ctx && a_stream->trans_ctx->trans
+            ? a_stream->trans_ctx->trans : a_stream->trans;
+    if (l_trans && l_trans->ops && l_trans->ops->write) {
+        return l_trans->ops->write(a_stream, a_data, a_size);
     }
 
     dap_events_socket_t *l_es = a_stream->esocket;
@@ -985,14 +981,14 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         a_stream->esocket_uuid = 0;
         a_stream->esocket_worker = NULL;
         /* Clear error_callback to prevent spurious error reports during teardown.
-         * Do NOT clear delete_callback — the esocket delete callback (s_tls_delete
-         * or s_esocket_callback_delete) needs to run to free transport-specific
-         * resources (e.g. tls_conn_ctx_t, mimicry).  The is_deleting guard at the
-         * top of this function prevents the callback from re-entering deletion. */
+         * Do NOT blindly NULL _inheritor — TLS keeps tls_conn_ctx there for its
+         * delete_callback. Clear only when _inheritor is the stream trans_ctx, or
+         * when the stream was already detached (trans_ctx NULL) but the unified
+         * stream delete_callback would still follow a stale _inheritor. */
         l_es->callbacks.error_callback = NULL;
-        /* For non-TLS transports, _inheritor is trans_ctx which we free below.
-         * NULL it here to prevent double-free by the esocket delete callback. */
-        if (l_es->_inheritor == (void*)a_stream->trans_ctx)
+        if (l_es->_inheritor == (void*)a_stream->trans_ctx
+            || (!a_stream->trans_ctx
+                && l_es->callbacks.delete_callback == s_esocket_callback_delete))
             l_es->_inheritor = NULL;
         dap_worker_t *l_current = dap_worker_get_current();
         if (l_current == l_es_worker) {
@@ -1142,10 +1138,16 @@ void dap_stream_server_promote_uuid_keepalive(dap_stream_t *a_stream)
  */
 void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_ARG *a_arg)
 {
-    if (dap_net_trans_websocket_try_upgrade(a_http_client) == 0)
+    log_it(L_INFO, "stream headers_read: query='%s' path='%s'",
+           a_http_client && a_http_client->in_query_string[0] ? a_http_client->in_query_string : "(empty)",
+           a_http_client ? a_http_client->url_path : "(null)");
+    if (dap_net_trans_websocket_try_upgrade(a_http_client) == 0) {
+        log_it(L_INFO, "stream headers_read: handled as WebSocket upgrade");
         return;
+    }
 
     unsigned int l_id=0;
+    bool l_need_error_reply = false;
     //debug_if(s_debug_more, L_DEBUG,"Prepare data stream");
     if(a_http_client->in_query_string[0]){
         debug_if(s_debug_more, L_INFO,"Query string [%s]",a_http_client->in_query_string);
@@ -1156,6 +1158,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                 log_it(L_ERROR,"No session id %u was found", l_id);
                 a_http_client->reply_status_code = Http_Status_NotFound;
                 strcpy(a_http_client->reply_reason_phrase,"Not found");
+                l_need_error_reply = true;
             } else {
                 debug_if(s_debug, L_DEBUG, "Session pointer: %p, mutex: %p, active_channels: %p",
                        (void*)l_ss, (void*)&l_ss->mutex, (void*)l_ss->active_channels);
@@ -1169,8 +1172,9 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     if (!l_stream) {
                         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                         a_http_client->reply_status_code = Http_Status_NotFound;
-                        return;
-                    }
+                        strcpy(a_http_client->reply_reason_phrase,"Not found");
+                        l_need_error_reply = true;
+                    } else {
                     debug_if(s_debug, L_DEBUG, "Stream created successfully: %p (esocket=%p, stream_worker=%p)",
                            (void*)l_stream, (void*)l_stream->esocket, (void*)l_stream->stream_worker);
                     l_stream->session = l_ss;
@@ -1182,9 +1186,9 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     for(size_t i = 0; i < count_channels; i++) {
                         dap_stream_ch_t * l_ch = dap_stream_ch_new(l_stream, l_ss->active_channels[i]);
                         if (!l_ch) {
+                            /* HTTP 200 already sent inside s_stream_new */
                             log_it(L_ERROR, "Failed to create channel '%c' for session %u", l_ss->active_channels[i], l_id);
-                            a_http_client->reply_status_code = Http_Status_InternalServerError;
-                            return;
+                            break;
                         }
                         l_ch->ready_to_read = true;
                         //l_stream->channel[i]->ready_to_write = true;
@@ -1204,16 +1208,32 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
                     dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
 #endif
+                    }
                 }else{
-                    log_it(L_ERROR,"Can't open session id %u", l_id);
+                    log_it(L_ERROR,"Can't open session id %u (already opened=%d)", l_id, l_open_ret);
                     a_http_client->reply_status_code = Http_Status_NotFound;
                     strcpy(a_http_client->reply_reason_phrase,"Not found");
+                    l_need_error_reply = true;
                 }
             }
+        } else {
+            log_it(L_ERROR, "Stream GET: cannot parse session_id from query '%s'",
+                   a_http_client->in_query_string);
+            a_http_client->reply_status_code = Http_Status_BadRequest;
+            strcpy(a_http_client->reply_reason_phrase,"Bad request");
+            l_need_error_reply = true;
         }
     }else{
         log_it(L_ERROR,"No query string");
+        a_http_client->reply_status_code = Http_Status_BadRequest;
+        strcpy(a_http_client->reply_reason_phrase,"Bad request");
+        l_need_error_reply = true;
     }
+    /* Error paths never reach s_stream_new (which writes 200). Without an
+     * explicit reply the HTTP layer drops the request silently and the
+     * client later sends SERVICE_REQUEST into a half-open stream. */
+    if (l_need_error_reply)
+        dap_http_client_write(a_http_client);
 }
 
 /**
@@ -1460,6 +1480,14 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
  */
 size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data, size_t a_data_size)
 {
+    return dap_stream_data_proc_read_ext_validated(a_stream, a_data, a_data_size, NULL);
+}
+
+size_t dap_stream_data_proc_read_ext_validated(dap_stream_t *a_stream, const void *a_data,
+                                              size_t a_data_size, bool *a_accepted)
+{
+    if (a_accepted)
+        *a_accepted = false;
     if (!a_stream || !a_data || a_data_size == 0)
         return 0;
 
@@ -1489,7 +1517,9 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
-                s_stream_proc_pkt_in(a_stream, l_pkt);
+                bool l_accepted = s_stream_proc_pkt_in(a_stream, l_pkt);
+                if (a_accepted && l_accepted)
+                    *a_accepted = true;
             } else {
                 debug_if(s_debug_more, L_DEBUG, "proc_read_ext: incomplete packet need=%zu have=%zu",
                          l_shift, (size_t)(l_end - l_pos));
@@ -1503,7 +1533,7 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     }
 
     debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG,
-             "Processed %lu / %lu bytes", l_processed_size, a_data_size);
+             "Processed %zu / %zu bytes", l_processed_size, a_data_size);
 
     return l_processed_size;
 }
@@ -1530,10 +1560,15 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
  * @brief stream_proc_pkt_in
  * @param sid
  */
-static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pkt)
+static bool s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pkt)
 {
     size_t a_pkt_size = sizeof(dap_stream_pkt_hdr_t) + a_pkt->hdr.size;
     bool l_is_clean_fragments = false;
+    bool l_accepted = false;
+    if ((a_pkt->hdr.type == STREAM_PKT_TYPE_DATA_PACKET ||
+         a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) &&
+        (!a_stream->session || !a_stream->session->key))
+        return false;
     a_stream->is_active = true;
     // dap_events_socket_t *l_es = a_stream->esocket;
 
@@ -1550,19 +1585,29 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: stream=%p, session=%p, key=%p, fragm_dec_size=%zu",
                  a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL, l_fragm_dec_size);
 
+        DAP_DEL_Z(a_stream->pkt_cache);
         a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_fragm_dec_size);
+        if (!a_stream->pkt_cache) {
+            l_is_clean_fragments = true;
+            break;
+        }
         dap_stream_fragment_pkt_t *l_fragm_pkt = (dap_stream_fragment_pkt_t*)a_stream->pkt_cache;
 
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: CALLING dap_stream_pkt_read_unsafe (stream=%p, pkt=%p, out=%p, out_size=%zu)",
                  a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
 
         size_t l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
+        if (l_dec_pkt_size > l_fragm_dec_size) {
+            log_it(L_ERROR, "FRAG: dec_na returned %zu > buf %zu — possible heap overrun, dropping", l_dec_pkt_size, l_fragm_dec_size);
+            l_is_clean_fragments = true;
+            break;
+        }
 
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: dap_stream_pkt_read_unsafe returned l_dec_pkt_size=%zu (expected_min=%zu)",
                  l_dec_pkt_size, sizeof(dap_stream_fragment_pkt_t));
 
-        if(l_dec_pkt_size == 0) {
-            debug_if(s_dump_packet_headers, L_WARNING, "Input: can't decode packet size = %zu (stream=%p)", a_pkt_size, a_stream);
+        if(l_dec_pkt_size < sizeof(dap_stream_fragment_pkt_t)) {
+            log_it(L_WARNING, "Input: decryption returned 0 for pkt_size=%zu (stream=%p) — padding mismatch or corrupt data?", a_pkt_size, (void*)a_stream);
             l_is_clean_fragments = true;
             break;
         }
@@ -1574,7 +1619,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         }
         {
           size_t l_ms = (size_t)l_fragm_pkt->mem_shift, l_fs = (size_t)l_fragm_pkt->full_size, l_sz = (size_t)l_fragm_pkt->size;
-          if (!l_fs || l_fs > (size_t)DAP_STREAM_PKT_SIZE_MAX || l_sz > l_fs || l_ms > l_fs - l_sz) {
+          if (!l_sz || !l_fs || l_fs > (size_t)DAP_STREAM_PKT_SIZE_MAX || l_sz > l_fs || l_ms > l_fs - l_sz) {
             debug_if(s_dump_packet_headers, L_WARNING, "Input: invalid fragment bounds mem_shift=%zu size=%zu full_size=%zu", l_ms, l_sz, l_fs);
             l_is_clean_fragments = true;
             break;
@@ -1601,6 +1646,10 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
                 DAP_DEL_Z(a_stream->buf_fragments);
                 a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
+                if (!a_stream->buf_fragments) {
+                    l_is_clean_fragments = true;
+                    break;
+                }
                 a_stream->buf_fragments_size_total = l_fragm_pkt->full_size;
             }
             memcpy(a_stream->buf_fragments + l_fragm_pkt->mem_shift, l_fragm_pkt->data, l_fragm_pkt->size);
@@ -1609,6 +1658,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
 
         // Not last fragment, otherwise go to parsing STREAM_PKT_TYPE_DATA_PACKET
         if(a_stream->buf_fragments_size_filled < l_fragm_pkt->full_size) {
+            l_accepted = true;
             debug_if(s_dump_packet_headers, L_DEBUG, "Fragment not complete yet: filled=%zu full=%u",
                    a_stream->buf_fragments_size_filled, l_fragm_pkt->full_size);
             break;
@@ -1628,14 +1678,25 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_dec_pkt_size = a_stream->buf_fragments_size_total;
         } else {
             size_t l_pkt_dec_size = dap_enc_decode_out_size(a_stream->session->key, a_pkt->hdr.size, DAP_ENC_DATA_TYPE_RAW);
+            DAP_DEL_Z(a_stream->pkt_cache);
             a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_pkt_dec_size);
+            if (!a_stream->pkt_cache) {
+                l_is_clean_fragments = true;
+                break;
+            }
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
+            if (l_dec_pkt_size > l_pkt_dec_size) {
+                log_it(L_ERROR, "DATA_PKT: dec_na returned %zu > buf %zu — possible heap overrun, dropping", l_dec_pkt_size, l_pkt_dec_size);
+                l_is_clean_fragments = true;
+                break;
+            }
         }
 
         debug_if(s_debug_more, L_DEBUG, "DATA_PKT: dec=%zu hdr=%zu ch_id=0x%02x data_size=%u",
                l_dec_pkt_size, sizeof(l_ch_pkt->hdr),
-               l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size);
+               l_dec_pkt_size >= sizeof(l_ch_pkt->hdr) ? l_ch_pkt->hdr.id : 0,
+               l_dec_pkt_size >= sizeof(l_ch_pkt->hdr) ? l_ch_pkt->hdr.data_size : 0);
 
         if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
             log_it(L_WARNING, "DATA_PKT: decoded %zu < hdr %zu — drop", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
@@ -1686,6 +1747,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
 
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
+                    l_accepted = l_security_check_passed;
                     // if (!l_es->_inheritor)
                     //     return;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
@@ -1729,20 +1791,25 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         uint32_t l_session_id = l_srv_pkt->session_id;
         if (a_stream->esocket)
             s_check_session(l_session_id, a_stream->esocket);
+        /* SERVICE is setup, not proof of established peer activity. */
     } break;
     case STREAM_PKT_TYPE_KEEPALIVE: {
+        if (a_pkt->hdr.size)
+            break;
+        l_accepted = true;
         debug_if(s_debug, L_DEBUG, "Keep alive check recieved");
         dap_stream_pkt_hdr_t l_ret_pkt = {
             .type = STREAM_PKT_TYPE_ALIVE
         };
         memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(c_dap_stream_sig));
-        if (a_stream->trans_ctx) {
-            dap_stream_send_unsafe(a_stream, &l_ret_pkt, sizeof(l_ret_pkt));
-        }
+        dap_stream_send_unsafe(a_stream, &l_ret_pkt, sizeof(l_ret_pkt));
         // Reset client keepalive timer (UUID lookup — never dereference keepalive_timer)
         s_stream_reset_keepalive_timer_unsafe(a_stream);
     } break;
     case STREAM_PKT_TYPE_ALIVE:
+        if (a_pkt->hdr.size)
+            break;
+        l_accepted = true;
         a_stream->is_active = false; // To prevent keep-alive concurrency
         debug_if(s_debug, L_DEBUG, "Keep alive response recieved");
         break;
@@ -1755,6 +1822,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         DAP_DEL_Z(a_stream->buf_fragments);
         a_stream->buf_fragments_size_total = a_stream->buf_fragments_size_filled = 0;
     }
+    return l_accepted;
 }
 
 /**
@@ -1973,29 +2041,59 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     // Client-side streams may never be added if worker_assign didn't fire
     dap_stream_t *l_stream = NULL;
     bool l_in_list = false;
+    /* Bounded iteration to detect corrupted list pointers (heap corruption).
+     * If the list is corrupted, we must NOT follow stale next/prev pointers. */
+    size_t l_iter_limit = 10000;
     DL_FOREACH(s_streams, l_stream) {
+        if (!--l_iter_limit) {
+            log_it(L_ERROR, "s_stream_delete_from_list: iteration limit reached — "
+                   "s_streams list likely corrupted (stream=%p)", (void*)a_stream);
+            pthread_rwlock_unlock(&s_streams_lock);
+            return;
+        }
         if (l_stream == a_stream) {
             l_in_list = true;
             break;
         }
     }
     l_stream = NULL;
-    if (l_in_list)
+    if (l_in_list) {
         DL_DELETE(s_streams, a_stream);
+        /* Clear list pointers after removal so stale references are harmless */
+        a_stream->prev = NULL;
+        a_stream->next = NULL;
+    }
     if (a_stream->authorized) {
-        // It's an authorized stream, try to replace it in hastable
-        if (a_stream->primary)
-            HASH_DEL(s_authorized_streams, a_stream);
-        DL_FOREACH(s_streams, l_stream)
+        /* Only HASH_DEL if this stream is actually the table entry.
+         * HASH_DEL on a non-member (stale primary / already removed) corrupts
+         * uthash and later shows up as free(): corrupted unsorted chunks. */
+        if (a_stream->primary) {
+            dap_stream_t *l_in_hash = NULL;
+            HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_in_hash);
+            if (l_in_hash == a_stream)
+                HASH_DEL(s_authorized_streams, a_stream);
+            a_stream->primary = false;
+        }
+        l_stream = NULL;
+        l_iter_limit = 10000;
+        DL_FOREACH(s_streams, l_stream) {
+            if (!--l_iter_limit) {
+                log_it(L_ERROR, "s_stream_delete_from_list: authorized replace scan limit — "
+                       "s_streams list likely corrupted (stream=%p)", (void*)a_stream);
+                l_stream = NULL;
+                break;
+            }
             if (l_stream->node.uint64 == a_stream->node.uint64)
                 break;
+        }
         if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
             dap_link_manager_stream_replace(&a_stream->node, l_stream->is_client_to_uplink);
-        } else {
+        } else if (!dap_stream_node_addr_is_blank(&a_stream->node)) {
             dap_cluster_member_delete(s_global_links_cluster, &a_stream->node);
             dap_link_manager_stream_delete(&a_stream->node); // Used own rwlock for this cluster members
         }
+        a_stream->authorized = false;
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }
@@ -2216,4 +2314,18 @@ void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count)
         DAP_DEL_Z(it->channels);
     }
     DAP_DELETE(a_info);
+}
+
+int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full)
+{
+    dap_worker_t *l_worker = NULL;
+    dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(&a_addr, &l_worker);
+    if (!l_uuid || !l_worker) {
+        log_it(L_WARNING, "Stream for addr " NODE_ADDR_FP_STR " not found", NODE_ADDR_FP_ARGS_S(a_addr));
+        return -1;
+    }
+    log_it(L_NOTICE, "Closing stream for addr " NODE_ADDR_FP_STR " (uuid %" DAP_UINT64_FORMAT_U ")",
+           NODE_ADDR_FP_ARGS_S(a_addr), l_uuid);
+    dap_events_socket_remove_and_delete_mt(l_worker, l_uuid);
+    return 0;
 }

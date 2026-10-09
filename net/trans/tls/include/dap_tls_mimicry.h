@@ -70,12 +70,15 @@ int dap_tls_mimicry_process_client_hello(dap_tls_mimicry_t *a_m,
                                          void **a_response, size_t *a_response_size);
 
 /**
- * Client: consume ServerHello + CCS + encrypted extensions, produce client Finished.
+ * Client: consume ServerHello + CCS + one fake EncryptedExtensions record,
+ * produce client Finished. Sets *a_consumed to handshake bytes used so any
+ * trailing APP_DATA (e.g. early enc_init reply) is preserved for the caller.
  * Caller must free(*a_response) with DAP_DELETE if *a_response_size > 0.
  */
 int dap_tls_mimicry_process_server_hello(dap_tls_mimicry_t *a_m,
                                          const void *a_data, size_t a_size,
-                                         void **a_response, size_t *a_response_size);
+                                         void **a_response, size_t *a_response_size,
+                                         size_t *a_consumed);
 
 /**
  * Wrap payload into one or more TLS Application Data records.

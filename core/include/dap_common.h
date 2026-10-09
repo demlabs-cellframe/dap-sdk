@@ -583,11 +583,17 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
  *     support it. Peers reporting v26 only get classic 5.7 ACK behavior
  *     (no early ACK, no threshold ACK) to avoid premature SYNCED_CHAIN
  *     caused by 5.7's num_last==ack_num check.
+ *
+ * DAP_CLIENT_PROTOCOL_VERSION is what we advertise in enc_init. Keep it at 26
+ * while the VPN fleet / HTTP path on production nodes still speaks 26
+ * (221+ successful sessions on test node vs our v27 POSTs never reaching :80).
+ * DAP_PROTOCOL_VERSION may stay 27 for chain-sync features when the peer
+ * reports support.
 */
 #define DAP_PROTOCOL_VERSION          27
 #define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
 
-#define DAP_CLIENT_PROTOCOL_VERSION   27
+#define DAP_CLIENT_PROTOCOL_VERSION   26
 
 /* Cross-platform secure memory clearing */
 #if defined(HAVE_EXPLICIT_BZERO)

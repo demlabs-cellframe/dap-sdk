@@ -392,7 +392,8 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
         if (l_wrap_rc == 0 && l_wrapped && l_wrapped_sz > 0) {
             dap_events_socket_write_unsafe(a_es, l_wrapped, l_wrapped_sz);
             DAP_DELETE(l_wrapped);
-            log_it(L_NOTICE, "TLS server: response sent (%zu bytes)", l_wrapped_sz);
+            log_it(L_NOTICE, "TLS server: response queued (%zu bytes, buf_out=%zu)",
+                   l_wrapped_sz, a_es->buf_out_size);
         }
         DAP_DELETE(l_response);
     } else {

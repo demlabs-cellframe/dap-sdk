@@ -251,11 +251,27 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
 {
     assert(a_arg);
     dap_global_db_cluster_t *l_cluster = a_arg;
+    static uint32_t s_timer_call_count = 0;
+    if (++s_timer_call_count % 30 == 1)
+        log_it(L_INFO, "GDB sync timer: mask='%s' state=%d links_cluster=%s members=%zu",
+                    l_cluster->groups_mask, l_cluster->sync_context.state,
+                    l_cluster->links_cluster ? (l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : "unnamed") : "NULL",
+                    l_cluster->links_cluster ? dap_cluster_members_count(l_cluster->links_cluster) : 0);
     switch (l_cluster->sync_context.state) {
     case DAP_GLOBAL_DB_SYNC_STATE_START: {
         dap_stream_node_addr_t l_current_link = dap_cluster_get_random_link(l_cluster->links_cluster);
-        if (dap_stream_node_addr_is_blank(&l_current_link))
+        if (dap_stream_node_addr_is_blank(&l_current_link)) {
+            static dap_time_t s_last_no_link_log = 0;
+            dap_time_t l_now = dap_time_now();
+            if (l_now - s_last_no_link_log >= 30) {
+                log_it(L_WARNING, "GDB cluster sync: no link found for cluster mask '%s' (links_cluster=%s, members=%zu)",
+                            l_cluster->groups_mask,
+                            l_cluster->links_cluster ? (l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : "unnamed") : "NULL",
+                            l_cluster->links_cluster ? dap_cluster_members_count(l_cluster->links_cluster) : 0);
+                s_last_no_link_log = l_now;
+            }
             break;
+        }
         dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask(l_cluster->groups_mask);
         if (!l_groups) {    // Nothing to sync
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
@@ -264,20 +280,23 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         }
         l_cluster->sync_context.current_link = l_current_link;
         dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
+        uint32_t l_groups_sent = 0;
         for (dap_list_t *it = l_groups; it; it = it->next) {
             if (!dap_global_db_driver_count(it->data, c_dap_global_db_driver_hash_blank, true))
                 continue;   // Don't send request for empty group, if any
             size_t l_group_len = dap_strlen(it->data) + 1;
             dap_global_db_start_pkt_t *l_msg = DAP_NEW_STACK_SIZE(dap_global_db_start_pkt_t, sizeof(dap_global_db_start_pkt_t) + l_group_len);
-            l_msg->last_hash = c_dap_global_db_driver_hash_blank; //dap_db_get_last_hash_remote(l_req->link, l_req->group);
+            l_msg->last_hash = c_dap_global_db_driver_hash_blank;
             l_msg->group_len = l_group_len;
             memcpy(l_msg->group, it->data, l_group_len);
-            debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_SYNC_START packet for group %s from first record", l_msg->group);
+            log_it(L_INFO, "OUT: GLOBAL_DB_SYNC_START for group %s to " NODE_ADDR_FP_STR, l_msg->group, NODE_ADDR_FP_ARGS_S(l_current_link));
             dap_stream_ch_pkt_send_by_addr(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START,
                                            l_msg, dap_global_db_start_pkt_get_size(l_msg));
+            l_groups_sent++;
         }
 
         dap_list_free_full(l_groups, NULL);
+        log_it(L_INFO, "GDB cluster sync: sent %u group requests for mask '%s'", l_groups_sent, l_cluster->groups_mask);
         
         l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
         l_cluster->sync_context.stage_last_activity = dap_time_now();
@@ -286,6 +305,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
     case DAP_GLOBAL_DB_SYNC_STATE_IDLE:
         if (dap_time_now() - l_cluster->sync_context.stage_last_activity >
                 l_cluster->dbi->sync_idle_time) {
+            log_it(L_INFO, "GDB cluster sync: IDLE->START for mask '%s'", l_cluster->groups_mask);
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
             if (!dap_stream_node_addr_is_blank(&l_cluster->sync_context.current_link))
                 dap_stream_ch_del_notifier(&l_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,

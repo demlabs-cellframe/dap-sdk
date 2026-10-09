@@ -231,7 +231,6 @@ ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint
         debug_if(s_debug_more, L_DEBUG, "dap_client_write_unsafe: ch='%c' type=0x%02x size=%zu ch=%p stream=%p",
                  a_ch_id, a_type, a_data_size, (void*)l_ch, (void*)l_ch->stream);
         ssize_t l_ret = dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
-        debug_if(s_debug_more, L_DEBUG, "dap_client_write_unsafe: wrote %zd bytes", l_ret);
         return l_ret;
     }
 
@@ -267,9 +266,10 @@ struct dap_client_write_args {
 static void s_client_write_on_worker(void *a_arg)
 {
     struct dap_client_write_args *l_args = a_arg;
-    debug_if(s_debug_more, L_DEBUG, "s_client_write_on_worker: ch='%c' type=0x%02x size=%zu client=%p",
-             l_args->ch_id, l_args->type, l_args->data_size, (void*)l_args->client);
-    dap_client_write_unsafe(l_args->client, l_args->ch_id, l_args->type, l_args->data, l_args->data_size);
+    ssize_t l_ret = dap_client_write_unsafe(l_args->client, l_args->ch_id, l_args->type, l_args->data, l_args->data_size);
+    if (l_ret < 0)
+        log_it(L_ERROR, "s_client_write_on_worker: write failed ch='%c' type=0x%02x size=%zu ret=%zd",
+               l_args->ch_id, l_args->type, l_args->data_size, l_ret);
     DAP_DELETE(a_arg);
 }
 

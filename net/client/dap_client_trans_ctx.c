@@ -63,12 +63,20 @@ static void s_stream_tc_cleanup_on_worker(void *a_arg)
 
     if (l_stream) {
         /* Worker context: safe to touch stream fields.  Detach the trans_ctx
-         * before deleting the stream so dap_stream_delete_unsafe() does not
-         * write into the trans_ctx we are about to free. */
-        if (l_stream->trans_ctx == l_tc) {
-            l_stream->trans_ctx = NULL;
-            if (l_stream->client_stream_ref == &l_tc->stream)
-                l_stream->client_stream_ref = NULL;
+         * and client_stream_ref unconditionally before deleting the stream so
+         * dap_stream_delete_unsafe() does not follow stale pointers.
+         * l_tc is intentionally NULL here (trans_ctx stays with FSM), so we
+         * cannot compare — just clear both fields. */
+        l_stream->trans_ctx = NULL;
+        l_stream->client_stream_ref = NULL;
+        /* Break circular reference and suppress re-entrant callbacks:
+         * - _inheritor -> trans_ctx -> stream would re-enter stream deletion
+         * - delete/error callbacks would notify FSM STREAM_ABORTED while we are
+         *   already tearing down for an intentional reconnect/close. */
+        if (l_stream->esocket) {
+            l_stream->esocket->_inheritor = NULL;
+            l_stream->esocket->callbacks.delete_callback = NULL;
+            l_stream->esocket->callbacks.error_callback = NULL;
         }
         dap_stream_delete_unsafe(l_stream);
     }
@@ -178,6 +186,16 @@ void dap_client_trans_ctx_get_stream_callbacks(dap_events_socket_callbacks_t *a_
     a_callbacks->write_callback = s_stream_es_callback_write;
     a_callbacks->error_callback = s_stream_es_callback_error;
     a_callbacks->delete_callback = s_stream_es_callback_delete;
+}
+
+void dap_client_trans_ctx_touch(dap_client_t *a_client)
+{
+    if (!a_client)
+        return;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
+    if (l_ctx)
+        l_ctx->ts_last_active = dap_time_now();
 }
 
 // ===== Instance lifecycle =====
@@ -350,6 +368,14 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
         if (l_tc->stream_key)
             dap_enc_key_delete(l_tc->stream_key);
         l_tc->stream_key = dap_enc_key_dup(a_stream->session->key);
+        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                              STAGE_STATUS_DONE, ERROR_NO_ERROR);
+    } else if (l_tc->stream_key) {
+        // DNS (and similar) set stream_key on trans_ctx and call handshake_cb
+        // with empty body — session->key may still be NULL.
+        debug_if(s_debug_more, L_DEBUG, "Handshake completed via transport stream_key");
+        if (a_stream->session && !a_stream->session->key)
+            a_stream->session->key = dap_enc_key_dup(l_tc->stream_key);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_DONE, ERROR_NO_ERROR);
     } else {

@@ -903,11 +903,14 @@ static dap_client_http_t* s_client_http_create_and_connect(
         .delete_callback = s_es_delete
     };
 
-    // Create socket using platform-independent function
-    dap_events_socket_t *l_ev_socket = dap_events_socket_create(DESCRIPTOR_TYPE_SOCKET_CLIENT, &l_s_callbacks);
+    // Resolve first and create a socket of the resolved family (NAT64-safe).
+    bool l_resolve_failed = false;
+    dap_events_socket_t *l_ev_socket = dap_events_socket_create_resolved(a_uplink_addr, a_uplink_port,
+                                                                         SOCK_STREAM, 0, &l_s_callbacks,
+                                                                         &l_resolve_failed);
     if (!l_ev_socket) {
-        *a_error_code = errno;
-        log_it(L_ERROR, "Can't create socket");
+        *a_error_code = l_resolve_failed ? EHOSTUNREACH : errno;
+        log_it(L_ERROR, "Can't create socket for '%s : %u'", a_uplink_addr ? a_uplink_addr : "", a_uplink_port);
         return NULL;
     }
     
@@ -975,16 +978,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     l_client_http->next_chunk_id = 0;
     l_client_http->chunked_error_count = 0;
 
-    // Resolve host
-    if (0 > dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL)) {
-        *a_error_code = EHOSTUNREACH;
-        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_uplink_addr, a_uplink_port);
-        s_client_http_delete(l_client_http);
-        l_ev_socket->_inheritor = NULL;
-        dap_events_socket_delete_unsafe(l_ev_socket, true);
-        return NULL;
-    }
-
+    // Address already resolved by dap_events_socket_create_resolved().
     dap_strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET6_ADDRSTRLEN - 1);
     l_ev_socket->remote_port = a_uplink_port;
 
@@ -1071,36 +1065,14 @@ static dap_client_http_t* s_client_http_create_and_connect(
         }
     }
 
-    // Add socket to worker - s_http_new will be called to set CONNECTING flag
+    /* Transfer ownership to the worker. s_http_new enables connection polling,
+     * including for sockets that are already connected when registered.
+     * dap_events_socket_connect also returns success for EINPROGRESS, so its
+     * result cannot be used to dispatch connected_callback here. Never touch
+     * the socket after handoff: the worker may already have deleted it. */
     dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
-    
-    // Check if connection completed immediately (connect() returned 0, l_connect_err == 0)
-    // In this case, EPOLLOUT won't fire, so we need to handle connection immediately
-    if (l_connect_ret == 0 && l_connect_err == 0 && l_ev_socket->context) {
-        // Connection was established immediately - verify and handle
-        int l_errno_check = 0;
-        socklen_t l_errno_len = sizeof(l_errno_check);
-        if (getsockopt(l_ev_socket->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno_check, &l_errno_len) == 0 && l_errno_check == 0) {
-            // Connection is ready - clear CONNECTING flag and call connected callback
-            l_ev_socket->flags &= ~DAP_SOCK_CONNECTING;
-            if (l_ev_socket->callbacks.connected_callback) {
-                debug_if(s_debug_more, L_DEBUG, "[HANDSHAKE DEBUG] Connection completed immediately, calling connected_callback for socket %"DAP_FORMAT_SOCKET, 
-                         l_ev_socket->socket);
-                l_ev_socket->callbacks.connected_callback(l_ev_socket);
-            }
-            dap_context_poll_update(l_ev_socket);
-            
-            /* connected_callback may have freed l_client_http (via full
-             * request/response cycle on localhost).  Check if the esocket
-             * still references us — if not, the client is gone. */
-            if (l_ev_socket->_inheritor != l_client_http) {
-                *a_error_code = 0;
-                return NULL;
-            }
-        }
-    }
-        *a_error_code = 0;
-        return l_client_http;
+    *a_error_code = 0;
+    return l_client_http;
 #endif
     
     // Should not reach here
@@ -1194,7 +1166,11 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
         return;
     }
     *l_es_uuid_ptr = a_esocket->uuid;
-    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, (unsigned long)s_client_timeout_read_after_connect_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr);
+    /* Large bodies (modern Kyber enc_init ~10KB) need more time for upload + server KEM. */
+    uint64_t l_timeout_ms = s_client_timeout_read_after_connect_ms;
+    if (l_client_http->request_size > 4096 && l_timeout_ms < 15000)
+        l_timeout_ms = 15000;
+    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, (unsigned long)l_timeout_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr);
     if (!l_client_http->timer) {
         DAP_DELETE(l_es_uuid_ptr);
         log_it(L_ERROR, "Can't run timerfo after connection check on worker id %u", l_client_http->worker->id);
@@ -1207,6 +1183,8 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 
     // Send HTTP request with properly formatted headers
     s_send_http_request(a_esocket, l_client_http);
+    /* Request queued to buf_out — refresh so write drain does not race the read timeout. */
+    l_client_http->ts_last_read = time(NULL);
 }
 
 /**
@@ -1230,7 +1208,15 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
     if(l_es){
         dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
         assert(l_client_http);
-        if ( time(NULL) - l_client_http->ts_last_read >= (time_t)(s_client_timeout_read_after_connect_ms / 1000)){
+        time_t l_timeout_s = (time_t)(s_client_timeout_read_after_connect_ms / 1000);
+        if (l_client_http->request_size > 4096 && l_timeout_s < 15)
+            l_timeout_s = 15;
+        if ( time(NULL) - l_client_http->ts_last_read >= l_timeout_s){
+            /* Still draining request body — do not treat as uplink timeout. */
+            if (l_es->buf_out_size > 0) {
+                l_client_http->ts_last_read = time(NULL);
+                return true;
+            }
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path ? l_client_http->path : "");
                    
@@ -2198,17 +2184,20 @@ int dap_client_http_init()
     if (l_ssl_cert_path) {
         if (wolfSSL_CTX_load_verify_locations(s_ctx, l_ssl_cert_path, 0) != SSL_SUCCESS)
         return -2;
+    } else if (dap_config_get_item_bool_default(g_config, "dap_client", "ssl_verify_none", false)) {
+        /* Explicit opt-out only (e.g. self-signed test nodes). Never the
+         * silent default: an unverified TLS peer can be impersonated. */
+        log_it(L_WARNING, "TLS certificate verification DISABLED by dap_client.ssl_verify_none");
+        wolfSSL_CTX_set_verify(s_ctx, WOLFSSL_VERIFY_NONE, 0);
     } else {
-        // Common system CA locations (hashed dirs); keep VERIFY_PEER when any loads
-        static const char *l_ca_dirs[] = { "/etc/ssl/certs", "/etc/ssl", "/etc/certs", "/usr/local/etc/ssl/certs" };
-        bool l_ca_loaded = false;
-        for (size_t i = 0; i < sizeof(l_ca_dirs)/sizeof(l_ca_dirs[0]) && !l_ca_loaded; i++)
-            l_ca_loaded = wolfSSL_CTX_load_verify_locations(s_ctx, NULL, l_ca_dirs[i]) == SSL_SUCCESS;
-        if (!l_ca_loaded) {
-            log_it(L_ERROR, "No system CA bundle found for outbound HTTPS: peer verification is DISABLED. "
-                            "Install ca-certificates or set [dap_client] ssl_cert_path");
-            wolfSSL_CTX_set_verify(s_ctx, WOLFSSL_VERIFY_NONE, 0);
-        }
+        /* Verify against the system trust store; fail closed if none. */
+        wolfSSL_CTX_set_verify(s_ctx, WOLFSSL_VERIFY_PEER, 0);
+#ifdef WOLFSSL_SYS_CA_CERTS
+        if (wolfSSL_CTX_load_system_CA_certs(s_ctx) != WOLFSSL_SUCCESS)
+            log_it(L_WARNING, "TLS: cannot load system CA certificates; HTTPS peers will fail verification");
+#else
+        log_it(L_WARNING, "TLS: no CA bundle configured (dap_client.ssl_cert_path); HTTPS peers will fail verification");
+#endif
     }
     if (wolfSSL_CTX_UseSupportedCurve(s_ctx, WOLFSSL_ECC_SECP256R1) != SSL_SUCCESS) {
         log_it(L_ERROR, "WolfSSL UseSupportedCurve() handle error");
@@ -2606,5 +2595,4 @@ static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_cl
     
     return true;
 }
-
 
