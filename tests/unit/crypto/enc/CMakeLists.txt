@@ -9,14 +9,14 @@ file(GLOB HEADERS *.h)
 
 add_executable(${PROJECT_NAME} ${SRC} ${HEADERS})
 
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(${PROJECT_NAME} PRIVATE
     dap_test
     dap_core_static
     dap_crypto_static
 )
 
 if(UNIX)
-    target_link_libraries(${PROJECT_NAME} m pthread)
+    target_link_libraries(${PROJECT_NAME} PRIVATE m pthread)
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
