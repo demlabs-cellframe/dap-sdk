@@ -75,7 +75,7 @@ DAP_MOCK_DECLARE(dap_server_delete);
 DAP_MOCK_DECLARE(dap_server_delete_sync);
 // The DNS server start arms an idle-tick timer; without an events reactor the
 // real dap_timerfd_start crashes - return a fake non-NULL handle instead.
-DAP_MOCK_DECLARE(dap_timerfd_start, 1);
+DAP_MOCK_DECLARE(dap_timerfd_start, { .return_value.ptr = (void*)(intptr_t)1 });
 
 // Mock dap_stream_trans functions
 // Don't mock dap_net_trans_find - use real implementation
