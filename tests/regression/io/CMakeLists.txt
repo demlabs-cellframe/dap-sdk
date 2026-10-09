@@ -45,6 +45,7 @@ target_link_libraries(${TEST_NAME} PRIVATE
     dap_io
     dap_core
     dap_crypto
+    dap_crypto_kyber512
     pthread
 )
 
