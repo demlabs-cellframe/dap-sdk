@@ -19,6 +19,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/core/include
     ${CMAKE_SOURCE_DIR}/net/stream/ch/include
     ${CMAKE_SOURCE_DIR}/net/stream/stream/include
+    ${CMAKE_SOURCE_DIR}/net/server/http_server/include
+    ${CMAKE_SOURCE_DIR}/net/server/http_server/http_client/include
+    ${CMAKE_SOURCE_DIR}/net/server/http_server
+    ${CMAKE_SOURCE_DIR}/net/common/http/include
+    ${CMAKE_SOURCE_DIR}/net/common/server/include
 )
 
 if(NOT ANDROID)
