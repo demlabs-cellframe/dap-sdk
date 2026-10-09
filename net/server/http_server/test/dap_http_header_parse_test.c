@@ -14,6 +14,7 @@
 #include "dap_test.h"
 #include "dap_http_client.h"
 #include "dap_http_header_server.h"
+#include "dap_http_header.h"
 
 #define LOG_TAG "dap_http_header_parse_test"
 
