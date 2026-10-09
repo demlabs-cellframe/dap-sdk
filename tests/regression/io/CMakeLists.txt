@@ -17,8 +17,9 @@ if(LINUX)
     
     target_link_libraries(${TEST_NAME} PRIVATE
         dap_test
-        dap_io
-        dap_core
+        dap_io_static
+        dap_core_static
+        dap_crypto_static
         pthread
     )
     

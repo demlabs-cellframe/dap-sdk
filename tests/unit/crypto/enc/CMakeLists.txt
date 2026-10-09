@@ -11,8 +11,8 @@ add_executable(${PROJECT_NAME} ${SRC} ${HEADERS})
 
 target_link_libraries(${PROJECT_NAME}
     dap_test
-    dap_core
-    dap_crypto
+    dap_core_static
+    dap_crypto_static
 )
 
 if(UNIX)

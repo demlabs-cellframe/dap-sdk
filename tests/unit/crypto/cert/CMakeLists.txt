@@ -10,8 +10,8 @@ file(GLOB HEADERS *.h)
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
 target_link_libraries(${PROJECT_NAME}
-    dap_crypto
-    dap_core
+    dap_crypto_static
+    dap_core_static
     dap_test
 )
 
