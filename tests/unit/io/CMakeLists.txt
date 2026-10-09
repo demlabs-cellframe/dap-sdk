@@ -353,8 +353,13 @@ message("[+] IO Flow Control Multi-Client test - integration bug regression")
 # 5.8-native io tests print uint64_t with %lu and call argless-prototype inits:
 # tolerated by the CI toolchains, fatal under -Werror on newer clang. Keep the
 # warnings visible but non-fatal for these targets only.
+include(CheckCCompilerFlag)
 foreach(t test_io_flow_ctrl test_io_flow_ctrl_multiclient test_io_flow_tier_application)
     if(TARGET ${t})
-        target_compile_options(${t} PRIVATE -Wno-error=format -Wno-error=deprecated-non-prototype)
+        target_compile_options(${t} PRIVATE -Wno-error=format)
+        check_c_compiler_flag("-Wno-error=deprecated-non-prototype" HAS_W_DEPREC_NON_PROTO_IO)
+        if(HAS_W_DEPREC_NON_PROTO_IO)
+            target_compile_options(${t} PRIVATE -Wno-error=deprecated-non-prototype)
+        endif()
     endif()
 endforeach()

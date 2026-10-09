@@ -6,7 +6,7 @@ project(dap_link_manager_test)
 include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/dap_test_helpers.cmake)
 
 add_executable(${PROJECT_NAME}
-    ${CMAKE_SOURCE_DIR}/net/link_manager/test/dap_link_manager_test.c
+    ${CMAKE_CURRENT_LIST_DIR}/../../../net/link_manager/test/dap_link_manager_test.c
 )
 
 dap_test_link_libraries(${PROJECT_NAME})

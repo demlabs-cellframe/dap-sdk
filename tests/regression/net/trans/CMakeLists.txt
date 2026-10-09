@@ -90,8 +90,13 @@ message("[+] UDP Handshake Retransmission Test - verifies handshake retransmissi
 
 # 5.8-native udp regression tests pass args to argless prototypes (see the io
 # tests note): tolerated by CI toolchains, fatal under -Werror on newer clang.
+include(CheckCCompilerFlag)
 foreach(t test_udp_handshake_retrans test_udp_multiclient_regression)
     if(TARGET ${t})
-        target_compile_options(${t} PRIVATE -Wno-error=deprecated-non-prototype -Wno-error=format)
+        target_compile_options(${t} PRIVATE -Wno-error=format)
+        check_c_compiler_flag("-Wno-error=deprecated-non-prototype" HAS_W_DEPREC_NON_PROTO)
+        if(HAS_W_DEPREC_NON_PROTO)
+            target_compile_options(${t} PRIVATE -Wno-error=deprecated-non-prototype)
+        endif()
     endif()
 endforeach()
