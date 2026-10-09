@@ -18,7 +18,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 if(NOT ANDROID)
-    target_link_libraries(${PROJECT_NAME} pthread)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
 endif()
 
 add_test(
