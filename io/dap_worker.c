@@ -27,6 +27,8 @@
 #include "dap_context.h"
 #include "dap_math_ops.h"
 #include "dap_worker.h"
+#include "dap_context_queue.h"
+#include "dap_timerfd.h"
 #include "dap_timerfd.h"
 #include "dap_events.h"
 #include "dap_enc_base64.h"
@@ -41,6 +43,7 @@
 
 #define LOG_TAG "dap_worker"
 
+static bool s_debug_more = false;
 typedef struct dap_worker_msg_callback {
     dap_worker_callback_t callback; // Callback for specific client operations
     void * arg;
@@ -52,12 +55,13 @@ static time_t s_connection_timeout = 60;    // seconds
 
 static bool s_socket_all_check_activity( void * a_arg);
 #ifndef DAP_EVENTS_CAPS_IOCP
-static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg);
-static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg);
-static void s_queue_es_reassign_callback( dap_events_socket_t * a_es, void * a_arg);
-static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg);
+// New queue callbacks (worker_queue accepts void * directly)
+static void s_queue_add_es_callback(void *a_arg);
+static void s_queue_delete_es_callback(void *a_arg);
+static void s_queue_es_reassign_callback(void *a_arg);
+static void s_queue_es_io_callback(void *a_arg);
 #endif
-static void s_queue_callback_callback( dap_events_socket_t * a_es, void * a_arg);
+static void s_queue_callback_callback(void *a_arg);
 
 dap_worker_t *dap_worker_get_current() {
     return s_worker;
@@ -91,7 +95,7 @@ static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags)
     (void) a_flags;
     a_es->context->signal_exit = true;
     if (g_debug_reactor)
-        log_it(L_DEBUG, "Context #%u signaled to exit", a_es->context->id);
+        debug_if(s_debug_more, L_DEBUG, "Context #%u signaled to exit", a_es->context->id);
 }
 
 /**
@@ -146,12 +150,22 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
 #error "Unimplemented dap_context_init for this platform"
 #endif
 #ifndef DAP_EVENTS_CAPS_IOCP
-    l_worker->queue_es_new      = dap_context_create_queue(a_context, s_queue_add_es_callback);
-    l_worker->queue_es_delete   = dap_context_create_queue(a_context, s_queue_delete_es_callback);
-    l_worker->queue_es_io       = dap_context_create_queue(a_context, s_queue_es_io_callback);
-    l_worker->queue_es_reassign = dap_context_create_queue(a_context, s_queue_es_reassign_callback );
+    // Create worker queues (lock-free ring buffer based)
+    l_worker->queue_es_new      = dap_context_queue_create(a_context, 0, s_queue_add_es_callback);
+    l_worker->queue_es_delete   = dap_context_queue_create(a_context, 0, s_queue_delete_es_callback);
+    l_worker->queue_es_io       = dap_context_queue_create(a_context, 0, s_queue_es_io_callback);
+    l_worker->queue_es_reassign = dap_context_queue_create(a_context, 0, s_queue_es_reassign_callback);
+    if (!l_worker->queue_es_new || !l_worker->queue_es_delete || 
+        !l_worker->queue_es_io || !l_worker->queue_es_reassign) {
+        log_it(L_CRITICAL, "Failed to create worker queues");
+        return -1;
+    }
 #endif
-    l_worker->queue_callback    = dap_context_create_queue(a_context, s_queue_callback_callback);
+    l_worker->queue_callback = dap_context_queue_create(a_context, 1048576, s_queue_callback_callback);  // 1M capacity for high load
+    if (!l_worker->queue_callback) {
+        log_it(L_CRITICAL, "Failed to create callback queue");
+        return -1;
+    }
 
     l_worker->timer_check_activity = dap_timerfd_create (s_connection_timeout * 1000 / 2,
                                                         s_socket_all_check_activity, l_worker);
@@ -170,20 +184,77 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
 int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
 {
     dap_return_val_if_fail(a_context && a_arg, -1);
-    //TODO add deinit code for queues and others
-    dap_context_remove(a_context->event_exit);
-    dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
-
+    
     dap_worker_t *l_worker = a_arg;
     assert(l_worker);
+    
+    log_it(L_NOTICE,"Stopping thread #%u, cleaning up queues...", l_worker->id);
+    
+    // Clean up worker queues
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_worker->queue_es_new) {
+        dap_context_queue_delete(l_worker->queue_es_new);
+        l_worker->queue_es_new = NULL;
+    }
+    if (l_worker->queue_es_delete) {
+        dap_context_queue_delete(l_worker->queue_es_delete);
+        l_worker->queue_es_delete = NULL;
+    }
+    if (l_worker->queue_es_reassign) {
+        dap_context_queue_delete(l_worker->queue_es_reassign);
+        l_worker->queue_es_reassign = NULL;
+    }
+    if (l_worker->queue_es_io) {
+        dap_context_queue_delete(l_worker->queue_es_io);
+        l_worker->queue_es_io = NULL;
+    }
+    
+    // Clean up input queue arrays
+    if (l_worker->queue_es_new_input) {
+        DAP_DELETE(l_worker->queue_es_new_input);
+        l_worker->queue_es_new_input = NULL;
+    }
+    if (l_worker->queue_es_delete_input) {
+        DAP_DELETE(l_worker->queue_es_delete_input);
+        l_worker->queue_es_delete_input = NULL;
+    }
+    if (l_worker->queue_es_reassign_input) {
+        DAP_DELETE(l_worker->queue_es_reassign_input);
+        l_worker->queue_es_reassign_input = NULL;
+    }
+    if (l_worker->queue_es_io_input) {
+        DAP_DELETE(l_worker->queue_es_io_input);
+        l_worker->queue_es_io_input = NULL;
+    }
+#endif
+    
+    if (l_worker->queue_callback) {
+        dap_context_queue_delete(l_worker->queue_callback);
+        l_worker->queue_callback = NULL;
+    }
+    
+    /* Clean up the activity-check timer created in callback_started */
+    if (l_worker->timer_check_activity) {
+        dap_timerfd_delete_unsafe(l_worker->timer_check_activity);
+        l_worker->timer_check_activity = NULL;
+    }
+    
+    dap_context_remove(a_context->event_exit);
+    dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
+    a_context->event_exit = NULL;
+
     log_it(L_NOTICE,"Exiting thread #%u", l_worker->id);
     return 0;
 }
 
 int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket)
 {
+    debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_worker_add_events_socket_unsafe: Adding CONNECTING socket %"DAP_FORMAT_SOCKET" (flags=0x%x, type=%d)", 
+             a_esocket->socket, a_esocket->flags, a_esocket->type);
     int err = dap_context_add(a_worker->context, a_esocket);
     if (!err) {
+        debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_worker_add_events_socket_unsafe: Successfully added CONNECTING socket %"DAP_FORMAT_SOCKET" to context", 
+                 a_esocket->socket);
         switch (a_esocket->type) {
         case DESCRIPTOR_TYPE_SOCKET_RAW:
         case DESCRIPTOR_TYPE_SOCKET_UDP:
@@ -196,6 +267,9 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
 #endif
         default: break;
         }
+    } else {
+        debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_ERROR, "dap_worker_add_events_socket_unsafe: Failed to add CONNECTING socket %"DAP_FORMAT_SOCKET" to context: %d", 
+                 a_esocket->socket, err);
     }
     return err;
 }
@@ -207,26 +281,31 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
  * @param a_arg
  */
 
-static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
+/**
+ * @brief Add esocket to worker (internal function)
+ * @param a_worker Worker
+ * @param a_esocket_ptr Event socket to add
+ * @return 0 on success
+ */
+static int s_queue_es_add(dap_worker_t *a_worker, dap_events_socket_t *a_esocket_ptr)
 {
-    assert(a_es);
-    dap_context_t * l_context = a_es->context;
+    assert(a_worker);
+    dap_context_t *l_context = a_worker->context;
     assert(l_context);
-    dap_worker_t * l_worker = a_es->worker;
-    assert(l_worker);
-    if (!a_arg)
-        return log_it(L_ERROR,"NULL esocket accepted to add on worker #%u", l_worker->id), -1;
-    dap_events_socket_t * l_es_new =(dap_events_socket_t *) a_arg;
+    
+    if (!a_esocket_ptr)
+        return log_it(L_ERROR, "NULL esocket accepted to add on worker #%u", a_worker->id), -1;
+    
+    dap_events_socket_t *l_es_new = (dap_events_socket_t *)a_esocket_ptr;
 
     debug_if(g_debug_reactor, L_DEBUG, "Added es %p \"%s\" [%s] to worker #%d",
              l_es_new, dap_events_socket_get_type_str(l_es_new),
              l_es_new->socket == INVALID_SOCKET ? "" : dap_itoa(l_es_new->socket),
-             l_worker->id);
+             a_worker->id);
 
 #ifdef DAP_EVENTS_CAPS_KQUEUE
     if(l_es_new->socket!=0 && l_es_new->socket != -1 &&
             l_es_new->type != DESCRIPTOR_TYPE_EVENT &&
-        l_es_new->type != DESCRIPTOR_TYPE_QUEUE &&
         l_es_new->type != DESCRIPTOR_TYPE_TIMER
             )
 #else
@@ -237,100 +316,139 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
             return -2;
         }
 
-    if ( dap_worker_add_events_socket_unsafe(l_worker, l_es_new) ) {
+    debug_if(g_debug_reactor, L_DEBUG, "s_queue_es_add: Adding socket %"DAP_FORMAT_SOCKET" to worker %u (flags=0x%x, CONNECTING=%d, type=%d)", 
+             l_es_new->socket, a_worker->id, l_es_new->flags, !!(l_es_new->flags & DAP_SOCK_CONNECTING), l_es_new->type);
+    if ( dap_worker_add_events_socket_unsafe(a_worker, l_es_new) ) {
         log_it(L_ERROR, "Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
         return -3;
     }
+    debug_if(g_debug_reactor, L_DEBUG, "s_queue_es_add: Successfully added socket %"DAP_FORMAT_SOCKET" to worker %u", l_es_new->socket, a_worker->id);
 
     // We need to differ new and reassigned esockets. If its new - is_initialized is false
     if (!l_es_new->is_initalized && l_es_new->callbacks.new_callback)
         l_es_new->callbacks.new_callback(l_es_new, NULL);
 
-    //log_it(L_DEBUG, "Added socket %d on worker %u", l_es_new->socket, w->id);
+    //debug_if(s_debug_more, L_DEBUG, "Added socket %d on worker %u", l_es_new->socket, w->id);
     if (l_es_new->callbacks.worker_assign_callback)
-        l_es_new->callbacks.worker_assign_callback(l_es_new, l_worker);
+        l_es_new->callbacks.worker_assign_callback(l_es_new, a_worker);
 
     l_es_new->is_initalized = true;
     return 0;
 }
 
-DAP_STATIC_INLINE void s_queue_add_es_callback(dap_events_socket_t *a_es, void * a_arg) { s_queue_es_add(a_es, a_arg); }
+/**
+ * @brief Worker queue callback for adding new esocket
+ * @param a_arg Event socket pointer (void *)
+ */
+static void s_queue_add_es_callback(void *a_arg) {
+    dap_events_socket_t *l_es = (dap_events_socket_t *)a_arg;
+    if (l_es && l_es->worker) {
+        debug_if(s_debug_more, L_INFO, "Worker #%u: dequeued new esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" type %d",
+               l_es->worker->id, l_es->socket, l_es->uuid, l_es->type);
+        s_queue_es_add(l_es->worker, l_es);
+    } else if (l_es) {
+        /* Worker was cleared during teardown — esocket is orphaned, just delete it */
+        debug_if(s_debug_more, L_WARNING, "s_queue_add_es_callback: esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" has no worker (teardown race), deleting",
+               l_es->socket, l_es->uuid);
+        dap_events_socket_delete_unsafe(l_es, false);
+    }
+}
 
 /**
  * @brief s_delete_es_callback
  * @param a_es
  * @param a_arg
  */
-static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg)
+/**
+ * @brief Worker queue callback for deleting esocket
+ * @param a_arg UUID pointer (dap_events_socket_uuid_t *)
+ */
+static void s_queue_delete_es_callback(void *a_arg)
 {
     assert(a_arg);
-    dap_events_socket_uuid_t * l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
-    dap_events_socket_t * l_es;
-    if ( (l_es = dap_context_find(a_es->context, *l_es_uuid_ptr)) != NULL ){
-        //l_es->flags |= DAP_SOCK_SIGNAL_CLOSE; // Send signal to socket to kill
+    dap_events_socket_uuid_t *l_es_uuid_ptr = (dap_events_socket_uuid_t *)a_arg;
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (!l_worker || !l_worker->context) {
+        log_it(L_ERROR, "Delete callback: no current worker");
+        DAP_DELETE(l_es_uuid_ptr);
+        return;
+    }
+    
+    dap_events_socket_t *l_es;
+    if ((l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr)) != NULL) {
         dap_events_socket_remove_and_delete_unsafe(l_es, false);
-    }else
-        debug_if(g_debug_reactor, L_INFO, "While we were sending the delete() message, esocket %"DAP_UINT64_FORMAT_U" has been disconnected ", *l_es_uuid_ptr);
+    } else {
+        debug_if(g_debug_reactor, L_INFO, "While we were sending the delete() message, esocket %"DAP_UINT64_FORMAT_U" has been disconnected", *l_es_uuid_ptr);
+    }
     DAP_DELETE(l_es_uuid_ptr);
 }
 
 /**
- * @brief s_reassign_es_callback
- * @param a_es
- * @param a_arg
+ * @brief Worker queue callback for reassigning esocket to another worker
+ * @param a_arg Reassign message (dap_worker_msg_reassign_t *)
  */
-static void s_queue_es_reassign_callback( dap_events_socket_t * a_es, void * a_arg)
+static void s_queue_es_reassign_callback(void *a_arg)
 {
-    assert(a_es);
-    dap_context_t * l_context = a_es->context;
-    assert(l_context);
-    dap_worker_msg_reassign_t * l_msg = (dap_worker_msg_reassign_t*) a_arg;
-    assert(l_msg);
-    dap_events_socket_t * l_es_reassign;
-    if ( ( l_es_reassign = dap_context_find(l_context, l_msg->esocket_uuid))!= NULL ){
-        if( l_es_reassign->was_reassigned && l_es_reassign->flags & DAP_SOCK_REASSIGN_ONCE) {
+    assert(a_arg);
+    dap_worker_msg_reassign_t *l_msg = (dap_worker_msg_reassign_t *)a_arg;
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (!l_worker || !l_worker->context) {
+        log_it(L_ERROR, "Reassign callback: no current worker");
+        DAP_DELETE(l_msg);
+        return;
+    }
+    
+    dap_context_t *l_context = l_worker->context;
+    dap_events_socket_t *l_es_reassign;
+    if ((l_es_reassign = dap_context_find(l_context, l_msg->esocket_uuid)) != NULL) {
+        dap_worker_t *l_worker_new = dap_events_worker_get(l_msg->worker_new_id);
+        if (!l_worker_new) {
+            log_it(L_ERROR, "Reassign callback: worker #%u not found", l_msg->worker_new_id);
+        } else if (l_es_reassign->was_reassigned && l_es_reassign->flags & DAP_SOCK_REASSIGN_ONCE) {
             log_it(L_INFO, "Reassgment request with DAP_SOCK_REASSIGN_ONCE allowed only once, declined reassigment from %u to %u",
-                   l_es_reassign->worker->id, l_msg->worker_new->id);
-
-        }else{
-            dap_events_socket_reassign_between_workers_unsafe(l_es_reassign,l_msg->worker_new);
+                   l_es_reassign->worker->id, l_msg->worker_new_id);
+        } else {
+            dap_events_socket_reassign_between_workers_unsafe(l_es_reassign, l_worker_new);
         }
-    }else{
-        log_it(L_INFO, "While we were sending the reassign message, esocket %p has been disconnected", l_msg->esocket);
+    } else {
+        log_it(L_INFO, "While we were sending the reassign message, esocket "DAP_FORMAT_ESOCKET_UUID" has been disconnected", l_msg->esocket_uuid);
     }
     DAP_DELETE(l_msg);
 }
 
 /**
- * @brief s_pipe_data_out_read_callback
- * @param a_es
- * @param a_arg
+ * @brief Worker queue callback for I/O operations
+ * @param a_arg I/O message (dap_worker_msg_io_t *)
  */
-static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
+static void s_queue_es_io_callback(void *a_arg)
 {
-    assert(a_es);
-    dap_context_t * l_context = a_es->context;
-    assert(l_context);
-    dap_worker_msg_io_t * l_msg = a_arg;
-    assert(l_msg);
-    // Check if it was removed from the list
+    assert(a_arg);
+    dap_worker_msg_io_t *l_msg = (dap_worker_msg_io_t *)a_arg;
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (!l_worker || !l_worker->context) {
+        log_it(L_ERROR, "I/O callback: no current worker");
+        DAP_DELETE(l_msg->data);
+        DAP_DELETE(l_msg);
+        return;
+    }
+    
+    dap_context_t *l_context = l_worker->context;
+    
     dap_events_socket_t *l_msg_es = dap_context_find(l_context, l_msg->esocket_uuid);
-    if ( l_msg_es == NULL){
-        log_it(L_INFO, "We got i/o message for esocket %"DAP_UINT64_FORMAT_U" thats now not in list. Lost %zu data", l_msg->esocket_uuid, l_msg->data_size);
+    if (l_msg_es == NULL) {
+        log_it(L_WARNING, "IO message for esocket 0x%"DAP_UINT64_FORMAT_x" not in list, lost %zu bytes (flags_set=0x%x)",
+               l_msg->esocket_uuid, l_msg->data_size, l_msg->flags_set);
         DAP_DELETE(l_msg->data);
         DAP_DELETE(l_msg);
         return;
     }
 
     if (l_msg->flags_set & DAP_SOCK_CONNECTING)
-        if (!  (l_msg_es->flags & DAP_SOCK_CONNECTING) ){
+        if (!(l_msg_es->flags & DAP_SOCK_CONNECTING)) {
             l_msg_es->flags |= DAP_SOCK_CONNECTING;
             dap_context_poll_update(l_msg_es);
         }
 
-    // Was a duplicate of the block above (checked flags_set twice), so DAP_SOCK_CONNECTING
-    // could never be cleared via this cross-thread message - the second check must test
-    // flags_unset, matching the READY_TO_READ/READY_TO_WRITE pattern right below.
     if (l_msg->flags_unset & DAP_SOCK_CONNECTING)
         if (l_msg_es->flags & DAP_SOCK_CONNECTING) {
             l_msg_es->flags &= ~DAP_SOCK_CONNECTING;
@@ -346,11 +464,16 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
     if (l_msg->flags_unset & DAP_SOCK_READY_TO_WRITE)
         dap_events_socket_set_writable_unsafe(l_msg_es, false);
     if (l_msg->data_size && l_msg->data) {
+        debug_if(s_debug_more && l_msg_es->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_DEBUG,
+                 "CLI IO: writing %zu bytes to es_uid 0x%"DAP_UINT64_FORMAT_x" buf_out was %zu flags 0x%x",
+                 l_msg->data_size, l_msg->esocket_uuid, l_msg_es->buf_out_size, l_msg_es->flags);
         // A refused write (output cap reached) drops data the peer is waiting
         // for: disconnect it. A bare SIGNAL_CLOSE is not enough - an idle peer
         // produces no events, so the reactor would never act on the flag.
-        if (!dap_events_socket_write_unsafe(l_msg_es, l_msg->data, l_msg->data_size) && !l_msg_es->no_close)
+        if (!dap_events_socket_write_unsafe(l_msg_es, l_msg->data, l_msg->data_size)
+                && !l_msg_es->no_close) {
             dap_events_socket_remove_and_delete_mt(l_msg_es->worker, l_msg_es->uuid);
+        }
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);
@@ -397,12 +520,21 @@ void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
  * @param a_es
  * @param a_arg
  */
-static void s_queue_callback_callback(dap_events_socket_t UNUSED_ARG *a_es, void *a_arg)
+/**
+ * @brief Worker queue callback for executing arbitrary callback
+ * @param a_arg Callback message (dap_worker_msg_callback_t *)
+ */
+static void s_queue_callback_callback(void *a_arg)
 {
-    dap_worker_msg_callback_t * l_msg = (dap_worker_msg_callback_t *) a_arg;
+    dap_worker_msg_callback_t *l_msg = (dap_worker_msg_callback_t *)a_arg;
     assert(l_msg);
     assert(l_msg->callback);
+
+    dap_worker_t *l_w = dap_worker_get_current();
+    debug_if(s_debug_more, L_INFO, "Worker #%u: processing callback %p arg=%p",
+           l_w ? l_w->id : 999, l_msg->callback, l_msg->arg);
     l_msg->callback(l_msg->arg);
+    
     DAP_DELETE(l_msg);
 }
 
@@ -476,9 +608,21 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
             ? 0 : ( DAP_DELETE(ol), GetLastError() );
     }
 #else
-    l_ret = dap_worker_get_current() == a_worker
-        ? s_queue_es_add(a_worker->queue_es_new, a_events_socket)
-        : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
+    // Use lock-free worker queue instead of pipe
+    if (dap_worker_get_current() == a_worker) {
+        // Same worker - direct add
+        l_ret = s_queue_es_add(a_worker, a_events_socket);
+    } else {
+        // Cross-worker - push to queue
+        a_events_socket->worker = a_worker; // Set worker before pushing
+        debug_if(s_debug_more, L_INFO, "Cross-worker push: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" → worker #%u",
+               a_events_socket->socket, a_events_socket->uuid, a_worker->id);
+        if (!dap_context_queue_push(a_worker->queue_es_new, a_events_socket)) {
+            l_ret = -1;
+        } else {
+            l_ret = 0;
+        }
+    }
 #endif
     if (l_ret)
         log_it(L_ERROR, "Can't %s es \"%s\" [%s], uuid "DAP_FORMAT_ESOCKET_UUID" to worker #%d, error %d: \"%s\"",
@@ -493,38 +637,46 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
 
 #ifndef DAP_EVENTS_CAPS_IOCP
 /**
- * @brief dap_worker_add_events_socket_inter
- * @param a_es_input
- * @param a_events_socket
+ * @brief Add event socket to worker via inter-worker queue
+ * @param a_queue_input Worker queue to send to
+ * @param a_events_socket Event socket to add
  */
 void dap_worker_add_events_socket_inter(dap_events_socket_t *a_es_input, dap_events_socket_t *a_events_socket)
 {
-    dap_return_if_fail(a_es_input && a_events_socket);
-    if( dap_events_socket_queue_ptr_send_to_input( a_es_input, a_events_socket ) )
-        log_it(L_ERROR, "Cant send pointer to interthread queue input: \"%s\"(code %d)",
-                        dap_strerror(errno), errno);
+    dap_return_if_fail(a_events_socket);
+    
+    // Migrate from old pipe-based API to new queue-based API
+    // a_es_input parameter is legacy and ignored - use auto worker assignment
+    dap_worker_t *l_target_worker = dap_events_worker_get_auto();
+    if (!l_target_worker) {
+        log_it(L_ERROR, "Failed to get target worker for inter-worker socket assignment");
+        return;
+    }
+    
+    // Use new direct assignment API
+    dap_worker_add_events_socket(l_target_worker, a_events_socket);
 }
 
 /**
- * @brief Send callback to the worker queue's input
- * @param a_es_input Queue's input
+ * @brief Send callback to the worker queue
+ * @param a_es_input Queue's input (old pipe-based API - deprecated)
  * @param a_callback Callback
  * @param a_arg Argument for callback
  */
-void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker_callback_t a_callback, void * a_arg)
+void dap_worker_exec_callback_inter(dap_events_socket_t *a_es_input, dap_worker_callback_t a_callback, void *a_arg)
 {
-    dap_return_if_fail(a_es_input && a_callback);
-    dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
-    if (!l_msg) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+    dap_return_if_fail(a_callback);
+    
+    // Migrate from old pipe-based API to new queue-based API
+    // a_es_input parameter is legacy and ignored - use auto worker assignment
+    dap_worker_t *l_target_worker = dap_events_worker_get_auto();
+    if (!l_target_worker) {
+        log_it(L_ERROR, "Failed to get target worker for inter-worker callback");
         return;
     }
-    l_msg->callback = a_callback;
-    l_msg->arg = a_arg;
-    if ( dap_events_socket_queue_ptr_send_to_input (a_es_input ,l_msg ) )
-        log_it(L_ERROR, "Cant send pointer to queue input: \"%s\"(code %d)",
-                        dap_strerror(errno), errno);
-
+    
+    // Use new direct callback API
+    dap_worker_exec_callback_on(l_target_worker, a_callback, a_arg);
 }
 #endif
 
@@ -540,10 +692,88 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
         return;
     }
     *l_msg = (dap_worker_msg_callback_t) { .callback = a_callback, .arg = a_arg };
-    if ( dap_events_socket_queue_ptr_send( a_worker->queue_callback, l_msg ) )
-        log_it(L_ERROR, "Cant send pointer to queue input: \"%s\"(code %d)",
-                        dap_strerror(errno), errno);
 
+    if (!dap_context_queue_push(a_worker->queue_callback, l_msg)) {
+        log_it(L_ERROR, "Failed to push callback to worker #%u queue (queue full)", a_worker->id);
+        DAP_DELETE(l_msg);
+    } else {
+        debug_if(s_debug_more, L_INFO, "Pushed callback %p to worker #%u queue_callback (eventfd=%d)",
+               a_callback, a_worker->id,
+               a_worker->queue_callback && a_worker->queue_callback->event_socket
+                   ? a_worker->queue_callback->event_socket->fd : -1);
+    }
+}
+
+// Helper structure for synchronous callback execution
+typedef struct {
+    dap_worker_callback_t callback;
+    void *arg;
+    pthread_mutex_t *mutex;
+    pthread_cond_t *cond;
+    bool *completed;
+} dap_worker_sync_wrapper_t;
+
+// Global wrapper callback for synchronous execution
+static void s_worker_sync_wrapper_callback(void *a_wrapper_arg) {
+    dap_worker_sync_wrapper_t *l_data = (dap_worker_sync_wrapper_t*)a_wrapper_arg;
+    
+    // Execute actual callback
+    l_data->callback(l_data->arg);
+    
+    // Signal completion
+    pthread_mutex_lock(l_data->mutex);
+    *l_data->completed = true;
+    pthread_cond_signal(l_data->cond);
+    pthread_mutex_unlock(l_data->mutex);
+}
+
+/**
+ * @brief dap_worker_exec_callback_on_sync - Synchronous callback execution
+ * @param a_worker Worker to execute callback on
+ * @param a_callback Callback function
+ * @param a_arg Callback argument
+ * 
+ * This function executes a callback on a worker thread and waits for completion.
+ * If called from the target worker thread, executes immediately (avoiding deadlock).
+ * Otherwise, schedules the callback and blocks until it completes.
+ */
+void dap_worker_exec_callback_on_sync(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
+{
+    dap_return_if_fail(a_worker && a_callback);
+    
+    // Check if we're already on the target worker - execute immediately
+    dap_worker_t *l_current_worker = dap_worker_get_current();
+    if (l_current_worker == a_worker) {
+        a_callback(a_arg);
+        return;
+    }
+    
+    // Need cross-worker synchronization
+    pthread_mutex_t l_mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t l_cond = PTHREAD_COND_INITIALIZER;
+    bool l_completed = false;
+    
+    // Wrapper data
+    dap_worker_sync_wrapper_t l_wrapper_data = {
+        .callback = a_callback,
+        .arg = a_arg,
+        .mutex = &l_mutex,
+        .cond = &l_cond,
+        .completed = &l_completed
+    };
+    
+    // Schedule wrapper
+    dap_worker_exec_callback_on(a_worker, s_worker_sync_wrapper_callback, &l_wrapper_data);
+    
+    // Wait for completion
+    pthread_mutex_lock(&l_mutex);
+    while (!l_completed) {
+        pthread_cond_wait(&l_cond, &l_mutex);
+    }
+    pthread_mutex_unlock(&l_mutex);
+    
+    pthread_mutex_destroy(&l_mutex);
+    pthread_cond_destroy(&l_cond);
 }
 
 /**
