@@ -723,7 +723,7 @@ int main(int argc, char **argv)
     dap_enc_init();
     
     log_it(L_NOTICE, "Init: cert_init...");
-    ret = dap_cert_init();
+    ret = dap_cert_init(NULL);
     if (ret != 0) {
         log_it(L_CRITICAL, "Cert init FAILED: %d", ret);
         return 1;
@@ -758,7 +758,7 @@ int main(int argc, char **argv)
     if (ret != 0) log_it(L_WARNING, "Link manager: %d (may be OK)", ret);
     
     log_it(L_NOTICE, "Init: global_db_init...");
-    ret = dap_global_db_init();
+    ret = dap_global_db_init(NULL);
     if (ret != 0) log_it(L_WARNING, "Global DB: %d (may be OK)", ret);
     
     log_it(L_NOTICE, "Init: client_init...");

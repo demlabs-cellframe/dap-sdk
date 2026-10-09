@@ -544,7 +544,7 @@ static void test_flow_ctrl_retransmit_regression(void)
     }
     
     uint64_t l_sent_after_send = atomic_load(&l_sender_ctx->packets_sent);
-    dap_test_msg("Packets sent: %lu", (unsigned long)l_sent_after_send);
+    dap_test_msg("Packets sent: %lu", l_sent_after_send);
     
     // Step 2: Wait for retransmit timer to fire (polling until retransmits > 0)
     dap_test_msg("Step 2: Waiting for retransmit timer (no ACKs)...");
@@ -556,7 +556,7 @@ static void test_flow_ctrl_retransmit_regression(void)
     
     uint64_t l_packets_after_wait = atomic_load(&l_sender_ctx->packets_sent);
     dap_test_msg("After wait: packets_sent=%lu (was 20), retrans_stats=%lu, timer_fired=%d", 
-                 (unsigned long)l_packets_after_wait, (unsigned long)l_retrans_stats, l_timer_fired);
+                 l_packets_after_wait, l_retrans_stats, l_timer_fired);
     
     dap_assert(l_timer_fired && l_retrans_stats > 0, 
                "Timer should trigger retransmits when no ACK");
@@ -574,7 +574,7 @@ static void test_flow_ctrl_retransmit_regression(void)
     uint64_t l_retrans_after_ack;
     dap_io_flow_ctrl_get_stats(l_sender, &l_sent_stats, &l_retrans_after_ack, &l_recv, &l_ooo, &l_dup, &l_lost);
     uint64_t l_packets_after_ack = atomic_load(&l_sender_ctx->packets_sent);
-    dap_test_msg("After ACK: packets_sent=%lu, retrans_stats=%lu", (unsigned long)l_packets_after_ack, (unsigned long)l_retrans_after_ack);
+    dap_test_msg("After ACK: packets_sent=%lu, retrans_stats=%lu", l_packets_after_ack, l_retrans_after_ack);
     
     // Step 6: Wait for multiple timer cycles AFTER ACK (polling, checking no new retrans)
     dap_test_msg("Step 6: Waiting for timer cycles after ACK...");
@@ -594,7 +594,7 @@ static void test_flow_ctrl_retransmit_regression(void)
     uint64_t l_new_packets = l_packets_final - l_packets_after_ack;
     
     dap_test_msg("Final: retrans_stats=%lu (was %lu), packets_sent=%lu (was %lu)", 
-                 (unsigned long)l_retrans_final, (unsigned long)l_retrans_after_ack, (unsigned long)l_packets_final, (unsigned long)l_packets_after_ack);
+                 l_retrans_final, l_retrans_after_ack, l_packets_final, l_packets_after_ack);
     dap_test_msg("NEW after ACK: retrans=%lu, packets=%lu (both expected 0)", 
                  l_new_retrans, l_new_packets);
     

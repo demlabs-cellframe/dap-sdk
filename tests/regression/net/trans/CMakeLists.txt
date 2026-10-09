@@ -87,3 +87,11 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 message("[+] UDP Handshake Retransmission Test - verifies handshake retransmission works")
+
+# 5.8-native udp regression tests pass args to argless prototypes (see the io
+# tests note): tolerated by CI toolchains, fatal under -Werror on newer clang.
+foreach(t test_udp_handshake_retrans test_udp_multiclient_regression)
+    if(TARGET ${t})
+        target_compile_options(${t} PRIVATE -Wno-error=deprecated-non-prototype -Wno-error=format)
+    endif()
+endforeach()

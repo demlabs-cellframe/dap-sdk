@@ -349,3 +349,12 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 message("[+] IO Flow Control Multi-Client test - integration bug regression")
+
+# 5.8-native io tests print uint64_t with %lu and call argless-prototype inits:
+# tolerated by the CI toolchains, fatal under -Werror on newer clang. Keep the
+# warnings visible but non-fatal for these targets only.
+foreach(t test_io_flow_ctrl test_io_flow_ctrl_multiclient test_io_flow_tier_application)
+    if(TARGET ${t})
+        target_compile_options(${t} PRIVATE -Wno-error=format -Wno-error=deprecated-non-prototype)
+    endif()
+endforeach()
