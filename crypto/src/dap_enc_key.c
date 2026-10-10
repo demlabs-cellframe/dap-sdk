@@ -890,7 +890,10 @@ uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen)
     uint64_t l_timestamp = a_key->last_used_timestamp;
     int32_t l_type = a_key->type;
     uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_key, (size_t *)&l_ser_skey_size);
-    uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_key, (size_t *)&l_ser_pkey_size);
+    /* Symmetric session keys legitimately have no public component. The wire
+     * format already represents it with a zero length. */
+    uint8_t *l_ser_pkey = a_key->pub_key_data && a_key->pub_key_data_size
+        ? dap_enc_key_serialize_pub_key(a_key, (size_t *)&l_ser_pkey_size) : NULL;
     uint64_t l_buflen = sizeof(uint64_t) * 5 + sizeof(int32_t) + l_ser_skey_size + l_ser_pkey_size + a_key->_inheritor_size;
     uint8_t *l_ret = DAP_VA_SERIALIZE_NEW(l_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
@@ -1681,6 +1684,5 @@ dap_enc_key_t* dap_enc_kem_derive_key(
     
     return l_key;
 }
-
 
 

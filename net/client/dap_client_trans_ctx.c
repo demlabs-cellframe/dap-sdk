@@ -527,7 +527,25 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
 
         size_t l_bob_message_size = 0;
         int l_json_parse_count = 0;
-        struct json_object *jobj = json_tokener_parse(l_data);
+        /* Transport payloads have an explicit length, not a guaranteed NUL. */
+        if (a_data_size > INT_MAX) {
+            l_error = ERROR_ENC_NO_KEY;
+            break;
+        }
+        struct json_tokener *tokener = json_tokener_new();
+        if (!tokener) {
+            l_error = ERROR_OUT_OF_MEMORY;
+            break;
+        }
+        struct json_object *jobj = json_tokener_parse_ex(tokener, l_data, (int)a_data_size);
+        if (json_tokener_get_error(tokener) != json_tokener_success ||
+            !json_object_is_type(jobj, json_type_object)) {
+            if (jobj) json_object_put(jobj);
+            json_tokener_free(tokener);
+            l_error = ERROR_ENC_NO_KEY;
+            break;
+        }
+        json_tokener_free(tokener);
         if (jobj) {
             json_object_object_foreach(jobj, key, val) {
                 if (json_object_get_type(val) == json_type_string) {
@@ -606,7 +624,6 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             l_decoded_len = dap_enc_base64_decode(l_node_sign_b64, l_len, l_sign, DAP_ENC_DATA_TYPE_B64);
             if (l_decoded_len > l_sign_alloc_size) {
                 log_it(L_ERROR, "Signature decode overflow: decoded %zu > allocated %zu", l_decoded_len, l_sign_alloc_size);
-                DAP_DELETE(l_sign);
                 l_tc->authorized = false;
             } else if (!dap_sign_verify_all(l_sign, l_decoded_len, l_bob_message, l_bob_message_size)) {
                 dap_stream_node_addr_t l_sign_addr = dap_stream_node_addr_from_sign(l_sign);

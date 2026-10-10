@@ -1473,7 +1473,9 @@ static void s_http_request_error_unencrypted(int a_err_code, void * a_obj)
     if (!l_client_esocket || !l_fsm) {
         log_it(L_WARNING, "HTTP request error (unencrypted) %d: client trans ctx gone (uuid=%"DAP_UINT64_FORMAT_U")"
                " — FSM notified via esocket delete callback",
-               a_err_code, l_ctx->client_uuid);
+                a_err_code, l_ctx->client_uuid);
+        if(l_ctx->error_callback == s_http_handshake_error_wrapper)
+            s_http_handshake_ctx_delete(l_ctx->callback_arg);
         DAP_DELETE(l_ctx);
         return;
     }
