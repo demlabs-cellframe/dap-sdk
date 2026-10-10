@@ -1693,6 +1693,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                            l_cur->remote_addr_str, l_cur->socket, l_cur, l_cur->uuid,
                                l_cur->type, a_context->id);
 
+                    /* Android poll has one slot per socket, not separate
+                     * readiness records. Removed slots are normal holes and
+                     * are skipped above, then compacted after dispatch. */
+#ifndef DAP_OS_ANDROID
                     for (ssize_t nn = n + 1; nn < l_sockets_max; nn++) { // Check for current selection if it has event duplication
                         dap_events_socket_t *l_es_selected = NULL;
 #ifdef DAP_EVENTS_CAPS_EPOLL
@@ -1719,6 +1723,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                   // Here we expect thats event duplicates goes together in it. If not - we lose some events between.
                         }
                     }
+#endif
                     dap_events_socket_remove_and_delete_unsafe( l_cur, false);
 #ifdef DAP_EVENTS_CAPS_KQUEUE
                     a_context->kqueue_events_count--;
@@ -1840,7 +1845,8 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 
 #elif defined (DAP_EVENTS_CAPS_POLL)
     if( a_esocket->context && a_esocket->is_initalized){
-        if (a_esocket->poll_index < a_esocket->context->poll_count ){
+        if (a_esocket->poll_index < a_esocket->context->poll_count &&
+                a_esocket->context->poll_esocket[a_esocket->poll_index] == a_esocket){
             struct pollfd * l_poll = &a_esocket->context->poll[a_esocket->poll_index];
             l_poll->events = a_esocket->poll_base_flags | POLLERR ;
             // Check & add
@@ -1848,7 +1854,7 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
                 l_poll->events |= POLLIN;
             if( a_esocket->flags & DAP_SOCK_READY_TO_WRITE || a_esocket->flags &DAP_SOCK_CONNECTING )
                 l_poll->events |= POLLOUT;
-        }else{
+        }else if (a_esocket->poll_index != UINT32_MAX){
             log_it(L_ERROR, "Wrong poll index when remove from context (unsafe): %u when total count %u", a_esocket->poll_index,
                    a_esocket->context->poll_count);
             return -666;
@@ -2226,16 +2232,21 @@ int dap_context_remove_from_polling(dap_events_socket_t * a_es)
     return 0;
 
 #elif defined (DAP_EVENTS_CAPS_POLL)
-    if (a_es->poll_index < l_context->poll_count) {
+    /* The slot must still belong to this esocket: after a removal the array is
+     * compacted and a stale poll_index may point at another live esocket. */
+    if (a_es->poll_index < l_context->poll_count &&
+            l_context->poll_esocket[a_es->poll_index] == a_es) {
         l_context->poll[a_es->poll_index].fd = -1;
-        a_es->context->poll_esocket[a_es->poll_index] = NULL;
+        l_context->poll_esocket[a_es->poll_index] = NULL;
         l_context->poll_compress = true;
+        a_es->poll_index = UINT32_MAX;
         return 0;
-    } else {
-        log_it(L_ERROR, "Wrong poll index when remove from polling: %u when total count %u",
-               a_es->poll_index, l_context->poll_count);
-        return -2;
     }
+    if (a_es->poll_index == UINT32_MAX)
+        return 0;   /* already removed from polling */
+    log_it(L_ERROR, "Wrong poll index when remove from polling: %u when total count %u",
+           a_es->poll_index, l_context->poll_count);
+    return -2;
 
 #else
 #error "Unimplemented dap_context_remove_from_polling for current platform"

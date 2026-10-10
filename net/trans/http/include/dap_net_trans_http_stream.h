@@ -331,6 +331,10 @@ dap_http_client_t* dap_stream_trans_http_get_client(dap_stream_t *a_stream);
  * @param a_response_error Error callback
  * @return 0 on success, -1 on failure
  */
+/* Cancel outstanding HTTP transport requests for a retired client UUID.
+ * Must run on that client's HTTP worker after unregistering the client. */
+void dap_net_trans_http_cancel_client_requests_unsafe(uint64_t a_client_uuid);
+
 int dap_net_trans_http_request(dap_client_trans_ctx_t * a_client_internal, const char * a_path, void * a_request,
         size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
         dap_client_callback_int_t a_response_error);
@@ -357,4 +361,3 @@ void dap_net_trans_http_request_enc(dap_client_trans_ctx_t * a_client_internal, 
 /** @} */ // end of dap_stream_trans_http group
 
 #endif // DAP_STREAM_TRANS_HTTP_H
-

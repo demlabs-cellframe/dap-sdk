@@ -2846,6 +2846,9 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+    /* Generic client callbacks and stream keepalive use DAP_ESOCKET_CLIENT.
+     * UDP packet decoding independently uses callbacks.arg (transport ctx). */
+    l_es->_inheritor = a_params->client_ctx;
     l_es->is_initalized = true;  // CRITICAL: Mark as initialized for write operations!
     
     // Set UDP read callback for client esocket

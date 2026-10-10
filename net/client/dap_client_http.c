@@ -68,6 +68,28 @@ static size_t s_streaming_threshold = DAP_CLIENT_HTTP_STREAMING_THRESHOLD_DEFAUL
 
 #ifndef DAP_NET_CLIENT_NO_SSL
 static WOLFSSL_CTX *s_ctx;
+static bool s_ssl_verify_peer = true;   // false only with explicit dap_client.ssl_verify_none
+
+/**
+ * Bind the TLS session to the requested host: SNI for host names and
+ * certificate name/IP verification. A trusted chain alone does not prove the
+ * certificate was issued for this host.
+ */
+static int s_ssl_bind_peer_identity(WOLFSSL *a_ssl, const char *a_host)
+{
+    if (!s_ssl_verify_peer)
+        return 0;
+    if (!a_host || !*a_host)
+        return -1;
+#ifdef HAVE_SNI
+    struct in6_addr l_ip;
+    bool l_is_ip = inet_pton(AF_INET, a_host, &l_ip) == 1 || inet_pton(AF_INET6, a_host, &l_ip) == 1;
+    if (!l_is_ip && wolfSSL_UseSNI(a_ssl, WOLFSSL_SNI_HOST_NAME, a_host,
+                                   (unsigned short)strlen(a_host)) != WOLFSSL_SUCCESS)
+        return -1;
+#endif
+    return wolfSSL_check_domain_name(a_ssl, a_host) == WOLFSSL_SUCCESS ? 0 : -1;
+}
 #endif
 
 // Streaming mode states
@@ -1862,6 +1884,12 @@ static void s_http_ssl_connected(dap_events_socket_t * a_esocket)
         log_it(L_ERROR, "wolfSSL_new error");
         return;
     }
+    if (s_ssl_bind_peer_identity(l_ssl, l_client_http->uplink_addr)) {
+        log_it(L_ERROR, "TLS: cannot bind peer identity for '%s', closing", l_client_http->uplink_addr);
+        wolfSSL_free(l_ssl);
+        a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return;
+    }
     wolfSSL_set_fd(l_ssl, a_esocket->socket);
     a_esocket->_pvt = (void *)l_ssl;
     a_esocket->type = DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL;
@@ -1974,6 +2002,12 @@ void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
         dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
     }
     s_client_http_delete(a_client_http);
+}
+
+dap_client_http_t *dap_client_http_from_socket_unsafe(dap_events_socket_t *a_es)
+{
+    return a_es && a_es->callbacks.delete_callback == s_es_delete
+        ? DAP_CLIENT_HTTP(a_es) : NULL;
 }
 
 /**
@@ -2180,10 +2214,11 @@ int dap_client_http_init()
     if (l_ssl_cert_path) {
         if (wolfSSL_CTX_load_verify_locations(s_ctx, l_ssl_cert_path, 0) != SSL_SUCCESS)
         return -2;
-    } else if (dap_config_get_item_bool_default(g_config, "dap_client", "ssl_verify_none", false)) {
+    } else if (        dap_config_get_item_bool_default(g_config, "dap_client", "ssl_verify_none", false)) {
         /* Explicit opt-out only (e.g. self-signed test nodes). Never the
          * silent default: an unverified TLS peer can be impersonated. */
         log_it(L_WARNING, "TLS certificate verification DISABLED by dap_client.ssl_verify_none");
+        s_ssl_verify_peer = false;
         wolfSSL_CTX_set_verify(s_ctx, WOLFSSL_VERIFY_NONE, 0);
     } else {
         /* Verify against the system trust store; fail closed if none. */
@@ -2591,4 +2626,3 @@ static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_cl
     
     return true;
 }
-

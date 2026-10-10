@@ -1013,6 +1013,24 @@ static void s_worker_execute_stage_done(void *a_arg)
     DAP_DELETE(l_ctx);
 }
 
+/**
+ * Legacy enc_init (MSRLN, protocol_version=0, no node signature) is a
+ * compatibility path for peers that answer but do not understand the modern
+ * handshake. A network failure (no answer, reset, timeout) says nothing about
+ * the peer's protocol version: retrying legacy there only adds delay and lets
+ * an on-path attacker force the unsigned handshake by dropping packets.
+ */
+static bool s_enc_error_allows_legacy(dap_client_error_t a_error)
+{
+    switch (a_error) {
+    case ERROR_STREAM_RESPONSE_WRONG:   /* peer answered with an HTTP error */
+    case ERROR_ENC_NO_KEY:              /* peer answered without a usable key */
+        return true;
+    default:
+        return false;
+    }
+}
+
 static void s_fsm_process(dap_client_fsm_t *a_fsm)
 {
     if (!a_fsm || a_fsm->is_removing || !s_fsm_client_bound(a_fsm))
@@ -1031,6 +1049,7 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
         bool l_is_last_attempt = a_fsm->reconnect_attempts >= s_max_attempts;
 
         if (l_stage == STAGE_ENC_INIT
+                && s_enc_error_allows_legacy(a_fsm->last_error)
                 && dap_client_get_enc_legacy_auto_fallback()
                 && !dap_client_get_legacy_enc_handshake()
                 && !a_fsm->enc_legacy_fallback_tried

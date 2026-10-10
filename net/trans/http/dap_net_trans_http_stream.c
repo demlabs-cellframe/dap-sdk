@@ -33,6 +33,7 @@
 #endif
 
 #include "dap_common.h"
+#include "dap_context.h"
 #include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_stream.h"
@@ -120,6 +121,34 @@ static int s_http_request(dap_client_trans_ctx_t * a_client_esocket, dap_net_tra
         dap_client_callback_int_t a_response_error);
 static void s_http_request_error_unencrypted(int a_err_code, void * a_obj);
 static void s_http_request_response_unencrypted(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code);
+
+void dap_net_trans_http_cancel_client_requests_unsafe(uint64_t a_client_uuid)
+{
+    dap_worker_t *worker = dap_worker_get_current();
+    if (!worker || !worker->context)
+        return;
+    dap_events_socket_t *es, *next;
+restart_scan:
+    HASH_ITER(hh, worker->context->esockets, es, next) {
+        /* Identify our HTTP sockets before inspecting their request context.
+         * Other HTTP consumers (including authorization) are not cancelled. */
+        dap_client_http_t *http = dap_client_http_from_socket_unsafe(es);
+        if (!http || http->were_callbacks_called ||
+            (http->error_callback != s_http_request_error &&
+             http->error_callback != s_http_request_error_unencrypted))
+            continue;
+        s_http_trans_request_ctx_t *request = http->callbacks_arg;
+        if (!request || request->client_uuid != a_client_uuid)
+            continue;
+        log_it(L_INFO, "Cancelling HTTP request for retired client uuid=%"DAP_UINT64_FORMAT_U,
+               a_client_uuid);
+        /* Normal delete invokes the error callback once, releasing the request
+         * context. UUID lookup cannot re-enter the retired client's FSM. */
+        dap_events_socket_remove_and_delete_unsafe(es, true);
+        /* HTTP destruction also removes its timer from this hash table. */
+        goto restart_scan;
+    }
+}
 
 static dap_client_t *s_http_stream_client_get(dap_stream_t *a_stream)
 {
@@ -2199,4 +2228,3 @@ int dap_stream_trans_http_translate_response_from_http(
            a_size, l_decoded_size);
     return 0;
 }
-

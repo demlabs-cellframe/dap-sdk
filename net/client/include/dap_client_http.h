@@ -160,6 +160,8 @@ uint64_t dap_client_http_get_connect_timeout_ms();
 uint64_t dap_client_http_get_read_after_connect_timeout_ms();
 
 void dap_client_http_close_unsafe(dap_client_http_t *a_client_http);
+/* Returns NULL for sockets not owned by this HTTP client implementation. */
+dap_client_http_t *dap_client_http_from_socket_unsafe(dap_events_socket_t *a_es);
 
 // Callback-only API - thread-safe, no return values
 void dap_client_http_request_async(

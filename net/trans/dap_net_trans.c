@@ -320,43 +320,46 @@ const char *dap_net_trans_type_to_str(dap_net_trans_type_t a_type)
 /**
  * @brief Parse trans type from string
  */
+static const struct {
+    const char *name;
+    dap_net_trans_type_t type;
+} s_trans_names[] = {
+    { "http",         DAP_NET_TRANS_HTTP },
+    { "https",        DAP_NET_TRANS_HTTP },
+    { "udp",          DAP_NET_TRANS_UDP_BASIC },
+    { "udp_basic",    DAP_NET_TRANS_UDP_BASIC },
+    { "udp_reliable", DAP_NET_TRANS_UDP_RELIABLE },
+    { "udp_quic",     DAP_NET_TRANS_UDP_QUIC_LIKE },
+    { "quic",         DAP_NET_TRANS_UDP_QUIC_LIKE },
+    { "websocket",    DAP_NET_TRANS_WEBSOCKET },
+    { "ws",           DAP_NET_TRANS_WEBSOCKET },
+    { "tls",          DAP_NET_TRANS_TLS_DIRECT },
+    { "tls_direct",   DAP_NET_TRANS_TLS_DIRECT },
+    { "dns",          DAP_NET_TRANS_DNS_TUNNEL },
+    { "dns_tunnel",   DAP_NET_TRANS_DNS_TUNNEL },
+};
+
+bool dap_net_trans_type_parse(const char *a_str, dap_net_trans_type_t *a_out)
+{
+    if (!a_str || !a_out)
+        return false;
+    for (size_t i = 0; i < sizeof(s_trans_names) / sizeof(s_trans_names[0]); i++) {
+        if (strcmp(a_str, s_trans_names[i].name) == 0) {
+            *a_out = s_trans_names[i].type;
+            return true;
+        }
+    }
+    return false;
+}
+
 dap_net_trans_type_t dap_net_trans_type_from_str(const char *a_str)
 {
     if (!a_str) {
         return DAP_NET_TRANS_HTTP;
     }
-    
-    // HTTP/HTTPS
-    if (strcmp(a_str, "http") == 0 || strcmp(a_str, "https") == 0) {
-        return DAP_NET_TRANS_HTTP;
-    }
-    
-    // UDP variants
-    if (strcmp(a_str, "udp") == 0 || strcmp(a_str, "udp_basic") == 0) {
-        return DAP_NET_TRANS_UDP_BASIC;
-    }
-    if (strcmp(a_str, "udp_reliable") == 0) {
-        return DAP_NET_TRANS_UDP_RELIABLE;
-    }
-    if (strcmp(a_str, "udp_quic") == 0 || strcmp(a_str, "quic") == 0) {
-        return DAP_NET_TRANS_UDP_QUIC_LIKE;
-    }
-    
-    // WebSocket
-    if (strcmp(a_str, "websocket") == 0 || strcmp(a_str, "ws") == 0) {
-        return DAP_NET_TRANS_WEBSOCKET;
-    }
-    
-    // TLS Direct
-    if (strcmp(a_str, "tls") == 0 || strcmp(a_str, "tls_direct") == 0) {
-        return DAP_NET_TRANS_TLS_DIRECT;
-    }
-    
-    // DNS Tunnel
-    if (strcmp(a_str, "dns") == 0 || strcmp(a_str, "dns_tunnel") == 0) {
-        return DAP_NET_TRANS_DNS_TUNNEL;
-    }
-    
+    dap_net_trans_type_t l_type;
+    if (dap_net_trans_type_parse(a_str, &l_type))
+        return l_type;
     log_it(L_WARNING, "Unknown trans type '%s', defaulting to HTTP", a_str);
     return DAP_NET_TRANS_HTTP;
 }

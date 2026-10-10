@@ -39,6 +39,9 @@
 #include "dap_net.h"
 #include "dap_net_trans.h"
 #include "dap_stream_handshake.h"
+#include "dap_client_http.h"
+#include "dap_net_trans_http_stream.h"
+#include <errno.h>
 
 #define LOG_TAG "dap_client_trans_ctx"
 
@@ -123,6 +126,21 @@ static void s_stage_stream_streaming(dap_client_t *a_client, void *a_arg);
 
 // JSON parser helper
 static int s_json_multy_obj_parse_str(const char *a_key, const char *a_val, int a_count, ...);
+
+/**
+ * Map a transport/HTTP handshake error to an FSM error class.
+ * A positive HTTP status (>= 400) means the peer answered and rejected the
+ * request — a protocol-level answer, possibly version incompatibility.
+ * Everything else is a network failure (no answer, reset, timeout).
+ */
+static dap_client_error_t s_handshake_error_to_client_error(int a_error)
+{
+    if (a_error == ETIMEDOUT || a_error == DAP_CLIENT_HTTP_ERROR_STREAMING_TIMEOUT)
+        return ERROR_NETWORK_CONNECTION_TIMEOUT;
+    if (a_error >= Http_Status_BadRequest && a_error < 600)
+        return ERROR_STREAM_RESPONSE_WRONG;
+    return ERROR_NETWORK_CONNECTION_REFUSE;
+}
 
 // ===== UUID-based global registry =====
 
@@ -273,6 +291,7 @@ void dap_client_trans_ctx_delete_unsafe(dap_client_trans_ctx_t *a_ctx)
         return;
     debug_if(s_debug_more, L_INFO, "dap_client_trans_ctx_delete %p", a_ctx);
     dap_client_trans_ctx_unregister(a_ctx);
+    dap_net_trans_http_cancel_client_requests_unsafe(a_ctx->uuid);
     dap_client_trans_ctx_clean_unsafe(a_ctx);
     DAP_DELETE(a_ctx);
 }
@@ -351,8 +370,7 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
     if (a_error != 0) {
         log_it(L_WARNING, "Handshake failed with error %d, trying fallback", a_error);
         // Try fallback via FSM (transport fallback is FSM logic)
-        dap_client_error_t l_err = (a_error == ETIMEDOUT)
-            ? ERROR_NETWORK_CONNECTION_TIMEOUT : ERROR_NETWORK_CONNECTION_REFUSE;
+        dap_client_error_t l_err = s_handshake_error_to_client_error(a_error);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, l_err);
         return;
@@ -628,8 +646,7 @@ static void s_enc_init_error(dap_client_t *a_client, UNUSED_ARG void *a_arg, int
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
     dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
     if (!l_ctx) return;
-    dap_client_error_t l_err = (a_err_code == ETIMEDOUT)
-        ? ERROR_NETWORK_CONNECTION_TIMEOUT : ERROR_NETWORK_CONNECTION_REFUSE;
+    dap_client_error_t l_err = s_handshake_error_to_client_error(a_err_code);
     dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                           STAGE_STATUS_ERROR, l_err);
 }

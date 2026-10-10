@@ -538,6 +538,15 @@ const char *dap_net_trans_type_to_str(dap_net_trans_type_t a_type);
 dap_net_trans_type_t dap_net_trans_type_from_str(const char *a_str);
 
 /**
+ * @brief Strict variant of dap_net_trans_type_from_str()
+ * @param a_str Trans type string (same names as dap_net_trans_type_from_str)
+ * @param a_out Parsed type; untouched on failure
+ * @return true if a_str names a known trans type; false for NULL/unknown
+ *         (no silent substitution with HTTP)
+ */
+bool dap_net_trans_type_parse(const char *a_str, dap_net_trans_type_t *a_out);
+
+/**
  * @brief Get list of all registered transs
  * 
  * @return Linked list of dap_net_trans_t* (caller must free list, not contents)
