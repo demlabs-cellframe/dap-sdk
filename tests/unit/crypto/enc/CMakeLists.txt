@@ -20,9 +20,17 @@ if(UNIX)
 endif()
 
 # Newer Apple clang rejects folded VLA extensions under -Werror in this
-# 5.8-native test; keep the warning but non-fatal.
+# 5.8-native test; keep the warning but non-fatal. The option name differs
+# between clang versions (vla-cast-extension vs vla-cxx-extension) - probe it.
+include(CheckCCompilerFlag)
 if(APPLE)
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-error=vla-cast-extension)
+    check_c_compiler_flag("-Wno-error=vla-cast-extension" HAS_VLA_CAST_EXT)
+    check_c_compiler_flag("-Wno-error=vla-cxx-extension" HAS_VLA_CXX_EXT)
+    if(HAS_VLA_CAST_EXT)
+        target_compile_options(${PROJECT_NAME} PRIVATE -Wno-error=vla-cast-extension)
+    elseif(HAS_VLA_CXX_EXT)
+        target_compile_options(${PROJECT_NAME} PRIVATE -Wno-error=vla-cxx-extension)
+    endif()
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE

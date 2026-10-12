@@ -63,6 +63,14 @@ set_tests_properties(dap_mock PROPERTIES
 message(STATUS "Configured DAP SDK Test Framework self-tests")
 
 # test_mock.c uses constant-folded VLAs; newer Apple clang -Werror's them.
+# The warning's name differs between clang versions - probe before use.
+include(CheckCCompilerFlag)
 if(APPLE)
-    target_compile_options(test_mock PRIVATE -Wno-error=vla-cast-extension)
+    check_c_compiler_flag("-Wno-error=vla-cast-extension" HAS_VLA_CAST_EXT_MOCK)
+    check_c_compiler_flag("-Wno-error=vla-cxx-extension" HAS_VLA_CXX_EXT_MOCK)
+    if(HAS_VLA_CAST_EXT_MOCK)
+        target_compile_options(test_mock PRIVATE -Wno-error=vla-cast-extension)
+    elseif(HAS_VLA_CXX_EXT_MOCK)
+        target_compile_options(test_mock PRIVATE -Wno-error=vla-cxx-extension)
+    endif()
 endif()
