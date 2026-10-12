@@ -2013,12 +2013,19 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     }
 
     // TCP/stream sockets: Use buffered writes
-    byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, a_data_size);
+    size_t l_prefix = a_es->packet_file ? sizeof(uint32_t) : 0;
+    if (l_prefix && (!a_data_size || a_data_size > UINT32_MAX))
+        return 0;
+    byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, a_data_size + l_prefix);
     if (!l_write_pos)
         return 0;
     
-    memcpy(l_write_pos, a_data, a_data_size);
-    s_events_socket_finalize_write(a_es, a_data_size);
+    if (l_prefix) {
+        uint32_t l_size = (uint32_t)a_data_size;
+        memcpy(l_write_pos, &l_size, sizeof(l_size));
+    }
+    memcpy(l_write_pos + l_prefix, a_data, a_data_size);
+    s_events_socket_finalize_write(a_es, a_data_size + l_prefix);
     return a_data_size;
 }
 

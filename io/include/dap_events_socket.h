@@ -296,6 +296,8 @@ typedef struct dap_events_socket {
     // Flags. TODO  - rework in bool fields
     uint32_t flags;
     bool no_close;
+    /* Packet FILE backend: buf_out is length-prefixed, drained by write_callback. */
+    bool packet_file;
     atomic_bool is_initalized;
     bool was_reassigned; // Was reassigment at least once
 

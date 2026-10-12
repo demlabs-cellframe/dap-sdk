@@ -34,13 +34,6 @@
 #define TLS_CT_HANDSHAKE           0x16
 #define TLS_CT_APPLICATION_DATA    0x17
 
-/* Any TLS record content type in [0x14..0x18] means buf_out already
- * contains a valid TLS record (handshake from process_client_hello, or
- * wrapped response from s_tls_read, or leftover from a partial send). */
-static inline bool s_is_tls_record_content(uint8_t a_byte)
-{
-    return a_byte >= TLS_CT_CHANGE_CIPHER_SPEC && a_byte <= 0x18;
-}
 
 /* ------------------------------------------------------------------ */
 /*  TLS context — stored in esocket->_inheritor                        */
@@ -53,7 +46,6 @@ typedef struct tls_conn_ctx {
     size_t prev_buf_in_size;  /* guard: buf_in_size at function exit */
     bool stream_mode;         /* after stream_ctl: route DAP packets to stream layer */
     dap_stream_t *stream;     /* created after stream_ctl; NULL until then */
-    bool buf_out_wrapped;     /* true if buf_out[0..N] is TLS-wrapped data */
 } tls_conn_ctx_t;
 
 static bool s_debug_more = false;
@@ -413,54 +405,35 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 
 static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
 {
+    (void)a_es;
+    (void)a_arg;
+    /* buf_out contains wire bytes exclusively, including partial records. */
+    return false;
+}
+
+ssize_t dap_net_trans_tls_server_write_unsafe(dap_events_socket_t *a_es,
+                                             const void *a_data, size_t a_size)
+{
     if (!a_es)
-        return false;
+        return -1;
     tls_conn_ctx_t *t = s_tls_ctx(a_es);
-    if (!t)
-        return true;
+    if (!t || !t->mimicry || !a_data || !a_size)
+        return -1;
 
-    /* If buf_out is empty, nothing to do */
-    if (a_es->buf_out_size == 0)
-        return false;
-
-    if (!t->mimicry)
-        return true;  /* no mimicry context — send raw */
-
-    /* Detect already-wrapped data by checking the TLS record content-type byte.
-     * Both init responses (ServerHello from process_client_hello starts with
-     * 0x16, enc_init/stream_ctl responses from s_tls_read start with 0x17) and
-     * stream-mode data wrapped by a previous s_tls_write call are valid TLS
-     * records.  Raw DAP stream packets never start with a TLS content type
-     * (first byte is 0xa0 from c_dap_stream_sig), so this is reliable. */
-    if (a_es->buf_out_size >= 5 &&
-        s_is_tls_record_content(((const uint8_t *)a_es->buf_out)[0])) {
-        /* Already wrapped — flush as-is (no re-wrap). */
-        return false;
-    }
-
-    /* Stream mode: wrap raw buf_out in TLS records */
+    /* Wrap before enqueue: pending bytes are immutable TLS wire data. */
     void *l_wrapped = NULL; size_t l_wrapped_sz = 0;
     int l_rc = dap_tls_mimicry_wrap(t->mimicry,
-                                    a_es->buf_out, a_es->buf_out_size,
+                                    a_data, a_size,
                                     &l_wrapped, &l_wrapped_sz);
     if (l_rc != 0 || !l_wrapped || l_wrapped_sz == 0) {
         log_it(L_WARNING, "TLS server: s_tls_write wrap failed rc=%d", l_rc);
-        return true;  /* send raw as fallback */
+        DAP_DELETE(l_wrapped);
+        return -1;
     }
 
-    /* Replace buf_out contents with TLS-wrapped data */
-    if (l_wrapped_sz > a_es->buf_out_size_max) {
-        byte_t *l_new = DAP_NEW_SIZE(byte_t, l_wrapped_sz);
-        if (!l_new) { DAP_DELETE(l_wrapped); return true; }
-        DAP_DELETE(a_es->buf_out);
-        a_es->buf_out = l_new;
-        a_es->buf_out_size_max = l_wrapped_sz;
-    }
-    memcpy(a_es->buf_out, l_wrapped, l_wrapped_sz);
-    a_es->buf_out_size = l_wrapped_sz;
+    size_t l_queued = dap_events_socket_write_unsafe(a_es, l_wrapped, l_wrapped_sz);
     DAP_DELETE(l_wrapped);
-    t->buf_out_wrapped = true;
-    return false;  /* data ready to send */
+    return l_queued == l_wrapped_sz ? (ssize_t)a_size : -1;
 }
 
 /* ------------------------------------------------------------------ */

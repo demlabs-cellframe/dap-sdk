@@ -73,6 +73,47 @@ typedef struct tls_mimicry_ctx {
 static dap_stream_trans_tls_config_t s_config;
 static bool s_debug_more = false;
 
+/* Per-layer flow counters (client hot path diagnostics).
+ * Counted here: inbound TLS records + unwrapped bytes + partial-record waits.
+ * A 10-second summary line replaces the former per-record logs. */
+static _Atomic uint64_t s_flow_records = 0;
+static _Atomic uint64_t s_flow_bytes = 0;
+static _Atomic uint64_t s_flow_partial = 0;
+static _Atomic int64_t  s_flow_last_ms = 0;
+
+static int64_t s_flow_now_ms(void)
+{
+    struct timespec l_ts;
+    clock_gettime(CLOCK_MONOTONIC, &l_ts);
+    return (int64_t)l_ts.tv_sec * 1000LL + (int64_t)l_ts.tv_nsec / 1000000LL;
+}
+
+static void s_flow_count_record(size_t a_bytes, bool a_partial)
+{
+    if (a_partial) {
+        atomic_fetch_add(&s_flow_partial, 1);
+        return;
+    }
+    atomic_fetch_add(&s_flow_records, 1);
+    atomic_fetch_add(&s_flow_bytes, a_bytes);
+
+    int64_t l_now = s_flow_now_ms();
+    int64_t l_last = atomic_load(&s_flow_last_ms);
+    if (l_last == 0) {
+        atomic_store(&s_flow_last_ms, l_now);
+        return;
+    }
+    if (l_now - l_last >= 10000 &&
+        atomic_compare_exchange_strong(&s_flow_last_ms, &l_last, l_now)) {
+        uint64_t l_recs = atomic_load(&s_flow_records);
+        uint64_t l_bytes = atomic_load(&s_flow_bytes);
+        uint64_t l_partial = atomic_load(&s_flow_partial);
+        log_it(L_INFO, "TLS-FLOW: %" DAP_UINT64_FORMAT_U " records, %" DAP_UINT64_FORMAT_U
+               " B, %" DAP_UINT64_FORMAT_U " partial waits (window %ld ms)",
+               l_recs, l_bytes, l_partial, (long)(l_now - l_last));
+    }
+}
+
 /**
  * @brief Get stream from esocket via client→FSM→trans_ctx chain.
  * _inheritor is dap_client_t* (set by s_stream_new via trans_ctx).
@@ -282,17 +323,19 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
 
 static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
-    if (!a_stream || !a_stream->esocket || !a_stream->trans_ctx || !a_data || a_size == 0)
+    if (!a_stream || !a_stream->esocket || !a_data || a_size == 0)
+        return -1;
+
+    if (a_stream->esocket->server)
+        return dap_net_trans_tls_server_write_unsafe(a_stream->esocket, a_data, a_size);
+    if (!a_stream->trans_ctx)
         return -1;
 
     void *l_wrapped = NULL;
     size_t l_wrapped_size = 0;
     tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
     if (!l_ctx || !l_ctx->mimicry) {
-        /* No mimicry context — server-side TLS streams may not have one.
-         * Write raw data; the TLS server's s_tls_write event-loop callback
-         * will handle TLS wrapping of buf_out. */
-        return dap_events_socket_write_unsafe(a_stream->esocket, a_data, a_size);
+        return -1;
     }
 
     if (dap_tls_mimicry_get_state(l_ctx->mimicry) == DAP_TLS_MIMICRY_STATE_ESTABLISHED) {
@@ -304,7 +347,7 @@ static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         ssize_t l_ret = dap_events_socket_write_unsafe(
             a_stream->esocket, l_wrapped, l_wrapped_size);
         DAP_DELETE(l_wrapped);
-        return l_ret >= 0 ? (ssize_t)a_size : -1;
+        return l_ret == (ssize_t)l_wrapped_size ? (ssize_t)a_size : -1;
     }
 
     return dap_events_socket_write_unsafe(a_stream->esocket, a_data, a_size);
@@ -639,14 +682,15 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
         }
         if (a_es->buf_in_size >= 5) {
             const uint8_t *b = a_es->buf_in;
-            log_it(L_DEBUG, "TLS read (phase %d): incomplete record, buf_in=%zu consumed=%zu "
+            debug_if(s_debug_more, L_DEBUG, "TLS read (phase %d): incomplete record, buf_in=%zu consumed=%zu "
                    "hdr=%02x %02x %02x %02x %02x — waiting",
                    (int)l_ctx->phase, a_es->buf_in_size, l_consumed,
                    b[0], b[1], b[2], b[3], b[4]);
         } else {
-            log_it(L_DEBUG, "TLS read (phase %d): incomplete record, buf_in=%zu consumed=%zu — waiting",
+            debug_if(s_debug_more, L_DEBUG, "TLS read (phase %d): incomplete record, buf_in=%zu consumed=%zu — waiting",
                    (int)l_ctx->phase, a_es->buf_in_size, l_consumed);
         }
+        s_flow_count_record(0, true);
         dap_events_socket_set_readable_unsafe(a_es, true);
         return;
     }
@@ -685,7 +729,7 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
         /* Established: feed unwrapped DAP stream packets to the stream layer.
          * If buf_in still has bytes (multiple TLS records coalesced in one
          * read), loop by re-entering so each record is processed in phase. */
-        log_it(L_NOTICE, "TLS read (STREAMING): unwrapped %zu bytes, feeding to stream", l_unwrapped_size);
+        s_flow_count_record(l_unwrapped_size, false);
         dap_stream_data_proc_read_ext(l_stream, l_unwrapped, l_unwrapped_size);
         if (a_es->buf_in_size > 0) {
             DAP_DELETE(l_unwrapped);

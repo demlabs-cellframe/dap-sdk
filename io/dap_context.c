@@ -1488,7 +1488,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                  */
                 bool l_has_udp_queue = l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP
                                       && l_cur->packet_queue && l_cur->packet_queue->count > 0;
-                if ( l_cur->context && (l_cur->buf_out_size || l_has_udp_queue) ){
+                if ( l_cur->context && !l_cur->packet_file && (l_cur->buf_out_size || l_has_udp_queue) ){
                     switch (l_cur->type){
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
