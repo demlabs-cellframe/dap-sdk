@@ -61,8 +61,10 @@ if(NOT ANDROID)
 endif()
 
 # ============================================================================
-# Test: IO Flow Tier Detection (cross-platform)
+# Test: IO Flow Tier Detection (Linux only: exercises eBPF/CBPF tiers whose
+# implementations live in io/linux/ and are not built on other platforms)
 # ============================================================================
+if(LINUX)
 project(test_io_flow_tiers)
 
 add_executable(${PROJECT_NAME} 
@@ -80,13 +82,13 @@ dap_mock_autowrap(${PROJECT_NAME})
 if(NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
 endif()
-
-# Add to CTest
-add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 120
-    LABELS "unit;io;flow;tier"
-)
+    # Add to CTest
+    add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+    set_tests_properties(${PROJECT_NAME} PROPERTIES 
+        TIMEOUT 120
+        LABELS "unit;io;flow;tier"
+    )
+endif() # LINUX (test_io_flow_tiers)
 
 # ============================================================================
 # Test: Thread Pool Unit Test
