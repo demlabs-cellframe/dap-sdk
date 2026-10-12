@@ -8,14 +8,14 @@ add_executable(${PROJECT_NAME}
     test_falcon.c
 )
 
-target_link_libraries(${PROJECT_NAME}
-    dap_crypto
-    dap_core
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    dap_core_static
+    dap_crypto_static
     dap_test
 )
 
 if(UNIX)
-    target_link_libraries(${PROJECT_NAME} m pthread)
+    target_link_libraries(${PROJECT_NAME} PRIVATE m pthread)
     # Release build uses -ffast-math globally; Falcon FP self-tests need strict IEEE semantics.
     target_compile_options(${PROJECT_NAME} PRIVATE -fno-fast-math)
 endif()
