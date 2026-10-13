@@ -1091,8 +1091,13 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
  * @param a_pin_value
  * @return
  */
+// Storage-full rejection helper (rate-limited), defined below
+static int dap_global_db_storage_full_reject(const char *a_group, const char *a_key);
+
 int dap_global_db_set_sync(const char *a_group, const char *a_key, const void *a_value, const size_t a_value_length, bool a_pin_value)
 {
+    if (dap_global_db_driver_storage_full())
+        return dap_global_db_storage_full_reject(a_group, a_key);
     dap_return_val_if_fail(s_dbi && a_group && a_key, DAP_GLOBAL_DB_RC_ERROR);
     return s_set_sync_with_ts(s_dbi, a_group, a_key, a_value,
                                 a_value_length, a_pin_value, dap_nanotime_now());
@@ -1337,6 +1342,11 @@ static void s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
  */
 int dap_global_db_set_multiple_zc(const char *a_group, dap_global_db_obj_t *a_values, size_t a_values_count, dap_global_db_callback_results_t a_callback, void *a_arg)
 {
+    // Storage-capacity latch (see dap_global_db_set): the mempool massive-write path
+    // feeds chain datums - without this check every queued TX batch would retry
+    // against a full map with per-item error logs.
+    if (dap_global_db_driver_storage_full())
+        return dap_global_db_storage_full_reject(a_group, a_values ? a_values[0].key : NULL);
     dap_return_val_if_fail(s_dbi && a_group && a_values && a_values_count, DAP_GLOBAL_DB_RC_ERROR);
     struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
