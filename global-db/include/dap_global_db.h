@@ -106,6 +106,7 @@ typedef bool (*dap_global_db_callback_results_raw_t) (dap_global_db_instance_t *
 #define DAP_GLOBAL_DB_RC_NO_RESULTS -1
 #define DAP_GLOBAL_DB_RC_CRITICAL   -3
 #define DAP_GLOBAL_DB_RC_ERROR      -6
+#define DAP_GLOBAL_DB_RC_STORAGE_FULL -25
 
 extern int g_dap_global_db_debug_more;
 

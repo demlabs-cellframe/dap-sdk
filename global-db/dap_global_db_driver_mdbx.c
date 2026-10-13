@@ -1492,8 +1492,11 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         }
         l_data.iov_base = l_record;
         l_data.iov_len = l_record_len;
-        if ( MDBX_SUCCESS != (rc = mdbx_put(a_txn, l_db_ctx->dbi, &l_key, &l_data, 0)) )
+        if ( MDBX_SUCCESS != (rc = mdbx_put(a_txn, l_db_ctx->dbi, &l_key, &l_data, 0)) ) {
+            if (rc == MDBX_MAP_FULL)
+                dap_global_db_driver_storage_full_set();
             log_it (L_ERROR, "mdbx_put: (%d) %s", rc, mdbx_strerror(rc));
+        }
         DAP_DELETE(l_record);
     } else {
         /* Delete record */
@@ -1712,8 +1715,11 @@ static int s_db_mdbx_txn_end(bool a_commit)
             log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc));
         s_dbi_registry_drop_pending();
     } else {
-        if ( MDBX_SUCCESS != (rc = mdbx_txn_commit(s_txn)) )
+        if ( MDBX_SUCCESS != (rc = mdbx_txn_commit(s_txn)) ) {
+            if (rc == MDBX_MAP_FULL)
+                dap_global_db_driver_storage_full_set();
             log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
+        }
         // A failed commit means libmdbx aborted the transaction and closed its
         // private dbi handles.
         if (rc == MDBX_SUCCESS)

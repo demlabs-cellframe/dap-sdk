@@ -191,3 +191,18 @@ dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
 dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 int dap_global_db_driver_txn_start();
 int dap_global_db_driver_txn_end(bool a_commit);
+
+/**
+ * @brief dap_global_db_driver_storage_full_set
+ *        Latch: the storage backend reported its hard capacity limit
+ *        (MDBX_MAP_FULL). Latched for the rest of the process lifetime —
+ *        writes can't succeed until the operator raises the storage limit
+ *        and restarts the node.
+ */
+void dap_global_db_driver_storage_full_set(void);
+
+/**
+ * @brief dap_global_db_driver_storage_full
+ * @return true when the storage capacity latch is set (see above)
+ */
+bool dap_global_db_driver_storage_full(void);
