@@ -1238,6 +1238,12 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
 
 int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
+    // Storage-capacity latch (see dap_global_db_set): the synchronous raw path
+    // has no queue in front of it, so without this check every caller keeps
+    // hitting the full map with per-object error logs.
+    if (dap_global_db_driver_storage_full())
+        return dap_global_db_storage_full_reject(a_store_objs ? a_store_objs[0].group : NULL,
+                                                 a_store_objs ? a_store_objs[0].key : NULL);
     dap_return_val_if_fail(s_dbi && a_store_objs && a_store_objs_count, DAP_GLOBAL_DB_RC_ERROR);
     return s_db_set_raw_sync(s_dbi, a_store_objs, a_store_objs_count, false);
 }
@@ -1301,7 +1307,15 @@ int dap_global_db_set_raw_signed(dap_store_obj_t *a_store_objs, size_t a_store_o
 static void s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
 {
     int l_ret = -1;
-    if (a_msg->values_raw_total > 0) {
+    // Storage-capacity latch: messages queued before the latch was set still
+    // carry thousands of doomed writes (the ledger replay enqueues one tx-cache
+    // write per block). Rejecting them here keeps the backlog drain cheap -
+    // one rate-limited log line per second - instead of hammering the full map
+    // with per-object put attempts and three error lines each.
+    if (dap_global_db_driver_storage_full()) {
+        l_ret = dap_global_db_storage_full_reject(a_msg->values_raw ? a_msg->values_raw[0].group : NULL,
+                                                  a_msg->values_raw ? a_msg->values_raw[0].key : NULL);
+    } else if (a_msg->values_raw_total > 0) {
         if (a_msg->sign_if_unsigned) {
             // Records of local caches are handed over unsigned: signing them on the writer's
             // hot path is exactly what set_raw() exists to avoid, but the cluster role check in
