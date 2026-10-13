@@ -26,6 +26,8 @@
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #include "dap_time.h"
+#include <time.h>
+#include <stdatomic.h>
 #include "dap_context.h"
 #include "dap_worker.h"
 #include "dap_cert.h"
@@ -1107,8 +1109,30 @@ int dap_global_db_set_sync(const char *a_group, const char *a_key, const void *a
  * @param a_arg Argument passed to the callback
  * @return 0 if success, error code if not
  */
+// Rate-limited rejection helper for the storage-capacity latch: one log line
+// per second max, everything else just gets the failure code.
+static int dap_global_db_storage_full_reject(const char *a_group, const char *a_key)
+{
+    static _Atomic(int64_t) s_last_logged = 0;
+    int64_t l_now = (int64_t)time(NULL);
+    int64_t l_prev = atomic_load(&s_last_logged);
+    if (l_prev == 0 || l_now - l_prev >= 1) {
+        int64_t l_expected = l_prev;
+        if (atomic_compare_exchange_strong(&s_last_logged, &l_expected, l_now))
+            log_it(L_WARNING, "GlobalDB write dropped (storage full)%s%s%s%s",
+                   a_group ? ", group " : "", a_group ? a_group : "",
+                   a_key ? ", key " : "", a_key ? a_key : "");
+    }
+    return DAP_GLOBAL_DB_RC_STORAGE_FULL;
+}
+
 int dap_global_db_set(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, void *a_arg)
 {
+    // Storage-capacity latch: while the backend is over its hard limit every write is doomed;
+    // dropping it here avoids the per-event retry storm (log flood + queue churn) — see
+    // dap_global_db_driver_storage_full_set(). Reads are unaffected.
+    if (dap_global_db_driver_storage_full())
+        return dap_global_db_storage_full_reject(a_group, a_key);
     dap_return_val_if_fail(s_dbi && a_group && a_key, DAP_GLOBAL_DB_RC_ERROR);
     struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
@@ -1225,6 +1249,9 @@ static int s_set_raw_async(dap_store_obj_t *a_store_objs, size_t a_store_objs_co
                            dap_global_db_callback_results_raw_t a_callback, void *a_arg,
                            bool a_sign_if_unsigned)
 {
+    if (dap_global_db_driver_storage_full())
+        return dap_global_db_storage_full_reject(a_store_objs ? a_store_objs[0].group : NULL,
+                                                 a_store_objs ? a_store_objs[0].key : NULL);
     dap_return_val_if_fail(s_dbi && a_store_objs && a_store_objs_count, DAP_GLOBAL_DB_RC_ERROR);
     struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;

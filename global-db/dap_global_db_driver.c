@@ -494,3 +494,32 @@ int dap_global_db_driver_txn_end(bool a_commit)
     debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have transaction_end callback", s_used_driver);
     return -1;
 }
+
+// ---- Storage capacity latch (set by a backend on its hard limit, e.g. MDBX_MAP_FULL) ----
+#include <stdatomic.h>
+static _Atomic bool s_storage_full_latch = false;
+static _Atomic uint64_t s_storage_full_dropped = 0;
+
+void dap_global_db_driver_storage_full_set(void)
+{
+    bool l_expected = false;
+    if (atomic_compare_exchange_strong(&s_storage_full_latch, &l_expected, true))
+        log_it(L_CRITICAL, "GlobalDB storage capacity limit reached (MDBX_MAP_FULL). "
+                "All further GlobalDB writes are dropped until the node is restarted with a raised "
+                "[global_db] mdbx_upper_limit_of_db_size (or with the writes' source disabled, "
+                "e.g. [ledger] cache_enabled=false). The storage keeps serving reads.");
+}
+
+bool dap_global_db_driver_storage_full(void)
+{
+    if (atomic_load(&s_storage_full_latch)) {
+        uint64_t l_dropped = atomic_fetch_add(&s_storage_full_dropped, 1) + 1;
+        // Rate-limited reminder: first drop is silent here (the latch-set log above explains),
+        // then one line per 4096 dropped writes keeps the counter visible without flooding.
+        if (l_dropped % 4096 == 0)
+            log_it(L_WARNING, "GlobalDB storage is full: %"DAP_UINT64_FORMAT_U" writes dropped so far "
+                    "(restart with raised mdbx_upper_limit_of_db_size to resume writing)", l_dropped);
+        return true;
+    }
+    return false;
+}
