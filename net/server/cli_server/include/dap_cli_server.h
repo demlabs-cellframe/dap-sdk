@@ -143,6 +143,10 @@ bool dap_cli_server_backpressure_acquire_method(const char *a_method, bool *a_ou
 // the CLI port limiter). Intended for the signed HTTP /exec_cmd path, to run
 // before request decode. Non-IPv4 sources always pass.
 bool dap_cli_server_rate_limit_check_addr(const struct sockaddr_storage *a_addr);
+// Same budget, but behind a trusted reverse proxy ([cli-server] trusted_proxies) the
+// client key is taken from the first X-Forwarded-For address; pass a_xff = NULL to
+// fall back to the peer-address check.
+bool dap_cli_server_rate_limit_check_addr_xff(const struct sockaddr_storage *a_peer, const char *a_xff);
 
 void dap_cli_server_backpressure_release(bool a_is_heavy);
 

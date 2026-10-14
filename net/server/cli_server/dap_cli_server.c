@@ -511,9 +511,132 @@ bool dap_cli_server_backpressure_acquire(const char *a_req_str, bool *a_out_is_h
     return l_ok;
 }
 
+// Trusted reverse proxies: when the direct peer is one of these, the client
+// identity for rate limiting (and only for it) is taken from the first
+// X-Forwarded-For address instead of the peer address - otherwise a proxy in
+// front of the node funnels every caller into one /16 bucket and they all
+// share a single budget. XFF from a non-trusted peer is ignored (spoofing).
+typedef struct { uint32_t addr, mask; } s_cli_trusted_proxy_t;
+static s_cli_trusted_proxy_t *s_cli_trusted_proxies = NULL;
+static size_t s_cli_trusted_proxy_count = 0;
+
+static bool s_cli_addr_in_subnet_v4(uint32_t a_addr_hbo, uint32_t a_net_hbo, uint32_t a_mask_hbo) {
+    return (a_addr_hbo & a_mask_hbo) == (a_net_hbo & a_mask_hbo);
+}
+
+static bool s_cli_peer_is_trusted_proxy(const struct sockaddr_storage *a_addr) {
+    if (!s_cli_trusted_proxy_count)
+        return false;
+    uint32_t l_addr_hbo = 0;
+    if (a_addr->ss_family == AF_INET)
+        l_addr_hbo = ntohl(((const struct sockaddr_in *)a_addr)->sin_addr.s_addr);
+    else if (a_addr->ss_family == AF_INET6) {
+        const uint8_t *l_b = ((const struct sockaddr_in6 *)a_addr)->sin6_addr.s6_addr;
+        if (static const uint8_t c_v4mapped_prefix[12] = {0,0,0,0,0,0,0,0,0,0,0xff,0xff};
+        if (memcmp(l_b, c_v4mapped_prefix, 12) == 0) // v4-mapped
+            l_addr_hbo = ntohl(*(const uint32_t *)(l_b + 12));
+        else
+            return false; // plain v6 proxies: list v6 entries separately later
+    } else
+        return false;
+    for (size_t i = 0; i < s_cli_trusted_proxy_count; ++i)
+        if (s_cli_addr_in_subnet_v4(l_addr_hbo, s_cli_trusted_proxies[i].addr, s_cli_trusted_proxies[i].mask))
+            return true;
+    return false;
+}
+
+// Parse "a.b.c.d[/bits]" (bits 0..32, default 32). Returns false on garbage.
+static bool s_cli_trusted_proxy_parse(const char *a_entry, s_cli_trusted_proxy_t *a_out) {
+    char l_buf[64] = {0};
+    if (!a_entry || strlen(a_entry) >= sizeof(l_buf))
+        return false;
+    strcpy(l_buf, a_entry);
+    char *l_slash = strchr(l_buf, '/');
+    uint32_t l_bits = 32;
+    if (l_slash) {
+        *l_slash = 0;
+        l_bits = (uint32_t)atoi(l_slash + 1);
+        if (l_bits > 32)
+            return false;
+    }
+    in_addr_t l_addr = inet_addr(l_buf);
+    if (l_addr == INADDR_NONE)
+        return false;
+    a_out->addr = ntohl(l_addr);
+    a_out->mask = l_bits ? (l_bits == 32 ? 0xffffffffu : ~((1u << (32 - l_bits)) - 1)) : 0;
+    return true;
+}
+
+static void s_cli_trusted_proxies_load(const char *a_cfg_section) {
+    uint16_t l_count = 0;
+    const char **l_entries = dap_config_get_array_str(g_config, a_cfg_section, "trusted_proxies", &l_count);
+    if (!l_entries || !l_count)
+        return;
+    s_cli_trusted_proxies = DAP_NEW_Z_COUNT(s_cli_trusted_proxy_t, l_count);
+    if (!s_cli_trusted_proxies) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
+    for (uint16_t i = 0; i < l_count; ++i) {
+        s_cli_trusted_proxy_t l_p;
+        if (s_cli_trusted_proxy_parse(l_entries[i], &l_p)) {
+            s_cli_trusted_proxies[s_cli_trusted_proxy_count++] = l_p;
+            log_it(L_NOTICE, "Trusted proxy added: %s", l_entries[i]);
+        } else
+            log_it(L_WARNING, "Bad trusted_proxies entry #%u: \"%s\" (expected a.b.c.d[/bits])", i, l_entries[i]);
+    }
+}
+
 // Rate-limit check for an arbitrary connection source, exported so the signed
 // HTTP /exec_cmd path can apply the very same per-/16 budget as the CLI port
 // before paying for request decode/verify.
+// Subnet key from the real client address: the direct peer, unless the peer
+// is a trusted reverse proxy - then the first X-Forwarded-For address. A
+// malformed/absent XFF from a trusted proxy falls back to the peer address.
+static uint32_t s_cli_client_subnet_key(const struct sockaddr_storage *a_peer, const char *a_xff) {
+    if (a_xff && s_cli_peer_is_trusted_proxy(a_peer)) {
+        // first entry only: the leftmost address is the one the end client
+        // cannot change after the proxy has set it
+        char l_first[64] = {0};
+        size_t l_n = 0;
+        while (a_xff[l_n] && a_xff[l_n] != ',' && l_n < sizeof(l_first) - 1) {
+            l_first[l_n] = a_xff[l_n];
+            ++l_n;
+        }
+        // trim spaces
+        while (l_n && l_first[l_n-1] == ' ') l_first[--l_n] = 0;
+        in_addr_t l_client = inet_addr(l_first);
+        if (l_client != INADDR_NONE)
+            return ntohl(l_client) >> 16;
+        // fell through: unparseable XFF - treat the proxy as the client
+    }
+    if (a_peer->ss_family == AF_INET6) {
+        if (IN6_IS_ADDR_LOOPBACK(&((const struct sockaddr_in6 *)a_peer)->sin6_addr))
+            return 0;
+        uint64_t l_hi = 0;
+        memcpy(&l_hi, ((const struct sockaddr_in6 *)a_peer)->sin6_addr.s6_addr, sizeof(l_hi));
+        return (uint32_t)(l_hi >> 48);
+    } else if (a_peer->ss_family == AF_INET) {
+        if (((const struct sockaddr_in *)a_peer)->sin_addr.s_addr == htonl(INADDR_LOOPBACK))
+            return 0;
+        return ntohl(((const struct sockaddr_in *)a_peer)->sin_addr.s_addr) >> 16;
+    }
+    return 0;
+}
+
+// Rate-limit gate with XFF awareness for the HTTP entry points: the caller
+// passes the peer address and the raw X-Forwarded-For header value (or NULL).
+// Behind a trusted reverse proxy the budget key is the end client's /16;
+// everywhere else this is the plain per-peer check.
+bool dap_cli_server_rate_limit_check_addr_xff(const struct sockaddr_storage *a_peer, const char *a_xff) {
+    if (!a_peer)
+        return true;
+    uint32_t l_subnet_key = s_cli_client_subnet_key(a_peer, a_xff);
+    if (!l_subnet_key)
+        return true;
+    return s_cli_rate_limit_check(l_subnet_key);
+}
+
 bool dap_cli_server_rate_limit_check_addr(const struct sockaddr_storage *a_addr) {
     if (!a_addr)
         return true;
@@ -846,6 +969,7 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
         s_cli_max_inflight = 1;
     if (s_cli_max_inflight_heavy < 1)
         s_cli_max_inflight_heavy = 1;
+    s_cli_trusted_proxies_load(a_cfg_section);
     s_cli_rate_limit_enabled = dap_config_get_item_bool_default(g_config, a_cfg_section, "rate_limit", s_cli_rate_limit_enabled);
     s_cli_rate_limit_rps = dap_config_get_item_int32_default(g_config, a_cfg_section, "rate_limit_rps", s_cli_rate_limit_rps);
     s_cli_rate_limit_burst = dap_config_get_item_int32_default(g_config, a_cfg_section, "rate_limit_burst", s_cli_rate_limit_burst);
