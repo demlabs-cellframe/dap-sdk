@@ -1350,8 +1350,11 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }
                 }
 
-                /* TUN: drain kernel queue in one epoll wakeup (avoids monopolizing worker). */
+                /* Level-triggered TUN remains readable after this budget.
+                 * Yield to transport sockets and timers even under continuous ingress. */
+                unsigned l_tun_read_budget = 64;
                 while (l_cur->type == DESCRIPTOR_TYPE_FILE
+                       && l_tun_read_budget-- > 0
                        && (l_cur->flags & DAP_SOCK_READY_TO_READ)
                        && l_cur->buf_in_size == 0
                        && l_cur->buf_in_size < l_cur->buf_in_size_max

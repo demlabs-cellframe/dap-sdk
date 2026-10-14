@@ -1951,22 +1951,32 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
 {
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
     byte_t *l_buf_out;
+    size_t l_needed;
+    if (__builtin_add_overflow(a_es->buf_out_size, a_required_size, &l_needed)) {
+        log_it(L_ERROR, "Integer overflow in output size calculation");
+        return NULL;
+    }
     
-    if (a_es->buf_out_size_max < a_es->buf_out_size + a_required_size) {
-        if (__builtin_add_overflow(a_es->buf_out_size_max, dap_max(l_basic_buf_size, a_required_size), &a_es->buf_out_size_max)) {
+    if (a_es->buf_out_size_max < l_needed) {
+        size_t l_capacity;
+        if (__builtin_add_overflow(a_es->buf_out_size_max, dap_max(l_basic_buf_size, a_required_size), &l_capacity)) {
             log_it(L_ERROR, "Integer overflow in buffer size calculation");
             return NULL;
         }
-        if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max))) {
+        if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, l_capacity))) {
             log_it(L_ERROR, "Can't increase capacity: OOM!");
             return NULL;
         }
         a_es->buf_out = l_buf_out;
+        a_es->buf_out_size_max = l_capacity;
         debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", 
                  a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
-    } else if ((a_es->buf_out_size + a_required_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
-        a_es->buf_out_size_max = l_basic_buf_size;
-        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+    } else if ((l_needed <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
+        l_buf_out = DAP_REALLOC(a_es->buf_out, l_basic_buf_size);
+        if (l_buf_out) {
+            a_es->buf_out = l_buf_out;
+            a_es->buf_out_size_max = l_basic_buf_size;
+        }
         debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
                  a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
@@ -2016,7 +2026,10 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     size_t l_prefix = a_es->packet_file ? sizeof(uint32_t) : 0;
     if (l_prefix && (!a_data_size || a_data_size > UINT32_MAX))
         return 0;
-    byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, a_data_size + l_prefix);
+    size_t l_required;
+    if (__builtin_add_overflow(a_data_size, l_prefix, &l_required))
+        return 0;
+    byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, l_required);
     if (!l_write_pos)
         return 0;
     
