@@ -531,7 +531,7 @@ static bool s_cli_peer_is_trusted_proxy(const struct sockaddr_storage *a_addr) {
         l_addr_hbo = ntohl(((const struct sockaddr_in *)a_addr)->sin_addr.s_addr);
     else if (a_addr->ss_family == AF_INET6) {
         const uint8_t *l_b = ((const struct sockaddr_in6 *)a_addr)->sin6_addr.s6_addr;
-        if (static const uint8_t c_v4mapped_prefix[12] = {0,0,0,0,0,0,0,0,0,0,0xff,0xff};
+        static const uint8_t c_v4mapped_prefix[12] = {0,0,0,0,0,0,0,0,0,0,0xff,0xff};
         if (memcmp(l_b, c_v4mapped_prefix, 12) == 0) // v4-mapped
             l_addr_hbo = ntohl(*(const uint32_t *)(l_b + 12));
         else
