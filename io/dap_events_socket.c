@@ -1959,10 +1959,12 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
     
     if (a_es->buf_out_size_max < l_needed) {
         size_t l_capacity;
-        if (__builtin_add_overflow(a_es->buf_out_size_max, dap_max(l_basic_buf_size, a_required_size), &l_capacity)) {
-            log_it(L_ERROR, "Integer overflow in buffer size calculation");
-            return NULL;
-        }
+        /* Geometric growth avoids repeatedly copying a growing backlog.
+         * Fall back to the checked exact requirement near SIZE_MAX. */
+        size_t l_growth = dap_max(l_basic_buf_size, a_es->buf_out_size_max / 2);
+        if (__builtin_add_overflow(a_es->buf_out_size_max, l_growth, &l_capacity))
+            l_capacity = l_needed;
+        l_capacity = dap_max(l_capacity, l_needed);
         if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, l_capacity))) {
             log_it(L_ERROR, "Can't increase capacity: OOM!");
             return NULL;
@@ -1971,7 +1973,8 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
         a_es->buf_out_size_max = l_capacity;
         debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", 
                  a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
-    } else if ((l_needed <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
+    } else if (!a_es->buf_out_size && (l_needed <= l_basic_buf_size / 4)
+               && (a_es->buf_out_size_max > l_basic_buf_size)) {
         l_buf_out = DAP_REALLOC(a_es->buf_out, l_basic_buf_size);
         if (l_buf_out) {
             a_es->buf_out = l_buf_out;
