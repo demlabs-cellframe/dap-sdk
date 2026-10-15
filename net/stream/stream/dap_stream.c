@@ -1524,7 +1524,8 @@ size_t dap_stream_data_proc_read_ext_validated(dap_stream_t *a_stream, const voi
                 break;
             }
             l_pos += l_shift;
-            l_processed_size += l_shift;
+            /* Callers use this as a prefix offset, including skipped bytes. */
+            l_processed_size = (size_t)(l_pos - (const byte_t *)a_data);
         } else {
             ++l_pos;
         }

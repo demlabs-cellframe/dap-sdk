@@ -935,7 +935,13 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
     dns_inflight_t *l_slot = s_window_find(l_ctx, l_txid);
     if(!l_slot)
         return;
-    s_window_release(l_ctx, l_slot);
+    /* A DNS response completes the query, not necessarily its upload fragment.
+     * Keep an unacknowledged data query eligible for the timed retry path.
+     * Polls carry no upload payload and can always release their credit. */
+    if (l_slot->poll_only ||
+        (l_frame.ack_message_id == l_slot->message_id &&
+         l_frame.ack_fragment_index == l_slot->fragment_index))
+        s_window_release(l_ctx, l_slot);
     if(l_frame.type == DAP_DNS_TUNNEL_MSG_DATA && l_frame.payload_length) {
         if(l_ctx->poll_window < DNS_POLL_WINDOW_MAX)
             ++l_ctx->poll_window;

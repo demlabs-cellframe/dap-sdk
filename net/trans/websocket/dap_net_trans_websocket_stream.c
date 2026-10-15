@@ -1134,8 +1134,10 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         }
         if (l_res != 0) {
             log_it(L_ERROR, "WebSocket frame parse error at offset %zu", l_consumed);
-            l_consumed++;
-            continue;
+            DAP_DELETE(l_payload);
+            DAP_DELETE(l_payload_buf);
+            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return -1;
         }
 
         // Handle control frames
@@ -1163,8 +1165,11 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         if (l_payload && l_payload_size > 0) {
             // Grow buffer if needed
             if (l_payload_total + l_payload_size > l_payload_buf_alloc) {
-                l_payload_buf_alloc = (l_payload_total + l_payload_size) * 2;
-                l_payload_buf = DAP_REALLOC(l_payload_buf, l_payload_buf_alloc);
+                /* Decoded payload cannot exceed the input frame bytes. */
+                DAP_DELETE(l_payload);
+                DAP_DELETE(l_payload_buf);
+                l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return -1;
             }
             memcpy(l_payload_buf + l_payload_total, l_payload, l_payload_size);
             l_payload_total += l_payload_size;
@@ -1189,6 +1194,11 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         // Prepend leftover from previous call (partial DAP stream packet)
         if (l_priv->frame_buffer_used > 0) {
             size_t l_total = l_priv->frame_buffer_used + l_payload_total;
+            if (l_total < l_priv->frame_buffer_used) {
+                DAP_DELETE(l_payload_buf);
+                l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return -1;
+            }
             uint8_t *l_combined = DAP_NEW_Z_SIZE(uint8_t, l_total);
             if (l_combined) {
                 memcpy(l_combined, l_priv->frame_buffer, l_priv->frame_buffer_used);
@@ -1196,6 +1206,10 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 l_priv->frame_buffer_used = 0;
                 l_data = l_combined;
                 l_data_size = l_total;
+            } else {
+                DAP_DELETE(l_payload_buf);
+                l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return -1;
             }
         }
 
@@ -1206,7 +1220,14 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         size_t l_remaining = l_data_size - l_processed;
         if (l_remaining > 0) {
             if (l_remaining > l_priv->frame_buffer_size) {
-                l_priv->frame_buffer = DAP_REALLOC(l_priv->frame_buffer, l_remaining);
+                uint8_t *l_new_buffer = DAP_REALLOC(l_priv->frame_buffer, l_remaining);
+                if (!l_new_buffer) {
+                    if (l_data != l_payload_buf) DAP_DELETE(l_data);
+                    DAP_DELETE(l_payload_buf);
+                    l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                    return -1;
+                }
+                l_priv->frame_buffer = l_new_buffer;
                 l_priv->frame_buffer_size = l_remaining;
             }
             memcpy(l_priv->frame_buffer, l_data + l_processed, l_remaining);
