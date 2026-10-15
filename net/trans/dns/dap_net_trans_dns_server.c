@@ -325,11 +325,19 @@ static dns_down_frag_t *s_next_down(dns_server_client_session_t *a_session)
         return NULL;
     uint64_t l_now = s_now_ms();
     dns_down_frag_t *l_stale = NULL;
+    bool l_have_message = false;
+    uint32_t l_message = 0;
     for(size_t i = a_session->down_pos; i < a_session->down_count; ++i) {
         if(l_down[i].acked) {
             if(i == a_session->down_pos)
                 a_session->down_pos = i + 1;
             continue;
+        }
+        if (!l_have_message) {
+            l_message = l_down[i].message_id;
+            l_have_message = true;
+        } else if (l_down[i].message_id != l_message) {
+            break;
         }
         /* Parallel queries must not all get the same fragment, so hand out
          * unsent ones first and only resend after the ack timeout */

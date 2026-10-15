@@ -1615,7 +1615,10 @@ int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_siz
     }
 
     // Check if full payload available
-    if (a_data_size < l_offset + l_payload_len) {
+    /* RFC 6455 lengths are 63-bit; subtraction avoids size_t wrap. */
+    if (l_payload_len > SIZE_MAX || (l_payload_len & (UINT64_C(1) << 63)))
+        return -1;
+    if (l_payload_len > a_data_size - l_offset) {
         return -2;  // Incomplete frame
     }
 
@@ -1624,6 +1627,8 @@ int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_siz
         *a_payload_size_out = l_payload_len;
         if (l_payload_len > 0) {
             *a_payload_out = DAP_NEW_Z_SIZE(uint8_t, l_payload_len);
+            if (!*a_payload_out)
+                return -1;
             memcpy(*a_payload_out, &a_data[l_offset], l_payload_len);
             
             // Unmask if needed
@@ -1930,4 +1935,3 @@ static int s_ws_register_server_handlers(dap_net_trans_t *a_trans, void *a_trans
              "WebSocket: skip /stream upgrade-only proc (use default stream + try_upgrade)");
     return 0;
 }
-
