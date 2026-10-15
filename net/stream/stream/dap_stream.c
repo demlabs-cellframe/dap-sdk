@@ -1847,7 +1847,9 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
     }
     debug_if(s_debug, L_DEBUG, "Current seq_id: %"DAP_UINT64_FORMAT_U", last: %zu",
                                 l_ch_pkt->hdr.seq_id, a_stream->client_last_seq_id_packet);
-    a_stream->client_last_seq_id_packet = l_ch_pkt->hdr.seq_id;
+    /* Rejected packets must never move the accepted high-water mark back. */
+    if (l_count_lost_packets >= 0)
+        a_stream->client_last_seq_id_packet = l_ch_pkt->hdr.seq_id;
     return l_count_lost_packets < 0;
 }
 

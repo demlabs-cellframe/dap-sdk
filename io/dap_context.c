@@ -1847,7 +1847,10 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
     }
 
 #elif defined (DAP_EVENTS_CAPS_POLL)
-    if( a_esocket->context && a_esocket->is_initalized){
+    /* new_callback runs after poll registration but before is_initalized is
+     * set. It may arm CONNECTING/POLLOUT (HTTP does); registration identity,
+     * not completion of initialization, determines whether we can update. */
+    if( a_esocket->context){
         if (a_esocket->poll_index < a_esocket->context->poll_count &&
                 a_esocket->context->poll_esocket[a_esocket->poll_index] == a_esocket){
             struct pollfd * l_poll = &a_esocket->context->poll[a_esocket->poll_index];

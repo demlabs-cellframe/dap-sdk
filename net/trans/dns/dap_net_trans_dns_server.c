@@ -60,14 +60,7 @@ static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg);
 static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static bool s_dns_idle_cb(void *a_arg);
 
-typedef struct dns_reasm {
-    uint32_t message_id;
-    uint8_t type;
-    uint16_t fragment_count;
-    uint16_t received;
-    uint16_t lens[DNS_MAX_FRAGS];
-    uint8_t *frags[DNS_MAX_FRAGS];
-} dns_reasm_t;
+#include "dap_dns_reassembly.h"
 
 typedef struct dns_down_frag {
     uint8_t type;
@@ -216,12 +209,6 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
     return 0;
 }
 
-static void s_reasm_reset(dns_reasm_t *a_reasm)
-{
-    for(size_t i = 0; i < DNS_MAX_FRAGS; ++i)
-        DAP_DEL_Z(a_reasm->frags[i]);
-    memset(a_reasm, 0, sizeof(*a_reasm));
-}
 
 static void s_session_free(dns_server_client_session_t *a_session)
 {
@@ -280,48 +267,6 @@ void dap_net_trans_dns_server_delete(dap_net_trans_dns_server_t *a_dns_server)
     DAP_DELETE(a_dns_server);
 }
 
-static int s_reasm_add(dns_reasm_t *a_reasm, const dap_dns_tunnel_frame_t *a_frame,
-        uint8_t **a_out, size_t *a_out_size)
-{
-    if(!a_frame->fragment_count || a_frame->fragment_count > DNS_MAX_FRAGS)
-        return -1;
-    if(a_reasm->fragment_count && a_reasm->message_id != a_frame->message_id)
-        s_reasm_reset(a_reasm);
-    if(!a_reasm->fragment_count) {
-        a_reasm->message_id = a_frame->message_id;
-        a_reasm->type = a_frame->type;
-        a_reasm->fragment_count = a_frame->fragment_count;
-    }
-    if(a_reasm->frags[a_frame->fragment_index])
-        return 0;
-    if(a_frame->payload_length) {
-        a_reasm->frags[a_frame->fragment_index] =
-                DAP_DUP_SIZE(a_frame->payload, a_frame->payload_length);
-        if(!a_reasm->frags[a_frame->fragment_index])
-            return -1;
-    }
-    a_reasm->lens[a_frame->fragment_index] = a_frame->payload_length;
-    a_reasm->received++;
-    if(a_reasm->received != a_reasm->fragment_count)
-        return 0;
-    size_t l_total = 0;
-    for(uint16_t i = 0; i < a_reasm->fragment_count; ++i)
-        l_total += a_reasm->lens[i];
-    uint8_t *l_buf = l_total ? DAP_NEW_SIZE(uint8_t, l_total) : DAP_NEW_Z(uint8_t);
-    if(!l_buf)
-        return -1;
-    size_t l_off = 0;
-    for(uint16_t i = 0; i < a_reasm->fragment_count; ++i) {
-        if(a_reasm->lens[i] && a_reasm->frags[i]) {
-            memcpy(l_buf + l_off, a_reasm->frags[i], a_reasm->lens[i]);
-            l_off += a_reasm->lens[i];
-        }
-    }
-    s_reasm_reset(a_reasm);
-    *a_out = l_buf;
-    *a_out_size = l_total;
-    return 1;
-}
 
 static int s_enqueue_down(dns_server_client_session_t *a_session, uint8_t a_type,
         const uint8_t *a_data, size_t a_size)
@@ -602,11 +547,13 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es,
     }
     if(l_frame.type == DAP_DNS_TUNNEL_MSG_HANDSHAKE ||
             l_frame.type == DAP_DNS_TUNNEL_MSG_DATA) {
-        l_session->last_up_msg = l_frame.message_id;
-        l_session->last_up_frag = l_frame.fragment_index;
         uint8_t *l_msg = NULL;
         size_t l_msg_size = 0;
         int l_ready = s_reasm_add(s_reasm(l_session), &l_frame, &l_msg, &l_msg_size);
+        if (l_ready >= 0) {
+            l_session->last_up_msg = l_frame.message_id;
+            l_session->last_up_frag = l_frame.fragment_index;
+        }
         if(l_ready > 0) {
             if(l_frame.type == DAP_DNS_TUNNEL_MSG_HANDSHAKE &&
                     !l_session->handshake_complete) {
