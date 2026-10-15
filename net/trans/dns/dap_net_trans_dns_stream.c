@@ -418,19 +418,7 @@ static int s_enqueue_message(dns_client_priv_t *a_ctx, uint8_t a_type,
 
 static dns_out_frag_t *s_next_unacked(dns_client_priv_t *a_ctx)
 {
-    bool l_have_message = false;
-    uint32_t l_message = 0;
     for(size_t i = a_ctx->out_pos; i < a_ctx->out_count; ++i) {
-        if (!a_ctx->out[i].acked) {
-            if (!l_have_message) {
-                l_message = a_ctx->out[i].message_id;
-                l_have_message = true;
-            } else if (a_ctx->out[i].message_id != l_message) {
-                /* Stream fragments require message order. Pipeline fragments
-                 * within this message, not messages across an ACK gap. */
-                return NULL;
-            }
-        }
         if(!a_ctx->out[i].acked && !a_ctx->out[i].sent)
             return &a_ctx->out[i];
         if(a_ctx->out[i].acked && i == a_ctx->out_pos)
