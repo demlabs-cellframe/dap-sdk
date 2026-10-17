@@ -2492,7 +2492,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
                                                          l_udp_ctx->remote_addr_len);
         DAP_DELETE(l_obfuscated);
     
-        if (l_sent < 0) {
+        if (l_sent != (ssize_t)l_obfuscated_size) {
             log_it(L_ERROR, "Failed to send obfuscated HANDSHAKE packet");
             return -1;
         }
@@ -2647,7 +2647,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     
     DAP_DELETE(l_encrypted);
     
-    if (l_sent < 0) {
+    if (l_sent != (ssize_t)l_encrypted_size) {
         log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_pkt_type);
         return -1;
     }
@@ -2846,6 +2846,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+    dap_events_socket_prepare_uplink(l_es);
     /* Generic client callbacks and stream keepalive use DAP_ESOCKET_CLIENT.
      * UDP packet decoding independently uses callbacks.arg (transport ctx). */
     l_es->_inheritor = a_params->client_ctx;

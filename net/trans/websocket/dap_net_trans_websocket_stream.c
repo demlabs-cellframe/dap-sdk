@@ -1108,6 +1108,7 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     }
 
     size_t l_consumed = 0;
+    bool l_received_close = false;
 
     // Accumulate de-framed payloads in a temporary buffer
     size_t l_payload_buf_alloc = l_es->buf_in_size;
@@ -1145,7 +1146,8 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             log_it(L_INFO, "WebSocket received CLOSE frame");
             DAP_DEL_Z(l_payload);
             l_consumed += l_frame_size;
-            s_ws_close(a_stream);
+            /* Deliver preceding data before close frees the per-stream state. */
+            l_received_close = true;
             break;
         }
         if (l_opcode == DAP_WS_OPCODE_PING) {
@@ -1241,6 +1243,12 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     }
 
     DAP_DELETE(l_payload_buf);
+
+    if (l_received_close) {
+        /* No accesses to l_priv after this call: s_ws_close frees it. */
+        s_ws_close(a_stream);
+        l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+    }
 
     // Return 0 — all buf_in management handled internally
     return 0;
@@ -1596,9 +1604,12 @@ int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_siz
                              bool *a_fin_out, uint8_t **a_payload_out, size_t *a_payload_size_out,
                              size_t *a_frame_total_size_out)
 {
-    if (!a_data || a_data_size < 2) {
+    if (!a_data) {
         return -1;
     }
+    /* TCP may split even the two-byte base header across reads. */
+    if (a_data_size < 2)
+        return -2;
 
     size_t l_offset = 0;
 

@@ -134,6 +134,8 @@ typedef struct dns_inflight {
 typedef struct dns_client_priv {
     uint64_t client_nonce;
     uint64_t session_cookie;
+    struct sockaddr_storage remote_addr;
+    socklen_t remote_addr_len;
     dap_enc_key_t *alice_key;
     uint32_t stream_id;
     uint32_t next_message_id;
@@ -317,6 +319,11 @@ static int s_dns_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
     memcpy(&l_priv->remote_addr, &l_resolved, (size_t)l_len);
     l_priv->remote_addr_len = (socklen_t)l_len;
     l_priv->esocket = a_stream->esocket;
+    dns_client_priv_t *l_ctx = s_get_or_create_client_ctx(a_stream);
+    if(!l_ctx)
+        return -1;
+    memcpy(&l_ctx->remote_addr, &l_resolved, (size_t)l_len);
+    l_ctx->remote_addr_len = (socklen_t)l_len;
     if(l_priv->esocket) {
         memcpy(&l_priv->esocket->addr_storage, &l_priv->remote_addr,
                 l_priv->remote_addr_len);
@@ -476,7 +483,7 @@ static int s_client_send_frame(dap_stream_t *a_stream, dns_client_priv_t *a_ctx,
     if(l_rc != DAP_DNS_TUNNEL_WIRE_OK)
         return -1;
     size_t l_sent = dap_events_socket_sendto_unsafe(l_es, l_slot->query,
-            l_size, &l_es->addr_storage, l_es->addr_size);
+            l_size, &a_ctx->remote_addr, a_ctx->remote_addr_len);
     if(l_sent != l_size)
         return -1;
     l_slot->used = true;
@@ -580,8 +587,8 @@ static bool s_client_retry_cb(void *a_arg)
         }
         l_slot->sent_ms = l_now;
         dap_events_socket_sendto_unsafe(l_stream->esocket, l_slot->query,
-                l_slot->query_size, &l_stream->esocket->addr_storage,
-                l_stream->esocket->addr_size);
+                l_slot->query_size, &l_ctx->remote_addr,
+                l_ctx->remote_addr_len);
     }
     if(l_exhausted) {
         log_it(L_ERROR, "DNS client: query retry budget exhausted");
@@ -827,6 +834,8 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
     l_es->_inheritor = a_params->client_ctx;
     int l_buf_size = 4 * 1024 * 1024;
+    /* Protect before handshake, including reconnect with an existing TUN. */
+    dap_events_socket_prepare_uplink(l_es);
     setsockopt(l_es->fd, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buf_size,
             sizeof(l_buf_size));
     setsockopt(l_es->fd, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buf_size,
@@ -901,6 +910,45 @@ static dns_client_priv_t *s_get_or_create_client_ctx(dap_stream_t *a_stream)
     return l_ctx;
 }
 
+/* Compare endpoint fields, not sockaddr padding or IPv6 flowinfo. */
+static bool s_dns_same_peer(const struct sockaddr_storage *a_expected, socklen_t a_expected_len,
+        const struct sockaddr_storage *a_actual, socklen_t a_actual_len)
+{
+    if(a_expected->ss_family != a_actual->ss_family)
+        return false;
+    if(a_expected->ss_family == AF_INET) {
+        if(a_expected_len < sizeof(struct sockaddr_in) || a_actual_len < sizeof(struct sockaddr_in))
+            return false;
+        const struct sockaddr_in *l_a = (const struct sockaddr_in *)a_expected;
+        const struct sockaddr_in *l_b = (const struct sockaddr_in *)a_actual;
+        return l_a->sin_port == l_b->sin_port && l_a->sin_addr.s_addr == l_b->sin_addr.s_addr;
+    }
+    if(a_expected->ss_family == AF_INET6) {
+        if(a_expected_len < sizeof(struct sockaddr_in6) || a_actual_len < sizeof(struct sockaddr_in6))
+            return false;
+        const struct sockaddr_in6 *l_a = (const struct sockaddr_in6 *)a_expected;
+        const struct sockaddr_in6 *l_b = (const struct sockaddr_in6 *)a_actual;
+        return l_a->sin6_port == l_b->sin6_port && l_a->sin6_scope_id == l_b->sin6_scope_id &&
+                !memcmp(&l_a->sin6_addr, &l_b->sin6_addr, sizeof(l_a->sin6_addr));
+    }
+    return false;
+}
+
+static bool s_dns_response_session_matches(const dns_client_priv_t *a_ctx,
+        const dap_dns_tunnel_frame_t *a_frame)
+{
+    if(a_frame->client_nonce != a_ctx->client_nonce)
+        return false;
+    if(a_ctx->session_cookie)
+        return a_frame->session_cookie == a_ctx->session_cookie;
+    /* During fragmented handshake the server returns cookie-zero POLL ACKs.
+     * Only a HANDSHAKE response may establish the nonzero session cookie. */
+    if(a_ctx->handshake_done || !a_ctx->handshake_cb)
+        return false;
+    return (a_frame->type == DAP_DNS_TUNNEL_MSG_POLL && !a_frame->session_cookie) ||
+           (a_frame->type == DAP_DNS_TUNNEL_MSG_HANDSHAKE && a_frame->session_cookie);
+}
+
 static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
 {
     UNUSED(a_arg);
@@ -911,8 +959,6 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         a_es->buf_in_size = 0;
         return;
     }
-    dap_client_trans_ctx_touch(l_client);
-    a_es->last_time_active = time(NULL);
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
     if(!l_fsm || !l_tc || !l_tc->stream || !l_tc->transport_priv) {
@@ -920,6 +966,11 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
     dns_client_priv_t *l_ctx = (dns_client_priv_t *)l_tc->transport_priv;
+    if(!s_dns_same_peer(&l_ctx->remote_addr, l_ctx->remote_addr_len,
+            &a_es->addr_storage, a_es->addr_size)) {
+        a_es->buf_in_size = 0;
+        return;
+    }
     dap_stream_t *l_stream = l_tc->stream;
     uint8_t l_payload[DAP_DNS_TUNNEL_EDNS_UDP_SIZE];
     size_t l_payload_size = sizeof(l_payload);
@@ -933,8 +984,10 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
     dns_inflight_t *l_slot = s_window_find(l_ctx, l_txid);
-    if(!l_slot)
+    if(!l_slot || !s_dns_response_session_matches(l_ctx, &l_frame))
         return;
+    dap_client_trans_ctx_touch(l_client);
+    a_es->last_time_active = time(NULL);
     /* A DNS response completes the query, not necessarily its upload fragment.
      * Keep an unacknowledged data query eligible for the timed retry path.
      * Polls carry no upload payload and can always release their credit. */

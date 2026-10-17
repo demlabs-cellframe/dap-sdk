@@ -800,6 +800,16 @@ int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char
  * @param a_error_code Output parameter for error code (0 on success, errno/WSAGetLastError on error)
  * @return 0 on success (including EINPROGRESS/WSAEWOULDBLOCK), -1 on immediate failure
  */
+void dap_events_socket_prepare_uplink(dap_events_socket_t *a_es)
+{
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
+    if (a_es && s_pre_connect_cb)
+        s_pre_connect_cb((int)a_es->socket, s_pre_connect_ctx);
+#else
+    (void)a_es;
+#endif
+}
+
 int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
 {
     if (!a_es) {
@@ -813,10 +823,7 @@ int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
         return -1;
     }
     
-#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
-    if(s_pre_connect_cb)
-        s_pre_connect_cb((int)a_es->socket, s_pre_connect_ctx);
-#endif
+    dap_events_socket_prepare_uplink(a_es);
     // Initiate non-blocking connection. The address length must match the
     // resolved family: a fixed sizeof(sockaddr_in) makes IPv6 (NAT64) fail.
     socklen_t l_addr_len = a_es->addr_size;

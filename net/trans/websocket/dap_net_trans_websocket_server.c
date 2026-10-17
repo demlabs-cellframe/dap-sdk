@@ -739,7 +739,14 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
             &l_opcode, &l_fin, &l_payload, &l_payload_size, &l_frame_size);
 
         if (l_res == -2) break;  // Incomplete frame
-        if (l_res != 0) { l_consumed++; continue; }
+        if (l_res != 0) {
+            /* WebSocket has no sync marker: skipping a byte corrupts framing. */
+            log_it(L_ERROR, "WebSocket server frame parse error at offset %zu", l_consumed);
+            DAP_DELETE(l_payload);
+            DAP_DELETE(l_payload_buf);
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return;
+        }
 
         // Handle control frames
         if (l_opcode == DAP_WS_OPCODE_CLOSE) {
@@ -906,4 +913,3 @@ static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, 
     debug_if(s_debug_more, L_DEBUG, "Generated Sec-WebSocket-Accept: %s", a_accept_key);
     return true;
 }
-
