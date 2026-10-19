@@ -893,6 +893,12 @@ static dns_client_priv_t *s_get_or_create_client_ctx(dap_stream_t *a_stream)
     dns_client_priv_t *l_ctx = DAP_NEW_Z(dns_client_priv_t);
     if(!l_ctx)
         return NULL;
+    /* Initial FSM handshake runs before connect(). Preserve the endpoint
+     * resolved by stage_prepare before recvfrom can overwrite addr_storage. */
+    if(a_stream->esocket) {
+        l_ctx->remote_addr = a_stream->esocket->addr_storage;
+        l_ctx->remote_addr_len = a_stream->esocket->addr_size;
+    }
     l_ctx->client_nonce = m_dap_random_u64();
     l_ctx->next_txid = (uint16_t)m_dap_random_u16();
     dap_stream_trans_dns_private_t *l_priv = s_get_private(a_stream->trans);
