@@ -841,14 +841,15 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
     }
     
     // Send obfuscated handshake
-    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_udp_ctx->stream->esocket,
+    size_t l_sent = dap_events_socket_sendto_unsafe(l_udp_ctx->stream->esocket,
                                                       l_obfuscated, l_obfuscated_size,
                                                       &l_udp_ctx->remote_addr,
                                                       l_udp_ctx->remote_addr_len);
     DAP_DELETE(l_obfuscated);
     
-    if (l_sent < 0) {
-        log_it(L_ERROR, "HANDSHAKE RETRANS: send failed (errno=%d)", errno);
+    if (l_sent != l_obfuscated_size) {
+        log_it(L_ERROR, "HANDSHAKE RETRANS: send rejected (%zu/%zu bytes)",
+               l_sent, l_obfuscated_size);
         return true;  // Keep timer running, try again
     }
     

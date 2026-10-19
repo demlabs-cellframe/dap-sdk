@@ -295,7 +295,8 @@ static int s_enqueue_down(dns_server_client_session_t *a_session, uint8_t a_type
     size_t l_count = a_size ? (a_size + l_budget - 1) / l_budget : 1;
     if(l_count > DNS_MAX_FRAGS || a_session->down_count + l_count > DNS_MAX_DOWN)
         return -1;
-    uint32_t l_id = ++a_session->next_down_id;
+    uint32_t l_id = a_session->next_down_id + 1;
+    size_t l_start = a_session->down_count;
     size_t l_off = 0;
     for(size_t i = 0; i < l_count; ++i) {
         size_t l_chunk = a_size - l_off;
@@ -310,11 +311,18 @@ static int s_enqueue_down(dns_server_client_session_t *a_session, uint8_t a_type
         l_frag->payload_len = (uint16_t)l_chunk;
         if(l_chunk) {
             l_frag->payload = DAP_DUP_SIZE(a_data + l_off, l_chunk);
-            if(!l_frag->payload)
+            if(!l_frag->payload) {
+                while (a_session->down_count > l_start) {
+                    dns_down_frag_t *l_rollback = &l_down[--a_session->down_count];
+                    DAP_DELETE(l_rollback->payload);
+                    memset(l_rollback, 0, sizeof(*l_rollback));
+                }
                 return -1;
+            }
         }
         l_off += l_chunk;
     }
+    a_session->next_down_id = l_id;
     return 0;
 }
 
@@ -554,8 +562,9 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es,
             l_session->last_up_msg = l_frame.message_id;
             l_session->last_up_frag = l_frame.fragment_index;
         }
-        if(l_ready > 0) {
-            if(l_frame.type == DAP_DNS_TUNNEL_MSG_HANDSHAKE &&
+        uint8_t l_type = l_frame.type;
+        while(l_ready > 0) {
+            if(l_type == DAP_DNS_TUNNEL_MSG_HANDSHAKE &&
                     !l_session->handshake_complete) {
                 uint64_t l_old_cookie = l_session->cookie;
                 s_complete_handshake(a_es, a_dns_server, l_session, l_msg, l_msg_size);
@@ -565,11 +574,12 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es,
                         sizeof(l_session->cookie), l_session);
                 pthread_mutex_unlock(&a_dns_server->sessions_lock);
                 UNUSED(l_old_cookie);
-            } else if(l_frame.type == DAP_DNS_TUNNEL_MSG_DATA && l_session->stream &&
+            } else if(l_type == DAP_DNS_TUNNEL_MSG_DATA && l_session->stream &&
                     l_msg_size) {
                 dap_stream_data_proc_read_ext(l_session->stream, l_msg, l_msg_size);
             }
             DAP_DELETE(l_msg);
+            l_ready = s_reasm_pop(s_reasm(l_session), &l_msg, &l_msg_size, &l_type);
         }
     }
 

@@ -400,7 +400,8 @@ static int s_enqueue_message(dns_client_priv_t *a_ctx, uint8_t a_type,
     if(!l_count || l_count > DNS_MAX_FRAGS ||
             a_ctx->out_count + l_count > DNS_MAX_OUT)
         return -1;
-    uint32_t l_message_id = ++a_ctx->next_message_id;
+    uint32_t l_message_id = a_ctx->next_message_id + 1;
+    size_t l_start = a_ctx->out_count;
     size_t l_offset = 0;
     for(size_t i = 0; i < l_count; ++i) {
         size_t l_chunk = a_size - l_offset;
@@ -415,11 +416,18 @@ static int s_enqueue_message(dns_client_priv_t *a_ctx, uint8_t a_type,
         l_frag->payload_len = (uint16_t)l_chunk;
         if(l_chunk) {
             l_frag->payload = DAP_DUP_SIZE(a_data + l_offset, l_chunk);
-            if(!l_frag->payload)
+            if(!l_frag->payload) {
+                while (a_ctx->out_count > l_start) {
+                    dns_out_frag_t *l_rollback = &a_ctx->out[--a_ctx->out_count];
+                    DAP_DELETE(l_rollback->payload);
+                    memset(l_rollback, 0, sizeof(*l_rollback));
+                }
                 return -1;
+            }
         }
         l_offset += l_chunk;
     }
+    a_ctx->next_message_id = l_message_id;
     return 0;
 }
 
@@ -570,7 +578,7 @@ static bool s_client_retry_cb(void *a_arg)
         dns_inflight_t *l_slot = &l_ctx->window[i];
         if(!l_slot->used || l_now - l_slot->sent_ms < DNS_RETRY_MS)
             continue;
-        if(l_slot->retries++ >= DNS_MAX_RETRIES) {
+        if(l_slot->retries >= DNS_MAX_RETRIES) {
             if(!l_slot->poll_only) {
                 for(size_t j = 0; j < l_ctx->out_count; ++j) {
                     if(l_ctx->out[j].message_id == l_slot->message_id &&
@@ -585,10 +593,13 @@ static bool s_client_retry_cb(void *a_arg)
             l_exhausted = true;
             continue;
         }
-        l_slot->sent_ms = l_now;
-        dap_events_socket_sendto_unsafe(l_stream->esocket, l_slot->query,
+        size_t l_sent = dap_events_socket_sendto_unsafe(l_stream->esocket, l_slot->query,
                 l_slot->query_size, &l_ctx->remote_addr,
                 l_ctx->remote_addr_len);
+        if (l_sent == l_slot->query_size) {
+            l_slot->sent_ms = l_now;
+            ++l_slot->retries;
+        }
     }
     if(l_exhausted) {
         log_it(L_ERROR, "DNS client: query retry budget exhausted");
@@ -1024,12 +1035,14 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
             l_ctx->last_ack_msg = l_frame.message_id;
             l_ctx->last_ack_frag = l_frame.fragment_index;
         }
-        if(l_ready > 0) {
-            if(l_frame.type == DAP_DNS_TUNNEL_MSG_HANDSHAKE && !l_ctx->handshake_done)
+        uint8_t l_type = l_frame.type;
+        while(l_ready > 0) {
+            if(l_type == DAP_DNS_TUNNEL_MSG_HANDSHAKE && !l_ctx->handshake_done)
                 s_finish_handshake(l_stream, l_ctx, l_msg, l_msg_size);
-            else if(l_frame.type == DAP_DNS_TUNNEL_MSG_DATA && l_msg_size)
+            else if(l_type == DAP_DNS_TUNNEL_MSG_DATA && l_msg_size)
                 dap_stream_data_proc_read_ext(l_stream, l_msg, l_msg_size);
             DAP_DELETE(l_msg);
+            l_ready = s_reasm_pop(&l_ctx->reasm, &l_msg, &l_msg_size, &l_type);
         }
     }
     s_client_send_next(l_stream, l_ctx);

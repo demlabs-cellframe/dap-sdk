@@ -15,11 +15,16 @@ typedef struct {
     uint8_t *parts[32];
 } dns_reasm_slot_t;
 typedef struct dns_reasm {
+    /* Wire message IDs start at one and advance across handshake and data. */
+    uint32_t next_id;
+    int started;
     dns_reasm_slot_t slots[DNS_REASM_SLOTS];
     uint32_t completed[64];
     uint8_t completed_type[64];
     unsigned completed_count, completed_next;
 } dns_reasm_t;
+
+static int s_reasm_pop(dns_reasm_t *r, uint8_t **out, size_t *out_size, uint8_t *type);
 
 static void s_reasm_slot_clear(dns_reasm_slot_t *s)
 {
@@ -39,9 +44,11 @@ static int s_reasm_add(dns_reasm_t *r, const dap_dns_tunnel_frame_t *f,
                       uint8_t **out, size_t *out_size)
 {
     *out = NULL; *out_size = 0;
+    if (!r->started) { r->next_id = 1; r->started = 1; }
     if (!f->fragment_count || f->fragment_count > 32 ||
         f->fragment_index >= f->fragment_count ||
         (f->payload_length && !f->payload)) return -1;
+    if ((int32_t)(f->message_id - r->next_id) < 0) return 0;
     for (unsigned i = 0; i < r->completed_count; ++i)
         if (r->completed[i] == f->message_id && r->completed_type[i] == f->type) return 0;
     dns_reasm_slot_t *s = NULL, *empty = NULL;
@@ -52,6 +59,14 @@ static int s_reasm_add(dns_reasm_t *r, const dap_dns_tunnel_frame_t *f,
     }
     if (!s) {
         if (!empty) return -1;
+        /* Reserve capacity for the missing head of the ordered stream. */
+        unsigned used = 0;
+        int head_present = 0;
+        for (unsigned i = 0; i < DNS_REASM_SLOTS; ++i) {
+            used += !!r->slots[i].count;
+            if (r->slots[i].count && r->slots[i].id == r->next_id) head_present = 1;
+        }
+        if (!head_present && f->message_id != r->next_id && used >= DNS_REASM_SLOTS - 1) return -1;
         s = empty; s->id = f->message_id; s->type = f->type; s->count = f->fragment_count;
     }
     if (s->count != f->fragment_count) return -1;
@@ -59,12 +74,30 @@ static int s_reasm_add(dns_reasm_t *r, const dap_dns_tunnel_frame_t *f,
     if (!(s->bitmap & bit)) {
         if (f->payload_length > DNS_REASM_BYTES - s->bytes) return -1;
         uint8_t *p = f->payload_length ? malloc(f->payload_length) : NULL;
-        if (f->payload_length && !p) return -1;
+        if (f->payload_length && !p) {
+            if (!s->bitmap) s_reasm_slot_clear(s);
+            return -1;
+        }
         if (p) memcpy(p, f->payload, f->payload_length);
         s->parts[f->fragment_index] = p;
         s->lengths[f->fragment_index] = f->payload_length;
         s->bytes += f->payload_length; s->bitmap |= bit;
     }
+    uint32_t full = s->count == 32 ? UINT32_MAX : (UINT32_C(1) << s->count) - 1;
+    if (s->bitmap != full) return 0;
+    if (s->id != r->next_id) return 0;
+    uint8_t type;
+    return s_reasm_pop(r, out, out_size, &type);
+}
+
+/* Drain every contiguous completed message after filling a sequence gap. */
+static int s_reasm_pop(dns_reasm_t *r, uint8_t **out, size_t *out_size, uint8_t *type)
+{
+    *out = NULL; *out_size = 0;
+    dns_reasm_slot_t *s = NULL;
+    for (unsigned i = 0; i < DNS_REASM_SLOTS; ++i)
+        if (r->slots[i].count && r->slots[i].id == r->next_id) { s = &r->slots[i]; break; }
+    if (!s) return 0;
     uint32_t full = s->count == 32 ? UINT32_MAX : (UINT32_C(1) << s->count) - 1;
     if (s->bitmap != full) return 0;
     uint8_t *p = malloc(s->bytes ? s->bytes : 1);
@@ -78,6 +111,8 @@ static int s_reasm_add(dns_reasm_t *r, const dap_dns_tunnel_frame_t *f,
     r->completed[done] = s->id; r->completed_type[done] = s->type;
     r->completed_next = (done + 1) % 64;
     if (r->completed_count < 64) ++r->completed_count;
+    *type = s->type;
+    ++r->next_id;
     s_reasm_slot_clear(s);
     *out = p; *out_size = offset;
     return 1;

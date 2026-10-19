@@ -46,7 +46,11 @@ typedef struct tls_conn_ctx {
     size_t prev_buf_in_size;  /* guard: buf_in_size at function exit */
     bool stream_mode;         /* after stream_ctl: route DAP packets to stream layer */
     dap_stream_t *stream;     /* created after stream_ctl; NULL until then */
+    uint8_t *stream_tail;
+    size_t stream_tail_size;
 } tls_conn_ctx_t;
+
+#include "dap_tls_stream_buffer.h"
 
 static bool s_debug_more = false;
 
@@ -297,6 +301,7 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     }
 
     if (l_rc != 0 || !l_raw || l_raw_sz == 0) {
+        if (l_rc < 0) a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
         DAP_DELETE(l_raw);
         t->prev_buf_in_size = a_es->buf_in_size;  /* update guard at exit */
         return;
@@ -319,7 +324,9 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
          * pointer lives in t->stream, set after stream_ctl. */
         dap_stream_t *l_stream = t->stream;
         if (l_stream) {
-            dap_stream_data_proc_read_ext(l_stream, l_raw, l_raw_sz);
+            if (s_tls_stream_feed(l_stream, &t->stream_tail, &t->stream_tail_size,
+                                  l_raw, l_raw_sz) != 0)
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
         } else {
             /* No stream — this is expected if stream wasn't created via HTTP path.
              * The stream_ctl handler should have created the session, but the
@@ -451,6 +458,7 @@ static void s_tls_delete(dap_events_socket_t *a_es, void *a_arg)
             t->stream = NULL;
         }
         if (t->mimicry) dap_tls_mimicry_free(t->mimicry);
+        free(t->stream_tail);
         DAP_DELETE(a_es->_inheritor);
         a_es->_inheritor = NULL;
     }

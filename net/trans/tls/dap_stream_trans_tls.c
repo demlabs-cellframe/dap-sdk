@@ -47,6 +47,7 @@
 #include "dap_net_trans_tls_server.h"
 
 #define LOG_TAG "dap_stream_trans_tls"
+#include "dap_tls_stream_buffer.h"
 
 /* Client-side protocol phases, processed in order by the single read callback.
  * The state machine is driven by this enum, NOT by swapping read_callback
@@ -66,6 +67,8 @@ typedef struct tls_mimicry_ctx {
     dap_net_handshake_params_t  handshake_params;  /* saved for enc_init after TLS handshake */
     dap_net_trans_session_cb_t  session_create_cb; /* callback for stream_ctl response */
     tls_client_phase_t           phase;            /* current protocol phase */
+    uint8_t *stream_tail;
+    size_t stream_tail_size;
 } tls_mimicry_ctx_t;
 
 
@@ -453,6 +456,7 @@ static void s_tls_close(dap_stream_t *a_stream)
         tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
         if (l_ctx) {
             dap_tls_mimicry_free(l_ctx->mimicry);
+            free(l_ctx->stream_tail);
             DAP_DEL_Z(l_ctx->sni_hostname);
             DAP_DELETE(l_ctx);
             a_stream->trans_ctx->transport_priv = NULL;
@@ -670,6 +674,7 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
     if (l_rc < 0) {
         log_it(L_ERROR, "TLS read (phase %d): unwrap failed (buf_in=%zu)",
                (int)l_ctx->phase, a_es->buf_in_size);
+        a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
         DAP_DELETE(l_unwrapped);
         return;
     }
@@ -730,7 +735,12 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
          * If buf_in still has bytes (multiple TLS records coalesced in one
          * read), loop by re-entering so each record is processed in phase. */
         s_flow_count_record(l_unwrapped_size, false);
-        dap_stream_data_proc_read_ext(l_stream, l_unwrapped, l_unwrapped_size);
+        if (s_tls_stream_feed(l_stream, &l_ctx->stream_tail, &l_ctx->stream_tail_size,
+                              l_unwrapped, l_unwrapped_size) != 0) {
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            DAP_DELETE(l_unwrapped);
+            return;
+        }
         if (a_es->buf_in_size > 0) {
             DAP_DELETE(l_unwrapped);
             s_tls_read_cb(a_es, a_arg);  /* drain remaining records */
