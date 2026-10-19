@@ -33,7 +33,7 @@ bool dap_io_flow_cbpf_is_available(void);
  * @param socket_fd One of the SO_REUSEPORT sockets (program attaches to entire group)
  * @return 0 on success, -1 on error
  */
-int dap_io_flow_cbpf_attach_socket(int socket_fd);
+int dap_io_flow_cbpf_attach_socket(int socket_fd, unsigned int socket_count);
 
 /**
  * @brief Detach classic BPF program from socket

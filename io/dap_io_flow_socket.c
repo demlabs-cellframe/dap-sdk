@@ -896,7 +896,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
                 config_ret = dap_io_flow_ebpf_attach_socket(l_first_es->fd);
             } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
-                config_ret = dap_io_flow_cbpf_attach_socket(l_first_es->fd);
+                config_ret = dap_io_flow_cbpf_attach_socket(l_first_es->fd, l_num_listeners);
             }
             
             if (config_ret != 0) {
@@ -1037,4 +1037,3 @@ uint32_t dap_io_flow_socket_addr_hash(const struct sockaddr_storage *a_addr)
     
     return hash;
 }
-
