@@ -1241,6 +1241,7 @@ static void s_json_cmds_build(void) {
             "remove",
             "gdb_import",
             "stats",
+            "chain",
             "print_log",
             "stake_lock",
             "exec_cmd",
