@@ -47,6 +47,7 @@
 #include "dap_net_trans_tls_server.h"
 
 #define LOG_TAG "dap_stream_trans_tls"
+#include <json-c/json.h>
 #include "dap_tls_stream_buffer.h"
 
 /* Client-side protocol phases, processed in order by the single read callback.
@@ -69,6 +70,8 @@ typedef struct tls_mimicry_ctx {
     tls_client_phase_t           phase;            /* current protocol phase */
     uint8_t *stream_tail;
     size_t stream_tail_size;
+    char *enc_reply;
+    size_t enc_reply_size;
 } tls_mimicry_ctx_t;
 
 
@@ -457,6 +460,7 @@ static void s_tls_close(dap_stream_t *a_stream)
         if (l_ctx) {
             dap_tls_mimicry_free(l_ctx->mimicry);
             free(l_ctx->stream_tail);
+            free(l_ctx->enc_reply);
             DAP_DEL_Z(l_ctx->sni_hostname);
             DAP_DELETE(l_ctx);
             a_stream->trans_ctx->transport_priv = NULL;
@@ -702,21 +706,54 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
 
     /* === Dispatch the unwrapped payload by phase === */
     switch (l_ctx->phase) {
-    case TLS_PHASE_ENC_INIT_WAIT:
+    case TLS_PHASE_ENC_INIT_WAIT: {
+        /* A TLS record is not a control-message boundary. Keep the original
+         * JSON bytes for the existing DAP callback, including signatures. */
+        const size_t limit = 1024U * 1024U;
+        if (l_unwrapped_size > limit - l_ctx->enc_reply_size) {
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            break;
+        }
+        size_t total = l_ctx->enc_reply_size + l_unwrapped_size;
+        char *reply = realloc(l_ctx->enc_reply, total + 1);
+        if (!reply) {
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            break;
+        }
+        memcpy(reply + l_ctx->enc_reply_size, l_unwrapped, l_unwrapped_size);
+        reply[total] = '\0';
+        l_ctx->enc_reply = reply;
+        l_ctx->enc_reply_size = total;
+        struct json_tokener *tok = json_tokener_new();
+        if (!tok) {
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            break;
+        }
+        json_object *obj = json_tokener_parse_ex(tok, reply, (int)total);
+        enum json_tokener_error err = json_tokener_get_error(tok);
+        size_t end = json_tokener_get_parse_end(tok);
+        while (end < total && (reply[end] == ' ' || reply[end] == '\r' ||
+                              reply[end] == '\n' || reply[end] == '\t')) ++end;
+        bool complete = err == json_tokener_success && obj &&
+                        json_object_is_type(obj, json_type_object) && end == total;
+        json_object_put(obj);
+        json_tokener_free(tok);
+        if (err == json_tokener_continue) break;
+        if (!complete) {
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            break;
+        }
         log_it(L_NOTICE, "TLS enc_init response received (%zu bytes)", l_unwrapped_size);
         if (l_ctx->handshake_cb) {
-            /* json_tokener_parse needs a NUL-terminated string */
-            char *l_json = DAP_NEW_Z_SIZE(char, l_unwrapped_size + 1);
-            if (l_json) {
-                memcpy(l_json, l_unwrapped, l_unwrapped_size);
-                l_ctx->handshake_cb(l_stream, l_json, l_unwrapped_size, 0);
-                DAP_DELETE(l_json);
-            } else {
-                l_ctx->handshake_cb(l_stream, l_unwrapped, l_unwrapped_size, 0);
-            }
+            dap_net_trans_handshake_cb_t cb = l_ctx->handshake_cb;
             l_ctx->handshake_cb = NULL;
+            l_ctx->enc_reply = NULL;
+            l_ctx->enc_reply_size = 0;
+            cb(l_stream, reply, total, 0);
+            free(reply);
         }
         break;
+    }
 
     case TLS_PHASE_STREAM_CTL_WAIT:
         log_it(L_NOTICE, "TLS stream_ctl response received (%zu bytes)", l_unwrapped_size);

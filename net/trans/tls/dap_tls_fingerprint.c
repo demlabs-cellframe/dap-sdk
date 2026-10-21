@@ -104,6 +104,12 @@ int dap_tls_fp_build_clienthello(const dap_tls_fp_profile_t *a_profile,
     memcpy(l_buf, a_profile->clienthello, l_insert);
     memcpy(l_buf + l_insert + l_sni_len, a_profile->clienthello + l_insert,
            l_base_size - l_insert);
+    /* TLS 1.3 advertises its actual version in supported_versions; the
+     * ClientHello legacy_version is 0x0303, not the record-layer 0x0301. */
+    if (l_total >= 6) {
+        l_buf[4] = 0x03;
+        l_buf[5] = 0x03;
+    }
 
     /* Patch hostname_length (2 bytes BE) */
     if (a_profile->sni_hostname_length_offset + 2 <= l_base_size) {
