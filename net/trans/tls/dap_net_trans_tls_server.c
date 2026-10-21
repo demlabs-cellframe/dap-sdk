@@ -48,6 +48,8 @@ typedef struct tls_conn_ctx {
     dap_stream_t *stream;     /* created after stream_ctl; NULL until then */
     uint8_t *stream_tail;
     size_t stream_tail_size;
+    uint8_t *control_tail;
+    size_t control_tail_size;
 } tls_conn_ctx_t;
 
 #include "dap_tls_stream_buffer.h"
@@ -72,19 +74,24 @@ static int s_parse_http_post(char *a_raw, size_t a_raw_len,
     *a_body = NULL;
     *a_body_len = 0;
 
-    /* Find end of request line: POST <url> HTTP/1.x\r\n */
+    /* All scans are bounded: TLS plaintext is not NUL terminated. */
+    if (a_raw_len < 5) return 1;
+    if (memcmp(a_raw, "POST ", 5)) return -1;
+    const char *l_end = a_raw + a_raw_len;
     char *l_eol = memchr(a_raw, '\n', a_raw_len);
-    if (!l_eol) return -1;
+    if (!l_eol) return 1;
 
     /* Skip "POST " */
     char *l_p = a_raw + 5;
 
     /* Extract URL path (up to '?' or ' ') */
     char *l_path_start = l_p;
-    while (*l_p && *l_p != '?' && *l_p != ' ' && *l_p != '\r' && *l_p != '\n')
+    while (l_p < l_eol && *l_p != '?' && *l_p != ' ' && *l_p != '\r')
         l_p++;
+    if (l_p == l_path_start || l_p >= l_eol) return -1;
     size_t l_path_len = (size_t)(l_p - l_path_start);
     *a_url_path = DAP_NEW_SIZE(char, l_path_len + 1);
+    if (!*a_url_path) return -1;
     memcpy(*a_url_path, l_path_start, l_path_len);
     (*a_url_path)[l_path_len] = '\0';
 
@@ -92,10 +99,11 @@ static int s_parse_http_post(char *a_raw, size_t a_raw_len,
     if (*l_p == '?') {
         l_p++;
         char *l_qstart = l_p;
-        while (*l_p && *l_p != ' ' && *l_p != '\r' && *l_p != '\n')
+        while (l_p < l_eol && *l_p != ' ' && *l_p != '\r')
             l_p++;
         size_t l_qlen = (size_t)(l_p - l_qstart);
         *a_query_string = DAP_NEW_SIZE(char, l_qlen + 1);
+        if (!*a_query_string) return -1;
         memcpy(*a_query_string, l_qstart, l_qlen);
         (*a_query_string)[l_qlen] = '\0';
     }
@@ -104,23 +112,42 @@ static int s_parse_http_post(char *a_raw, size_t a_raw_len,
     size_t l_content_length = 0;
     char *l_body_start = NULL;
     char *l_line = l_eol + 1;
+    bool l_has_length = false;
 
     while (l_line < a_raw + a_raw_len) {
-        if (*l_line == '\r' && *(l_line + 1) == '\n') {
+        if (l_end - l_line >= 2 && l_line[0] == '\r' && l_line[1] == '\n') {
             l_body_start = l_line + 2;
             break;
         }
         char *l_line_end = memchr(l_line, '\n', (size_t)(a_raw + a_raw_len - l_line));
-        if (!l_line_end) break;
+        if (!l_line_end) return 1;
 
-        if (strncasecmp(l_line, "Content-Length:", 15) == 0) {
-            l_content_length = (size_t)atoi(l_line + 15);
+        if (l_line_end - l_line >= 18 && !strncasecmp(l_line, "Transfer-Encoding:", 18))
+            return -1;
+        if (l_line_end - l_line >= 15 && strncasecmp(l_line, "Content-Length:", 15) == 0) {
+            if (l_has_length) return -1;
+            l_has_length = true;
+            char *p = l_line + 15;
+            while (p < l_line_end && (*p == ' ' || *p == '\t')) ++p;
+            if (p == l_line_end || *p < '0' || *p > '9') return -1;
+            for (; p < l_line_end && *p >= '0' && *p <= '9'; ++p) {
+                unsigned digit = (unsigned)(*p - '0');
+                if (l_content_length > (1048576U - digit) / 10) return -1;
+                l_content_length = l_content_length * 10 + digit;
+            }
+            while (p < l_line_end && (*p == ' ' || *p == '\t' || *p == '\r')) ++p;
+            if (p != l_line_end) return -1;
         }
         l_line = l_line_end + 1;
     }
 
-    if (l_body_start && l_content_length > 0) {
+    if (!l_body_start) return 1;
+    if (!l_has_length) return -1;
+    if ((size_t)(l_end - l_body_start) < l_content_length) return 1;
+    if ((size_t)(l_end - l_body_start) != l_content_length) return -1;
+    if (l_content_length > 0) {
         *a_body = DAP_NEW_SIZE(char, l_content_length + 1);
+        if (!*a_body) return -1;
         memcpy(*a_body, l_body_start, l_content_length);
         (*a_body)[l_content_length] = '\0';
         *a_body_len = l_content_length;
@@ -339,10 +366,44 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     }
 
     /* Parse HTTP POST: extract URL, query, body */
+    if (l_raw_sz > 1048576U || t->control_tail_size > 1048576U - l_raw_sz) {
+        DAP_DELETE(l_raw);
+        a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return;
+    }
+    if (t->control_tail_size) {
+        size_t total = t->control_tail_size + l_raw_sz;
+        uint8_t *joined = realloc(t->control_tail, total);
+        if (!joined) {
+            DAP_DELETE(l_raw);
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return;
+        }
+        memcpy(joined + t->control_tail_size, l_raw, l_raw_sz);
+        DAP_DELETE(l_raw);
+        l_raw = joined;
+        l_raw_sz = total;
+        t->control_tail = NULL;
+        t->control_tail_size = 0;
+    }
     char *l_url_path = NULL, *l_query = NULL, *l_body = NULL;
     size_t l_body_len = 0;
-    s_parse_http_post((char *)l_raw, l_raw_sz,
+    int l_parse_rc = s_parse_http_post((char *)l_raw, l_raw_sz,
                       &l_url_path, &l_query, &l_body, &l_body_len);
+    if (l_parse_rc != 0) {
+        DAP_DELETE(l_url_path);
+        DAP_DELETE(l_query);
+        DAP_DELETE(l_body);
+        if (l_parse_rc == 1) {
+            t->control_tail = l_raw;
+            t->control_tail_size = l_raw_sz;
+            t->prev_buf_in_size = a_es->buf_in_size;
+        } else {
+            DAP_DELETE(l_raw);
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        }
+        return;
+    }
     DAP_DELETE(l_raw);
 
     log_it(L_NOTICE, "TLS server: HTTP POST %s (body=%zu bytes, raw_sz=%zu)",
@@ -459,6 +520,7 @@ static void s_tls_delete(dap_events_socket_t *a_es, void *a_arg)
         }
         if (t->mimicry) dap_tls_mimicry_free(t->mimicry);
         free(t->stream_tail);
+        free(t->control_tail);
         DAP_DELETE(a_es->_inheritor);
         a_es->_inheritor = NULL;
     }

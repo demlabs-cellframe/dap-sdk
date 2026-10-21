@@ -86,13 +86,24 @@ int dap_tls_fp_build_clienthello(const dap_tls_fp_profile_t *a_profile,
         return -2;
 
     size_t l_base_size = a_profile->clienthello_size;
+    if (l_base_size < 4 || a_profile->sni_hostname_offset > l_base_size ||
+        a_profile->sni_hostname_length_offset + 2 > a_profile->sni_hostname_offset ||
+        a_profile->sni_data_length_offset + 4 > a_profile->sni_hostname_offset ||
+        a_profile->extensions_length_offset + 2 > a_profile->sni_hostname_offset)
+        return -2;
     size_t l_total = l_base_size + l_sni_len;
 
     uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
     if (!l_buf)
         return -3;
 
-    memcpy(l_buf, a_profile->clienthello, l_base_size);
+    /* Insert the hostname, preserving every extension following the empty
+     * hostname slot. Copying over the template corrupts those extensions and
+     * leaves the newly allocated tail uninitialised. */
+    size_t l_insert = a_profile->sni_hostname_offset;
+    memcpy(l_buf, a_profile->clienthello, l_insert);
+    memcpy(l_buf + l_insert + l_sni_len, a_profile->clienthello + l_insert,
+           l_base_size - l_insert);
 
     /* Patch hostname_length (2 bytes BE) */
     if (a_profile->sni_hostname_length_offset + 2 <= l_base_size) {

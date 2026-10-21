@@ -318,7 +318,7 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
     a_result->stream = l_stream;
     a_result->error_code = 0;
 
-    const char *l_sni = s_config.sni_hostname ? s_config.sni_hostname : a_params->host;
+    const char *l_sni = s_config.sni_hostname ? s_config.sni_hostname : "";
     log_it(L_INFO, "TLS Mimicry: TCP connect to %s:%u initiated (SNI=%s)",
            a_params->host, a_params->port, l_sni);
     return 0;

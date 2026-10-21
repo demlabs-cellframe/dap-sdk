@@ -277,9 +277,8 @@ int dap_tls_context_set_min_version(dap_tls_context_t *a_ctx, uint16_t a_version
     switch (a_version) {
         case 0x0303: a_ctx->min_version = kTLSProtocol12; break;
         case 0x0304:
-            log_it(L_WARNING, "TLS 1.3 not supported by Secure Transport, using TLS 1.2");
-            a_ctx->min_version = kTLSProtocol12;
-            break;
+            log_it(L_ERROR, "TLS 1.3 is not supported by Secure Transport");
+            return -1;
         default:
             log_it(L_ERROR, "Unsupported TLS version: 0x%04x", a_version);
             return -1;
