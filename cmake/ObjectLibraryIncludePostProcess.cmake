@@ -74,6 +74,12 @@ function(propagate_includes_recursive TARGET_NAME VISITED_SET_ID)
     endif()
     
     # Apply collected includes once (more efficient than multiple calls)
+    # Imported dependencies already declare their own usage requirements.
+    # They have no compilation step and cannot accept PRIVATE include paths.
+    get_target_property(IS_IMPORTED_TARGET ${TARGET_NAME} IMPORTED)
+    if(IS_IMPORTED_TARGET)
+        return()
+    endif()
     if(COLLECTED_INTERFACE_INCLUDES)
         list(REMOVE_DUPLICATES COLLECTED_INTERFACE_INCLUDES)
         target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INTERFACE_INCLUDES})
@@ -123,4 +129,3 @@ function(post_process_object_libraries)
     
     message(STATUS "[SDK] Post-processing complete for ${TOTAL_LIBS} OBJECT libraries")
 endfunction()
-

@@ -312,6 +312,7 @@ const char *dap_net_trans_type_to_str(dap_net_trans_type_t a_type)
         case DAP_NET_TRANS_UDP_QUIC_LIKE: return "UDP_QUIC_LIKE";
         case DAP_NET_TRANS_WEBSOCKET:     return "WEBSOCKET";
         case DAP_NET_TRANS_TLS_DIRECT:    return "TLS_DIRECT";
+        case DAP_NET_TRANS_TLS13:         return "TLS13";
         case DAP_NET_TRANS_DNS_TUNNEL:    return "DNS_TUNNEL";
         default:                                 return "UNKNOWN";
     }
@@ -335,6 +336,7 @@ static const struct {
     { "ws",           DAP_NET_TRANS_WEBSOCKET },
     { "tls",          DAP_NET_TRANS_TLS_DIRECT },
     { "tls_direct",   DAP_NET_TRANS_TLS_DIRECT },
+    { "tls13",        DAP_NET_TRANS_TLS13 },
     { "dns",          DAP_NET_TRANS_DNS_TUNNEL },
     { "dns_tunnel",   DAP_NET_TRANS_DNS_TUNNEL },
 };
@@ -656,4 +658,3 @@ int dap_net_trans_measure_throughput(dap_net_trans_t *a_trans, const char *a_hos
     return dap_net_trans_qos_measure_throughput(a_trans, a_host, a_port, a_timeout_ms,
                                                 a_out_down_mbps, a_out_up_mbps);
 }
-

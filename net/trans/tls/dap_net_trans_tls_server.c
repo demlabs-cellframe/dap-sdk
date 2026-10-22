@@ -13,6 +13,7 @@
 #include <errno.h>
 
 #include "dap_common.h"
+#include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
@@ -621,8 +622,16 @@ static const dap_net_trans_server_ops_t s_tls_ops = {
     .stop = s_tls_server_stop, .delete = s_tls_server_delete,
 };
 
+#ifdef DAP_TLS13_OPENSSL
+#include "dap_tls13_server.inc"
+#endif
+
 int dap_net_trans_tls_server_init(void)
 {
+#ifdef DAP_TLS13_OPENSSL
+    int tls13 = dap_net_trans_server_register_ops(DAP_NET_TRANS_TLS13, &s_tls13_server_ops);
+    if (tls13) return tls13;
+#endif
     int r = dap_net_trans_server_register_ops(DAP_NET_TRANS_TLS_DIRECT, &s_tls_ops);
     if (r == 0) log_it(L_NOTICE, "TLS mimicry server module initialized");
     return r;
@@ -630,5 +639,8 @@ int dap_net_trans_tls_server_init(void)
 
 void dap_net_trans_tls_server_deinit(void)
 {
+#ifdef DAP_TLS13_OPENSSL
+    dap_net_trans_server_unregister_ops(DAP_NET_TRANS_TLS13);
+#endif
     dap_net_trans_server_unregister_ops(DAP_NET_TRANS_TLS_DIRECT);
 }

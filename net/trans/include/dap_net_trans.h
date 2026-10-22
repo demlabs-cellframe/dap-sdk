@@ -96,9 +96,10 @@ typedef enum dap_net_trans_type {
     DAP_NET_TRANS_UDP_RELIABLE   = 0x03,  ///< UDP with ARQ (reliable, ordered)
     DAP_NET_TRANS_UDP_QUIC_LIKE  = 0x04,  ///< QUIC-inspired multiplexed UDP
     DAP_NET_TRANS_WEBSOCKET      = 0x05,  ///< WebSocket 
-    DAP_NET_TRANS_TLS_DIRECT     = 0x06,  ///< Direct TLS connection
+    DAP_NET_TRANS_TLS_DIRECT     = 0x06,  ///< Legacy TLS mimicry carrier
     DAP_NET_TRANS_DNS_TUNNEL     = 0x07,  ///< DNS-based tunneling
-    DAP_NET_TRANS_MAX            = 0x07   ///< Maximum trans type value
+    DAP_NET_TRANS_TLS13          = 0x08,  ///< Standard authenticated TLS 1.3 (separate registration)
+    DAP_NET_TRANS_MAX            = 0x08   ///< Maximum trans type value
 } dap_net_trans_type_t;
 
 /**
@@ -676,4 +677,3 @@ int dap_net_trans_measure_throughput(dap_net_trans_t *a_trans, const char *a_hos
 #ifdef __cplusplus
 }
 #endif
-

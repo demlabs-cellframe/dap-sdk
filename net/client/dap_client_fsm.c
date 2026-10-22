@@ -740,13 +740,17 @@ static void s_worker_execute_stage(void *a_arg)
             dap_client_trans_ctx_get_stream_callbacks(&l_stream_cbs);
             bool l_keep_transport_read =
                 (l_tc->stream->esocket->type == DESCRIPTOR_TYPE_SOCKET_UDP) ||
-                (l_client->trans_type == DAP_NET_TRANS_TLS_DIRECT);
+                (l_client->trans_type == DAP_NET_TRANS_TLS_DIRECT) ||
+                (l_client->trans_type == DAP_NET_TRANS_TLS13);
             if (!l_keep_transport_read) {
                 l_tc->stream->esocket->callbacks.read_callback = l_stream_cbs.read_callback;
             }
-            l_tc->stream->esocket->callbacks.write_callback = l_stream_cbs.write_callback;
-            l_tc->stream->esocket->callbacks.error_callback = l_stream_cbs.error_callback;
-            l_tc->stream->esocket->callbacks.delete_callback = l_stream_cbs.delete_callback;
+            if (l_client->trans_type != DAP_NET_TRANS_TLS13)
+                l_tc->stream->esocket->callbacks.write_callback = l_stream_cbs.write_callback;
+            if (l_client->trans_type != DAP_NET_TRANS_TLS13)
+                l_tc->stream->esocket->callbacks.error_callback = l_stream_cbs.error_callback;
+            if (l_client->trans_type != DAP_NET_TRANS_TLS13)
+                l_tc->stream->esocket->callbacks.delete_callback = l_stream_cbs.delete_callback;
         }
 
         // Session start — pass a real callback so the transport can signal
@@ -1431,7 +1435,10 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
     if (a_fsm->stage == STAGE_ENC_INIT) {
         dap_net_trans_ctx_t *l_tc = a_fsm->trans_ctx;
         dap_client_t *l_client = a_fsm->client;
-        const bool l_resume = l_client->session_resume_mode && l_tc && l_tc->session_key;
+        /* A fresh TLS13 connection must authenticate its peer and establish
+         * the framed ENC/CTL state even when a previous DAP key exists. */
+        const bool l_resume = l_client->trans_type != DAP_NET_TRANS_TLS13 &&
+                              l_client->session_resume_mode && l_tc && l_tc->session_key;
 
         // Validate address
         if (!*l_client->link_info.uplink_addr || !l_client->link_info.uplink_port) {

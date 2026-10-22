@@ -12,6 +12,7 @@
 
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
@@ -30,6 +31,12 @@ struct dap_tls_session {
     dap_tls_context_t *ctx;
     SSL *ssl;
     bool nonblocking;
+    bool pin_set;
+    bool peer_verified;
+    bool peer_rejected;
+    uint8_t spki_pin[32];
+    bool memory_io;
+    bool fd_io;
 };
 
 /* ---- Global lifecycle --------------------------------------------------- */
@@ -66,7 +73,11 @@ dap_tls_context_t *dap_tls_context_new_client(void)
     }
     SSL_CTX_set_min_proto_version(l_ssl_ctx, TLS1_2_VERSION);
     SSL_CTX_set_max_proto_version(l_ssl_ctx, TLS1_3_VERSION);
-    SSL_CTX_set_verify(l_ssl_ctx, SSL_VERIFY_NONE, NULL);
+    SSL_CTX_set_verify(l_ssl_ctx, SSL_VERIFY_PEER, NULL);
+    if (SSL_CTX_set_default_verify_paths(l_ssl_ctx) != 1) {
+        SSL_CTX_free(l_ssl_ctx);
+        return NULL;
+    }
     SSL_CTX_set_session_cache_mode(l_ssl_ctx, SSL_SESS_CACHE_CLIENT);
 
     dap_tls_context_t *l_ctx = DAP_NEW_Z(dap_tls_context_t);
@@ -236,13 +247,48 @@ void dap_tls_session_free(dap_tls_session_t *a_session)
 
 int dap_tls_session_set_fd(dap_tls_session_t *a_session, int a_fd)
 {
-    if (!a_session || !a_session->ssl || a_fd < 0)
+    if (!a_session || !a_session->ssl || a_fd < 0 || a_session->memory_io)
         return -1;
     if (SSL_set_fd(a_session->ssl, a_fd) != 1) {
         log_it(L_ERROR, "SSL_set_fd failed for fd=%d", a_fd);
         return -1;
     }
+    a_session->fd_io = true;
     return 0;
+}
+
+int dap_tls_openssl_session_set_memory_io(dap_tls_session_t *s)
+{
+    if (!s || !s->ssl || s->fd_io || s->memory_io || !SSL_in_before(s->ssl)) return -1;
+    BIO *input = BIO_new(BIO_s_mem()), *output = BIO_new(BIO_s_mem());
+    if (!input || !output) {
+        BIO_free(input);
+        BIO_free(output);
+        return -1;
+    }
+    BIO_set_mem_eof_return(input, -1);
+    BIO_set_mem_eof_return(output, -1);
+    SSL_set_bio(s->ssl, input, output); /* SSL owns both BIOs. */
+    s->memory_io = true;
+    return 0;
+}
+
+ssize_t dap_tls_openssl_session_feed(dap_tls_session_t *s, const void *data, size_t size)
+{
+    if (!s || !s->memory_io || !data || size > INT_MAX || s->peer_rejected) return -1;
+    /* Bound unprocessed ciphertext independently of the reactor's buffers. */
+    const size_t limit = 1024U * 1024U;
+    size_t pending = BIO_ctrl_pending(SSL_get_rbio(s->ssl));
+    if (size > limit || pending > limit - size) return -1;
+    return BIO_write(SSL_get_rbio(s->ssl), data, (int)size);
+}
+
+ssize_t dap_tls_openssl_session_drain(dap_tls_session_t *s, void *data, size_t size)
+{
+    if (!s || !s->memory_io || !data || !size || size > INT_MAX) return -1;
+    BIO *output = SSL_get_wbio(s->ssl);
+    if (!BIO_ctrl_pending(output)) return 0;
+    return BIO_read(output, data, (int)size);
 }
 
 int dap_tls_session_set_hostname(dap_tls_session_t *a_session,
@@ -267,13 +313,50 @@ void dap_tls_session_set_nonblocking(dap_tls_session_t *a_session,
 
 /* ---- Handshake ---------------------------------------------------------- */
 
+int dap_tls_openssl_session_set_spki_pin(dap_tls_session_t *s, const uint8_t pin[32])
+{
+    if (!s || !s->ssl || !pin || !SSL_in_before(s->ssl)) return -1;
+    memcpy(s->spki_pin, pin, sizeof(s->spki_pin));
+    s->pin_set = true;
+    /* Trust is the provisioned SPKI, not an arbitrary self-signed chain.
+     * Application data remains gated until post-handshake verification. */
+    SSL_set_verify(s->ssl, SSL_VERIFY_NONE, NULL);
+    return 0;
+}
+
+static bool s_verify_pinned_peer(dap_tls_session_t *s)
+{
+    X509 *cert = SSL_get_peer_certificate(s->ssl);
+    if (!cert) return false;
+    unsigned char *der = NULL;
+    int length = i2d_X509_PUBKEY(X509_get_X509_PUBKEY(cert), &der);
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_size = 0;
+    bool valid = length > 0 && der &&
+        X509_cmp_current_time(X509_get0_notBefore(cert)) < 0 &&
+        X509_cmp_current_time(X509_get0_notAfter(cert)) > 0 &&
+        EVP_Digest(der, (size_t)length, digest, &digest_size, EVP_sha256(), NULL) == 1 &&
+        digest_size == sizeof(s->spki_pin) &&
+        CRYPTO_memcmp(digest, s->spki_pin, sizeof(s->spki_pin)) == 0;
+    OPENSSL_free(der);
+    X509_free(cert);
+    return valid;
+}
+
 int dap_tls_session_connect(dap_tls_session_t *a_session)
 {
-    if (!a_session || !a_session->ssl)
+    if (!a_session || !a_session->ssl || a_session->peer_rejected)
         return -1;
     int l_ret = SSL_connect(a_session->ssl);
-    if (l_ret == 1)
+    if (l_ret == 1) {
+        if (a_session->pin_set && !s_verify_pinned_peer(a_session)) {
+            a_session->peer_rejected = true;
+            log_it(L_ERROR, "TLS peer SPKI or certificate validity mismatch");
+            return -1;
+        }
+        a_session->peer_verified = true;
         return 1;
+    }
     int l_err = SSL_get_error(a_session->ssl, l_ret);
     if (l_err == SSL_ERROR_WANT_READ || l_err == SSL_ERROR_WANT_WRITE)
         return 0;
@@ -302,16 +385,18 @@ int dap_tls_session_accept(dap_tls_session_t *a_session)
 ssize_t dap_tls_session_read(dap_tls_session_t *a_session,
                               void *a_buf, size_t a_size)
 {
-    if (!a_session || !a_session->ssl || !a_buf || a_size == 0)
+    if (!a_session || !a_session->ssl || !a_buf || a_size == 0 || a_size > INT_MAX)
         return -1;
+    if (a_session->peer_rejected || (a_session->pin_set && !a_session->peer_verified)) return -1;
     return (ssize_t)SSL_read(a_session->ssl, a_buf, (int)a_size);
 }
 
 ssize_t dap_tls_session_write(dap_tls_session_t *a_session,
                                const void *a_data, size_t a_size)
 {
-    if (!a_session || !a_session->ssl || !a_data || a_size == 0)
+    if (!a_session || !a_session->ssl || !a_data || a_size == 0 || a_size > INT_MAX)
         return -1;
+    if (a_session->peer_rejected || (a_session->pin_set && !a_session->peer_verified)) return -1;
     return (ssize_t)SSL_write(a_session->ssl, a_data, (int)a_size);
 }
 

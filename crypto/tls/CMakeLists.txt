@@ -22,9 +22,14 @@ set(DAP_TLS_BACKEND_SRC "")
 set(DAP_TLS_LINK_LIBS "")
 
 if(DAP_TLS_BACKEND_DETECTED STREQUAL "openssl")
-    find_package(OpenSSL REQUIRED)
+    find_package(OpenSSL 1.1.1 REQUIRED COMPONENTS SSL Crypto)
+    # SDK object-library dependencies are propagated to targets outside this
+    # directory (daemon, GUI, plugins). Imported targets must remain visible.
+    foreach(tls_dependency OpenSSL::SSL OpenSSL::Crypto)
+        set_property(TARGET ${tls_dependency} PROPERTY IMPORTED_GLOBAL TRUE)
+    endforeach()
     set(DAP_TLS_BACKEND_SRC "${CMAKE_CURRENT_SOURCE_DIR}/os/openssl/dap_tls_openssl.c")
-    # set(DAP_TLS_LINK_LIBS ${OPENSSL_LIBRARIES})
+    set(DAP_TLS_LINK_LIBS OpenSSL::SSL OpenSSL::Crypto)
     set(DAP_TLS_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
     message(STATUS "  OpenSSL version: ${OPENSSL_VERSION}")
 elseif(DAP_TLS_BACKEND_DETECTED STREQUAL "apple")

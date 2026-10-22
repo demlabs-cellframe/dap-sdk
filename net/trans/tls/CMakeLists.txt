@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(dap_trans_tls C)
 
+option(DAP_TLS13_OPENSSL "Build the separate OpenSSL TLS13 server transport" OFF)
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/DapModule.cmake)
 
@@ -25,6 +27,18 @@ create_object_library(dap_trans_tls DAP_INTERNAL_MODULES ${TLS_SRCS} HEADERS ${T
 target_include_directories(dap_trans_tls PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(dap_trans_tls PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(dap_trans_tls PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+
+if(DAP_TLS13_OPENSSL)
+    if(NOT TARGET dap_crypto_tls)
+        message(FATAL_ERROR "TLS13 requires BUILD_WITH_TLS=ON and DAP_TLS_BACKEND=openssl")
+    endif()
+    if(NOT DAP_TLS_BACKEND STREQUAL "openssl")
+        message(FATAL_ERROR "TLS13 memory BIO transport requires explicit DAP_TLS_BACKEND=openssl")
+    endif()
+    target_compile_definitions(dap_trans_tls PRIVATE DAP_TLS13_OPENSSL=1)
+    target_link_libraries(dap_trans_tls INTERFACE dap_crypto_tls)
+    target_include_directories(dap_trans_tls PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/tls/include)
+endif()
 
 dap_register_module(
     MODULE_NAME "trans_tls"

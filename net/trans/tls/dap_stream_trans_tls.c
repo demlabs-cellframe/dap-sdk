@@ -169,6 +169,9 @@ static const dap_net_trans_ops_t s_tls_ops = {
 /*  Registration                                                              */
 /* ========================================================================== */
 
+#ifdef DAP_TLS13_OPENSSL
+static int s_tls13_register_client(void);
+#endif
 int dap_stream_trans_tls_register(void)
 {
     s_config = dap_stream_trans_tls_config_default();
@@ -188,6 +191,9 @@ int dap_stream_trans_tls_register(void)
         NULL);
     if (l_rc == 0)
         log_it(L_NOTICE, "TLS Mimicry transport registered");
+#ifdef DAP_TLS13_OPENSSL
+    if (!l_rc) l_rc = s_tls13_register_client();
+#endif
     return l_rc;
 }
 
@@ -195,6 +201,9 @@ int dap_stream_trans_tls_unregister(void)
 {
     dap_net_trans_tls_server_deinit();
     DAP_DEL_Z(s_config.sni_hostname);
+#ifdef DAP_TLS13_OPENSSL
+    dap_net_trans_unregister(DAP_NET_TRANS_TLS13);
+#endif
     return dap_net_trans_unregister(DAP_NET_TRANS_TLS_DIRECT);
 }
 
@@ -1048,3 +1057,7 @@ bool dap_stream_trans_is_tls(const dap_stream_t *a_stream)
     return a_stream && a_stream->trans
         && a_stream->trans->type == DAP_NET_TRANS_TLS_DIRECT;
 }
+
+#ifdef DAP_TLS13_OPENSSL
+#include "dap_tls13_client.inc"
+#endif
