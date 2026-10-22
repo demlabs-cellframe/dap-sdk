@@ -26,21 +26,9 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 #include "dap_hash.h"
 
-/** Case-insensitive substring search (portable; avoids implicit-decl warnings on Linux without _GNU_SOURCE). */
-static char *s_strcasestr(const char *a_haystack, const char *a_needle)
-{
-    if (!a_needle[0])
-        return (char *)a_haystack;
-    for (; *a_haystack; a_haystack++) {
-        const char *h = a_haystack, *n = a_needle;
-        for (; *h && *n && tolower((unsigned char)*h) == tolower((unsigned char)*n); h++, n++)
-            ;
-        if (!*n)
-            return (char *)a_haystack;
-    }
-    return NULL;
-}
 #include "dap_common.h"
+#include "dap_worker.h"
+#include "dap_context.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_websocket_server.h"
@@ -63,6 +51,9 @@ static char *s_strcasestr(const char *a_haystack, const char *a_needle)
 #include "fips202.h"
 
 #define LOG_TAG "dap_net_trans_websocket_server"
+#include "dap_ws_upgrade_request.h"
+#include "dap_ws_frame_role.h"
+#include "dap_ws_close.h"
 
 static bool s_debug_more = false;
 // WebSocket GUID for Sec-WebSocket-Accept calculation (RFC 6455)
@@ -73,6 +64,8 @@ typedef struct ws_server_conn_state {
     uint8_t *frame_buffer;      // Leftover partial DAP stream data between reads
     size_t frame_buffer_size;   // Allocated size
     size_t frame_buffer_used;   // Used bytes
+    bool is_fragmented;
+    size_t fragmented_message_bytes;
 } ws_server_conn_state_t;
 
 // Forward declarations for server-side esocket callbacks
@@ -364,6 +357,20 @@ void dap_net_trans_websocket_server_delete(dap_net_trans_websocket_server_t *a_w
  * is performed here. Otherwise returns -1 so the caller can proceed
  * with normal HTTP stream processing.
  */
+/* Return handled even on rejection: a malformed Upgrade must never fall
+ * through to the legacy unframed DAP stream path. */
+static int s_websocket_reject_upgrade(dap_http_client_t *client, uint16_t status)
+{
+    client->reply_status_code = status;
+    client->reply_reason_phrase[0] = '\0';
+    client->keep_alive = false;
+    client->out_connection_close = true;
+    client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
+    dap_events_socket_set_readable_unsafe(client->esocket, false);
+    dap_http_client_write(client);
+    return 0;
+}
+
 int dap_net_trans_websocket_try_upgrade(dap_http_client_t *a_http_client)
 {
     if (!a_http_client)
@@ -374,35 +381,34 @@ int dap_net_trans_websocket_try_upgrade(dap_http_client_t *a_http_client)
     dap_http_header_t *l_ws_key     = dap_http_header_find(a_http_client->in_headers, "Sec-WebSocket-Key");
     dap_http_header_t *l_ws_version = dap_http_header_find(a_http_client->in_headers, "Sec-WebSocket-Version");
 
+    /* A normal HTTP request can contain Connection without requesting WS. */
+    if (!l_upgrade && !l_ws_key && !l_ws_version)
+        return -1;
     if (!l_upgrade || !l_connection || !l_ws_key || !l_ws_version)
-        return -1;
+        return s_websocket_reject_upgrade(a_http_client, 400);
 
-    if (!s_strcasestr(l_upgrade->value, "websocket") ||
-        !s_strcasestr(l_connection->value, "Upgrade"))
-        return -1;
+    if (!dap_ws_request_headers_valid(a_http_client->in_headers, a_http_client->http_version_11,
+                                     a_http_client->in_content_length) ||
+        !dap_ws_request_fields_valid(a_http_client->action, l_upgrade->value,
+                                     l_connection->value, l_ws_key->value))
+        return s_websocket_reject_upgrade(a_http_client, 400);
 
     dap_net_trans_t *l_ws_trans = dap_net_trans_find(DAP_NET_TRANS_WEBSOCKET);
     if (!l_ws_trans) {
         log_it(L_ERROR, "WebSocket upgrade requested but transport not registered");
-        return -1;
+        return s_websocket_reject_upgrade(a_http_client, 503);
     }
 
     if (strcmp(l_ws_version->value, "13") != 0) {
         log_it(L_WARNING, "Unsupported WebSocket version: %s", l_ws_version->value);
-        a_http_client->reply_status_code = 426;
         dap_http_out_header_add(a_http_client, "Sec-WebSocket-Version", "13");
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return 0;
+        return s_websocket_reject_upgrade(a_http_client, 426);
     }
 
     char l_accept_key[128] = {0};
     if (!s_generate_accept_key(l_ws_key->value, l_accept_key, sizeof(l_accept_key))) {
         log_it(L_ERROR, "Failed to generate Sec-WebSocket-Accept key");
-        a_http_client->reply_status_code = 500;
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return 0;
+        return s_websocket_reject_upgrade(a_http_client, 500);
     }
 
     log_it(L_INFO, "WebSocket upgrade request accepted from %s",
@@ -453,38 +459,25 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
          * /stream is handled by dap_stream; bare "/" gets a proper 404. */
         log_it(L_WARNING, "WebSocket upgrade handler got non-upgrade request path='%s'",
                a_http_client->url_path);
-        a_http_client->reply_status_code = 404; // Not Found
-        dap_strncpy(a_http_client->reply_reason_phrase, "Not Found",
-                    sizeof(a_http_client->reply_reason_phrase));
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        s_websocket_reject_upgrade(a_http_client, 404);
         return;
     }
 
     // Validate upgrade headers
-    if (s_strcasestr(l_upgrade->value, "websocket") == NULL) {
+    if (!dap_ws_request_headers_valid(a_http_client->in_headers, a_http_client->http_version_11,
+                                     a_http_client->in_content_length) ||
+        !dap_ws_request_fields_valid(a_http_client->action, l_upgrade->value,
+                                     l_connection->value, l_ws_key->value)) {
         log_it(L_WARNING, "Invalid Upgrade header: %s", l_upgrade->value);
-        a_http_client->reply_status_code = 400; // Bad Request
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return;
-    }
-
-    if (s_strcasestr(l_connection->value, "Upgrade") == NULL) {
-        log_it(L_WARNING, "Invalid Connection header: %s", l_connection->value);
-        a_http_client->reply_status_code = 400; // Bad Request
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        s_websocket_reject_upgrade(a_http_client, 400);
         return;
     }
 
     // Check WebSocket version (should be 13)
     if (strcmp(l_ws_version->value, "13") != 0) {
         log_it(L_WARNING, "Unsupported WebSocket version: %s", l_ws_version->value);
-        a_http_client->reply_status_code = 426; // Upgrade Required
         dap_http_out_header_add(a_http_client, "Sec-WebSocket-Version", "13");
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        s_websocket_reject_upgrade(a_http_client, 426);
         return;
     }
 
@@ -495,9 +488,7 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
     char l_accept_key[128] = {0};
     if (!s_generate_accept_key(l_ws_key->value, l_accept_key, sizeof(l_accept_key))) {
         log_it(L_ERROR, "Failed to generate Sec-WebSocket-Accept key");
-        a_http_client->reply_status_code = 500;
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        s_websocket_reject_upgrade(a_http_client, 500);
         return;
     }
 
@@ -572,6 +563,17 @@ static bool s_websocket_upgrade_headers_write(dap_http_client_t *a_http_client, 
  * Note: WebSocket trans's private data is shared across all streams,
  * but each stream maintains its own connection state via esocket.
  */
+static void s_ws_resume_buffered(void *arg)
+{
+    dap_events_socket_uuid_t uuid = *(dap_events_socket_uuid_t *)arg;
+    free(arg);
+    dap_worker_t *worker = dap_worker_get_current();
+    dap_events_socket_t *es = worker ? dap_context_find(worker->context, uuid) : NULL;
+    if (!es || es->callbacks.read_callback != s_ws_server_esocket_read ||
+        (es->flags & DAP_SOCK_SIGNAL_CLOSE)) return;
+    if (es->buf_in_size) s_ws_server_esocket_read(es, NULL);
+}
+
 static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
 {
     if (!a_http_client || !a_http_client->esocket) {
@@ -681,6 +683,7 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
 
     // Create per-connection WebSocket state for de-framing
     ws_server_conn_state_t *l_conn_state = DAP_NEW_Z(ws_server_conn_state_t);
+    if (!l_conn_state) return -7;
     if (l_stream->trans_ctx)
         l_stream->trans_ctx->transport_priv = l_conn_state;
 
@@ -690,6 +693,19 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
     a_http_client->esocket->callbacks.write_callback = NULL;  // Write via trans->ops->write
     a_http_client->esocket->callbacks.delete_callback = s_ws_server_esocket_delete;
     a_http_client->esocket->callbacks.error_callback = s_ws_server_esocket_error;
+    a_http_client->esocket->callbacks.write_finished_callback = NULL;
+    a_http_client->esocket->callbacks.arg = NULL;
+
+    if (a_http_client->esocket->buf_in_size) {
+        dap_events_socket_uuid_t *uuid = malloc(sizeof(*uuid));
+        if (!uuid || !a_http_client->esocket->worker) {
+            free(uuid);
+            a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return -8;
+        }
+        *uuid = a_http_client->esocket->uuid;
+        dap_worker_exec_callback_on(a_http_client->esocket->worker, s_ws_resume_buffered, uuid);
+    }
 
     log_it(L_INFO, "Successfully switched to WebSocket protocol for stream %p (socket %p)",
            l_stream, a_http_client->esocket);
@@ -734,7 +750,11 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
         size_t l_payload_size = 0;
         size_t l_frame_size = 0;
 
-        int l_res = dap_net_trans_websocket_parse_frame(
+        int l_res = dap_ws_frame_role_check(a_es->buf_in + l_consumed,
+                                           a_es->buf_in_size - l_consumed, true);
+        if (!l_res) l_res = dap_ws_frame_budget_check(a_es->buf_in + l_consumed,
+            a_es->buf_in_size - l_consumed, DAP_WS_RECEIVE_FRAME_MAX);
+        if (!l_res) l_res = dap_net_trans_websocket_parse_frame(
             a_es->buf_in + l_consumed, a_es->buf_in_size - l_consumed,
             &l_opcode, &l_fin, &l_payload, &l_payload_size, &l_frame_size);
 
@@ -748,13 +768,21 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
             return;
         }
 
+        if (!l_conn || (l_opcode == DAP_WS_OPCODE_CLOSE && !dap_ws_close_valid(l_payload, l_payload_size)) ||
+            dap_ws_fragment_accept(&l_conn->is_fragmented, l_opcode, l_fin) ||
+            dap_ws_message_budget(&l_conn->fragmented_message_bytes, l_opcode, l_fin, l_payload_size)) {
+            DAP_DELETE(l_payload);
+            DAP_DELETE(l_payload_buf);
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return;
+        }
         // Handle control frames
         if (l_opcode == DAP_WS_OPCODE_CLOSE) {
             log_it(L_INFO, "WebSocket server: received CLOSE frame");
+            // Echo the received status/reason (including empty Close).
+            dap_net_trans_websocket_reply_close(l_stream, l_payload, l_payload_size);
             DAP_DEL_Z(l_payload);
             l_consumed += l_frame_size;
-            // Send close response and signal socket close
-            dap_net_trans_websocket_send_close(l_stream, DAP_WS_CLOSE_NORMAL, NULL);
             a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
             break;
         }
@@ -793,6 +821,11 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
 
         // Prepend leftover from previous call
         if (l_conn && l_conn->frame_buffer_used > 0) {
+            if (l_payload_total > SIZE_MAX - l_conn->frame_buffer_used) {
+                DAP_DELETE(l_payload_buf);
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return;
+            }
             size_t l_total = l_conn->frame_buffer_used + l_payload_total;
             uint8_t *l_combined = DAP_NEW_Z_SIZE(uint8_t, l_total);
             if (l_combined) {
@@ -801,16 +834,36 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
                 l_conn->frame_buffer_used = 0;
                 l_data = l_combined;
                 l_data_size = l_total;
+            } else {
+                /* Frames have already been consumed from the socket. Do not
+                 * parse newer bytes without their retained prefix. */
+                DAP_DELETE(l_payload_buf);
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return;
             }
         }
 
         size_t l_processed = dap_stream_data_proc_read_ext(l_stream, l_data, l_data_size);
 
+        size_t l_remaining = 0;
+        if (dap_ws_tail_size(l_data_size, l_processed, &l_remaining)) {
+            if (l_data != l_payload_buf) DAP_DELETE(l_data);
+            DAP_DELETE(l_payload_buf);
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return;
+        }
+
         // Save unprocessed remainder
-        size_t l_remaining = l_data_size - l_processed;
         if (l_remaining > 0 && l_conn) {
             if (l_remaining > l_conn->frame_buffer_size) {
-                l_conn->frame_buffer = DAP_REALLOC(l_conn->frame_buffer, l_remaining);
+                uint8_t *new_buffer = DAP_REALLOC(l_conn->frame_buffer, l_remaining);
+                if (!new_buffer) {
+                    if (l_data != l_payload_buf) DAP_DELETE(l_data);
+                    DAP_DELETE(l_payload_buf);
+                    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                    return;
+                }
+                l_conn->frame_buffer = new_buffer;
                 l_conn->frame_buffer_size = l_remaining;
             }
             memcpy(l_conn->frame_buffer, l_data + l_processed, l_remaining);

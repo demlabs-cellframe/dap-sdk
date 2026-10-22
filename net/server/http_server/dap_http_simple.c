@@ -72,6 +72,7 @@ static void s_proc_pool_complete(dap_thread_pool_t *a_pool, dap_thread_t a_worke
 typedef struct dap_http_simple_url_proc {
   dap_http_simple_callback_t proc_callback;
   size_t reply_size_max;
+  size_t request_size_max;
 } dap_http_simple_url_proc_t;
 
 
@@ -127,6 +128,14 @@ void dap_http_simple_module_deinit( void )
  */
 struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *a_http, const char *a_url_path, size_t a_reply_size_max, dap_http_simple_callback_t a_callback )
 {
+    return dap_http_simple_proc_add_with_limit(a_http, a_url_path, a_reply_size_max,
+                                             DAP_HTTP_SIMPLE_REQUEST_MAX, a_callback);
+}
+
+struct dap_http_url_proc *dap_http_simple_proc_add_with_limit(dap_http_server_t *a_http,
+    const char *a_url_path, size_t a_reply_size_max, size_t a_request_size_max,
+    dap_http_simple_callback_t a_callback)
+{
     dap_http_simple_url_proc_t *l_url_proc = DAP_NEW_Z( dap_http_simple_url_proc_t );
     if (!l_url_proc) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -135,6 +144,7 @@ struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *a_http, 
 
     l_url_proc->proc_callback = a_callback;
     l_url_proc->reply_size_max = a_reply_size_max;
+    l_url_proc->request_size_max = a_request_size_max;
 
     return dap_http_add_proc( a_http, a_url_path,
                      l_url_proc, // Internal structure
@@ -237,9 +247,39 @@ void dap_http_simple_set_pass_unknown_user_agents(int pass)
     is_unknown_user_agents_pass = pass;
 }
 
+/* Resolve on the owner worker instead of capturing a client pointer. The
+ * transport callback check excludes upgraded sockets and TLS ciphertext. */
+static void s_http_resume_buffered(void *arg)
+{
+    dap_events_socket_uuid_t uuid = *(dap_events_socket_uuid_t *)arg;
+    free(arg);
+    dap_worker_t *worker = dap_worker_get_current();
+    dap_events_socket_t *es = worker ? dap_context_find(worker->context, uuid) : NULL;
+    if (!es || es->callbacks.read_callback != dap_http_client_read ||
+        (es->flags & DAP_SOCK_SIGNAL_CLOSE)) return;
+    dap_http_client_t *client = DAP_HTTP_CLIENT(es);
+    if (client && client->state_read == DAP_HTTP_CLIENT_STATE_START && es->buf_in_size)
+        dap_http_client_read(es, NULL);
+}
+
 static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
 {
     dap_http_simple_t *l_http_simple = (dap_http_simple_t *)a_arg;
+    if (!l_http_simple || !l_http_simple->http_client)
+        return;
+    dap_http_client_t *client = l_http_simple->http_client;
+    /* Socket drain is not response completion: headers/body may still be
+     * waiting for queue capacity. Keep their offsets and request ownership. */
+    if (client->pending_headers || l_http_simple->reply_sent < client->out_content_length) {
+        dap_events_socket_set_writable_unsafe(a_es, true);
+        return;
+    }
+    int drained = dap_http_client_output_drained(client);
+    if (drained < 0) {
+        a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return;
+    }
+    if (!drained) return; /* Sink owner resumes completion after progress. */
     if (l_http_simple && l_http_simple->close_after_write) {
         log_it(L_INFO, "All HTTP data transmitted, closing connection");
         a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
@@ -252,6 +292,16 @@ static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
             l_http_simple->reply_sent = 0;
             l_http_simple->close_after_write = false;
             dap_events_socket_set_readable_unsafe(a_es, true);
+            if (a_es->buf_in_size && a_es->callbacks.read_callback == dap_http_client_read) {
+                dap_events_socket_uuid_t *uuid = malloc(sizeof(*uuid));
+                if (!uuid || !a_es->worker) {
+                    free(uuid);
+                    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                    return;
+                }
+                *uuid = a_es->uuid;
+                dap_worker_exec_callback_on(a_es->worker, s_http_resume_buffered, uuid);
+            }
         }
     }
 }
@@ -312,10 +362,11 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
     if (!a_arg)
         return false;
     size_t bytes_to_write = a_http_client->out_content_length - l_http_simple->reply_sent;
-    size_t bytes_written = dap_events_socket_write_unsafe(l_http_simple->esocket,
+    ssize_t bytes_written = dap_http_client_write_body(a_http_client,
                                               l_http_simple->reply_byte + l_http_simple->reply_sent,
                                               bytes_to_write);
-    l_http_simple->reply_sent += bytes_written;
+    if (bytes_written < 0) return false;
+    l_http_simple->reply_sent += (size_t)bytes_written;
 
     if (l_http_simple->reply_sent >= a_http_client->out_content_length) {
         if (!l_http_simple->close_after_write) {
@@ -458,12 +509,14 @@ static void s_http_client_new(dap_http_client_t *a_http_client, UNUSED_ARG void 
         .close_after_write = false
     };
     dap_strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->remote_addr_str, INET6_ADDRSTRLEN);
-    a_http_client->esocket->callbacks.arg = l_http_simple;
-    a_http_client->esocket->callbacks.write_finished_callback = s_http_client_write_finished;
+    a_http_client->handler_arg = l_http_simple;
+    a_http_client->handler_write_finished = s_http_client_write_finished;
 }
 
 static void s_http_client_delete(dap_http_client_t *a_http_client, void *arg)
 {
+    a_http_client->handler_arg = NULL;
+    a_http_client->handler_write_finished = NULL;
     dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
 
     if (l_http_simple) {
@@ -486,6 +539,17 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
     }
 */
 
+    if (a_http_client->in_content_length >
+            DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->request_size_max ||
+        a_http_client->in_content_length == SIZE_MAX) {
+        a_http_client->reply_status_code = 413; /* Content Too Large */
+        a_http_client->keep_alive = false;
+        a_http_client->out_connection_close = true;
+        a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
+        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        dap_http_client_write(a_http_client);
+        return;
+    }
     if( a_http_client->in_content_length ) {
         // dbg if( a_http_client->in_content_length < 3){
         if( a_http_client->in_content_length > 0){
@@ -494,6 +558,13 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
             if(!l_http_simple->request){
                 l_http_simple->request_size_max = 0;
                 log_it(L_ERROR, "Too big content-length %zu in request", a_http_client->in_content_length);
+                a_http_client->reply_status_code = Http_Status_ServiceUnavailable;
+                a_http_client->keep_alive = false;
+                a_http_client->out_connection_close = true;
+                a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
+                dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+                dap_http_client_write(a_http_client);
+                return;
             }
         }
         else
@@ -518,21 +589,26 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
 
 void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
 {
-    int *ret = (int *)a_arg;
+    size_t *ret = (size_t *)a_arg;
+    *ret = 0;
 
     log_it(L_INFO, "HTTP data_read: buf_in_size=%zu, content_length=%zu",
-           a_http_client->esocket->buf_in_size, a_http_client->in_content_length);
+           dap_http_client_input_size(a_http_client), a_http_client->in_content_length);
 
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
     if(!l_http_simple){
-        a_http_client->esocket->buf_in_size = 0;
+        dap_http_client_input_consume(a_http_client, dap_http_client_input_size(a_http_client));
         a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
         log_it( L_WARNING, "No http_simple object in read callback, close connection" );
         return;
     }
 
-    size_t bytes_to_read = (a_http_client->esocket->buf_in_size + l_http_simple->request_size) < a_http_client->in_content_length ?
-                            a_http_client->esocket->buf_in_size : ( a_http_client->in_content_length - l_http_simple->request_size );
+    if (l_http_simple->request_size > a_http_client->in_content_length) {
+        a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return;
+    }
+    size_t remaining = a_http_client->in_content_length - l_http_simple->request_size;
+    size_t bytes_to_read = dap_min(dap_http_client_input_size(a_http_client), remaining);
 
     if( bytes_to_read ) {
         // Oops! The client sent more data than write in the CONTENT_LENGTH header
@@ -549,11 +625,12 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
             l_http_simple->request = l_req_new;
         }
         if(l_http_simple->request){// request_byte=request
-            memcpy( l_http_simple->request_byte + l_http_simple->request_size, a_http_client->esocket->buf_in, bytes_to_read );
+            memcpy( l_http_simple->request_byte + l_http_simple->request_size,
+                    dap_http_client_input_data(a_http_client), bytes_to_read );
             l_http_simple->request_size += bytes_to_read;
         }
     }
-    *ret = (int) a_http_client->esocket->buf_in_size;
+    *ret = bytes_to_read;
     if( l_http_simple->request_size >= a_http_client->in_content_length ) {
 
         log_it( L_INFO,"Data for http_simple_request collected" );

@@ -93,6 +93,7 @@ dap_server_t* dap_http_server_new(const char *a_cfg_section, const char *a_serve
         .delete_callback    = dap_http_client_delete,
         .read_callback      = dap_http_client_read,
         .write_callback     = dap_http_client_write_callback,
+        .write_finished_callback = dap_http_client_write_finished,
         .error_callback     = dap_http_client_error
     };
     dap_server_t *l_server = dap_server_new(a_cfg_section, NULL, &l_client_callbacks);
@@ -200,4 +201,3 @@ dap_http_url_proc_t * dap_http_add_proc(dap_http_server_t *a_http, const char *a
     log_it( L_DEBUG, "Added URL processor for '%s' path", l_url_proc->url );
     return l_url_proc;
 }
-

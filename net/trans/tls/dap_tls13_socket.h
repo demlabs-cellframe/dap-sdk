@@ -86,6 +86,13 @@ static ssize_t dap_tls13_socket_send_wire(void *arg, const void *data, size_t si
     return n == size ? (ssize_t)n : -1;
 }
 
+static int dap_tls13_socket_wire_drained(void *arg)
+{
+    dap_tls13_socket_t *s = arg;
+    if (!s || !s->socket || (s->socket->flags & DAP_SOCK_SIGNAL_CLOSE)) return -1;
+    return s->socket->buf_out_size == 0 ? 1 : 0;
+}
+
 static int dap_tls13_socket_drive(dap_tls13_socket_t *s)
 {
     if (!s || !s->socket || !s->channel) return -1;
@@ -101,8 +108,9 @@ static int dap_tls13_socket_drive(dap_tls13_socket_t *s)
     }
     if (s->channel->tls.peer_closed) {
         /* Retire only after the reply has left both BIO and SDK queues. */
-        int shutdown = dap_tls_reactor_shutdown(&s->channel->tls);
-        if (shutdown < 0 || (shutdown == 1 && !s->socket->buf_out_size))
+        int shutdown = dap_tls_plain_stream_shutdown(&s->channel->tls,
+            &s->channel->outgoing, dap_tls13_socket_wire_drained, s);
+        if (shutdown < 0 || shutdown == 1)
             s->socket->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
     if (s->channel->read_budget_exhausted && !s->continuation_pending &&

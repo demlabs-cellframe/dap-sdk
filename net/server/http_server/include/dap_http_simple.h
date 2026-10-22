@@ -74,6 +74,11 @@ typedef struct dap_http_simple {
 
 #define DAP_HTTP_SIMPLE(a) ((dap_http_simple_t*) (a)->_inheritor )
 
+#define DAP_HTTP_SIMPLE_REQUEST_MAX (16U * 1024U * 1024U)
+/* Explicit per-route buffered request budget; zero permits bodyless requests. */
+struct dap_http_url_proc *dap_http_simple_proc_add_with_limit(dap_http_server_t *server,
+    const char *path, size_t reply_max, size_t request_max, dap_http_simple_callback_t cb);
+
 struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *sh, const char *url_path, size_t reply_size_max, dap_http_simple_callback_t cb ); // Add simple processor
 
 int  dap_http_simple_module_init( void );
@@ -97,4 +102,3 @@ size_t dap_http_simple_reply( dap_http_simple_t *a_http_simple, void *a_data, si
 DAP_PRINTF_ATTR(2, 3) size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_format, ... );
 dap_http_cache_t * dap_http_simple_make_cache_from_reply(dap_http_simple_t * a_http_simple , time_t a_ts_expire );
 void dap_http_simple_set_flag_generate_default_header(dap_http_simple_t *a_http_simple, bool flag);
-

@@ -127,7 +127,7 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
                                char *a_name_out, size_t a_name_max,
                                char *a_value_out, size_t a_value_max)
 {
-    if(!a_line || !a_name_out || !a_value_out)
+    if(!a_line || !a_name_out || !a_value_out || !a_name_max || !a_value_max)
         return -1;
         
     // Check for end-of-headers marker
@@ -142,7 +142,13 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
     // Extract name
     size_t l_name_len = l_sep - a_line;
     if(l_name_len >= a_name_max)
-        l_name_len = a_name_max - 1;
+        return -1;
+    for (size_t i = 0; i < l_name_len; ++i) {
+        unsigned char c = (unsigned char)a_line[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || (c && strchr("!#$%&'*+-.^_`|~", c))))
+            return -1;
+    }
     memcpy(a_name_out, a_line, l_name_len);
     a_name_out[l_name_len] = '\0';
     
@@ -151,7 +157,7 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
     size_t l_value_len = a_line_len - (l_value - a_line);
     
     // Skip leading whitespace
-    while(l_value_len > 0 && isspace(*l_value)) {
+    while(l_value_len > 0 && (*l_value == ' ' || *l_value == '\t')) {
         l_value++;
         l_value_len--;
     }
@@ -161,11 +167,16 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
         l_value_len -= 2;
         
     // Remove trailing whitespace
-    while(l_value_len > 0 && isspace(l_value[l_value_len-1]))
+    while(l_value_len > 0 && (l_value[l_value_len-1] == ' ' || l_value[l_value_len-1] == '\t'))
         l_value_len--;
         
     if(l_value_len >= a_value_max)
-        l_value_len = a_value_max - 1;
+        return -1;
+    for (size_t i = 0; i < l_value_len; ++i) {
+        unsigned char c = (unsigned char)l_value[i];
+        if ((c < 32 && c != '\t') || c == 127)
+            return -1;
+    }
     memcpy(a_value_out, l_value, l_value_len);
     a_value_out[l_value_len] = '\0';
     
@@ -183,4 +194,4 @@ void dap_http_header_print(dap_http_header_t *a_headers)
     for(dap_http_header_t *l_hdr = a_headers; l_hdr; l_hdr = l_hdr->next) {
         debug_if(s_debug_more, L_DEBUG, "  %s: %s", l_hdr->name, l_hdr->value);
     }
-} 
+}

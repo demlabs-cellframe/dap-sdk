@@ -26,6 +26,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <stdint.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -44,6 +45,7 @@
 #include "dap_events_socket.h"
 #include "dap_http_client.h"
 #include "dap_http_header_server.h"
+#include "dap_http_request_policy.h"
 
 #define LOG_TAG "http_header"
 
@@ -105,6 +107,16 @@ char l_value[DAP_HTTP$SZ_FIELD_VALUE] = {0};
 size_t l_namelen, l_valuelen;
 struct ht_field *l_ht;
 
+    if (!cl_ht || !ht_line || cl_ht->in_header_bytes > DAP_HTTP_REQUEST_HEADER_BYTES_MAX ||
+        ht_line_len > DAP_HTTP_REQUEST_HEADER_BYTES_MAX - cl_ht->in_header_bytes)
+        return -1;
+    /* Charge each complete line once, including the final CRLF. A rejected
+     * request is terminal and must not be resumed by the caller. */
+    cl_ht->in_header_bytes += ht_line_len;
+    if (!(ht_line_len == 2 && ht_line[0] == '\r' && ht_line[1] == '\n') &&
+        ++cl_ht->in_header_count > DAP_HTTP_REQUEST_HEADER_COUNT_MAX)
+        return -1;
+
     debug_if(s_debug_http, L_DEBUG, "Parse header string (%zu octets) : '%.*s'",  ht_line_len, (int) ht_line_len, ht_line);
 
     // Use common parser to extract name/value
@@ -114,6 +126,24 @@ struct ht_field *l_ht;
     if(l_ret != 0)
         return l_ret;
     
+    /* This server consumes fixed-length request bodies, not chunked input.
+     * Reject unsupported framing rather than treating chunks as requests. */
+    if (!strcasecmp(l_name, "Transfer-Encoding"))
+        return -1;
+    size_t l_content_length = 0;
+    if (!strcasecmp(l_name, "Content-Length")) {
+        if (!l_value[0] || dap_http_header_find(cl_ht->in_headers, "Content-Length"))
+            return -1; /* Deliberately reject even identical duplicates. */
+        for (const unsigned char *p = (const unsigned char *)l_value; *p; ++p) {
+            if (*p < '0' || *p > '9' || l_content_length > (SIZE_MAX - (*p - '0')) / 10)
+                return -1;
+            l_content_length = l_content_length * 10 + (*p - '0');
+        }
+        /* Buffered body consumers reserve a trailing NUL. */
+        if (l_content_length == SIZE_MAX)
+            return -1;
+    }
+
     l_namelen = strlen(l_name);
     l_valuelen = strlen(l_value);
 
@@ -124,7 +154,7 @@ struct ht_field *l_ht;
     for ( l_ht = ht_fields_server; l_ht->namelen; l_ht++)
         {
             if ( l_namelen == l_ht->namelen )
-                if ( !memcmp(l_name, l_ht->name, l_namelen) )
+                if ( !strncasecmp(l_name, l_ht->name, l_namelen) )
                     break;
             }
 
@@ -136,8 +166,15 @@ struct ht_field *l_ht;
     switch (l_ht->ht_field_code )
     {
         case    HTTP_FLD$K_CONNECTION:
-            cl_ht->keep_alive = !strncasecmp(l_value, "Keep-Alive", l_valuelen);
+        {
+            bool l_close = cl_ht->in_connection_close, l_keep_alive = false;
+            if (dap_http_connection_options(l_value, &l_close, &l_keep_alive))
+                return -1;
+            cl_ht->in_connection_close = l_close;
+            if (l_close) cl_ht->keep_alive = false;
+            else if (l_keep_alive) cl_ht->keep_alive = true;
             break;
+        }
 
         case    HTTP_FLD$K_CONTENT_TYPE:
             memcpy( cl_ht->in_content_type, l_value, dap_min(l_valuelen, sizeof(cl_ht->in_content_type) - 1) );
@@ -145,7 +182,7 @@ struct ht_field *l_ht;
             break;
 
         case    HTTP_FLD$K_CONTENT_LEN:
-            cl_ht->in_content_length = atoi( l_value );
+            cl_ht->in_content_length = l_content_length;
             break;
 
         case    HTTP_FLD$K_COOKIE:
@@ -156,7 +193,8 @@ struct ht_field *l_ht;
 
 
     /* Add header to list using common function */
-    dap_http_header_add(&cl_ht->in_headers, l_name, l_value);
+    if (!dap_http_header_add(&cl_ht->in_headers, l_name, l_value))
+        return -1;
 
     return 0;
 }

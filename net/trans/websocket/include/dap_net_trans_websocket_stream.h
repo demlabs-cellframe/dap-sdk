@@ -196,6 +196,7 @@ typedef struct dap_net_trans_websocket_private {
     size_t frame_buffer_used;                 ///< Used buffer space
     uint64_t payload_remaining;                ///< Bytes remaining in current frame
     bool is_fragmented;                        ///< Currently receiving fragmented message
+    size_t fragmented_message_bytes;            ///< Bounded aggregate data payload
     dap_ws_opcode_t fragment_opcode;          ///< Opcode of first fragment
     
     // Masking
@@ -327,6 +328,8 @@ int dap_net_trans_websocket_build_frame(uint8_t *a_buffer, size_t a_buffer_size,
  * @param a_reason Close reason string (optional, can be NULL)
  * @return 0 on success, negative error code on failure
  */
+/* Echo an already received Close payload, including an empty payload. */
+int dap_net_trans_websocket_reply_close(dap_stream_t *stream, const void *payload, size_t size);
 int dap_net_trans_websocket_send_close(dap_stream_t *a_stream, 
                                         dap_ws_close_code_t a_code,
                                         const char *a_reason);
@@ -371,4 +374,3 @@ int dap_net_trans_websocket_get_stats(const dap_stream_t *a_stream,
 #ifdef __cplusplus
 }
 #endif
-

@@ -42,11 +42,25 @@ typedef struct dap_http_url_proc_folder {
 typedef struct dap_http_file{
     FILE * fd;
     size_t position;
+    unsigned char pending[16384];
+    size_t pending_size, pending_offset;
     char local_path[4096+2048+1];
     dap_http_client_t *client;
 } dap_http_file_t;
 
 #define DAP_HTTP_FILE(a) ((dap_http_file_t*) (a)->_inheritor )
+
+/* The generic HTTP owner frees _inheritor after invoking this callback.
+ * Release only resources owned by the file response; safe after EOF/error. */
+static void s_http_folder_delete(dap_http_client_t *client, void *arg)
+{
+    (void)arg;
+    dap_http_file_t *file = DAP_HTTP_FILE(client);
+    if (file && file->fd) {
+        fclose(file->fd);
+        file->fd = NULL;
+    }
+}
 
 void dap_http_folder_headers_read( dap_http_client_t *cl_ht, void *arg );
 bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void *arg );
@@ -119,7 +133,7 @@ int dap_http_folder_add(dap_http_server_t *sh, const char *url_path, const char 
                       url_path, 
                       up_folder, 
                       NULL,
-                      NULL,
+                      s_http_folder_delete,
                       dap_http_folder_headers_read,
                       dap_http_folder_headers_write,
                       dap_http_folder_data_read,
@@ -153,7 +167,15 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
   dap_http_url_proc_folder_t * up_folder=(dap_http_url_proc_folder_t*) cl_ht->proc->_inheritor;
 
   // Init specific file response data for HTTP client instance
+  s_http_folder_delete(cl_ht, NULL);
+  DAP_DEL_Z(cl_ht->_inheritor);
   cl_ht->_inheritor=DAP_NEW_Z(dap_http_file_t);
+  if (!cl_ht->_inheritor) {
+      cl_ht->reply_status_code = Http_Status_ServiceUnavailable;
+      cl_ht->keep_alive = false;
+      cl_ht->out_connection_close = true;
+      return false;
+  }
 
   dap_http_file_t* cl_ht_file=DAP_HTTP_FILE(cl_ht);
   cl_ht_file->client=cl_ht;
@@ -215,9 +237,9 @@ err:
  */
 void dap_http_folder_data_read(dap_http_client_t * cl_ht, void * arg)
 {
-    int * bytes_return = (int*) arg; // Return number of read bytes
+    size_t *bytes_return = (size_t *)arg; // HTTP reader uses size_t consumed bytes
     //Do nothing
-    *bytes_return=cl_ht->esocket->buf_in_size;
+    *bytes_return=dap_http_client_input_size(cl_ht);
 }
 
 /**
@@ -229,19 +251,36 @@ bool dap_http_folder_data_write(dap_http_client_t * cl_ht, void * arg)
 {
     (void) arg;
     dap_http_file_t * cl_ht_file= DAP_HTTP_FILE(cl_ht);
-    cl_ht->esocket->buf_out_size=fread(cl_ht->esocket->buf_out, 1, cl_ht->esocket->buf_out_size_max + 1, cl_ht_file->fd);
-    cl_ht_file->position+=cl_ht->esocket->buf_out_size;
-    dap_events_socket_set_writable_unsafe(cl_ht->esocket, true);
-
-    if(feof(cl_ht_file->fd)!=0){
-        debug_if(s_debug_more, L_INFO, "All the file %s is sent out",cl_ht_file->local_path);
-        //strncat(cl_ht->client->buf_out+cl_ht->client->buf_out_size,"\r\n",sizeof(cl_ht->client->buf_out));
-        fclose(cl_ht_file->fd);
-        dap_events_socket_set_writable_unsafe(cl_ht->esocket,false);
-
-        if ( !cl_ht->keep_alive )
+    if (!cl_ht_file || !cl_ht_file->fd) return false;
+    if (cl_ht_file->pending_offset == cl_ht_file->pending_size) {
+        cl_ht_file->pending_offset = 0;
+        cl_ht_file->pending_size = fread(cl_ht_file->pending, 1,
+                                        sizeof(cl_ht_file->pending), cl_ht_file->fd);
+        if (ferror(cl_ht_file->fd)) {
+            fclose(cl_ht_file->fd);
+            cl_ht_file->fd = NULL;
             cl_ht->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return false;
+        }
     }
-    return false;
+    if (cl_ht_file->pending_size) {
+        ssize_t sent = dap_http_client_write_body(cl_ht,
+            cl_ht_file->pending + cl_ht_file->pending_offset,
+            cl_ht_file->pending_size - cl_ht_file->pending_offset);
+        if (sent < 0) {
+            fclose(cl_ht_file->fd);
+            cl_ht_file->fd = NULL;
+            return false;
+        }
+        cl_ht_file->pending_offset += (size_t)sent;
+        cl_ht_file->position += (size_t)sent;
+        if (cl_ht_file->pending_offset < cl_ht_file->pending_size) return true;
+    }
+    if (feof(cl_ht_file->fd)) {
+        fclose(cl_ht_file->fd);
+        cl_ht_file->fd = NULL;
+        if (!cl_ht->keep_alive) cl_ht->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return false;
+    }
+    return true;
 }
-

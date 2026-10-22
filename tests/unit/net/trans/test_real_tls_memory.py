@@ -18,7 +18,17 @@ test = r'''
 #include "dap_tls_reactor.h"
 #include "dap_tls13_channel.h"
 #include "dap_tls13_endpoint.h"
+#include "dap_tls_http_output.h"
 static unsigned frames;
+static int lower_drained(void *arg) {return *(int *)arg;}
+static size_t http_received;
+static const char http_request[]="GET / HTTP/1.1\r\nHost: test\r\n\r\n";
+static int http_plain_received(void *arg,const void *data,size_t size) {
+ (void)arg;
+ assert(size<=sizeof(http_request)-1-http_received);
+ assert(!memcmp(data,http_request+http_received,size));
+ http_received+=size; return 0;
+}
 static ssize_t tcp_send(void *arg,const void *data,size_t size) {
  int fd=*(int*)arg;
  ssize_t n=send(fd,data,size>37?37:size,0);
@@ -187,14 +197,77 @@ int main(int argc,char **argv) {
        assert(dap_tls13_channel_input(&channel_server,NULL,0)>=0);
      }
      assert(frames==1);
+     /* The same TLS stream can carry HTTP bytes without DAP framing. */
+     /* A full queue must reject atomically, without poisoning TLS. */
+     assert(!channel_client.outgoing.head);
+     size_t full_size=DAP_TLS_PLAIN_QUEUE_LIMIT-sizeof(dap_tls_plain_chunk_t);
+     unsigned char *full=calloc(1,full_size); assert(full);
+     assert(!dap_tls_plain_queue_push(&channel_client.outgoing,full,full_size));
+     free(full);
+     dap_tls_plain_chunk_t *full_head=channel_client.outgoing.head;
+     assert(dap_tls_plain_stream_write(&channel_client.tls,&channel_client.outgoing,
+         http_request,sizeof(http_request)-1)==DAP_TLS_PLAIN_WRITE_BLOCKED);
+     assert(!channel_client.tls.failed);
+     assert(channel_client.outgoing.allocated==DAP_TLS_PLAIN_QUEUE_LIMIT);
+     assert(channel_client.outgoing.head==full_head && !full_head->next && !full_head->offset);
+     dap_tls_plain_queue_clear(&channel_client.outgoing);
+     assert(dap_tls_plain_stream_write(&channel_client.tls,&channel_client.outgoing,
+         http_request,sizeof(http_request)-1)==DAP_TLS_PLAIN_WRITE_ACCEPTED);
+     bool budget_exhausted=false;
+     for(int i=0;i<10000 && http_received<sizeof(http_request)-1;i++) {
+       assert(dap_tls_plain_queue_pump(&channel_client.outgoing,&channel_client.tls)>=0);
+       assert(dap_tls_plain_stream_drive(&channel_server.tls,&channel_server.outgoing,
+           http_plain_received,NULL,NULL,&budget_exhausted)>=0);
+     }
+     assert(http_received==sizeof(http_request)-1);
+     http_received=0;
+     int http_wire_status=1;
+     /* Exercise the same channel drive used by the socket adapter, with
+      * plaintext protocol selected instead of DAP dispatch. */
+     channel_server.plain_input=http_plain_received;
+     channel_server.dispatch=NULL;
+     dap_tls_http_output_t http_sink={.tls=&channel_client.tls,
+         .outgoing=&channel_client.outgoing,.wire_drained=lower_drained,.wire_arg=&http_wire_status};
+     dap_http_output_t http_output=dap_tls_http_output_bind(&http_sink);
+     assert(dap_http_output_write(&http_output,http_request,sizeof(http_request)-1)==sizeof(http_request)-1);
+     for(int i=0;i<10000 && http_received<sizeof(http_request)-1;i++) {
+       assert(http_output.drained(http_output.arg)>=0);
+       assert(dap_tls13_channel_drive(&channel_server)>=0);
+     }
+     assert(http_received==sizeof(http_request)-1);
+     assert(dap_tls13_channel_send(&channel_server,DAP_TLS13_CTL_REPLY,"wrong",5)==-1);
+     http_wire_status=0; assert(http_output.drained(http_output.arg)==0);
+     http_wire_status=1; assert(http_output.drained(http_output.arg)==1);
+     int lower_status=0;
+     assert(dap_tls_plain_stream_drain(&channel_client.tls,&channel_client.outgoing,
+         lower_drained,&lower_status)==0);
+     lower_status=1;
+     assert(dap_tls_plain_stream_drain(&channel_client.tls,&channel_client.outgoing,
+         lower_drained,&lower_status)==1);
+     http_received=0;
      /* Hand back session ownership for shutdown checks below. */
      reactor=channel_client.tls; server=channel_server.tls;
      channel_client.tls.session=NULL; channel_server.tls.session=NULL;
      dap_tls13_channel_clear(&channel_client); dap_tls13_channel_clear(&channel_server);
      int closed=0;
+     dap_tls_plain_queue_t closing_client={0},closing_server={0};
+     int wire_ready=1;
+     sink.blocked=1;
+     assert(!dap_tls_plain_queue_push(&closing_client,"final response",14));
+     assert(dap_tls_plain_stream_shutdown(&reactor,&closing_client,lower_drained,&wire_ready)==0);
+     assert(!reactor.closing); /* No close_notify while ciphertext is blocked. */
+     sink.blocked=0;
+     size_t final_received=0;
+     for(int i=0;i<1000 && final_received<14;i++) {
+       assert(dap_tls_plain_stream_shutdown(&reactor,&closing_client,lower_drained,&wire_ready)>=0);
+       ssize_t n=dap_tls_reactor_read(&server,out+final_received,sizeof(out)-final_received);
+       assert(n>=0); final_received+=(size_t)n;
+     }
+     assert(final_received==14 && !memcmp(out,"final response",14));
+     assert(!closing_client.head && !closing_client.allocated);
      for(int i=0;i<100 && !closed;i++) {
-       int a=dap_tls_reactor_shutdown(&reactor);
-       int b=dap_tls_reactor_shutdown(&server);
+        int a=dap_tls_plain_stream_shutdown(&reactor,&closing_client,lower_drained,&wire_ready);
+        int b=dap_tls_plain_stream_shutdown(&server,&closing_server,lower_drained,&wire_ready);
        assert(a>=0 && b>=0);
        closed=a==1 && b==1;
      }
@@ -215,6 +288,7 @@ with tempfile.TemporaryDirectory() as directory:
                     '-out',str(tmp/'cert.pem')],check=True)
     subprocess.run(['cc','-DDAP_OS_UNIX','-I'+str(tmp),'-I'+str(sdk/'crypto/tls/include'),
                     '-I'+str(sdk/'net/trans/tls'),
+                    '-I'+str(sdk/'net/server/http_server/http_client/include'),
                     str(tmp/'test.c'),str(sdk/'crypto/tls/os/openssl/dap_tls_openssl.c'),
                     '-lssl','-lcrypto','-o',str(tmp/'test')],check=True)
     subprocess.run([str(tmp/'test'),str(tmp/'cert.pem'),str(tmp/'key.pem')],check=True)

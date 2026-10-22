@@ -61,6 +61,10 @@
 #include "http_status_code.h"
 #include "dap_net_trans_http_stream.h"
 #include "dap_stream_ctl.h"
+#include "dap_ws_upgrade_status.h"
+#include "dap_ws_upgrade_response.h"
+#include "dap_ws_frame_role.h"
+#include "dap_ws_close.h"
 #include "dap_enc_server.h"
 
 #define LOG_TAG "dap_net_trans_websocket_stream"
@@ -959,6 +963,9 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 
     // Set state to CONNECTING (upgrade in progress)
     l_priv->state = DAP_WS_STATE_CONNECTING;
+    l_priv->is_fragmented = false;
+    l_priv->fragmented_message_bytes = 0;
+    l_priv->frame_buffer_used = 0;
 
     // Build full path (same as HTTP transport uses for GET /stream)
     char l_full_path[2048];
@@ -1037,24 +1044,27 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             return 0;  // Need more data
         }
 
-        // Search for end of HTTP headers (\r\n\r\n)
-        char *l_headers_end = NULL;
-        for (size_t i = 0; i + 3 < l_es->buf_in_size; i++) {
-            if (l_es->buf_in[i] == '\r' && l_es->buf_in[i + 1] == '\n' &&
-                l_es->buf_in[i + 2] == '\r' && l_es->buf_in[i + 3] == '\n') {
-                l_headers_end = (char *)l_es->buf_in + i;
-                break;
+        size_t l_headers_size = 0;
+        int l_header_result = dap_ws_upgrade_header_size(l_es->buf_in, l_es->buf_in_size,
+                                                        &l_headers_size);
+        if (!l_header_result) return 0;
+        if (l_header_result < 0) {
+            l_priv->state = DAP_WS_STATE_CLOSED;
+            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            if (l_priv->ready_callback) {
+                dap_net_trans_ready_cb_t callback = l_priv->ready_callback;
+                l_priv->ready_callback = NULL;
+                callback(l_priv->ready_callback_stream, -1);
             }
+            return -1;
         }
-        if (!l_headers_end) {
-            return 0;  // Incomplete headers, wait for more data
-        }
-
-        size_t l_headers_size = (size_t)(l_headers_end - (char *)l_es->buf_in) + 4;
 
         // Validate 101 Switching Protocols response
-        if (memcmp(l_es->buf_in, "HTTP/1.1 101", 12) == 0 ||
-            memcmp(l_es->buf_in, "HTTP/1.0 101", 12) == 0) {
+        char expected_accept[64];
+        if (l_priv->sec_websocket_key &&
+            !s_ws_generate_accept(l_priv->sec_websocket_key, expected_accept, sizeof(expected_accept)) &&
+            dap_ws_upgrade_response_valid(l_es->buf_in, l_headers_size, expected_accept,
+                                          l_priv->config.subprotocol)) {
             log_it(L_INFO, "WebSocket upgrade successful (101 Switching Protocols)");
             l_priv->state = DAP_WS_STATE_OPEN;
 
@@ -1125,7 +1135,13 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         size_t l_payload_size = 0;
         size_t l_frame_size = 0;
 
-        int l_res = dap_net_trans_websocket_parse_frame(l_es->buf_in + l_consumed,
+        int l_res = dap_ws_frame_role_check(l_es->buf_in + l_consumed,
+                                           l_es->buf_in_size - l_consumed,
+                                           !a_stream->is_client_to_uplink);
+        if (!l_res) l_res = dap_ws_frame_budget_check(l_es->buf_in + l_consumed,
+            l_es->buf_in_size - l_consumed,
+            l_priv->config.max_frame_size ? l_priv->config.max_frame_size : DAP_WS_RECEIVE_FRAME_MAX);
+        if (!l_res) l_res = dap_net_trans_websocket_parse_frame(l_es->buf_in + l_consumed,
                                      l_es->buf_in_size - l_consumed,
                                      &l_opcode, &l_fin, &l_payload,
                                      &l_payload_size, &l_frame_size);
@@ -1141,9 +1157,26 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             return -1;
         }
 
+        if ((l_opcode == DAP_WS_OPCODE_CLOSE && !dap_ws_close_valid(l_payload, l_payload_size)) ||
+            dap_ws_fragment_accept(&l_priv->is_fragmented, l_opcode, l_fin) ||
+            dap_ws_message_budget(&l_priv->fragmented_message_bytes, l_opcode, l_fin, l_payload_size)) {
+            DAP_DELETE(l_payload);
+            DAP_DELETE(l_payload_buf);
+            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return -1;
+        }
         // Handle control frames
         if (l_opcode == DAP_WS_OPCODE_CLOSE) {
             log_it(L_INFO, "WebSocket received CLOSE frame");
+            if (l_priv->state != DAP_WS_STATE_CLOSING) {
+                if (dap_net_trans_websocket_reply_close(a_stream, l_payload, l_payload_size)) {
+                    DAP_DELETE(l_payload);
+                    DAP_DELETE(l_payload_buf);
+                    l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                    return -1;
+                }
+                l_priv->state = DAP_WS_STATE_CLOSING;
+            }
             DAP_DEL_Z(l_payload);
             l_consumed += l_frame_size;
             /* Deliver preceding data before close frees the per-stream state. */
@@ -1219,7 +1252,13 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         size_t l_processed = dap_stream_data_proc_read_ext(a_stream, l_data, l_data_size);
 
         // Save any unprocessed bytes (partial DAP stream packet) for next call
-        size_t l_remaining = l_data_size - l_processed;
+        size_t l_remaining = 0;
+        if (dap_ws_tail_size(l_data_size, l_processed, &l_remaining)) {
+            if (l_data != l_payload_buf) DAP_DELETE(l_data);
+            DAP_DELETE(l_payload_buf);
+            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return -1;
+        }
         if (l_remaining > 0) {
             if (l_remaining > l_priv->frame_buffer_size) {
                 uint8_t *l_new_buffer = DAP_REALLOC(l_priv->frame_buffer, l_remaining);
@@ -1546,8 +1585,14 @@ int dap_net_trans_websocket_build_frame(uint8_t *a_buffer, size_t a_buffer_size,
     if (!a_buffer || !a_frame_size_out) {
         return -1;
     }
+    *a_frame_size_out = 0;
+    if ((!a_payload && a_payload_size) ||
+        (uint64_t)a_payload_size > (UINT64_MAX >> 1)) return -1;
+    size_t required_header = 2 + (a_payload_size < 126 ? 0 : a_payload_size < 65536 ? 2 : 8)
+                            + (a_mask ? 4 : 0);
+    if (required_header > a_buffer_size || a_payload_size > a_buffer_size - required_header)
+        return -2;
 
-    size_t l_header_size = 2;  // Minimum header size
     size_t l_offset = 0;
 
     // Byte 0: FIN, RSV, Opcode
@@ -1561,13 +1606,11 @@ int dap_net_trans_websocket_build_frame(uint8_t *a_buffer, size_t a_buffer_size,
         uint16_t l_len = htons((uint16_t)a_payload_size);
         memcpy(&a_buffer[l_offset], &l_len, 2);
         l_offset += 2;
-        l_header_size += 2;
     } else {
         a_buffer[l_offset++] = (a_mask ? 0x80 : 0x00) | 127;
         uint64_t l_len = htobe64((uint64_t)a_payload_size);
         memcpy(&a_buffer[l_offset], &l_len, 8);
         l_offset += 8;
-        l_header_size += 8;
     }
 
     // Masking key (if needed)
@@ -1576,7 +1619,6 @@ int dap_net_trans_websocket_build_frame(uint8_t *a_buffer, size_t a_buffer_size,
         randombytes(&l_mask_key, sizeof(l_mask_key));
         memcpy(&a_buffer[l_offset], &l_mask_key, 4);
         l_offset += 4;
-        l_header_size += 4;
     }
 
     // Check buffer size
@@ -1616,11 +1658,17 @@ int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_siz
     // Parse byte 0
     bool l_fin = (a_data[l_offset] & 0x80) != 0;
     uint8_t l_opcode = a_data[l_offset] & 0x0F;
+    if ((a_data[l_offset] & 0x70) ||
+        !(l_opcode == 0 || l_opcode == 1 || l_opcode == 2 ||
+          l_opcode == 8 || l_opcode == 9 || l_opcode == 10)) return -1;
+    bool l_control = (l_opcode & 8) != 0;
+    if (l_control && !l_fin) return -1;
     l_offset++;
 
     // Parse byte 1
     bool l_mask = (a_data[l_offset] & 0x80) != 0;
     uint64_t l_payload_len = a_data[l_offset] & 0x7F;
+    if (l_control && l_payload_len > 125) return -1;
     l_offset++;
 
     // Extended payload length
@@ -1629,16 +1677,19 @@ int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_siz
         uint16_t l_len16;
         memcpy(&l_len16, &a_data[l_offset], 2);
         l_payload_len = ntohs(l_len16);
+        if (l_payload_len < 126) return -1;
         l_offset += 2;
     } else if (l_payload_len == 127) {
         if (a_data_size < l_offset + 8) return -2;
         uint64_t l_len64;
         memcpy(&l_len64, &a_data[l_offset], 8);
         l_payload_len = be64toh(l_len64);
+        if (l_payload_len < 65536) return -1;
         l_offset += 8;
     }
 
     // Masking key
+    if (l_opcode == 8 && l_payload_len == 1) return -1;
     uint32_t l_mask_key = 0;
     if (l_mask) {
         if (a_data_size < l_offset + 4) return -2;
@@ -1774,6 +1825,8 @@ dap_net_trans_websocket_private_t* dap_net_trans_websocket_get_private(dap_strea
 /**
  * @brief Send WebSocket close frame
  */
+static int s_ws_send_control(dap_stream_t *, dap_ws_opcode_t, const void *, size_t);
+
 int dap_net_trans_websocket_send_close(dap_stream_t *a_stream, dap_ws_close_code_t a_code,
                                         const char *a_reason)
 {
@@ -1789,104 +1842,76 @@ int dap_net_trans_websocket_send_close(dap_stream_t *a_stream, dap_ws_close_code
     if (l_es->flags & DAP_SOCK_SIGNAL_CLOSE)
         return 0;
 
-    // Build close payload: 2-byte code + optional reason
-    size_t l_reason_len = a_reason ? strlen(a_reason) : 0;
+    /* Two-byte code leaves at most 123 bytes for the complete UTF-8 reason.
+     * Reject oversize rather than truncating a multibyte code point. */
+    size_t l_reason_len = 0;
+    if (a_reason) {
+        while (l_reason_len < 124 && a_reason[l_reason_len]) ++l_reason_len;
+        if (l_reason_len > 123) return -2;
+    }
     size_t l_payload_size = 2 + l_reason_len;
-    uint8_t *l_payload = DAP_NEW_Z_SIZE(uint8_t, l_payload_size);
+    uint8_t l_payload[125];
     
     uint16_t l_code_be = htons((uint16_t)a_code);
     memcpy(l_payload, &l_code_be, 2);
     if (a_reason && l_reason_len > 0)
         memcpy(l_payload + 2, a_reason, l_reason_len);
 
-    size_t l_frame_size = l_payload_size + 14;
-    uint8_t *l_frame = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);
-    size_t l_actual_size;
-    bool l_should_mask = a_stream->is_client_to_uplink;
-    
-    int l_ret = dap_net_trans_websocket_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_CLOSE,
-                                   true, l_should_mask, l_payload, l_payload_size, &l_actual_size);
-    DAP_DELETE(l_payload);
-
-    if (l_ret == 0) {
-        size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame, l_actual_size);
-        if (l_sent == l_actual_size) {
-            debug_if(s_debug_more, L_DEBUG, "WebSocket close frame sent (code=%u)", a_code);
-        } else {
-            log_it(L_ERROR, "WebSocket close frame send failed");
-            l_ret = -5;
-        }
-    }
-    DAP_DELETE(l_frame);
-    return l_ret;
+    if ((unsigned)a_code > 65535 || !dap_ws_close_valid(l_payload, l_payload_size)) return -2;
+    return s_ws_send_control(a_stream, DAP_WS_OPCODE_CLOSE, l_payload, l_payload_size);
 }
 
 /**
  * @brief Send WebSocket ping frame
  */
-int dap_net_trans_websocket_send_ping(dap_stream_t *a_stream, const void *a_payload,
-                                       size_t a_payload_size)
+static int s_ws_send_control(dap_stream_t *a_stream, dap_ws_opcode_t opcode,
+                             const void *a_payload, size_t a_payload_size)
 {
     if (!a_stream) return -1;
-    if (a_payload_size > 125) return -2;
+    if (a_payload_size > 125 || (!a_payload && a_payload_size)) return -2;
 
     dap_events_socket_t *l_es = a_stream->esocket;
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_es && l_priv) l_es = l_priv->esocket;
     if (!l_es || (l_es->flags & DAP_SOCK_SIGNAL_CLOSE)) return -3;
 
-    size_t l_frame_size = a_payload_size + 14;
-    uint8_t *l_frame = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);
+    uint8_t l_frame[125 + 14];
     size_t l_actual_size;
     bool l_should_mask = a_stream->is_client_to_uplink;
     
-    int l_ret = dap_net_trans_websocket_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_PING,
+    int l_ret = dap_net_trans_websocket_build_frame(l_frame, sizeof(l_frame), opcode,
                                    true, l_should_mask, a_payload, a_payload_size, &l_actual_size);
     
     if (l_ret == 0) {
         size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame, l_actual_size);
-        if (l_sent == l_actual_size) {
-            debug_if(s_debug_more, L_DEBUG, "WebSocket ping sent (%zu bytes payload)", a_payload_size);
-        } else {
+        if (l_sent != l_actual_size) {
+            /* A partial frame cannot be retried as a new frame. */
+            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
             l_ret = -5;
         }
     }
-    DAP_DELETE(l_frame);
     return l_ret;
+}
+
+int dap_net_trans_websocket_send_ping(dap_stream_t *a_stream, const void *a_payload,
+                                     size_t a_payload_size)
+{
+    return s_ws_send_control(a_stream, DAP_WS_OPCODE_PING, a_payload, a_payload_size);
+}
+
+int dap_net_trans_websocket_reply_close(dap_stream_t *stream, const void *payload, size_t size)
+{
+    if (!dap_ws_close_valid(payload, size)) return -2;
+    return s_ws_send_control(stream, DAP_WS_OPCODE_CLOSE, payload, size);
 }
 
 /**
  * @brief Send WebSocket pong frame
  */
 int dap_net_trans_websocket_send_pong(dap_stream_t *a_stream, const void *a_payload,
-                                       size_t a_payload_size)
+                                        size_t a_payload_size)
 {
-    if (!a_stream) return -1;
-    if (a_payload_size > 125) return -2;
-
-    dap_events_socket_t *l_es = a_stream->esocket;
-    dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
-    if (!l_es && l_priv) l_es = l_priv->esocket;
-    if (!l_es || (l_es->flags & DAP_SOCK_SIGNAL_CLOSE)) return -3;
-
-    size_t l_frame_size = a_payload_size + 14;
-    uint8_t *l_frame = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);
-    size_t l_actual_size;
-    bool l_should_mask = a_stream->is_client_to_uplink;
-    
-    int l_ret = dap_net_trans_websocket_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_PONG,
-                                   true, l_should_mask, a_payload, a_payload_size, &l_actual_size);
-
-    if (l_ret == 0) {
-        size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame, l_actual_size);
-        if (l_sent == l_actual_size) {
-            debug_if(s_debug_more, L_DEBUG, "WebSocket pong sent (%zu bytes payload)", a_payload_size);
-        } else {
-            l_ret = -5;
-        }
-    }
-    DAP_DELETE(l_frame);
-    return l_ret;
+    return s_ws_send_control(a_stream, DAP_WS_OPCODE_PONG, a_payload, a_payload_size);
 }
 
 /**

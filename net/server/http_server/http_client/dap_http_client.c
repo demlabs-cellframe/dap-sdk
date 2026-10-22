@@ -38,6 +38,9 @@
 #include "dap_http_client.h"
 #include "dap_http_ban_list_client.h"
 #include "dap_http_header_server.h"
+#include "dap_http_line.h"
+#include "dap_http_request_policy.h"
+#include "dap_http_response_buffer.h"
 
 #define LOG_TAG "dap_http_client"
 
@@ -114,6 +117,10 @@ void dap_http_client_delete( dap_events_socket_t * a_esocket, void *a_arg )
     while( l_http_client->out_headers )
         dap_http_header_remove( &l_http_client->out_headers, l_http_client->out_headers );
 
+    free(l_http_client->pending_headers);
+    l_http_client->pending_headers = NULL;
+    dap_http_input_clear(&l_http_client->plaintext_input);
+
     if( l_http_client->proc ) {
         if( l_http_client->proc->delete_callback ) {
           l_http_client->proc->delete_callback( l_http_client, NULL );
@@ -122,6 +129,30 @@ void dap_http_client_delete( dap_events_socket_t * a_esocket, void *a_arg )
     DAP_DEL_Z(l_http_client->_inheritor);
 }
 
+
+const unsigned char *dap_http_client_input_data(const dap_http_client_t *client)
+{
+    if (!client) return NULL;
+    if (client->use_plaintext_input) return client->plaintext_input.data;
+    return client->esocket ? (const unsigned char *)client->esocket->buf_in : NULL;
+}
+
+size_t dap_http_client_input_size(const dap_http_client_t *client)
+{
+    if (!client) return 0;
+    if (client->use_plaintext_input) return client->plaintext_input.size;
+    return client->esocket ? client->esocket->buf_in_size : 0;
+}
+
+int dap_http_client_input_consume(dap_http_client_t *client, size_t size)
+{
+    if (!client || size > dap_http_client_input_size(client)) return -1;
+    if (client->use_plaintext_input)
+        return dap_http_input_consume(&client->plaintext_input, size);
+    if (!client->esocket) return -1;
+    dap_events_socket_shrink_buf_in(client->esocket, size);
+    return 0;
+}
 
 static char  *z_basename( char *path, uint32_t len )
 {
@@ -205,78 +236,50 @@ static int32_t  z_rootdirname( char *path, uint32_t len )
 
 static int s_http_start_line_parse( dap_http_client_t *a_http_client, char *a_buf, size_t a_buf_length )
 {
-size_t  l_len, l_buf_len;
-char    *l_cp_start, *l_cp_end;
-const char ht_ver [] = "HTTP/1.";                                           /* We are not interested by minor version */
+    if (!a_http_client || !a_buf || a_buf_length < 2 ||
+        memcmp(a_buf + a_buf_length - 2, "\r\n", 2))
+        return -EINVAL;
+    size_t n = a_buf_length - 2;
+    const char *method_end = memchr(a_buf, ' ', n);
+    if (!method_end || method_end == a_buf) return -EINVAL;
+    size_t method_len = (size_t)(method_end - a_buf);
+    if (method_len >= sizeof(a_http_client->action)) return -EINVAL;
+    for (size_t i = 0; i < method_len; ++i)
+        if (!dap_http_token_char((unsigned char)a_buf[i])) return -EINVAL;
 
-    log_it(L_NOTICE, "Parse %.*s" , (int) a_buf_length, a_buf);
-
-    if ( (a_buf_length == 2) && (*a_buf == CR) && (*(a_buf + 1)  == LF) )          /* Check for HTTP End-Of-Header sequence */
-        return  1;
-
-
-    l_buf_len = a_buf_length;
-    l_cp_start = a_buf;
-
-    /*
-    * request-line   = method SP request-target SP HTTP-version CRLF
-    * https://projects.demlabs.net/issues/6099?issue_count=148&issue_position=1&next_issue_id=6096
-    */
-
-
-    /* Extract HTTP method name, eg: POST, GET, PATCH, DELETE, HEAD ...
-    ** GET /issues/6099?issue_count=148 HTTP/1.1   -> "GET"
-    */
-
-    for ( ; isspace(*l_cp_start) && l_buf_len; l_cp_start++, l_buf_len--);  /* Skip possible anti-DPI whitespaces */
-    l_cp_end = l_cp_start;
-    for ( ; !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--);     /* Run method's symbols until first whitespace */
-
-    l_len = l_cp_end - l_cp_start;
-    a_http_client->action_len = dap_min(l_len, sizeof(a_http_client->action) - 1 );
-    memcpy( a_http_client->action, l_cp_start, a_http_client->action_len);  /* Save HTTP method's name into the HT-client context */
-    a_http_client->action[a_http_client->action_len] = '\0';                /* ASCIZ */
-
-
-    /* Extract <path> part of the <request-target>
-    ** /issues/6099?issue_count=148 HTTP/1.1   -> "/issues/6099"
-    */
-    l_cp_start = l_cp_end;
-    for ( ; (*l_cp_start != '/') && l_len && l_buf_len; l_cp_start++, l_buf_len--);      /* Skip possible anti-DPI whitespaces to '/' */
-    l_cp_end = l_cp_start;
-    for ( ; (*l_cp_end != '?') && !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--); /* Run over <path> up to first <space> or '?' */
-
-    l_len = l_cp_end - l_cp_start;
-    a_http_client->url_path_len = dap_min(l_len, sizeof( a_http_client->url_path) - 1 );
-    memcpy( a_http_client->url_path, l_cp_start, a_http_client->url_path_len);
-    a_http_client->url_path[a_http_client->url_path_len] = '\0';            /* ASCIZ */
-
-
-    /* Extract <arguments> part of the <request-target>
-    ** issue_count=148 HTTP/1.1  -> "issue_count=148"
-    */
-    if ( *l_cp_end == '?' )
-    {
-        l_cp_end++;
-        l_cp_start = l_cp_end;
-        for ( ; !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--); /* Run over <arguments> up to first <space> */
-
-        l_len = l_cp_end - l_cp_start;
-        a_http_client->in_query_string_len = dap_min(l_len, sizeof( a_http_client->in_query_string) - 1 );
-        memcpy( a_http_client->in_query_string, l_cp_start, a_http_client->in_query_string_len);
-        a_http_client->in_query_string[a_http_client->in_query_string_len] = '\0';          /* ASCIZ */
+    const char *target = method_end + 1;
+    size_t remaining = n - (size_t)(target - a_buf);
+    const char *target_end = memchr(target, ' ', remaining);
+    /* This origin server routes origin-form targets, not proxy CONNECT or
+     * absolute-form URLs. Never search past junk for an embedded slash. */
+    if (!target_end || target_end == target || *target != '/') return -EINVAL;
+    size_t target_len = (size_t)(target_end - target);
+    for (size_t i = 0; i < target_len; ++i) {
+        unsigned char c = (unsigned char)target[i];
+        if (c <= 32 || c == 127 || c == '#') return -EINVAL;
     }
+    const char *version = target_end + 1;
+    if (n - (size_t)(version - a_buf) != 8 ||
+        (memcmp(version, "HTTP/1.1", 8) && memcmp(version, "HTTP/1.0", 8)))
+        return -EINVAL;
+    const char *query = memchr(target, '?', target_len);
+    size_t path_len = query ? (size_t)(query - target) : target_len;
+    size_t query_len = query ? (size_t)(target_end - query - 1) : 0;
+    if (path_len >= sizeof(a_http_client->url_path) ||
+        query_len >= sizeof(a_http_client->in_query_string)) return -EINVAL;
 
-
-    /* Extract HTTP version mark and check for :
-    ** HTTP/1.1
-    */
-    l_cp_start = l_cp_end;
-    for ( ; isspace(*l_cp_start) && l_buf_len; l_cp_start++, l_buf_len--);      /* Skip possible anti-DPI whitespaces */
-    if ( memcmp(l_cp_start, ht_ver, sizeof(ht_ver) -1) )
-        return  log_it(L_WARNING, "This ('%s') is not HTTP/1.x like start-line, so ...", l_cp_start), -EINVAL;
-
-    return  0;  /* SUCCESS */
+    /* Publish only fully validated fields; no truncated routing identity. */
+    memcpy(a_http_client->action, a_buf, method_len);
+    a_http_client->action[method_len] = '\0';
+    a_http_client->action_len = (uint32_t)method_len;
+    memcpy(a_http_client->url_path, target, path_len);
+    a_http_client->url_path[path_len] = '\0';
+    a_http_client->url_path_len = (uint32_t)path_len;
+    if (query_len) memcpy(a_http_client->in_query_string, query + 1, query_len);
+    a_http_client->in_query_string[query_len] = '\0';
+    a_http_client->in_query_string_len = (uint32_t)query_len;
+    a_http_client->http_version_11 = !memcmp(version, "HTTP/1.1", 8);
+    return 0;
 }
 
 /**
@@ -286,8 +289,10 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
  */
 static inline void s_report_error_and_restart( dap_events_socket_t *a_esocket, dap_http_client_t *a_http_client, uint16_t error_code )
 {
-    a_esocket->buf_in_size = 0;
+    dap_http_client_input_consume(a_http_client, dap_http_client_input_size(a_http_client));
     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
+    a_http_client->keep_alive = false;
+    a_http_client->out_connection_close = true;
     a_http_client->reply_status_code = error_code;
 #ifdef DAP_EVENTS_CAPS_IOCP
     a_esocket->flags &= ~DAP_SOCK_READY_TO_READ;
@@ -307,7 +312,6 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 {
     UNUSED(a_arg);
 
-    byte_t *l_peol;
     char *l_cp;
     int l_ret;
     size_t l_len = 0;
@@ -332,7 +336,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
     unsigned l_iter_count = 0;
     do{
         debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %zu",
-                                        l_http_client->state_read, a_esocket->buf_in_size );
+                                        l_http_client->state_read, dap_http_client_input_size(l_http_client) );
 
         switch( l_http_client->state_read )
         {
@@ -346,35 +350,37 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     }
                 }
 
-                if ( a_esocket->buf_in_size < HTTP$SZ_MINSTARTLINE )         /* Is the length of the start-line looks to be enough ? */
-                {
-                    log_it( L_ERROR, "Start-line '%.*s' is too short (%d < %d)",
-                            (int ) a_esocket->buf_in_size, a_esocket->buf_in, (int) a_esocket->buf_in_size , HTTP$SZ_MINSTARTLINE );
-                    s_report_error_and_restart( a_esocket, l_http_client,  Http_Status_BadRequest);
-                    break;
-                }
-
-                if ( (l_peol = memchr(a_esocket->buf_in, LF, a_esocket->buf_in_size)) ) /* Found LF ? */
-                    if ( *(l_peol - 1) != CR )                              /* Check CR at previous position */
-                        l_peol = NULL;
-
-                if ( !l_peol ) {
-                    log_it( L_ERROR, "Start-line with size %zu is not terminated by CRLF pair", a_esocket->buf_in_size);
+                l_ret = dap_http_line_read(dap_http_client_input_data(l_http_client), dap_http_client_input_size(l_http_client),
+                                           HTTP$SZ_HTLINE, &l_len);
+                if (!l_ret)
+                    return; /* TCP/TLS may split a line at any byte. */
+                if (l_ret < 0 || l_len < HTTP$SZ_MINSTARTLINE) {
+                    log_it(L_ERROR, "Malformed or oversized HTTP start-line");
                     s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
                     break;
                 }
-
-                l_peol++;                                                   /* Count terminal  <LF> */
-                l_len = l_peol - a_esocket->buf_in;                         /* <l_len> - actual data length of the HTTP's start-line  */
 
                                                                             /* Parse HTTP's start-line */
-                if ( 0 > s_http_start_line_parse(l_http_client, (char *) a_esocket->buf_in, l_len) ) {
-                    log_it( L_WARNING, "Error parsing request line '%.*s'", (int)l_len, a_esocket->buf_in );
+                if ( 0 > s_http_start_line_parse(l_http_client, (char *) dap_http_client_input_data(l_http_client), l_len) ) {
+                    log_it( L_WARNING, "Error parsing request line '%.*s'", (int)l_len, dap_http_client_input_data(l_http_client) );
                     s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
                     break;
                 }
 
-                dap_events_socket_shrink_buf_in( a_esocket, l_len);         /* Shrink input buffer over start-line */
+                /* A fresh request on a persistent connection owns a fresh
+                 * header budget and framing state. */
+                while (l_http_client->in_headers)
+                    dap_http_header_remove(&l_http_client->in_headers, l_http_client->in_headers);
+                l_http_client->in_header_bytes = l_http_client->in_header_count = 0;
+                l_http_client->in_connection_close = false;
+                l_http_client->in_content_length = 0;
+                l_http_client->in_content_type[0] = l_http_client->in_cookie[0] = '\0';
+                l_http_client->in_cookie_len = 0;
+                /* Persistence is the default only for HTTP/1.1. */
+                l_http_client->keep_alive = l_len >= 10 &&
+                    !memcmp(dap_http_client_input_data(l_http_client) + l_len - 10, "HTTP/1.1\r\n", 10);
+
+                dap_http_client_input_consume(l_http_client, l_len);
 
                 log_it( L_INFO, "Input: '%.*s' request for '%.*s' document (query string '%.*s')",
                         (int) l_http_client->action_len, l_http_client->action,
@@ -446,32 +452,20 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
             /* no break here just step to next phase */
 
             case DAP_HTTP_CLIENT_STATE_HEADERS: { // Parse input headers
-                if ( a_esocket->buf_in_size < 2 )                          /* 2 = CRLF pair */
-                    {
-                        log_it( L_ERROR, "HTTP Header field is too short (%d octets) to be useful", (int) a_esocket->buf_in_size);
-                        s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
-                        break;
-                    }
-
-                if ( (l_peol = memchr(a_esocket->buf_in, LF, a_esocket->buf_in_size)) ) /* Found LF ? */
-                    if ( *(l_peol - 1) != CR )                              /* Check CR at previous position */
-                        l_peol = NULL;
-
-                if ( !l_peol ) {
-                    if (HTTP$SZ_HTLINE > a_esocket->buf_in_size) {
-                        debug_if(s_debug_http, L_DEBUG, "May be incomplete request in buffer, wait another part");
-                        return;
-                    }
-                    log_it( L_ERROR, "Line with size %zu is not terminated by CRLF pair: %s", a_esocket->buf_in_size, a_esocket->buf_in);
+                l_ret = dap_http_line_read(dap_http_client_input_data(l_http_client), dap_http_client_input_size(l_http_client),
+                                           HTTP$SZ_HTLINE, &l_len);
+                if (!l_ret)
+                    return;
+                if (l_ret < 0) {
+                    log_it(L_ERROR, "Malformed or oversized HTTP header line");
                     s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
                     break;
                 }
 
-                l_peol++;                                                   /* Count terminal  <LF> */
-                l_len = l_peol - a_esocket->buf_in;
-
-                if ( 0 > (l_ret = dap_http_header_server_parse( l_http_client, (char *) a_esocket->buf_in, l_len )) ) {
-                    log_it( L_WARNING, "Input: not a valid header '%.*s'", (int)l_len, a_esocket->buf_in );
+                if ( 0 > (l_ret = dap_http_header_server_parse( l_http_client, (char *) dap_http_client_input_data(l_http_client), l_len )) ) {
+                    log_it( L_WARNING, "Input: not a valid header '%.*s'", (int)l_len, dap_http_client_input_data(l_http_client) );
+                    s_report_error_and_restart(a_esocket, l_http_client, Http_Status_BadRequest);
+                    break;
                 }else if ( l_ret == 1 ) {
                     log_it( L_INFO, "Input: HTTP headers are over" );
 
@@ -510,19 +504,37 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                            l_http_client->http ? l_http_client->http->server_name : "?");
 
                     if (!l_has_cache && l_hdr_cb) {
+                        /* Transfer only payload bytes to a protocol takeover.
+                         * Consume the final HTTP CRLF before invoking a handler
+                         * that may replace socket ownership/callbacks. */
+                        dap_http_client_input_consume(l_http_client, l_len);
+                        l_len = 0;
+                        void *previous_owner = a_esocket->_inheritor;
+                        void (*previous_read)(dap_events_socket_t *, void *) = a_esocket->callbacks.read_callback;
                         log_it(L_INFO, "HTTP calling headers_read cb=%p path='%s' query='%s' server='%s'",
                                (void *)l_hdr_cb, l_http_client->url_path,
                                l_http_client->in_query_string,
                                l_http_client->http ? l_http_client->http->server_name : "?");
                         l_hdr_cb(l_http_client, NULL);
+                        /* Do not dereference the old HTTP context after a
+                         * successful takeover. The new owner drains the tail. */
+                        if (a_esocket->_inheritor != previous_owner ||
+                            a_esocket->callbacks.read_callback != previous_read)
+                            return;
                     } else {
                         log_it(L_WARNING, "Skipping headers_read: cache=%d cb=%p path='%s' query='%s'",
                                l_has_cache, (void *)l_hdr_cb, l_http_client->url_path,
                                l_http_client->in_query_string);
                     }
 
+                    if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
+                        /* The route rejected the request (size/OOM/etc.). Do
+                         * not resurrect DATA or dispatch buffered body bytes. */
+                        dap_http_client_input_consume(l_http_client, dap_http_client_input_size(l_http_client));
+                        return;
+                    }
                     if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_DATA) {
-                        log_it(L_INFO, "HTTP: stream takeover detected, buf_in_size=%zu after headers", a_esocket->buf_in_size);
+                        log_it(L_INFO, "HTTP: stream takeover detected, buf_in_size=%zu after headers", dap_http_client_input_size(l_http_client));
                     } else if( l_http_client->in_content_length ) {
                         debug_if (s_debug_http, L_DEBUG, "headers -> DAP_HTTP_CLIENT_STATE_DATA" );
                         l_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
@@ -540,28 +552,40 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         dap_http_client_write(l_http_client);
                     }
                 }
-                dap_events_socket_shrink_buf_in(a_esocket, l_len);         /* Shrink input buffer over whole HTTP header */
+                dap_http_client_input_consume(l_http_client, l_len);
+                /* Final CRLF may already have been consumed before callback;
+                 * still process a coalesced body in this input turn. */
+                if (!l_len) l_len = 1;
             } break;
 
             case DAP_HTTP_CLIENT_STATE_DATA:{
                 log_it(L_INFO, "HTTP DATA: buf_in_size=%zu, has_data_read_cb=%d",
-                       a_esocket->buf_in_size,
+                       dap_http_client_input_size(l_http_client),
                        l_http_client->proc && l_http_client->proc->data_read_callback ? 1 : 0);
 
                 pthread_rwlock_rdlock(&l_http_client->proc->cache_rwlock);
                 if ( l_http_client->proc->cache == NULL && l_http_client->proc->data_read_callback ) {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
+                    l_len = 0;
                     l_http_client->proc->data_read_callback( l_http_client, &l_len );
                     log_it(L_INFO, "HTTP DATA: data_read_callback returned l_len=%zu", l_len);
-                    dap_events_socket_shrink_buf_in( a_esocket, l_len );
+                    if (l_len > dap_http_client_input_size(l_http_client)) {
+                        a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                        return;
+                    }
+                    dap_http_client_input_consume(l_http_client, l_len);
+                    /* One body dispatch per input turn. A completed request
+                     * may now belong to an asynchronous handler; do not invoke
+                     * it again on the next request's bytes in this loop. */
+                    return;
                 } else {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
-                    a_esocket->buf_in_size = 0;
+                    dap_http_client_input_consume(l_http_client, dap_http_client_input_size(l_http_client));
                     dap_http_client_write(l_http_client);
                 }
             } break;
             case DAP_HTTP_CLIENT_STATE_NONE: {
-                a_esocket->buf_in_size = 0;
+                dap_http_client_input_consume(l_http_client, dap_http_client_input_size(l_http_client));
             } break;
         } // switch
         if (++l_iter_count > 1000) {
@@ -569,7 +593,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
             s_report_error_and_restart( a_esocket, l_http_client, Http_Status_LoopDetected );
             break;
         }
-    } while (a_esocket->buf_in_size && l_len);
+    } while (dap_http_client_input_size(l_http_client) && l_len);
 }
 
 /**
@@ -577,38 +601,107 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
  * @param a_esocket HTTP Client instance's esocket
  * @param a_arg Additional argument (usualy not used)
  */
+/* Headers must be accepted in full before producing any body bytes. */
+static int s_http_flush_headers(dap_http_client_t *client)
+{
+    if (!client->pending_headers) return 1;
+    ssize_t n = dap_http_client_write_body(client,
+        client->pending_headers + client->pending_headers_offset,
+        client->pending_headers_size - client->pending_headers_offset);
+    if (n < 0) return -1;
+    client->pending_headers_offset += (size_t)n;
+    if (client->pending_headers_offset < client->pending_headers_size) return 0;
+    free(client->pending_headers);
+    client->pending_headers = NULL;
+    client->pending_headers_size = client->pending_headers_offset = 0;
+    return 1;
+}
+
 void dap_http_client_write(dap_http_client_t *a_http_client)
 {
+    if (a_http_client->pending_headers) {
+        if (s_http_flush_headers(a_http_client) == 0)
+            dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
+        return;
+    }
     if ( a_http_client->proc ) {
         // We check out_headers because if they are - we send only cached headers and don't call headers_write_callback at all
         if (!a_http_client->out_headers) {
             bool l_generate_default_headers = a_http_client->proc->headers_write_callback && a_http_client->state_read != DAP_HTTP_CLIENT_STATE_NONE ?
-                        !a_http_client->proc->headers_write_callback(a_http_client, a_http_client->esocket->callbacks.arg) : true;
+                        !a_http_client->proc->headers_write_callback(a_http_client, a_http_client->handler_arg) : true;
             if (l_generate_default_headers)
                 dap_http_client_out_header_generate( a_http_client );
         } else {
-            a_http_client->reply_status_code = Http_Status_OK; // Cached data are always OK... for now.
+            if (a_http_client->proc->cache && a_http_client->state_read != DAP_HTTP_CLIENT_STATE_NONE)
+                a_http_client->reply_status_code = Http_Status_OK;
             //TODO: make cached reply status code
         }
     }
     log_it( L_INFO," HTTP response with %u status code", a_http_client->reply_status_code );
-    a_http_client->esocket->buf_out_size += snprintf((char *) a_http_client->esocket->buf_out + a_http_client->esocket->buf_out_size,
-                                                         a_http_client->esocket->buf_out_size_max - a_http_client->esocket->buf_out_size,
-                    "HTTP/1.1 %u %s" CRLF,
-                    a_http_client->reply_status_code, a_http_client->reply_reason_phrase[0] ?
-                    a_http_client->reply_reason_phrase : http_status_reason_phrase(a_http_client->reply_status_code) );
+    char *serialized = malloc(DAP_HTTP_RESPONSE_HEADERS_MAX);
+    size_t used = 0;
+    if (!serialized) goto serialization_failed;
+    if (dap_http_response_append(serialized, DAP_HTTP_RESPONSE_HEADERS_MAX, &used,
+            "HTTP/1.1 %u %s" CRLF, a_http_client->reply_status_code,
+            a_http_client->reply_reason_phrase[0] ? a_http_client->reply_reason_phrase :
+            http_status_reason_phrase(a_http_client->reply_status_code))) goto serialization_failed;
     /* Write HTTP headres */
     char l_buf[DAP_TIME_STR_SIZE];
     dap_time_to_str_rfc822( l_buf, DAP_TIME_STR_SIZE, time( NULL ) );
-    dap_http_header_add( &a_http_client->out_headers, "Date", l_buf );
+    if (!dap_http_header_add( &a_http_client->out_headers, "Date", l_buf )) goto serialization_failed;
 
     for ( dap_http_header_t *hdr = a_http_client->out_headers; hdr; hdr = a_http_client->out_headers ) {
-        a_http_client->esocket->buf_out_size += snprintf((char *) a_http_client->esocket->buf_out + a_http_client->esocket->buf_out_size,
-                                                            a_http_client->esocket->buf_out_size_max - a_http_client->esocket->buf_out_size,
-                                                            "%s: %s" CRLF, hdr->name, hdr->value);
+        if (dap_http_response_append(serialized, DAP_HTTP_RESPONSE_HEADERS_MAX, &used,
+                                    "%s: %s" CRLF, hdr->name, hdr->value)) goto serialization_failed;
         dap_http_header_remove( &a_http_client->out_headers, hdr );
     }
-    dap_events_socket_write_unsafe(a_http_client->esocket, CRLF, 2); /* Add final CRLF - HTTP's End-Of-Header */
+    if (dap_http_response_append(serialized, DAP_HTTP_RESPONSE_HEADERS_MAX, &used, CRLF))
+        goto serialization_failed;
+    a_http_client->pending_headers = serialized;
+    a_http_client->pending_headers_size = used;
+    a_http_client->pending_headers_offset = 0;
+    if (s_http_flush_headers(a_http_client) == 0)
+        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
+    return;
+serialization_failed:
+    free(serialized);
+    a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+}
+
+ssize_t dap_http_client_write_body(dap_http_client_t *client, const void *data, size_t size)
+{
+    if (!client || !client->esocket || (!data && size)) return -1;
+    if (!size) return 0;
+    ssize_t accepted = client->output.write ?
+        dap_http_output_write(&client->output, data, size) :
+        (ssize_t)dap_events_socket_write_unsafe(client->esocket, data, size);
+    if (accepted < 0 || (size_t)accepted > size) {
+        client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return -1;
+    }
+    return accepted;
+}
+
+int dap_http_client_output_drained(dap_http_client_t *client)
+{
+    if (!client || !client->esocket) return -1;
+    if (client->pending_headers) return 0;
+    if (client->output.write) {
+        /* A custom sink must explicitly account for its own queues. */
+        if (!client->output.drained) return -1;
+        int rc = client->output.drained(client->output.arg);
+        return rc < 0 ? -1 : rc == 1 ? 1 : 0;
+    }
+    return client->esocket->buf_out_size == 0 ? 1 : 0;
+}
+
+void dap_http_client_write_finished(dap_events_socket_t *socket, void *arg)
+{
+    (void)arg; /* Transport owns socket callback arguments. */
+    dap_http_client_t *client = socket ? DAP_HTTP_CLIENT(socket) : NULL;
+    if (client && client->handler_write_finished)
+        client->handler_write_finished(socket, client->handler_arg);
+    /* Handler may have retired its owner; do not access client here. */
 }
 
 bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
@@ -617,6 +710,8 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
     if (!l_http_client)
         return false;
+    int headers = s_http_flush_headers(l_http_client);
+    if (headers <= 0) return headers == 0;
     if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
         // No write data if error code set
         a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
@@ -630,20 +725,20 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
         if (!l_http_client->proc->cache) {
             debug_if(s_debug_http, L_DEBUG, "No cache so we call write callback");
             pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
-            l_ret = l_http_client->proc->data_write_callback(l_http_client, a_arg);
+            l_ret = l_http_client->proc->data_write_callback(l_http_client, l_http_client->handler_arg);
         } else {
-            size_t l_sent = dap_events_socket_write_unsafe(a_esocket,
+            ssize_t l_sent = dap_http_client_write_body(l_http_client,
                                            l_http_client->proc->cache->body + l_http_client->out_cache_position,
                                            l_http_client->proc->cache->body_size-l_http_client->out_cache_position);
-            if (!l_sent || l_http_client->out_cache_position + l_sent >= l_http_client->proc->cache->body_size) { // All is sent
-                if (!l_sent)
-                    debug_if(s_debug_http, L_ERROR, "Can't send data to socket");
-                else
-                    debug_if(s_debug_http, L_DEBUG, "Out %"DAP_FORMAT_SOCKET" All cached data over, signal to close connection",
-                             a_esocket->socket);
+            if (l_sent < 0) {
                 a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
-            } else
-                l_http_client->out_cache_position += l_sent;
+            } else {
+                l_http_client->out_cache_position += (size_t)l_sent;
+                if (l_http_client->out_cache_position >= l_http_client->proc->cache->body_size)
+                    a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                else
+                    l_ret = true; /* Includes zero-byte backpressure. */
+            }
             pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
         }
     } else {

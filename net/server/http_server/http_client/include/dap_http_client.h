@@ -38,6 +38,9 @@ typedef void (*dap_http_client_callback_t) (struct dap_http_client *,void * arg)
 typedef bool (*dap_http_client_callback_write_t) (struct dap_http_client *a_client, void *a_arg); // Callback for write client operation
 typedef void (*dap_http_client_callback_error_t) (struct dap_http_client *,int); // Callback for specific client operations
 
+#include "dap_http_output.h"
+#include "dap_http_input.h"
+
 typedef struct dap_http_client
 {
     char action[32],                                                        /* HTTP method : GET, PUT and etc */
@@ -46,6 +49,9 @@ typedef struct dap_http_client
     uint32_t action_len, url_path_len, in_query_string_len;
 
     int     keep_alive;                                                     /* Connection: Keep-Alive */
+    bool in_connection_close;
+    bool http_version_11;
+    size_t in_header_bytes, in_header_count;
 
     dap_http_client_state_t state_read;
 
@@ -68,6 +74,13 @@ typedef struct dap_http_client
     size_t out_cache_position;
 
     dap_events_socket_t *esocket;
+    dap_http_output_t output; /* Optional body sink; NULL keeps legacy TCP. */
+    dap_http_input_t plaintext_input;
+    bool use_plaintext_input; /* Set by transport before the first HTTP read. */
+    void *handler_arg;
+    void (*handler_write_finished)(dap_events_socket_t *, void *);
+    char *pending_headers;
+    size_t pending_headers_size, pending_headers_offset;
     SOCKET socket_num;
     struct dap_http_server * http;
 
@@ -100,8 +113,13 @@ void dap_http_client_error( dap_events_socket_t * a_esocket,int a_arg ); // Proc
 void dap_http_client_out_header_generate( dap_http_client_t *a_http_client );
 
 void dap_http_client_write(dap_http_client_t *a_http_client);   // Start write event
+ssize_t dap_http_client_write_body(dap_http_client_t *client, const void *data, size_t size);
+int dap_http_client_output_drained(dap_http_client_t *client);
+const unsigned char *dap_http_client_input_data(const dap_http_client_t *client);
+size_t dap_http_client_input_size(const dap_http_client_t *client);
+int dap_http_client_input_consume(dap_http_client_t *client, size_t size);
+void dap_http_client_write_finished(dap_events_socket_t *socket, void *arg);
 
 #ifdef __cplusplus
 }
 #endif
-
