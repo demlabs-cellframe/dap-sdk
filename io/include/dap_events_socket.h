@@ -434,6 +434,12 @@ void dap_events_socket_set_pre_connect_callback(dap_events_socket_pre_connect_ca
 #endif
 /* Invoke mobile routing hook before the first send on an unconnected socket. */
 void dap_events_socket_prepare_uplink(dap_events_socket_t *a_es);
+/* External backend sockets: callback reports failure. Register before starting
+ * backend threads; callback/context must outlive all calls. Mobile fails when
+ * no checked hook is registered; desktop without a hook is a no-op. */
+typedef int (*dap_events_socket_uplink_check_t)(int a_fd, void *a_ctx);
+void dap_events_socket_set_uplink_check(dap_events_socket_uplink_check_t a_cb, void *a_ctx);
+int dap_events_socket_prepare_external_uplink(int a_fd);
 dap_events_socket_t * dap_events_socket_create_type_event_unsafe(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);
 dap_events_socket_t * dap_events_socket_create_type_event_mt(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);
 void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket);

@@ -161,9 +161,9 @@ static int s_parse_http_post(char *a_raw, size_t a_raw_len,
 /*  URL router — dispatches to appropriate handler                     */
 /* ------------------------------------------------------------------ */
 
-static int s_route_request(const char *a_url_path, const char *a_query,
+static int s_route_request_with_key(const char *a_url_path, const char *a_query,
                            const void *a_body, size_t a_body_len,
-                           char **a_response, size_t *a_response_len)
+                           char **a_response, size_t *a_response_len, const char *a_key_id)
 {
     *a_response = NULL;
     *a_response_len = 0;
@@ -176,6 +176,7 @@ static int s_route_request(const char *a_url_path, const char *a_query,
     l_req.body = a_body;
     l_req.body_len = a_body_len;
     l_req.status_code = 404;
+    l_req.key_id = a_key_id;
 
     int l_rc = -1;
 
@@ -209,6 +210,12 @@ static int s_route_request(const char *a_url_path, const char *a_query,
     }
 
     return l_rc;
+}
+
+static int s_route_request(const char *path, const char *query,
+                          const void *body, size_t size, char **reply, size_t *reply_size)
+{
+    return s_route_request_with_key(path, query, body, size, reply, reply_size, NULL);
 }
 
 /* ------------------------------------------------------------------ */

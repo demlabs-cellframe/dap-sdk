@@ -9,11 +9,28 @@ test = r'''
 #include <string.h>
 #include <openssl/ssl.h>
 #include <openssl/pem.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include "dap_tls.h"
 #include "dap_tls_reactor.h"
 #include "dap_tls13_channel.h"
 #include "dap_tls13_endpoint.h"
 static unsigned frames;
+static ssize_t tcp_send(void *arg,const void *data,size_t size) {
+ int fd=*(int*)arg;
+ ssize_t n=send(fd,data,size>37?37:size,0);
+ if(n<0 && (errno==EAGAIN || errno==EWOULDBLOCK)) return 0;
+ return n;
+}
+static void tcp_receive(int fd,dap_tls13_channel_t *channel) {
+ unsigned char data[113];
+ ssize_t n=recv(fd,data,sizeof(data),0);
+ if(n>0) assert(dap_tls13_channel_input(channel,data,(size_t)n)>=0);
+ else assert(n<0 && (errno==EAGAIN || errno==EWOULDBLOCK));
+}
 static int frame_received(void *arg,uint8_t type,const void *data,size_t size) {
  (void)arg; assert(type==DAP_TLS13_CTL_REPLY && size==12);
  assert(!memcmp(data,"opaque reply",12)); frames++; return 0;
@@ -41,6 +58,39 @@ int main(int argc,char **argv) {
  OPENSSL_free(der); X509_free(cert);
  char pin_hex[65];
  for(unsigned i=0;i<32;i++) sprintf(pin_hex+2*i,"%02x",pin[i]);
+ {
+   int listener=socket(AF_INET,SOCK_STREAM,0);assert(listener>=0);
+   struct sockaddr_in address={.sin_family=AF_INET,.sin_addr.s_addr=htonl(INADDR_LOOPBACK)};
+   assert(!bind(listener,(struct sockaddr*)&address,sizeof(address)));
+   assert(!listen(listener,1)); socklen_t length=sizeof(address);
+   assert(!getsockname(listener,(struct sockaddr*)&address,&length));
+   int client_fd=socket(AF_INET,SOCK_STREAM,0);assert(client_fd>=0);
+   assert(!connect(client_fd,(struct sockaddr*)&address,length));
+   int server_fd=accept(listener,NULL,NULL);assert(server_fd>=0);close(listener);
+   assert(!fcntl(client_fd,F_SETFL,O_NONBLOCK));
+   assert(!fcntl(server_fd,F_SETFL,O_NONBLOCK));
+   dap_tls13_endpoint_t client={0},server={0};
+   assert(!dap_tls13_endpoint_client(&client,pin_hex,NULL,tcp_send,&client_fd,frame_received,NULL));
+   assert(!dap_tls13_endpoint_server(&server,argv[1],argv[2],tcp_send,&server_fd,frame_received,NULL));
+   for(unsigned i=0;i<10000 && !(client.channel.tls.ready && server.channel.tls.ready);i++) {
+     assert(dap_tls13_channel_drive(&client.channel)>=0);
+     assert(dap_tls13_channel_drive(&server.channel)>=0);
+     tcp_receive(client_fd,&client.channel); tcp_receive(server_fd,&server.channel);
+     usleep(1000);
+   }
+   assert(client.channel.tls.ready && server.channel.tls.ready);
+   assert(!dap_tls13_channel_send(&client.channel,DAP_TLS13_CTL_REPLY,"opaque reply",12));
+   assert(!dap_tls13_channel_send(&server.channel,DAP_TLS13_CTL_REPLY,"opaque reply",12));
+   for(unsigned i=0;i<10000 && frames<2;i++) {
+     assert(dap_tls13_channel_drive(&client.channel)>=0);
+     assert(dap_tls13_channel_drive(&server.channel)>=0);
+     tcp_receive(client_fd,&client.channel); tcp_receive(server_fd,&server.channel);
+     usleep(1000);
+   }
+   assert(frames==2);frames=0;
+   dap_tls13_endpoint_clear(&client);dap_tls13_endpoint_clear(&server);
+   close(client_fd);close(server_fd);
+ }
  {
    dap_tls13_endpoint_t client={0},server={0};
    sink_t to_server={0},to_client={0};
@@ -168,4 +218,4 @@ with tempfile.TemporaryDirectory() as directory:
                     str(tmp/'test.c'),str(sdk/'crypto/tls/os/openssl/dap_tls_openssl.c'),
                     '-lssl','-lcrypto','-o',str(tmp/'test')],check=True)
     subprocess.run([str(tmp/'test'),str(tmp/'cert.pem'),str(tmp/'key.pem')],check=True)
-print('PASS: real TLS 1.3, fragmented BIO, correct/wrong SPKI, application data gated')
+print('PASS: real TLS 1.3 over nonblocking loopback TCP and memory BIO, framed bidirectional data, correct/wrong SPKI')

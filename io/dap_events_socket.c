@@ -123,6 +123,26 @@ void dap_events_socket_set_pre_connect_callback(dap_events_socket_pre_connect_ca
 // DATAGRAM PACKET QUEUE (for non-blocking sendto on UDP, SCTP, etc.)
 // =============================================================================
 
+static dap_events_socket_uplink_check_t s_uplink_check;
+static void *s_uplink_check_ctx;
+
+void dap_events_socket_set_uplink_check(dap_events_socket_uplink_check_t a_cb, void *a_ctx)
+{
+    s_uplink_check = a_cb;
+    s_uplink_check_ctx = a_ctx;
+}
+
+int dap_events_socket_prepare_external_uplink(int a_fd)
+{
+    if (a_fd < 0) return -1;
+    if (s_uplink_check) return s_uplink_check(a_fd, s_uplink_check_ctx);
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
+    return -1;
+#else
+    return 0;
+#endif
+}
+
 #define DAP_PACKET_QUEUE_INITIAL_CAPACITY 16
 #define DAP_PACKET_QUEUE_MAX_CAPACITY 4096  // Limit to prevent memory exhaustion
 

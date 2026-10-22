@@ -2,6 +2,10 @@
  * TLS13 has a dedicated listener and never auto-detects legacy mimicry. */
 #include "dap_tls13_connection.h"
 #include "dap_tls13_server_dispatch.h"
+#include "dap_enc_base64.h"
+#include "dap_enc_ks.h"
+#include <json-c/json.h>
+#include "dap_tls13_key_id.h"
 typedef struct tls13_listener {
     dap_server_t *server;
     char *cert, *key;
@@ -11,6 +15,7 @@ typedef struct tls13_peer {
     dap_tls13_server_dispatch_t dispatch;
     dap_events_socket_t *es;
     dap_stream_t *stream;
+    char key_id[DAP_ENC_KS_KEY_ID_SIZE + 1];
 } tls13_peer_t;
 
 static int s_tls13_send(void *arg, uint8_t type, const void *data, size_t size)
@@ -47,8 +52,16 @@ static int s_tls13_control(tls13_peer_t *p, bool enc, const void *data, size_t s
     int rc=s_parse_http_post((char *)data,size,&path,&query,&body,&body_size);
     const char *prefix=enc ? "/enc_init/" : "/stream_ctl/";
     if (rc || !path || strncmp(path,prefix,strlen(prefix))) { rc=-1; goto done; }
-    rc=s_route_request(path,query,body,body_size,(char **)out,out_size);
+    if (!enc && !p->key_id[0]) { rc=-1; goto done; }
+    rc=s_route_request_with_key(path,query,body,body_size,(char **)out,out_size,
+                               enc ? NULL : p->key_id);
     if (rc || !*out || !*out_size) { rc=-1; goto done; }
+    if (enc) {
+        /* Bind CTL to the key created by ENC on this TLS connection, never
+         * accept a client-provided key belonging to another connection. */
+        if(dap_tls13_key_id_from_reply(*out,*out_size,p->key_id) ||
+           !dap_enc_ks_find(p->key_id)) { rc=-1; goto done; }
+    }
     if (!enc) {
         char *reply=calloc(1,*out_size+1);
         if (!reply) { rc=-1; goto done; }

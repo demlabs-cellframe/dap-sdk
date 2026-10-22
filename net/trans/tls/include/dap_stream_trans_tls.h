@@ -47,6 +47,15 @@ int dap_stream_trans_tls_get_config(dap_net_trans_t *a_trans,
 
 bool dap_stream_trans_is_tls(const dap_stream_t *a_stream);
 
+/* Optional endpoint trust source (local config now, CDB later).
+ * Register before network workers start; callback/context outlive connections.
+ * Called on the connection worker; must not block or perform network I/O.
+ * Fill NUL-terminated SPKI hex (64 chars) and optional SNI into supplied buffers.
+ * Nonzero return rejects the endpoint; no fallback to another trust source. */
+typedef int (*dap_tls13_trust_provider_t)(const char *host, uint16_t port,
+    char *pin_hex, size_t pin_capacity, char *server_name, size_t name_capacity, void *arg);
+void dap_stream_trans_tls13_set_trust_provider(dap_tls13_trust_provider_t provider, void *arg);
+
 #ifdef __cplusplus
 }
 #endif

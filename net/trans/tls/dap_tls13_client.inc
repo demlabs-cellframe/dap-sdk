@@ -3,7 +3,7 @@
 #include "dap_tls13_client_state.h"
 #include "dap_client_trans_ctx.h"
 typedef struct tls13_client {
-    /* First member permits reuse of DAP request builders only. */
+    /* DAP request parameters; never cast the transport context to mimicry. */
     tls_mimicry_ctx_t dap;
     dap_tls13_connection_t connection;
     dap_tls13_client_state_t state;
@@ -79,22 +79,50 @@ static void s_tls13_client_close(dap_stream_t *stream)
 static int s_tls13_client_prepare(dap_net_trans_t *trans,const dap_net_stage_prepare_params_t *params,
                                  dap_net_stage_prepare_result_t *result)
 {
-    if (!params || !params->host || !g_config) return -1;
+    if (!params || !params->host || !result) return -1;
+    memset(result, 0, sizeof(*result));
+    result->error_code = -1;
     /* Endpoint-specific configuration; a pin is never inherited from another host. */
     char section[512];
     int n=snprintf(section,sizeof(section),"tls13:%s:%u",params->host,params->port);
     if (n<0 || (size_t)n>=sizeof(section)) return -1;
-    const char *pin=dap_config_get_item_str(g_config,section,"spki_sha256");
-    const char *sni=dap_config_get_item_str(g_config,section,"server_name");
+    char provided_pin[65] = {0}, provided_name[254] = {0};
+    const char *pin=NULL, *sni=NULL;
+    dap_client_t *client = params->client_ctx;
+    if (client && client->tls13_spki_sha256[0]) {
+        if (!memchr(client->tls13_spki_sha256,0,sizeof(client->tls13_spki_sha256)) ||
+            !memchr(client->tls13_server_name,0,sizeof(client->tls13_server_name))) return -1;
+        pin=client->tls13_spki_sha256;
+        sni=client->tls13_server_name[0] ? client->tls13_server_name : NULL;
+    } else if (s_tls13_trust_provider) {
+        if (s_tls13_trust_provider(params->host,params->port,
+                provided_pin,sizeof(provided_pin),provided_name,sizeof(provided_name),
+                s_tls13_trust_arg) ||
+            !memchr(provided_pin,0,sizeof(provided_pin)) ||
+            !memchr(provided_name,0,sizeof(provided_name))) return -1;
+        pin=provided_pin;
+        sni=provided_name[0] ? provided_name : NULL;
+    } else if (g_config) {
+        pin=dap_config_get_item_str(g_config,section,"spki_sha256");
+        sni=dap_config_get_item_str(g_config,section,"server_name");
+    } else return -1;
     uint8_t decoded[32];
     if (dap_tls13_pin_decode(pin,decoded)) return -1;
     tls13_client_t *c=calloc(1,sizeof(*c));
     if (!c) return -1;
     c->pin=dap_strdup(pin); c->sni=sni ? dap_strdup(sni) : NULL;
     if (!c->pin || (sni && !c->sni)) { free(c->pin); free(c->sni); free(c); return -1; }
+    /* dap_stream_new_es_client does not allocate trans_ctx. Supply a staging
+     * context before publishing transport_priv; FSM adopts it after prepare. */
+    dap_net_trans_ctx_t *staging=calloc(1,sizeof(*staging));
+    if (!staging) { free(c->pin); free(c->sni); free(c); return -1; }
     int rc=s_tls_stage_prepare(trans,params,result);
-    if (rc) { free(c->pin); free(c->sni); free(c); return rc; }
+    if (rc) { free(staging); free(c->pin); free(c->sni); free(c); return rc; }
     c->stream=result->stream;
+    staging->stream=c->stream;
+    staging->esocket=result->esocket;
+    staging->trans=trans;
+    c->stream->trans_ctx=staging;
     c->stream->trans_ctx->transport_priv=c;
     return 0;
 }
@@ -123,9 +151,16 @@ static int s_tls13_client_session(dap_stream_t *stream,dap_net_session_params_t 
                                  dap_net_trans_session_cb_t callback)
 {
     tls13_client_t *c=stream && stream->trans_ctx ? stream->trans_ctx->transport_priv : NULL;
-    if (!c || c->state.phase!=DAP_TLS13_ENC_DONE) return -1;
+    if (!c || !params || !callback || c->state.phase!=DAP_TLS13_ENC_DONE) return -1;
     c->state.phase=DAP_TLS13_WAIT_CTL;
-    return s_tls_session_create(stream,params,callback);
+    c->dap.session_create_cb=callback;
+    int rc=s_tls_send_session_request(stream,params);
+    if (rc) {
+        c->dap.session_create_cb=NULL;
+        c->state.phase=DAP_TLS13_CLOSED;
+        stream->esocket->flags|=DAP_SOCK_SIGNAL_CLOSE;
+    }
+    return rc;
 }
 static int s_tls13_client_start(dap_stream_t *stream,uint32_t session,dap_net_trans_ready_cb_t callback)
 {

@@ -47,6 +47,14 @@
 #include "dap_net_trans_tls_server.h"
 
 #define LOG_TAG "dap_stream_trans_tls"
+static dap_tls13_trust_provider_t s_tls13_trust_provider;
+static void *s_tls13_trust_arg;
+
+void dap_stream_trans_tls13_set_trust_provider(dap_tls13_trust_provider_t provider, void *arg)
+{
+    s_tls13_trust_provider = provider;
+    s_tls13_trust_arg = arg;
+}
 #include <json-c/json.h>
 #include "dap_tls_stream_buffer.h"
 
@@ -271,6 +279,7 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
 {
     UNUSED(a_trans);
     if (!a_params || !a_result) return -1;
+    memset(a_result, 0, sizeof(*a_result));
 
     dap_events_socket_callbacks_t *l_cbs = a_params->callbacks;
     // Resolve first and create a socket of the resolved family (IPv6/NAT64-safe)
@@ -306,6 +315,9 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
     if (l_err) {
         log_it(L_ERROR, "TLS Mimicry: TCP connect error: %d", l_err);
         a_result->error_code = l_err;
+        /* Not published to a worker yet. The caller still owns client_ctx
+         * and callbacks.arg on prepare failure. */
+        dap_events_socket_delete_unsafe(l_es, true);
         return -1;
     }
 #endif
@@ -322,6 +334,13 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
     if (!l_stream) {
         log_it(L_ERROR, "TLS Mimicry: failed to create stream");
         a_result->error_code = -1;
+        /* prepare failed: FSM still owns callbacks.arg/client_ctx. Retire
+         * the socket without notifying/deleting those owners a second time. */
+        memset(&l_es->callbacks, 0, sizeof(l_es->callbacks));
+        if (l_es->worker)
+            dap_events_socket_remove_and_delete_unsafe(l_es, true);
+        else
+            dap_events_socket_delete_unsafe(l_es, true);
         return -1;
     }
     l_stream->trans = a_trans;
@@ -925,10 +944,9 @@ static int s_tls_handshake_init(dap_stream_t *a_stream,
  * This is independent of the HTTP transport module — TLS has its own
  * internal HTTP server (created in dap_net_trans_tls_server.c).
  */
-static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t *a_params,
-                                dap_net_trans_session_cb_t a_callback)
+static int s_tls_send_session_request(dap_stream_t *a_stream, dap_net_session_params_t *a_params)
 {
-    if (!a_stream || !a_params || !a_callback) {
+    if (!a_stream || !a_params || !a_params->channels) {
         log_it(L_ERROR, "TLS session_create: invalid parameters");
         return -1;
     }
@@ -949,11 +967,16 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
     /* Build stream_ctl URL with channel parameters */
     char *l_suburl = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
                                         a_params->channels, a_params->enc_type,
-                                        a_params->enc_key_size, a_params->enc_headers ? 1 : 0);
+                                         a_params->enc_key_size, a_params->enc_headers ? 1 : 0);
+    if (!l_suburl) return -3;
 
     char l_stream_ctl_url[1024] = { '\0' };
-    snprintf(l_stream_ctl_url, sizeof(l_stream_ctl_url), "/%s/%s",
-             DAP_UPLINK_PATH_STREAM_CTL, l_suburl);
+    int l_url_size = snprintf(l_stream_ctl_url, sizeof(l_stream_ctl_url), "/%s/%s",
+              DAP_UPLINK_PATH_STREAM_CTL, l_suburl);
+    if (l_url_size < 0 || (size_t)l_url_size >= sizeof(l_stream_ctl_url)) {
+        DAP_DELETE(l_suburl);
+        return -3;
+    }
 
     debug_if(s_debug_more, L_DEBUG, "TLS session_create: sending stream_ctl via TLS channel: %s",
            l_stream_ctl_url);
@@ -987,16 +1010,33 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
      * Server's internal HTTP server processes after TLS unwrap. */
     ssize_t l_sent = dap_stream_trans_write_unsafe(a_stream, l_http_post, (size_t)l_http_post_size);
 
-    if (l_sent < 0) {
+    if (l_sent != l_http_post_size) {
         log_it(L_ERROR, "TLS session_create: failed to send stream_ctl via TLS");
         return -3;
+    }
+
+    return 0;
+}
+
+static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t *a_params,
+                                 dap_net_trans_session_cb_t a_callback)
+{
+    if (!a_stream || !a_stream->trans_ctx || !a_callback) return -1;
+    tls_mimicry_ctx_t *l_ctx = a_stream->trans_ctx->transport_priv;
+    if (!l_ctx) return -1;
+    l_ctx->session_create_cb = a_callback;
+    l_ctx->phase = TLS_PHASE_STREAM_CTL_WAIT;
+    int rc = s_tls_send_session_request(a_stream, a_params);
+    if (rc) {
+        l_ctx->session_create_cb = NULL;
+        if (a_stream->esocket) a_stream->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return rc;
     }
 
     /* Store callback and advance the phase to STREAM_CTL_WAIT. The single
      * read callback s_tls_read_cb already installed on the esocket will route
      * the next unwrapped record to session_create_cb. No callback swap → no
      * race even if the server reply is already in buf_in. */
-    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
     if (l_ctx) {
         l_ctx->session_create_cb = a_callback;
         l_ctx->phase = TLS_PHASE_STREAM_CTL_WAIT;
@@ -1004,7 +1044,7 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
             dap_events_socket_set_readable_unsafe(a_stream->esocket, true);
     }
 
-    log_it(L_NOTICE, "TLS session_create: stream_ctl sent (%zd bytes), awaiting response", l_sent);
+    log_it(L_NOTICE, "TLS session_create: stream_ctl sent, awaiting response");
     return 0;
 }
 
