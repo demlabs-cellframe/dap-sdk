@@ -36,7 +36,7 @@ static inline int dap_http_input_append(dap_http_input_t *input, const void *dat
         while (capacity < needed) {
             capacity = capacity > input->limit / 2 ? input->limit : capacity * 2;
         }
-        unsigned char *new_data = realloc(input->data, capacity);
+        unsigned char *new_data = (unsigned char *)realloc(input->data, capacity);
         if (!new_data) return -1;
         input->data = new_data;
         input->capacity = capacity;

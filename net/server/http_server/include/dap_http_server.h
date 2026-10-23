@@ -53,6 +53,12 @@ typedef struct dap_http_url_proc{
 
     dap_http_client_callback_t access_callback;
 
+    /* Explicit opt-in for layered plaintext transports. The route must use
+     * HTTP input/output APIs, preserve socket callbacks/owner, and manage
+     * asynchronous lifetime without dereferencing a retired socket. Set at
+     * registration time, before the listener accepts connections. */
+    bool layered_io_safe;
+
     void *_inheritor; // Internal data specific to the current URL processor
     UT_hash_handle hh; // makes this structure hashable with UTHASH library
 } dap_http_url_proc_t;

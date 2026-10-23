@@ -29,6 +29,7 @@ target_include_directories(dap_trans_tls PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(dap_trans_tls PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
 
 if(DAP_TLS13_OPENSSL)
+    target_sources(dap_trans_tls PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dap_https_probe.c")
     if(NOT TARGET dap_crypto_tls)
         message(FATAL_ERROR "TLS13 requires BUILD_WITH_TLS=ON and DAP_TLS_BACKEND=openssl")
     endif()

@@ -77,6 +77,13 @@ typedef struct dap_http_client
     dap_http_output_t output; /* Optional body sink; NULL keeps legacy TCP. */
     dap_http_input_t plaintext_input;
     bool use_plaintext_input; /* Set by transport before the first HTTP read. */
+    bool input_paused; /* An asynchronous route owns the current request. */
+    bool async_request_owned; /* Worker owns HTTP data until owner completion. */
+    bool response_pending;
+    bool response_production_done;
+    bool output_close_requested; /* Graceful application close for layered transports. */
+    void (*input_resume_notify)(void *); /* Schedule, never synchronously reenter reader. */
+    void *input_resume_arg;
     void *handler_arg;
     void (*handler_write_finished)(dap_events_socket_t *, void *);
     char *pending_headers;
@@ -118,6 +125,14 @@ int dap_http_client_output_drained(dap_http_client_t *client);
 const unsigned char *dap_http_client_input_data(const dap_http_client_t *client);
 size_t dap_http_client_input_size(const dap_http_client_t *client);
 int dap_http_client_input_consume(dap_http_client_t *client, size_t size);
+/* Configure before first input, on the socket owner worker. The transport
+ * owns TLS callbacks; only ordinary HTTP routes are allowed in this mode. */
+int dap_http_client_enable_plaintext(dap_http_client_t *client, size_t limit,
+                                     dap_http_output_t output);
+int dap_http_client_feed_plaintext(dap_http_client_t *client, const void *data, size_t size);
+void dap_http_client_pause_input(dap_http_client_t *client);
+void dap_http_client_resume_input(dap_http_client_t *client);
+void dap_http_client_request_close(dap_http_client_t *client);
 void dap_http_client_write_finished(dap_events_socket_t *socket, void *arg);
 
 #ifdef __cplusplus

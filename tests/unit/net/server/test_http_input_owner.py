@@ -15,7 +15,7 @@ typedef struct {bool use_plaintext_input;dap_http_input_t plaintext_input;socket
 static void dap_events_socket_shrink_buf_in(socket_t *s,size_t n) {
     s->buf_in_size-=n;memmove(s->buf_in,s->buf_in+n,s->buf_in_size);
 }
-''' + text[start:text.index('\nstatic char  *z_basename',start)] + r'''
+''' + text[start:text.index('\nint dap_http_client_enable_plaintext',start)] + r'''
 int main(void) {
     unsigned char wire[]="ciphertext";
     socket_t socket={wire,10};dap_http_client_t c={.esocket=&socket};

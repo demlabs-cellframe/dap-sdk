@@ -57,6 +57,7 @@ typedef struct dap_server {
     void *_inheritor;
     bool ext_log;
     atomic_int ref_count;
+    dap_server_callback_t final_callback; /* Last socket reference released; not stop notification. */
 } dap_server_t;
 
 int dap_server_init( ); // Init server module
@@ -79,6 +80,8 @@ static inline void dap_server_ref(dap_server_t *a_server) {
 }
 
 static inline void dap_server_unref(dap_server_t *a_server) {
-    if (a_server && atomic_fetch_sub(&a_server->ref_count, 1) == 1)
+    if (a_server && atomic_fetch_sub(&a_server->ref_count, 1) == 1) {
+        if (a_server->final_callback) a_server->final_callback(a_server, NULL);
         DAP_DELETE(a_server);
+    }
 }

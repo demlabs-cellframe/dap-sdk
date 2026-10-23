@@ -76,6 +76,7 @@ void dap_tls_session_set_nonblocking(dap_tls_session_t *a_session,
                                        bool a_nonblocking);
 /* OpenSSL memory BIO adapter for SDK-owned nonblocking sockets. */
 int dap_tls_openssl_session_set_memory_io(dap_tls_session_t *a_session);
+int dap_tls_openssl_context_http1_server(dap_tls_context_t *context);
 ssize_t dap_tls_openssl_session_feed(dap_tls_session_t *a_session,
                                     const void *a_data, size_t a_size);
 ssize_t dap_tls_openssl_session_drain(dap_tls_session_t *a_session,

@@ -85,6 +85,10 @@ void dap_http_client_new( dap_events_socket_t *a_esocket, void *a_arg )
     a_esocket->_inheritor = DAP_NEW_Z( dap_http_client_t );
 
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
+    if (!l_http_client) {
+        a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return;
+    }
     l_http_client->esocket = a_esocket;
     l_http_client->http = a_esocket->server ? DAP_HTTP_SERVER( a_esocket->server ) : NULL;
     l_http_client->keep_alive = true;  /* HTTP/1.1 default — overridden by Connection header */
@@ -110,6 +114,13 @@ void dap_http_client_delete( dap_events_socket_t * a_esocket, void *a_arg )
 
     if ( !(l_http_client = DAP_HTTP_CLIENT( a_esocket )) )
         return;                                                             /* Client is in proc callback in another thread so we don't delete it */
+
+    if (l_http_client->async_request_owned) {
+        /* Completion resolves socket UUID and frees detached request data.
+         * Do not release headers/body while the pool callback reads them. */
+        a_esocket->_inheritor = NULL;
+        return;
+    }
 
     while( l_http_client->in_headers )
         dap_http_header_remove( &l_http_client->in_headers, l_http_client->in_headers );
@@ -152,6 +163,66 @@ int dap_http_client_input_consume(dap_http_client_t *client, size_t size)
     if (!client->esocket) return -1;
     dap_events_socket_shrink_buf_in(client->esocket, size);
     return 0;
+}
+
+int dap_http_client_enable_plaintext(dap_http_client_t *client, size_t limit,
+                                     dap_http_output_t output)
+{
+    if (!client || !client->esocket || client->use_plaintext_input ||
+        client->state_read != DAP_HTTP_CLIENT_STATE_START ||
+        client->in_header_bytes || client->pending_headers ||
+        !output.write || !output.drained) return -1;
+    if (dap_http_input_init(&client->plaintext_input, limit)) return -1;
+    client->output = output;
+    client->use_plaintext_input = true;
+    return 0;
+}
+
+int dap_http_client_feed_plaintext(dap_http_client_t *client, const void *data, size_t size)
+{
+    if (!client || !client->esocket || !client->use_plaintext_input ||
+        client->esocket->_inheritor != client ||
+        (client->esocket->flags & DAP_SOCK_SIGNAL_CLOSE)) return -1;
+    if (dap_http_input_append(&client->plaintext_input, data, size)) return -1;
+    if (client->input_paused) return 0;
+    dap_events_socket_t *socket = client->esocket;
+    dap_http_client_read(socket, NULL);
+    return (socket->flags & DAP_SOCK_SIGNAL_CLOSE) ? -1 : 0;
+}
+
+void dap_http_client_request_close(dap_http_client_t *client)
+{
+    if (!client || !client->esocket) return;
+    if (!client->use_plaintext_input) {
+        client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return;
+    }
+    client->output_close_requested = true;
+    client->input_paused = true;
+    if (client->input_resume_notify)
+        client->input_resume_notify(client->input_resume_arg);
+}
+
+void dap_http_client_pause_input(dap_http_client_t *client)
+{
+    if (!client) return;
+    client->input_paused = true;
+    /* TLS must continue receiving records/alerts; pause application dispatch,
+     * not ciphertext I/O. TCP routes can suspend their socket reads. */
+    if (!client->use_plaintext_input && client->esocket)
+        dap_events_socket_set_readable_unsafe(client->esocket, false);
+}
+
+void dap_http_client_resume_input(dap_http_client_t *client)
+{
+    if (!client) return;
+    client->input_paused = false;
+    if (client->use_plaintext_input) {
+        if (client->plaintext_input.size && client->input_resume_notify)
+            client->input_resume_notify(client->input_resume_arg);
+    } else if (client->esocket) {
+        dap_events_socket_set_readable_unsafe(client->esocket, true);
+    }
 }
 
 static char  *z_basename( char *path, uint32_t len )
@@ -323,6 +394,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
         return;
     }
     dap_http_url_proc_t *url_proc = NULL;
+    if (l_http_client->input_paused) return;
     dap_http_cache_t * l_http_cache;
 
     /*
@@ -413,6 +485,12 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 l_cp = z_basename( l_http_client->url_path, l_http_client->url_path_len );
                 memmove( l_http_client->url_path, l_cp, strlen(l_cp) + 1 );
                                                                             /* url_path = 'target' */
+                if (l_http_client->use_plaintext_input && url_proc && !url_proc->layered_io_safe) {
+                    /* Constructor/write callbacks must not run either. */
+                    l_http_client->proc = NULL;
+                    s_report_error_and_restart(a_esocket, l_http_client, 404);
+                    return;
+                }
                 if ( !url_proc )
                 {
                     log_it( L_WARNING, "Input: unprocessed URL request %s is rejected", l_http_client->url_path );
@@ -476,6 +554,13 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         break;
                     }
 
+                    /* Validate before access/header handlers can touch the
+                     * transport. Existing routes are TCP-only until audited. */
+                    if (l_http_client->use_plaintext_input && !l_http_client->proc->layered_io_safe) {
+                        s_report_error_and_restart(a_esocket, l_http_client, 404);
+                        return;
+                    }
+
                     if ( l_http_client->proc->access_callback )
                     {
                         int isOk = true;
@@ -504,6 +589,15 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                            l_http_client->http ? l_http_client->http->server_name : "?");
 
                     if (!l_has_cache && l_hdr_cb) {
+                        /* Legacy stream routes replace transport callbacks.
+                         * A TLS owner must keep them until a layered WS adapter
+                         * is installed; reject instead of leaking plaintext. */
+                        if (l_http_client->use_plaintext_input &&
+                            (dap_http_header_find(l_http_client->in_headers, "Upgrade") ||
+                             !strcmp(l_http_client->proc->url, "/stream"))) {
+                            s_report_error_and_restart(a_esocket, l_http_client, 400);
+                            return;
+                        }
                         /* Transfer only payload bytes to a protocol takeover.
                          * Consume the final HTTP CRLF before invoking a handler
                          * that may replace socket ownership/callbacks. */
@@ -540,7 +634,9 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         l_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
                     } else if (l_http_client->proc->cache) {
                         dap_http_client_write(l_http_client);
-                    } else if (a_esocket->buf_out_size == 0) {
+                    } else if (!l_http_client->input_paused &&
+                               !l_http_client->response_pending &&
+                               a_esocket->buf_out_size == 0) {
                         /* Bodyless request produced no reply (headers_read skipped
                          * or returned without write). Never silent-drop: GET /stream
                          * then hung until client timeout (~half of sessions on busy
@@ -553,6 +649,9 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     }
                 }
                 dap_http_client_input_consume(l_http_client, l_len);
+                /* A route can hand a bodyless request to its async worker.
+                 * Leave the next request's bytes untouched until completion. */
+                if (l_http_client->input_paused) return;
                 /* Final CRLF may already have been consumed before callback;
                  * still process a coalesced body in this input turn. */
                 if (!l_len) l_len = 1;
@@ -619,6 +718,8 @@ static int s_http_flush_headers(dap_http_client_t *client)
 
 void dap_http_client_write(dap_http_client_t *a_http_client)
 {
+    a_http_client->response_pending = true;
+    a_http_client->response_production_done = false;
     if (a_http_client->pending_headers) {
         if (s_http_flush_headers(a_http_client) == 0)
             dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
@@ -662,6 +763,8 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
     a_http_client->pending_headers_offset = 0;
     if (s_http_flush_headers(a_http_client) == 0)
         dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
+    if (a_http_client->use_plaintext_input && a_http_client->input_resume_notify)
+        a_http_client->input_resume_notify(a_http_client->input_resume_arg);
     return;
 serialization_failed:
     free(serialized);
@@ -714,7 +817,7 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
     if (headers <= 0) return headers == 0;
     if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
         // No write data if error code set
-        a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        dap_http_client_request_close(l_http_client);
         return false;
     }
     bool l_ret = false;
@@ -735,7 +838,7 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
             } else {
                 l_http_client->out_cache_position += (size_t)l_sent;
                 if (l_http_client->out_cache_position >= l_http_client->proc->cache->body_size)
-                    a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                    dap_http_client_request_close(l_http_client);
                 else
                     l_ret = true; /* Includes zero-byte backpressure. */
             }
@@ -743,7 +846,7 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
         }
     } else {
         log_it(L_WARNING, "No http proc, nothing to write");
-        a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        dap_http_client_request_close(l_http_client);
     }
     return l_ret;
 }

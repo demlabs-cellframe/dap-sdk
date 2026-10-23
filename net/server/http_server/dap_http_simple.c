@@ -280,9 +280,11 @@ static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
     if (!drained) return; /* Sink owner resumes completion after progress. */
+    client->response_pending = false;
+    client->response_production_done = false;
     if (l_http_simple && l_http_simple->close_after_write) {
         log_it(L_INFO, "All HTTP data transmitted, closing connection");
-        a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        dap_http_client_request_close(client);
     } else {
         dap_http_client_t *l_http_client = l_http_simple ? l_http_simple->http_client : NULL;
         if (l_http_client) {
@@ -291,7 +293,7 @@ static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
             l_http_simple->reply_size = 0;
             l_http_simple->reply_sent = 0;
             l_http_simple->close_after_write = false;
-            dap_events_socket_set_readable_unsafe(a_es, true);
+            dap_http_client_resume_input(l_http_client);
             if (a_es->buf_in_size && a_es->callbacks.read_callback == dap_http_client_read) {
                 dap_events_socket_uuid_t *uuid = malloc(sizeof(*uuid));
                 if (!uuid || !a_es->worker) {
@@ -309,12 +311,21 @@ static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
 static void s_esocket_worker_write_callback(void *a_arg)
 {
     dap_http_simple_t *l_http_simple = (dap_http_simple_t*)a_arg;
+    if (!l_http_simple || !l_http_simple->http_client) return;
     dap_worker_t *l_worker = dap_worker_get_current();
     if (!l_worker) {
         log_it(L_ERROR, "l_worker is NULL");
         return;
     }
     dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_http_simple->esocket_uuid);
+    l_http_simple->http_client->async_request_owned = false;
+    if (l_es && l_es->_inheritor != l_http_simple->http_client) {
+        /* Unexpected takeover while a route owns the request. Do not overwrite
+         * or free state whose ownership now needs the transport's cleanup. */
+        log_it(L_ERROR, "HTTP completion found a different socket owner");
+        l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return;
+    }
     if (!l_es) {
         debug_if(g_debug_reactor, L_INFO, "Esocket 0x%"DAP_UINT64_FORMAT_x" is already deleted", l_http_simple->esocket_uuid);
         dap_http_client_t *l_http_client = l_http_simple->http_client;
@@ -323,19 +334,24 @@ static void s_esocket_worker_write_callback(void *a_arg)
                 dap_http_header_remove(&l_http_client->in_headers, l_http_client->in_headers);
             while (l_http_client->out_headers)
                 dap_http_header_remove(&l_http_client->out_headers, l_http_client->out_headers);
+            DAP_DEL_Z(l_http_client->pending_headers);
+            dap_http_input_clear(&l_http_client->plaintext_input);
             DAP_DELETE(l_http_client);
         }
         DAP_DEL_Z(l_http_simple->request);
         DAP_DEL_Z(l_http_simple->reply);
+        while (l_http_simple->ext_headers)
+            dap_http_header_remove(&l_http_simple->ext_headers, l_http_simple->ext_headers);
         DAP_DELETE(l_http_simple);
         return;
     }
-    l_es->_inheritor = l_http_simple->http_client; // Back to the owner
     dap_http_client_write(l_http_simple->http_client);
 }
 
 inline static void s_write_data_to_socket(dap_http_simple_t *a_simple)
 {
+    /* Called from both pool and owner threads: ownership was acquired on
+     * the owner before submit/scheduling. Never mutate HTTP state here. */
     dap_worker_exec_callback_on(dap_events_worker_get(a_simple->worker->id), s_esocket_worker_write_callback, a_simple);
 }
 
@@ -441,7 +457,11 @@ static void *s_proc_pool_task(void *a_arg)
     }
     if (!l_http_simple->reply_byte) {
         log_it(L_ERROR, "[!] HTTP client is corrupted!");
-        return NULL;
+        l_http_simple->http_client->reply_status_code = Http_Status_ServiceUnavailable;
+        l_http_simple->http_client->out_content_length = 0;
+        l_http_simple->http_client->keep_alive = false;
+        l_http_simple->http_client->out_connection_close = true;
+        return l_http_simple; /* Owner completion must still release the request. */
     }
     http_status_code_t return_code = (http_status_code_t)0;
 
@@ -546,7 +566,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
         a_http_client->keep_alive = false;
         a_http_client->out_connection_close = true;
         a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        dap_http_client_pause_input(a_http_client);
         dap_http_client_write(a_http_client);
         return;
     }
@@ -562,7 +582,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
                 a_http_client->keep_alive = false;
                 a_http_client->out_connection_close = true;
                 a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
-                dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+                dap_http_client_pause_input(a_http_client);
                 dap_http_client_write(a_http_client);
                 return;
             }
@@ -571,13 +591,15 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
             log_it(L_ERROR, "Not defined content-length %zu in request", a_http_client->in_content_length);
     } else {
         log_it( L_DEBUG, "No data section, execution proc callback" );
+        dap_http_client_pause_input(a_http_client);
         if (!s_http_proc_pool) {
             log_it(L_WARNING, "HTTP proc pool not initialized yet, rejecting request");
+            a_http_client->async_request_owned = true;
             s_write_response_busy(l_http_simple);
             s_write_data_to_socket(l_http_simple);
             return;
         }
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        a_http_client->async_request_owned = true;
         int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
         if (l_submit_rc != 0) {
             log_it(L_ERROR, "HTTP proc pool submit failed (rc=%d), sending 503", l_submit_rc);
@@ -619,7 +641,7 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
             byte_t *l_req_new = DAP_REALLOC((byte_t*)l_http_simple->request, l_http_simple->request_size_max);
             if (!l_req_new) {
                 log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-                dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+                dap_http_client_pause_input(a_http_client);
                 return;
             }
             l_http_simple->request = l_req_new;
@@ -632,10 +654,12 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
     }
     *ret = bytes_to_read;
     if( l_http_simple->request_size >= a_http_client->in_content_length ) {
+        dap_http_client_pause_input(a_http_client);
 
         log_it( L_INFO,"Data for http_simple_request collected" );
         if (!s_http_proc_pool) {
             log_it(L_WARNING, "HTTP proc pool not ready, processing request synchronously");
+            a_http_client->async_request_owned = true;
             /* Process directly without thread pool — used during server startup */
             http_status_code_t return_code = (http_status_code_t)0;
             dap_http_simple_url_proc_t *l_url_proc = DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc);
@@ -649,7 +673,8 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
             s_write_data_to_socket(l_http_simple);
             return;
         }
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        dap_http_client_pause_input(a_http_client);
+        a_http_client->async_request_owned = true;
         int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
         if (l_submit_rc != 0) {
             log_it(L_ERROR, "HTTP proc pool submit failed (rc=%d), sending 503", l_submit_rc);

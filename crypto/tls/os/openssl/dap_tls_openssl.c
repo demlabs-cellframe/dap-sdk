@@ -184,6 +184,29 @@ int dap_tls_context_load_ca(dap_tls_context_t *a_ctx,
     return 0;
 }
 
+static int s_http1_alpn(SSL *ssl, const unsigned char **out, unsigned char *outlen,
+    const unsigned char *in, unsigned int inlen, void *arg)
+{
+    (void)ssl; (void)arg;
+    for (unsigned int i = 0; i < inlen;) {
+        unsigned int len = in[i++];
+        if (!len || len > inlen - i) return SSL_TLSEXT_ERR_ALERT_FATAL;
+        if (len == 8 && !memcmp(in + i, "http/1.1", 8)) {
+            *out = in + i; *outlen = 8;
+            return SSL_TLSEXT_ERR_OK;
+        }
+        i += len;
+    }
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
+}
+
+int dap_tls_openssl_context_http1_server(dap_tls_context_t *context)
+{
+    if (!context || !context->ssl_ctx) return -1;
+    SSL_CTX_set_alpn_select_cb(context->ssl_ctx, s_http1_alpn, NULL);
+    return 0;
+}
+
 int dap_tls_context_set_alpn(dap_tls_context_t *a_ctx,
                               const uint8_t *a_protos, uint32_t a_protos_len)
 {

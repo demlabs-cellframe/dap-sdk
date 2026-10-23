@@ -62,12 +62,11 @@ fail:
     return -1;
 }
 
-static int dap_tls13_endpoint_server(dap_tls13_endpoint_t *e, const char *cert,
-                                    const char *key, dap_tls_wire_send_fn send,
-                                    void *send_arg, dap_tls13_frame_callback_t dispatch,
-                                    void *dispatch_arg)
+static int dap_tls13_endpoint_server_init(dap_tls13_endpoint_t *e, const char *cert,
+                                     const char *key, dap_tls_wire_send_fn send,
+                                     void *send_arg)
 {
-    if (!e || e->context || e->channel.tls.session || !cert || !key || !send || !dispatch) return -1;
+    if (!e || e->context || e->channel.tls.session || !cert || !key || !send) return -1;
     e->context = dap_tls_context_new_server(cert, key);
     if (!e->context || dap_tls_context_set_min_version(e->context, 0x0304)) goto fail;
     e->channel.tls.session = dap_tls_session_new(e->context);
@@ -75,11 +74,30 @@ static int dap_tls13_endpoint_server(dap_tls13_endpoint_t *e, const char *cert,
     e->channel.tls.server = true;
     e->channel.tls.send = send;
     e->channel.tls.send_arg = send_arg;
-    e->channel.dispatch = dispatch;
-    e->channel.dispatch_arg = dispatch_arg;
     return 0;
 fail:
     dap_tls13_endpoint_clear(e);
     return -1;
+}
+
+static int dap_tls13_endpoint_server(dap_tls13_endpoint_t *e, const char *cert,
+    const char *key, dap_tls_wire_send_fn send, void *send_arg,
+    dap_tls13_frame_callback_t dispatch, void *dispatch_arg)
+{
+    if (!dispatch || dap_tls13_endpoint_server_init(e, cert, key, send, send_arg)) return -1;
+    e->channel.dispatch = dispatch;
+    e->channel.dispatch_arg = dispatch_arg;
+    return 0;
+}
+
+static int dap_tls13_endpoint_server_plain(dap_tls13_endpoint_t *e, const char *cert,
+    const char *key, dap_tls_wire_send_fn send, void *send_arg,
+    dap_tls_plain_input_fn input, dap_tls_plain_eof_fn eof, void *arg)
+{
+    if (!input || dap_tls13_endpoint_server_init(e, cert, key, send, send_arg)) return -1;
+    e->channel.plain_input = input;
+    e->channel.plain_eof = eof;
+    e->channel.plain_arg = arg;
+    return 0;
 }
 #endif

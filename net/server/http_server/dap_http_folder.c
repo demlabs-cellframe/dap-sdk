@@ -279,7 +279,7 @@ bool dap_http_folder_data_write(dap_http_client_t * cl_ht, void * arg)
     if (feof(cl_ht_file->fd)) {
         fclose(cl_ht_file->fd);
         cl_ht_file->fd = NULL;
-        if (!cl_ht->keep_alive) cl_ht->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        if (!cl_ht->keep_alive) dap_http_client_request_close(cl_ht);
         return false;
     }
     return true;

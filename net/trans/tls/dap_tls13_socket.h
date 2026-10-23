@@ -15,6 +15,11 @@ typedef struct dap_tls13_socket {
     void *ready_arg;
     bool ready_notified;
     bool continuation_pending;
+    bool application_owns_shutdown; /* Layered protocols may still owe an async reply. */
+    /* Borrowed owner hook; must not synchronously destroy/unbind the socket.
+     * Return negative for terminal failure. Called after TLS I/O progress. */
+    int (*application_progress)(void *);
+    void *application_arg;
     void *previous_arg;
     void (*previous_read)(dap_events_socket_t *, void *);
     bool (*previous_write)(dap_events_socket_t *, void *);
@@ -71,6 +76,21 @@ static void dap_tls13_socket_continue(void *arg)
     dap_tls13_socket_drive(s);
 }
 
+/* Owner-worker scheduling for buffered application input, independent of new
+ * TCP arrivals. Coalesces requests with TLS read-budget continuations. */
+static int dap_tls13_socket_schedule(dap_tls13_socket_t *s)
+{
+    if (!s || !s->socket || !s->socket->worker ||
+        (s->socket->flags & DAP_SOCK_SIGNAL_CLOSE)) return -1;
+    if (s->continuation_pending) return 0;
+    dap_tls13_continuation_t *request = malloc(sizeof(*request));
+    if (!request) return -1;
+    request->uuid = s->socket->uuid;
+    s->continuation_pending = true;
+    dap_worker_exec_callback_on(s->socket->worker, dap_tls13_socket_continue, request);
+    return 0;
+}
+
 static ssize_t dap_tls13_socket_send_wire(void *arg, const void *data, size_t size)
 {
     dap_tls13_socket_t *s = arg;
@@ -106,7 +126,13 @@ static int dap_tls13_socket_drive(dap_tls13_socket_t *s)
         s->ready_notified = true;
         if (s->ready) s->ready(s->ready_arg);
     }
-    if (s->channel->tls.peer_closed) {
+    if (s->channel->tls.ready && s->application_progress &&
+        s->application_progress(s->application_arg) < 0) {
+        s->socket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return -1;
+    }
+    if (s->socket->flags & DAP_SOCK_SIGNAL_CLOSE) return 0;
+    if (s->channel->tls.peer_closed && !s->application_owns_shutdown) {
         /* Retire only after the reply has left both BIO and SDK queues. */
         int shutdown = dap_tls_plain_stream_shutdown(&s->channel->tls,
             &s->channel->outgoing, dap_tls13_socket_wire_drained, s);

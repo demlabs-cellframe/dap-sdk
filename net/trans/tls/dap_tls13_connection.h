@@ -52,4 +52,17 @@ static int dap_tls13_connection_server(dap_tls13_connection_t *c,
     }
     return 0;
 }
+static int dap_tls13_connection_server_plain(dap_tls13_connection_t *c,
+    dap_events_socket_t *es, const char *cert, const char *key,
+    dap_tls_plain_input_fn input, dap_tls_plain_eof_fn eof, void *arg)
+{
+    if (!c || !es || c->io.socket) return -1;
+    if (dap_tls13_endpoint_server_plain(&c->endpoint, cert, key,
+            dap_tls13_socket_send_wire, &c->io, input, eof, arg)) return -1;
+    if (dap_tls13_socket_bind(&c->io, es, &c->endpoint.channel)) {
+        dap_tls13_endpoint_clear(&c->endpoint);
+        return -1;
+    }
+    return 0;
+}
 #endif
