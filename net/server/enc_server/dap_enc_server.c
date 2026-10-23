@@ -187,7 +187,8 @@ int dap_enc_server_process_request(
         
         // Check ban list
         dap_stream_node_addr_t l_client_addr = dap_stream_node_addr_from_sign(l_sign);
-        const char *l_addr_str = dap_stream_node_addr_to_str_static(l_client_addr);
+        dap_node_addr_str_t l_addr_storage = dap_stream_node_addr_to_str_static_(l_client_addr);
+        const char *l_addr_str = l_addr_storage.s;
         
         debug_if(s_debug_more, L_DEBUG, "Validated signature %zu from node "NODE_ADDR_FP_STR, l_sign_validated, NODE_ADDR_FP_ARGS_S(l_client_addr));
         
@@ -350,4 +351,3 @@ void dap_enc_server_response_free(dap_enc_server_response_t *a_response) {
     DAP_DEL_Z(a_response->error_message);
     DAP_DELETE(a_response);
 }
-

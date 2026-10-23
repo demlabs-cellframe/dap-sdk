@@ -129,7 +129,7 @@ void dap_http_simple_module_deinit( void )
 struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *a_http, const char *a_url_path, size_t a_reply_size_max, dap_http_simple_callback_t a_callback )
 {
     return dap_http_simple_proc_add_with_limit(a_http, a_url_path, a_reply_size_max,
-                                             DAP_HTTP_SIMPLE_REQUEST_MAX, a_callback);
+                                             DAP_HTTP_SIMPLE_BODY_MAX, a_callback);
 }
 
 struct dap_http_url_proc *dap_http_simple_proc_add_with_limit(dap_http_server_t *a_http,
