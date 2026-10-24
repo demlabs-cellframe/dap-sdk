@@ -258,8 +258,14 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
         uint16_t l_count = 0, i;
 #if defined DAP_OS_LINUX || defined DAP_OS_DARWIN
         char **l_paths = dap_config_get_item_str_path_array(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
-        mode_t l_mode = 0666;
-            //strtol( dap_config_get_item_str_default(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PERMISSIONS, "0666"), NULL, 8 );
+        // Owner/group access by default instead of the previous hardcoded 0666: the CLI
+        // socket carries privileged commands, and 0666 let any local user drive the node
+        // (it also silently overrode the node's own umask 0077). Group access stays available
+        // for root-run agents/containers that talk to a socket owned by the service user;
+        // the mode can be widened or narrowed with the config key.
+        const char *l_mode_str = dap_config_get_item_str_default(g_config, a_cfg_section,
+                                                DAP_CFG_PARAM_SOCK_PERMISSIONS, "0660");
+        mode_t l_mode = l_mode_str ? (mode_t)strtol(l_mode_str, NULL, 8) : (mode_t)0660;
         for (i = 0; i < l_count; ++i) {
             if ( dap_server_listen_addr_add(l_server, l_paths[i], l_mode, DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING, &l_callbacks) )
                 log_it(L_ERROR, "Can't add path \"%s\" to server", l_paths[i]);

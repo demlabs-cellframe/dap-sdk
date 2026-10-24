@@ -146,3 +146,36 @@ int res;
 
     return res;
 }
+
+/**
+ * @brief Get the effective UID of the process on the other end of a connected unix socket
+ * @details Linux: SO_PEERCRED from the kernel; macOS/BSD: LOCAL_PEERCRED via getpeereid().
+ *          Callers compare the result against the socket file's st_uid to decide whether
+ *          the peer is the node's own user or a foreign local user.
+ * @param a_fd connected socket descriptor
+ * @param a_uid [out] peer effective UID
+ * @return 0 on success, -1 if the credentials are not available
+ */
+int dap_net_socket_peer_uid(int a_fd, uid_t *a_uid)
+{
+#ifndef DAP_OS_WINDOWS
+    dap_return_val_if_fail(a_uid, -1);
+#ifdef DAP_OS_LINUX
+    struct ucred l_cred = {};
+    socklen_t l_cred_size = sizeof(l_cred);
+    if (getsockopt(a_fd, SOL_SOCKET, SO_PEERCRED, &l_cred, &l_cred_size) < 0)
+        return log_it(L_WARNING, "SO_PEERCRED failed, errno %d: \"%s\"", errno, dap_strerror(errno)), -1;
+    *a_uid = l_cred.uid;
+    return 0;
+#else // macOS / BSD
+    uid_t l_uid = 0; gid_t l_gid = 0;
+    if (getpeereid(a_fd, &l_uid, &l_gid) < 0)
+        return log_it(L_WARNING, "getpeereid() failed, errno %d: \"%s\"", errno, dap_strerror(errno)), -1;
+    *a_uid = l_uid;
+    return 0;
+#endif
+#else
+    (void)a_fd; (void)a_uid;
+    return -1;
+#endif
+}

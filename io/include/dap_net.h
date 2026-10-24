@@ -59,6 +59,8 @@ extern "C" {
 int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_only, struct sockaddr_storage *a_addr_out, int *a_family);
 int dap_net_parse_config_address(const char *a_src, char *a_addr, uint16_t *a_port, struct sockaddr_storage *a_saddr, int *a_family);
 long dap_net_recv(SOCKET sd, unsigned char *buf, size_t bufsize, int timeout);
+// Effective UID of the peer behind a connected unix socket (0 on success, -1 if unavailable)
+int dap_net_socket_peer_uid(int a_fd, uid_t *a_uid);
 
 #ifdef __cplusplus
 }

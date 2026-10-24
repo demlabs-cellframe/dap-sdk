@@ -683,6 +683,24 @@ bool dap_cli_server_addr_is_loopback(const struct sockaddr_storage *a_addr)
     return false;
 }
 
+#ifdef DAP_OS_UNIX
+// A unix-socket peer is trusted only when its effective UID matches the node's own.
+// Previously every AF_UNIX peer skipped the restricted-command logic entirely, so any
+// local user who could reach the socket (created world-writable before the fix) could
+// run privileged CLI commands. When the credentials are unavailable the peer is untrusted.
+static bool s_cli_unix_peer_is_trusted(dap_events_socket_t *a_es)
+{
+    if (a_es->addr_storage.ss_family != AF_UNIX)
+        return false;
+    uid_t l_peer_uid = (uid_t)-1;
+    if (dap_net_socket_peer_uid(a_es->fd, &l_peer_uid) != 0) {
+        debug_if(s_cli_debug_more_cfg, L_WARNING, "Can't read the unix peer credentials, treating it as untrusted");
+        return false;
+    }
+    return l_peer_uid == getuid();
+}
+#endif
+
 char *dap_cli_server_cmd_list_json(const char **a_allowed_cmds, bool a_all_public)
 {
     json_object *l_arr = json_object_new_array();
@@ -858,7 +876,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
 
         l_arg->restricted = !l_is_loopback
 #ifdef DAP_OS_UNIX
-            && a_es->addr_storage.ss_family != AF_UNIX
+            && !s_cli_unix_peer_is_trusted(a_es)
 #endif
             && !s_allowed_cmd_check_method(l_method);
 
