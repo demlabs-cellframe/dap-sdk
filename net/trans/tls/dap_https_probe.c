@@ -1,4 +1,6 @@
 #include "dap_https_probe.h"
+#include "dap_strfuncs.h"
+#include "dap_net_server_common.h"
 #include "dap_http_server.h"
 #include "dap_net_trans_server.h"
 #include "dap_tls_http_peer.h"

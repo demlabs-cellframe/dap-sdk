@@ -801,6 +801,10 @@ int dap_http_client_output_drained(dap_http_client_t *client)
 void dap_http_client_write_finished(dap_events_socket_t *socket, void *arg)
 {
     (void)arg; /* Transport owns socket callback arguments. */
+    /* This trampoline belongs only to raw HTTP sockets. A stream takeover
+     * changes _inheritor's type; never cast it after callbacks have changed.
+     * TLS owners invoke the HTTP handler through their explicit client. */
+    if (!socket || socket->callbacks.read_callback != dap_http_client_read) return;
     dap_http_client_t *client = socket ? DAP_HTTP_CLIENT(socket) : NULL;
     if (client && client->handler_write_finished)
         client->handler_write_finished(socket, client->handler_arg);

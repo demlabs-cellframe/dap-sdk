@@ -118,7 +118,7 @@ static int dap_tls_http_peer_progress(void *arg)
         if (http->response_production_done && drained) {
             http->response_pending = false;
             if (http->handler_write_finished) {
-                dap_http_client_write_finished(socket, NULL);
+                http->handler_write_finished(socket, http->handler_arg);
             } else if (!http->keep_alive || http->out_connection_close || peer->peer_eof) {
                 dap_http_client_request_close(http);
             } else {

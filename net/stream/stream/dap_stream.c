@@ -636,6 +636,8 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
                  (void*)l_ret->esocket);
         l_ret->esocket->callbacks.read_callback = s_esocket_data_read;
         l_ret->esocket->callbacks.write_callback = s_esocket_write;
+        l_ret->esocket->callbacks.write_finished_callback = NULL;
+        l_ret->esocket->callbacks.arg = NULL;
         l_ret->esocket->callbacks.delete_callback = s_esocket_callback_delete;
         l_ret->esocket->callbacks.error_callback = s_esocket_callback_error;
         l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
