@@ -155,10 +155,11 @@ int res;
  * @param a_fd connected socket descriptor
  * @param a_uid [out] peer effective UID
  * @return 0 on success, -1 if the credentials are not available
+ * @note Unix-only, as is the declaration: Windows has no uid_t and no unix-socket peers.
  */
+#ifdef DAP_OS_UNIX
 int dap_net_socket_peer_uid(int a_fd, uid_t *a_uid)
 {
-#ifndef DAP_OS_WINDOWS
     dap_return_val_if_fail(a_uid, -1);
 #ifdef DAP_OS_LINUX
     struct ucred l_cred = {};
@@ -174,8 +175,5 @@ int dap_net_socket_peer_uid(int a_fd, uid_t *a_uid)
     *a_uid = l_uid;
     return 0;
 #endif
-#else
-    (void)a_fd; (void)a_uid;
-    return -1;
-#endif
 }
+#endif // DAP_OS_UNIX
