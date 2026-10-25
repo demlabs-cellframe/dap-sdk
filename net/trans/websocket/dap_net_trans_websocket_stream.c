@@ -65,6 +65,7 @@
 #include "dap_ws_upgrade_response.h"
 #include "dap_ws_frame_role.h"
 #include "dap_ws_close.h"
+#include "dap_ws_accept.h"
 #include "dap_enc_server.h"
 
 #define LOG_TAG "dap_net_trans_websocket_stream"
@@ -1552,27 +1553,7 @@ static int s_ws_generate_key(char *a_key_out, size_t a_key_size)
  */
 static int s_ws_generate_accept(const char *a_key, char *a_accept_out, size_t a_accept_size)
 {
-    if (!a_key || !a_accept_out || a_accept_size < 29) {  // Base64(20 bytes) = 28 chars + null
-        return -1;
-    }
-
-    // Concatenate key + magic GUID
-    char l_concat[256];
-    snprintf(l_concat, sizeof(l_concat), "%s%s", a_key, WS_MAGIC_GUID);
-
-    // Calculate SHA-1 hash
-    dap_chain_hash_fast_t l_hash;
-    dap_hash_fast(l_concat, strlen(l_concat), &l_hash);
-
-    // Base64 encode (first 20 bytes of hash)
-    size_t l_encoded_size = dap_enc_base64_encode(l_hash.raw, 20,
-                                                    a_accept_out, DAP_ENC_DATA_TYPE_B64);
-    if (l_encoded_size == 0) {
-        return -2;
-    }
-
-    a_accept_out[l_encoded_size] = '\0';
-    return 0;
+    return dap_ws_accept_key(a_key, a_accept_out, a_accept_size);
 }
 
 /**

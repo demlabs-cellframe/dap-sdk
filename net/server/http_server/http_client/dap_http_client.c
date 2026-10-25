@@ -593,7 +593,8 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                          * A TLS owner must keep them until a layered WS adapter
                          * is installed; reject instead of leaking plaintext. */
                         if (l_http_client->use_plaintext_input &&
-                            (dap_http_header_find(l_http_client->in_headers, "Upgrade") ||
+                            ((dap_http_header_find(l_http_client->in_headers, "Upgrade") &&
+                              !l_http_client->proc->layered_upgrade_safe) ||
                              !strcmp(l_http_client->proc->url, "/stream"))) {
                             s_report_error_and_restart(a_esocket, l_http_client, 400);
                             return;

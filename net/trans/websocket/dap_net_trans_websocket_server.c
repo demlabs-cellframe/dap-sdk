@@ -54,6 +54,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_ws_upgrade_request.h"
 #include "dap_ws_frame_role.h"
 #include "dap_ws_close.h"
+#include "dap_ws_accept.h"
 
 static bool s_debug_more = false;
 // WebSocket GUID for Sec-WebSocket-Accept calculation (RFC 6455)
@@ -926,43 +927,10 @@ static void s_ws_server_esocket_error(dap_events_socket_t *a_es, int a_arg)
  * @brief Generate Sec-WebSocket-Accept key from client key (RFC 6455)
  * 
  * The server takes the value of Sec-WebSocket-Key header, concatenates
- * it with the GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", takes SHA3-256
+ * it with the GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", takes SHA-1
  * hash of the result, and base64-encodes it.
  */
 static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, size_t a_accept_key_size)
 {
-    if (!a_client_key || !a_accept_key || a_accept_key_size < 45) {  // Base64(32 bytes) = 44 chars + null
-        return false;
-    }
-
-    // WebSocket client key should be exactly 24 chars (base64 of 16 bytes)
-    // GUID is 36 chars, so max concat is 24 + 36 + 1 = 61 bytes
-    // Use 128 bytes for safety, validate input length
-    size_t l_key_len = strlen(a_client_key);
-    if (l_key_len > 64) {  // RFC 6455: client key should be 24 chars
-        log_it(L_WARNING, "WebSocket client key too long (%zu bytes), truncating", l_key_len);
-        l_key_len = 64;
-    }
-    
-    // Concatenate client key with WebSocket GUID
-    char l_concat[128] = {0};
-    memcpy(l_concat, a_client_key, l_key_len);
-    strcat(l_concat, WEBSOCKET_GUID);
-
-    // Calculate SHA3-256 hash
-    unsigned char l_hash[32];  // SHA3-256 = 32 bytes
-    sha3_256(l_hash, (const unsigned char *)l_concat, strlen(l_concat));
-
-    // Base64 encode the hash
-    size_t l_encoded_size = dap_enc_base64_encode(l_hash, 32,
-                                                    a_accept_key, DAP_ENC_DATA_TYPE_B64);
-    if (l_encoded_size == 0) {
-        log_it(L_ERROR, "Failed to base64 encode WebSocket accept key");
-        return false;
-    }
-
-    a_accept_key[l_encoded_size] = '\0';
-
-    debug_if(s_debug_more, L_DEBUG, "Generated Sec-WebSocket-Accept: %s", a_accept_key);
-    return true;
+    return dap_ws_accept_key(a_client_key, a_accept_key, a_accept_key_size) == 0;
 }

@@ -49,7 +49,7 @@ static void s_headers(dap_http_client_t *http, void *arg)
         http->state_read = DAP_HTTP_CLIENT_STATE_NONE;
     } else {
         http->reply_status_code = 200;
-        http->out_content_length = 9;
+        http->out_content_length = !strcmp(http->proc->url, "/bulk") ? 1024U * 1024U : 9;
         strcpy(http->out_content_type, "text/plain");
         http->state_read = DAP_HTTP_CLIENT_STATE_DATA;
     }
@@ -62,10 +62,18 @@ static bool s_body(dap_http_client_t *http, void *arg)
     (void)arg;
     https_probe_client_t *client = (https_probe_client_t *)http;
     static const char body[] = "https-ok\n";
-    ssize_t n = dap_http_client_write_body(http, body + client->sent, 9 - client->sent);
+    unsigned char block[16384];
+    size_t remaining = http->out_content_length - client->sent;
+    size_t count = remaining < sizeof(block) ? remaining : sizeof(block);
+    const void *data = body + (client->sent < sizeof(body) ? client->sent : 0);
+    if (http->out_content_length != 9) {
+        for (size_t i = 0; i < count; ++i) block[i] = (unsigned char)((client->sent + i) % 251);
+        data = block;
+    }
+    ssize_t n = dap_http_client_write_body(http, data, count);
     if (n < 0) return false;
     client->sent += (size_t)n;
-    return client->sent != 9;
+    return client->sent != http->out_content_length;
 }
 
 static void s_delete(dap_events_socket_t *es, void *arg)
@@ -124,6 +132,10 @@ dap_server_t *dap_https_probe_start(const char *address, uint16_t port,
     listener->http.server = server;
     strcpy(listener->http.server_name, "HTTPS");
     dap_http_url_proc_t *route = dap_http_add_proc(&listener->http, "/", NULL,
+        NULL, NULL, s_headers, NULL, NULL, s_body, NULL);
+    if (!route) { dap_server_delete(server); return NULL; }
+    route->layered_io_safe = true;
+    route = dap_http_add_proc(&listener->http, "/bulk", NULL,
         NULL, NULL, s_headers, NULL, NULL, s_body, NULL);
     if (!route) { dap_server_delete(server); return NULL; }
     route->layered_io_safe = true;

@@ -58,6 +58,7 @@ typedef struct dap_http_url_proc{
      * asynchronous lifetime without dereferencing a retired socket. Set at
      * registration time, before the listener accepts connections. */
     bool layered_io_safe;
+    bool layered_upgrade_safe; /* Explicit owner-preserving Upgrade handler. */
 
     void *_inheritor; // Internal data specific to the current URL processor
     UT_hash_handle hh; // makes this structure hashable with UTHASH library

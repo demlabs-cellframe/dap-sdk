@@ -17,6 +17,11 @@ typedef struct dap_tls_http_peer {
     dap_timerfd_t *close_timer; /* Owner-worker only; cancelled by detach. */
     dap_timerfd_t *handshake_timer;
     dap_timerfd_t *lifetime_timer;
+    dap_tls_plain_input_fn upgraded_input;
+    dap_tls_plain_eof_fn upgraded_eof;
+    void *upgraded_arg;
+    bool upgrade_pending;
+    bool upgraded;
 } dap_tls_http_peer_t;
 
 static bool dap_tls_http_peer_handshake_timeout(void *arg)
@@ -26,7 +31,7 @@ static bool dap_tls_http_peer_handshake_timeout(void *arg)
     peer->handshake_timer = NULL;
     if (peer->http && peer->http->esocket &&
         !peer->connection->endpoint.channel.tls.ready)
-        peer->http->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        dap_events_socket_remove_and_delete_unsafe(peer->http->esocket, false);
     return false;
 }
 
@@ -36,7 +41,7 @@ static bool dap_tls_http_peer_lifetime_timeout(void *arg)
     if (!peer) return false;
     peer->lifetime_timer = NULL;
     if (peer->http && peer->http->esocket)
-        peer->http->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        dap_events_socket_remove_and_delete_unsafe(peer->http->esocket, false);
     return false;
 }
 
@@ -55,7 +60,7 @@ static bool dap_tls_http_peer_close_timeout(void *arg)
     if (!peer) return false;
     peer->close_timer = NULL; /* Timer deletes itself after false. */
     if (peer->http && peer->http->esocket)
-        peer->http->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        dap_events_socket_remove_and_delete_unsafe(peer->http->esocket, false);
     return false;
 }
 
@@ -70,6 +75,7 @@ static int dap_tls_http_peer_input(void *arg, const void *data, size_t size)
 {
     dap_tls_http_peer_t *peer = arg;
     if (peer->shutdown_started) return -1;
+    if (peer->upgraded) return peer->upgraded_input(peer->upgraded_arg, data, size);
     return dap_http_client_feed_plaintext(peer->http, data, size);
 }
 
@@ -77,6 +83,10 @@ static int dap_tls_http_peer_eof(void *arg)
 {
     dap_tls_http_peer_t *peer = arg;
     peer->peer_eof = true;
+    if (peer->upgraded) {
+        peer->http->output_close_requested = true;
+        return peer->upgraded_eof ? peer->upgraded_eof(peer->upgraded_arg) : 0;
+    }
     /* A complete request may be owned by an async route. It is allowed to
      * finish its response, but the connection cannot be reused afterwards. */
     peer->http->keep_alive = false;
@@ -93,7 +103,7 @@ static int dap_tls_http_peer_progress(void *arg)
     dap_events_socket_t *socket = http->esocket;
     /* application_progress runs only after the TLS handshake is ready. */
     dap_tls_http_peer_cancel_timer(&peer->handshake_timer);
-    if (!peer->shutdown_started && peer->peer_eof && !http->response_pending && !http->input_paused) {
+    if (!peer->upgraded && !peer->shutdown_started && peer->peer_eof && !http->response_pending && !http->input_paused) {
         /* No producer owns this request: EOF with partial input is fatal;
          * idle EOF can proceed directly to TLS shutdown. */
         if (dap_http_client_input_size(http) ||
@@ -109,14 +119,29 @@ static int dap_tls_http_peer_progress(void *arg)
     }
     if (http->response_pending) {
         if (!http->response_production_done) {
+            if (peer->upgrade_pending && !http->pending_headers) {
+                http->response_production_done = true;
+            } else {
             bool more = dap_http_client_write_callback(socket, NULL);
             if (socket->flags & DAP_SOCK_SIGNAL_CLOSE) return -1;
             http->response_production_done = !more;
+            }
         }
         int drained = dap_http_client_output_drained(http);
         if (drained < 0) return -1;
         if (http->response_production_done && drained) {
             http->response_pending = false;
+            if (peer->upgrade_pending) {
+                peer->upgrade_pending = false;
+                peer->upgraded = true;
+                /* The consumer must copy incomplete bytes before returning.
+                 * No socket callback or socket owner changes here. */
+                size_t tail = dap_http_client_input_size(http);
+                if (tail && peer->upgraded_input(peer->upgraded_arg,
+                        dap_http_client_input_data(http), tail)) return -1;
+                if (dap_http_client_input_consume(http, tail)) return -1;
+                return 0;
+            }
             if (http->handler_write_finished) {
                 http->handler_write_finished(socket, http->handler_arg);
             } else if (!http->keep_alive || http->out_connection_close || peer->peer_eof) {
@@ -138,8 +163,28 @@ static int dap_tls_http_peer_progress(void *arg)
         peer->shutdown_started = true;
         return dap_tls_http_peer_progress(peer);
     }
-    if (!http->input_paused && dap_http_client_input_size(http))
+    if (!peer->upgraded && !http->input_paused && dap_http_client_input_size(http))
         return dap_http_client_feed_plaintext(http, NULL, 0);
+    return 0;
+}
+
+/* Called by an explicitly layered-safe HTTP route after validating Upgrade.
+ * Route must supply 101 response headers and a bodyless write callback. */
+static int dap_tls_http_peer_upgrade(dap_tls_http_peer_t *peer,
+    dap_tls_plain_input_fn input, dap_tls_plain_eof_fn eof, void *arg)
+{
+    if (!peer || !peer->http || !input || peer->upgraded || peer->upgrade_pending ||
+        peer->shutdown_started || peer->peer_eof || peer->http->reply_status_code != 101 ||
+        peer->http->response_pending || peer->http->pending_headers) return -1;
+    peer->upgraded_input = input;
+    peer->upgraded_eof = eof;
+    peer->upgraded_arg = arg;
+    peer->upgrade_pending = true;
+    peer->http->keep_alive = true;
+    peer->http->out_connection_close = false;
+    peer->http->out_content_length = 0;
+    dap_http_client_pause_input(peer->http);
+    dap_http_client_write(peer->http);
     return 0;
 }
 
