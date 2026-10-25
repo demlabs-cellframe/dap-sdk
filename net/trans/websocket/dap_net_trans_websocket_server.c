@@ -29,6 +29,12 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_common.h"
 #include "dap_worker.h"
 #include "dap_context.h"
+#include "dap_timerfd.h"
+#ifdef DAP_OS_LINUX
+#include <netinet/tcp.h>
+#include <sys/ioctl.h>
+#include <time.h>
+#endif
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_websocket_server.h"
@@ -67,7 +73,45 @@ typedef struct ws_server_conn_state {
     size_t frame_buffer_used;   // Used bytes
     bool is_fragmented;
     size_t fragmented_message_bytes;
+    /* BEGIN TEMP VPN-TCP-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    dap_timerfd_t *diagnostic_timer;
+    dap_events_socket_uuid_t diagnostic_uuid;
+    /* END TEMP VPN-TCP-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
 } ws_server_conn_state_t;
+
+#ifdef DAP_OS_LINUX
+/* BEGIN TEMP VPN-TCP-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+/* Runs on the socket owner worker, including while no packets arrive. No
+ * payload logging; TCP_INFO counters are cumulative for this connection. */
+static bool s_ws_diagnostic_tick(void *arg)
+{
+    ws_server_conn_state_t *state = arg;
+    dap_worker_t *worker = dap_worker_get_current();
+    dap_events_socket_t *es = worker ? dap_context_find(worker->context, state->diagnostic_uuid) : NULL;
+    if (!es || !es->_inheritor) { state->diagnostic_timer = NULL; return false; }
+    dap_net_trans_ctx_t *ctx = es->_inheritor;
+    if (ctx->transport_priv != state) { state->diagnostic_timer = NULL; return false; }
+    struct tcp_info info = {0};
+    socklen_t length = sizeof(info);
+    int queued = -1;
+    int queue_rc = ioctl(es->socket, TIOCOUTQ, &queued);
+    int rc = getsockopt(es->socket, IPPROTO_TCP, TCP_INFO, &info, &length);
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    log_it(L_NOTICE, "[VPN-TCP-DIAG] transport=websocket uuid=%llu peer=%s fd=%d mono_s=%lld "
+        "sdk_out=%zu sdk_in=%zu dap_tail=%zu fragmented_bytes=%zu tcp_info_rc=%d "
+        "sendq=%d queue_rc=%d state=%u rtt_us=%u rto_us=%u cwnd=%u unacked=%u "
+        "lost=%u retrans_total=%u last_recv_ms=%u last_ack_ms=%u",
+        (unsigned long long)es->uuid, es->remote_addr_str, (int)es->socket, (long long)now.tv_sec,
+        es->buf_out_size, es->buf_in_size, state->frame_buffer_used,
+        state->fragmented_message_bytes, rc, queued, queue_rc,
+        info.tcpi_state, info.tcpi_rtt, info.tcpi_rto, info.tcpi_snd_cwnd,
+        info.tcpi_unacked, info.tcpi_lost, info.tcpi_total_retrans,
+        info.tcpi_last_data_recv, info.tcpi_last_ack_recv);
+    return true;
+}
+/* END TEMP VPN-TCP-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+#endif
 
 // Forward declarations for server-side esocket callbacks
 static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg);
@@ -687,6 +731,17 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
     if (!l_conn_state) return -7;
     if (l_stream->trans_ctx)
         l_stream->trans_ctx->transport_priv = l_conn_state;
+#ifdef DAP_OS_LINUX
+    /* BEGIN TEMP VPN-TCP-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    {
+        l_conn_state->diagnostic_uuid = a_http_client->esocket->uuid;
+        l_conn_state->diagnostic_timer = dap_timerfd_start_on_worker(
+            a_http_client->esocket->worker, 5000, s_ws_diagnostic_tick, l_conn_state);
+        if (!l_conn_state->diagnostic_timer)
+            log_it(L_WARNING, "[VPN-TCP-DIAG] Cannot create WS diagnostic timer");
+    }
+    /* END TEMP VPN-TCP-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+#endif
 
     // Replace esocket callbacks: HTTP layer is no longer in charge.
     // After upgrade, the esocket handles raw WebSocket frames, not HTTP.
@@ -900,6 +955,12 @@ static void s_ws_server_esocket_delete(dap_events_socket_t *a_es, void *a_arg)
     // Clean up per-connection WS state
     ws_server_conn_state_t *l_conn = (ws_server_conn_state_t *)l_trans_ctx->transport_priv;
     if (l_conn) {
+        /* BEGIN TEMP VPN-TCP-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+        if (l_conn->diagnostic_timer) {
+            dap_timerfd_delete_unsafe(l_conn->diagnostic_timer);
+            l_conn->diagnostic_timer = NULL;
+        }
+        /* END TEMP VPN-TCP-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
         DAP_DEL_Z(l_conn->frame_buffer);
         DAP_DELETE(l_conn);
         l_trans_ctx->transport_priv = NULL;
