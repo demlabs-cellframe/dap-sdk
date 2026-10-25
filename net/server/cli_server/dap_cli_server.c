@@ -544,7 +544,10 @@ static bool s_cli_peer_is_trusted_proxy(const struct sockaddr_storage *a_addr) {
     return false;
 }
 
-// Parse "a.b.c.d[/bits]" (bits 0..32, default 32). Returns false on garbage.
+// inet_addr() returns an unsigned 32-bit address in network order on every
+// platform; unsigned long is what the declaration uses and is at least 32 bits
+// everywhere. in_addr_t itself is not in the Windows headers, so naming it here
+// breaks the MinGW build.
 static bool s_cli_trusted_proxy_parse(const char *a_entry, s_cli_trusted_proxy_t *a_out) {
     char l_buf[64] = {0};
     if (!a_entry || strlen(a_entry) >= sizeof(l_buf))
@@ -558,7 +561,7 @@ static bool s_cli_trusted_proxy_parse(const char *a_entry, s_cli_trusted_proxy_t
         if (l_bits > 32)
             return false;
     }
-    in_addr_t l_addr = inet_addr(l_buf);
+    unsigned long l_addr = inet_addr(l_buf);
     if (l_addr == INADDR_NONE)
         return false;
     a_out->addr = ntohl(l_addr);
@@ -604,7 +607,7 @@ static uint32_t s_cli_client_subnet_key(const struct sockaddr_storage *a_peer, c
         }
         // trim spaces
         while (l_n && l_first[l_n-1] == ' ') l_first[--l_n] = 0;
-        in_addr_t l_client = inet_addr(l_first);
+        unsigned long l_client = inet_addr(l_first);
         if (l_client != INADDR_NONE)
             return ntohl(l_client) >> 16;
         // fell through: unparseable XFF - treat the proxy as the client
