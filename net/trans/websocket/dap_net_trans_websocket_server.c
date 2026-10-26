@@ -751,6 +751,11 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
     a_http_client->esocket->callbacks.error_callback = s_ws_server_esocket_error;
     a_http_client->esocket->callbacks.write_finished_callback = NULL;
     a_http_client->esocket->callbacks.arg = NULL;
+    /* Accepted WS sockets must close on peer FIN/HUP and fatal I/O errors.
+     * dap_stream creation inherits no_close=true, which is a reactor-level
+     * deletion veto (not merely a keepalive policy) and leaves CLOSE_WAIT
+     * sockets accumulating queued keepalives after the peer disconnects. */
+    a_http_client->esocket->no_close = false;
 
     if (a_http_client->esocket->buf_in_size) {
         dap_events_socket_uuid_t *uuid = malloc(sizeof(*uuid));
