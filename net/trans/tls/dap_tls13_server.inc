@@ -6,6 +6,7 @@
 #include "dap_enc_ks.h"
 #include <json-c/json.h>
 #include "dap_tls13_key_id.h"
+#include "dap_tls_dap_control.h"
 typedef struct tls13_listener {
     dap_server_t *server;
     char *cert, *key;
@@ -15,7 +16,7 @@ typedef struct tls13_peer {
     dap_tls13_server_dispatch_t dispatch;
     dap_events_socket_t *es;
     dap_stream_t *stream;
-    char key_id[DAP_ENC_KS_KEY_ID_SIZE + 1];
+    dap_tls_dap_control_t control;
 } tls13_peer_t;
 
 static int s_tls13_send(void *arg, uint8_t type, const void *data, size_t size)
@@ -44,39 +45,50 @@ static int s_tls13_data(void *arg, const void *data, size_t size)
     if (!p->stream) return -1;
     return dap_stream_data_proc_read_ext(p->stream, data, size) == size ? 0 : -1;
 }
-static int s_tls13_control(tls13_peer_t *p, bool enc, const void *data, size_t size,
-                           void **out, size_t *out_size)
+int dap_tls_dap_control_request(dap_tls_dap_control_t *control, bool enc, const void *data, size_t size,
+                            void **out, size_t *out_size)
 {
+    if (!out || !out_size) return -1;
+    *out = NULL; *out_size = 0;
+    if (!control || !data || !size) return -1;
     char *path=NULL, *query=NULL, *body=NULL;
     size_t body_size=0;
     int rc=s_parse_http_post((char *)data,size,&path,&query,&body,&body_size);
     const char *prefix=enc ? "/enc_init/" : "/stream_ctl/";
     if (rc || !path || strncmp(path,prefix,strlen(prefix))) { rc=-1; goto done; }
-    if (!enc && !p->key_id[0]) { rc=-1; goto done; }
+    if (!enc && !control->key_id[0]) { rc=-1; goto done; }
     rc=s_route_request_with_key(path,query,body,body_size,(char **)out,out_size,
-                               enc ? NULL : p->key_id);
+                                enc ? NULL : control->key_id);
     if (rc || !*out || !*out_size) { rc=-1; goto done; }
     if (enc) {
         /* Bind CTL to the key created by ENC on this TLS connection, never
          * accept a client-provided key belonging to another connection. */
-        if(dap_tls13_key_id_from_reply(*out,*out_size,p->key_id) ||
-           !dap_enc_ks_find(p->key_id)) { rc=-1; goto done; }
+        if(dap_tls13_key_id_from_reply(*out,*out_size,control->key_id) ||
+            !dap_enc_ks_find(control->key_id)) { control->key_id[0]=0; rc=-1; goto done; }
     }
+done:
+    free(path); free(query); free(body);
+    return rc;
+}
+
+static int s_tls13_control(tls13_peer_t *p, bool enc, const void *data, size_t size,
+                           void **out, size_t *out_size)
+{
+    int rc = dap_tls_dap_control_request(&p->control, enc, data, size, out, out_size);
+    if (rc) return rc;
     if (!enc) {
         char *reply=calloc(1,*out_size+1);
-        if (!reply) { rc=-1; goto done; }
+        if (!reply) return -1;
         memcpy(reply,*out,*out_size);
         unsigned id=0;
         int parsed=sscanf(reply,"%u",&id);
         free(reply);
         dap_stream_session_t *session=parsed==1 && id ? dap_stream_session_id_mt(id) : NULL;
-        if (!session || p->stream) { rc=-1; goto done; }
+        if (!session || p->stream) return -1;
         p->stream=dap_stream_new_es_server(p->es,session);
-        if (!p->stream) { rc=-1; goto done; }
+        if (!p->stream) return -1;
         p->stream->trans=&s_tls13_server_transport;
     }
-done:
-    free(path); free(query); free(body);
     return rc;
 }
 static int s_tls13_enc(void *arg,const void *data,size_t size,void **out,size_t *out_size)

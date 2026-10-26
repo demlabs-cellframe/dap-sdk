@@ -80,8 +80,9 @@ int main(int argc,char **argv) {
    assert(!fcntl(client_fd,F_SETFL,O_NONBLOCK));
    assert(!fcntl(server_fd,F_SETFL,O_NONBLOCK));
    dap_tls13_endpoint_t client={0},server={0};
-   assert(!dap_tls13_endpoint_client(&client,pin_hex,NULL,tcp_send,&client_fd,frame_received,NULL));
+   assert(!dap_tls13_endpoint_client_protocol(&client,pin_hex,NULL,tcp_send,&client_fd,frame_received,NULL,true));
    assert(!dap_tls13_endpoint_server(&server,argv[1],argv[2],tcp_send,&server_fd,frame_received,NULL));
+   assert(!dap_tls_openssl_context_http1_server(server.context));
    for(unsigned i=0;i<10000 && !(client.channel.tls.ready && server.channel.tls.ready);i++) {
      assert(dap_tls13_channel_drive(&client.channel)>=0);
      assert(dap_tls13_channel_drive(&server.channel)>=0);

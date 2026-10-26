@@ -37,16 +37,18 @@ static void dap_tls13_endpoint_clear(dap_tls13_endpoint_t *e)
 /* Destination must be zero-initialized. Failure leaves no owned resources.
  * Caller supplies an authenticated, out-of-band pin, not one learned from
  * this connection. SNI is optional; pin authenticates server key identity. */
-static int dap_tls13_endpoint_client(dap_tls13_endpoint_t *e, const char *pin_hex,
+static int dap_tls13_endpoint_client_protocol(dap_tls13_endpoint_t *e, const char *pin_hex,
                                     const char *sni, dap_tls_wire_send_fn send,
                                     void *send_arg, dap_tls13_frame_callback_t dispatch,
-                                    void *dispatch_arg)
+                                    void *dispatch_arg, bool http1)
 {
     uint8_t pin[32];
     if (!e || e->context || e->channel.tls.session || !send || !dispatch ||
         dap_tls13_pin_decode(pin_hex, pin)) return -1;
     e->context = dap_tls_context_new_client();
     if (!e->context || dap_tls_context_set_min_version(e->context, 0x0304)) goto fail;
+    static const unsigned char alpn[] = {8,'h','t','t','p','/','1','.','1'};
+    if (http1 && dap_tls_context_set_alpn(e->context, alpn, sizeof(alpn))) goto fail;
     e->channel.tls.session = dap_tls_session_new(e->context);
     if (!e->channel.tls.session ||
         dap_tls_openssl_session_set_memory_io(e->channel.tls.session) ||
@@ -60,6 +62,14 @@ static int dap_tls13_endpoint_client(dap_tls13_endpoint_t *e, const char *pin_he
 fail:
     dap_tls13_endpoint_clear(e);
     return -1;
+}
+
+static int dap_tls13_endpoint_client(dap_tls13_endpoint_t *e, const char *pin_hex,
+    const char *sni, dap_tls_wire_send_fn send, void *send_arg,
+    dap_tls13_frame_callback_t dispatch, void *dispatch_arg)
+{
+    return dap_tls13_endpoint_client_protocol(e, pin_hex, sni, send, send_arg,
+                                             dispatch, dispatch_arg, false);
 }
 
 static int dap_tls13_endpoint_server_init(dap_tls13_endpoint_t *e, const char *cert,

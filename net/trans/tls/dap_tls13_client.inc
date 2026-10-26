@@ -2,6 +2,9 @@
 #include "dap_tls13_connection.h"
 #include "dap_tls13_client_state.h"
 #include "dap_client_trans_ctx.h"
+#include "dap_wss_dap.h"
+#include "dap_wss_client_upgrade.h"
+#include "rand/dap_rand.h"
 typedef struct tls13_client {
     /* DAP request parameters; never cast the transport context to mimicry. */
     tls_mimicry_ctx_t dap;
@@ -10,7 +13,35 @@ typedef struct tls13_client {
     dap_stream_t *stream;
     uint8_t *alice;
     char *pin, *sni;
+    bool wss;
+    dap_wss_dap_t ws;
+    dap_wss_client_upgrade_t upgrade;
 } tls13_client_t;
+
+static int s_tls13_ws_wire(void *arg,const void *data,size_t size)
+{
+    tls13_client_t *c=arg;
+    return dap_tls_plain_stream_write(&c->connection.endpoint.channel.tls,
+        &c->connection.endpoint.channel.outgoing,data,size)==DAP_TLS_PLAIN_WRITE_ACCEPTED ? 0 : -1;
+}
+static int s_tls13_ws_tail(void *arg,const void *data,size_t size)
+{
+    tls13_client_t *c=arg;
+    return dap_wss_dap_input(&c->ws,data,size);
+}
+static int s_tls13_ws_ready(void *arg);
+static int s_tls13_ws_input(void *arg,const void *data,size_t size)
+{
+    tls13_client_t *c=arg;
+    return dap_wss_client_upgrade_feed(&c->upgrade,data,size,
+        s_tls13_ws_ready,s_tls13_ws_tail,c);
+}
+static int s_tls13_ws_eof(void *arg)
+{
+    tls13_client_t *c=arg;
+    return !c->upgrade.ready || c->ws.incoming.size || c->ws.dap.header_size ||
+        c->ws.dap.payload || c->ws.fragmented ? -1 : 0;
+}
 
 static int s_tls13_client_enc_reply(void *arg,const void *data,size_t size)
 {
@@ -43,10 +74,30 @@ static int s_tls13_client_data(void *arg,const void *data,size_t size)
 static void s_tls13_client_ready(void *arg)
 {
     tls13_client_t *c=arg;
+    if(c->wss) {
+        uint8_t nonce[16]; char key[25];
+        randombytes(nonce,sizeof(nonce));
+        size_t n=dap_enc_base64_encode(nonce,sizeof(nonce),key,DAP_ENC_DATA_TYPE_B64);
+        if(n!=24) {c->stream->esocket->flags|=DAP_SOCK_SIGNAL_CLOSE;return;}
+        key[n]=0;
+        dap_client_t *client=c->stream->trans_ctx && c->stream->trans_ctx->_inheritor ?
+            ((dap_client_trans_ctx_t *)c->stream->trans_ctx->_inheritor)->client : NULL;
+        const char *host=c->sni ? c->sni : client ? client->link_info.uplink_addr : NULL;
+        if(dap_wss_client_upgrade_start(&c->upgrade,host,"/vpn",key,s_tls13_ws_wire,c))
+            c->stream->esocket->flags|=DAP_SOCK_SIGNAL_CLOSE;
+        return;
+    }
     c->state.phase=DAP_TLS13_WAIT_ENC;
     c->dap.phase=TLS_PHASE_ENC_INIT_WAIT;
     if (s_tls_send_enc_init(c->stream,&c->dap,c->stream->esocket))
         c->stream->esocket->flags|=DAP_SOCK_SIGNAL_CLOSE;
+}
+static int s_tls13_ws_ready(void *arg)
+{
+    tls13_client_t *c=arg;
+    c->state.phase=DAP_TLS13_WAIT_ENC;
+    c->dap.phase=TLS_PHASE_ENC_INIT_WAIT;
+    return s_tls_send_enc_init(c->stream,&c->dap,c->stream->esocket);
 }
 static ssize_t s_tls13_client_write(dap_stream_t *stream,const void *data,size_t size)
 {
@@ -59,7 +110,8 @@ static ssize_t s_tls13_client_write(dap_stream_t *stream,const void *data,size_t
         case DAP_TLS13_STREAMING: type=DAP_TLS13_STREAM; break;
         default: return -1;
     }
-    if (dap_tls13_channel_send(&c->connection.endpoint.channel,type,data,size)) {
+    if (c->wss ? dap_wss_dap_send(&c->ws,type,data,size) :
+        dap_tls13_channel_send(&c->connection.endpoint.channel,type,data,size)) {
         stream->esocket->flags|=DAP_SOCK_SIGNAL_CLOSE;
         return -1;
     }
@@ -72,6 +124,8 @@ static void s_tls13_client_close(dap_stream_t *stream)
     if (!c) return;
     c->state.phase=DAP_TLS13_CLOSED;
     dap_tls13_connection_clear(&c->connection);
+    dap_wss_dap_clear(&c->ws);
+    dap_wss_client_upgrade_clear(&c->upgrade);
     free(c->alice); free(c->pin); free(c->sni);
     free(c);
     stream->trans_ctx->transport_priv=NULL;
@@ -110,6 +164,7 @@ static int s_tls13_client_prepare(dap_net_trans_t *trans,const dap_net_stage_pre
     if (dap_tls13_pin_decode(pin,decoded)) return -1;
     tls13_client_t *c=calloc(1,sizeof(*c));
     if (!c) return -1;
+    c->wss=g_config && dap_config_get_item_bool_default(g_config,section,"wss",false);
     c->pin=dap_strdup(pin); c->sni=sni ? dap_strdup(sni) : NULL;
     if (!c->pin || (sni && !c->sni)) { free(c->pin); free(c->sni); free(c); return -1; }
     /* dap_stream_new_es_client does not allocate trans_ctx. Supply a staging
@@ -140,7 +195,24 @@ static int s_tls13_client_handshake(dap_stream_t *stream,dap_net_handshake_param
     c->dap.handshake_cb=callback;
     c->state=(dap_tls13_client_state_t){.enc_reply=s_tls13_client_enc_reply,
         .ctl_reply=s_tls13_client_ctl_reply,.stream_data=s_tls13_client_data,.arg=c};
-    int rc = dap_tls13_connection_client(&c->connection,stream->esocket,c->pin,c->sni,
+    int rc;
+    if(c->wss) {
+        rc=dap_wss_dap_init(&c->ws,false,dap_tls13_client_dispatch,&c->state,s_tls13_ws_wire,c);
+        if(!rc) rc=dap_tls13_endpoint_client_protocol(&c->connection.endpoint,c->pin,c->sni,
+            dap_tls13_socket_send_wire,&c->connection.io,dap_tls13_client_dispatch,&c->state,true);
+        if(!rc) {
+            c->connection.endpoint.channel.plain_input=s_tls13_ws_input;
+            c->connection.endpoint.channel.plain_eof=s_tls13_ws_eof;
+            c->connection.endpoint.channel.plain_arg=c;
+            rc=dap_tls13_socket_bind(&c->connection.io,stream->esocket,&c->connection.endpoint.channel);
+        }
+        if(!rc) {
+            c->connection.io.ready=s_tls13_client_ready;
+            c->connection.io.ready_arg=c;
+            rc=dap_tls13_socket_drive(&c->connection.io)<0 ? -1 : 0;
+        }
+        if(rc) {dap_tls13_connection_clear(&c->connection);dap_wss_dap_clear(&c->ws);}
+    } else rc = dap_tls13_connection_client(&c->connection,stream->esocket,c->pin,c->sni,
         dap_tls13_client_dispatch,&c->state,s_tls13_client_ready,c);
     /* FSM transfers the original buffer only on successful initiation.
      * Our asynchronous request uses its own copy until transport teardown. */

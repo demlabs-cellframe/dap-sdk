@@ -8,6 +8,8 @@ import ssl
 import subprocess
 import tempfile
 import time
+import hashlib
+import base64
 
 build = pathlib.Path('/work/build')
 source = pathlib.Path(__file__).with_name('https_probe_runner.c')
@@ -78,6 +80,51 @@ with tempfile.TemporaryDirectory() as directory:
                         assert b'Content-Length: 1048576' in header,header
                         assert body==bytes(range(251))*(1048576//251)+bytes(range(1048576%251)),len(body)
                         client.unwrap().close()
+            # Independent RFC6455 client over real TLS; no SDK frame helpers.
+            def frame(opcode, payload=b'', fin=True):
+                mask=b'\x11\x22\x33\x44'
+                n=len(payload)
+                header=bytes([(128 if fin else 0)|opcode])
+                header+=bytes([128|n]) if n<126 else b'\xfe'+n.to_bytes(2,'big')
+                return header+mask+bytes(b^mask[i%4] for i,b in enumerate(payload))
+            with context.wrap_socket(socket.create_connection(('127.0.0.1',port),timeout=10),
+                                     server_hostname='localhost') as ws:
+                nonce=base64.b64encode(b'0123456789abcdef')
+                request=b'GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: '+nonce+b'\r\n\r\n'
+                ws.sendall(request+frame(2,b'first'))
+                pending=b''
+                while b'\r\n\r\n' not in pending: pending+=ws.recv(4096)
+                headers,pending=pending.split(b'\r\n\r\n',1)
+                assert headers.startswith(b'HTTP/1.1 101 '),headers
+                expected=base64.b64encode(hashlib.sha1(nonce+b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest())
+                assert b'Sec-WebSocket-Accept: '+expected in headers,headers
+                buffered=[pending]
+                def receive():
+                    def exact(n):
+                        while len(buffered[0])<n:
+                            chunk=ws.recv(4096)
+                            assert chunk,'unexpected WS EOF'
+                            buffered[0]+=chunk
+                        result,buffered[0]=buffered[0][:n],buffered[0][n:]
+                        return result
+                    h=exact(2);assert not h[1]&128
+                    n=h[1]&127
+                    if n==126:n=int.from_bytes(exact(2),'big')
+                    elif n==127:n=int.from_bytes(exact(8),'big')
+                    return h[0],exact(n)
+                assert receive()==(0x82,b'first')
+                ws.sendall(frame(2,b'ab',False)+frame(9,b'ping')+frame(0,b'cd'))
+                assert receive()==(2,b'ab')
+                assert receive()==(0x8a,b'ping')
+                assert receive()==(0x80,b'cd')
+                for i in range(64):
+                    payload=bytes([i])*16384
+                    ws.sendall(frame(2,payload))
+                    assert receive()==(0x82,payload)
+                ws.sendall(frame(8,b'\x03\xe8'))
+                assert receive()==(0x88,b'\x03\xe8')
+                assert ws.recv(1)==b''
+                ws.unwrap().close()
             context.set_alpn_protocols(['h2'])
             with socket.create_connection(('127.0.0.1',port),timeout=10) as raw:
                 try:
@@ -168,7 +215,7 @@ with tempfile.TemporaryDirectory() as directory:
                 survivor.close()
             server.communicate('\n',timeout=15)
             assert server.returncode==0
-            print('PASS: SDK HTTPS small/bulk, ALPN, close/handshake/request deadlines, abort and live-connection listener stop')
+            print('PASS: SDK HTTPS/WSS, RFC Accept, coalesced Upgrade, fragmented binary, Ping/Pong, 1MiB echo, Close, deadlines and listener stop')
         except Exception:
             print((tmp/'server.log').read_text())
             raise
