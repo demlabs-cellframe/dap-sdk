@@ -61,7 +61,7 @@ static ssize_t s_vpn_write(dap_stream_t *stream, const void *data, size_t size)
 }
 static const dap_net_trans_ops_t s_vpn_ops = {.write=s_vpn_write};
 /* Separate endpoint capability is still needed before exposing this in GUI. */
-static dap_net_trans_t s_vpn_transport = {.type=DAP_NET_TRANS_TLS13,
+static dap_net_trans_t s_vpn_transport = {.type=DAP_NET_TRANS_WSS,
     .ops=&s_vpn_ops, .socket_type=DAP_NET_TRANS_SOCKET_TCP};
 static int s_vpn_enc(void *arg, const void *data, size_t size, void **out, size_t *length)
 {

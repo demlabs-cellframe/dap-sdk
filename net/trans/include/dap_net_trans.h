@@ -99,7 +99,8 @@ typedef enum dap_net_trans_type {
     DAP_NET_TRANS_TLS_DIRECT     = 0x06,  ///< Legacy TLS mimicry carrier
     DAP_NET_TRANS_DNS_TUNNEL     = 0x07,  ///< DNS-based tunneling
     DAP_NET_TRANS_TLS13          = 0x08,  ///< Standard authenticated TLS 1.3 (separate registration)
-    DAP_NET_TRANS_MAX            = 0x08   ///< Maximum trans type value
+    DAP_NET_TRANS_WSS            = 0x09,  ///< DAP over authenticated WebSocket/TLS
+    DAP_NET_TRANS_MAX            = 0x09   ///< Maximum trans type value
 } dap_net_trans_type_t;
 
 /**

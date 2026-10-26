@@ -164,7 +164,7 @@ static int s_tls13_client_prepare(dap_net_trans_t *trans,const dap_net_stage_pre
     if (dap_tls13_pin_decode(pin,decoded)) return -1;
     tls13_client_t *c=calloc(1,sizeof(*c));
     if (!c) return -1;
-    c->wss=g_config && dap_config_get_item_bool_default(g_config,section,"wss",false);
+    c->wss=trans && trans->type == DAP_NET_TRANS_WSS;
     c->pin=dap_strdup(pin); c->sni=sni ? dap_strdup(sni) : NULL;
     if (!c->pin || (sni && !c->sni)) { free(c->pin); free(c->sni); free(c); return -1; }
     /* dap_stream_new_es_client does not allocate trans_ctx. Supply a staging
@@ -258,6 +258,9 @@ static const dap_net_trans_ops_t s_tls13_client_ops={
 };
 static int s_tls13_register_client(void)
 {
-    return dap_net_trans_register("tls13",DAP_NET_TRANS_TLS13,&s_tls13_client_ops,
+    int rc = dap_net_trans_register("tls13",DAP_NET_TRANS_TLS13,&s_tls13_client_ops,
+        DAP_NET_TRANS_SOCKET_TCP,NULL);
+    if (rc) return rc;
+    return dap_net_trans_register("wss",DAP_NET_TRANS_WSS,&s_tls13_client_ops,
         DAP_NET_TRANS_SOCKET_TCP,NULL);
 }
