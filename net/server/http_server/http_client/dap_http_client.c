@@ -499,6 +499,15 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 }
 
                 l_http_client->state_read = DAP_HTTP_CLIENT_STATE_HEADERS;
+                /* BEGIN TEMP SERVER-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+                if (l_http_client->proc &&
+                    (!strcmp(l_http_client->proc->url, "/enc_init") ||
+                     !strcmp(l_http_client->proc->url, "/stream_ctl") ||
+                     !strcmp(l_http_client->proc->url, "/stream")))
+                    log_it(L_NOTICE, "[SERVER-STAGE] event=request_line uuid=%llu peer=%s route=%s method=%s",
+                        (unsigned long long)a_esocket->uuid, a_esocket->remote_addr_str,
+                        l_http_client->proc->url, l_http_client->action);
+                /* END TEMP SERVER-STAGE */
 
                 // Check if present cache
                 pthread_rwlock_rdlock(&l_http_client->proc->cache_rwlock);
@@ -740,6 +749,16 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
         }
     }
     log_it( L_INFO," HTTP response with %u status code", a_http_client->reply_status_code );
+    /* BEGIN TEMP SERVER-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    if (a_http_client->proc &&
+        (!strcmp(a_http_client->proc->url, "/enc_init") ||
+         !strcmp(a_http_client->proc->url, "/stream_ctl") ||
+         !strcmp(a_http_client->proc->url, "/stream")))
+        log_it(L_NOTICE, "[SERVER-STAGE] event=response_prepared uuid=%llu peer=%s route=%s status=%u body_bytes=%zu",
+            (unsigned long long)a_http_client->esocket->uuid,
+            a_http_client->esocket->remote_addr_str, a_http_client->proc->url,
+            a_http_client->reply_status_code, a_http_client->out_content_length);
+    /* END TEMP SERVER-STAGE */
     char *serialized = malloc(DAP_HTTP_RESPONSE_HEADERS_MAX);
     size_t used = 0;
     if (!serialized) goto serialization_failed;

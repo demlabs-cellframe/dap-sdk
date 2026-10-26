@@ -407,6 +407,10 @@ void dap_net_trans_websocket_server_delete(dap_net_trans_websocket_server_t *a_w
 static int s_websocket_reject_upgrade(dap_http_client_t *client, uint16_t status)
 {
     client->reply_status_code = status;
+    /* BEGIN TEMP SERVER-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_NOTICE, "[SERVER-STAGE] event=upgrade_rejected uuid=%llu peer=%s status=%u",
+        (unsigned long long)client->esocket->uuid, client->esocket->remote_addr_str, status);
+    /* END TEMP SERVER-STAGE */
     client->reply_reason_phrase[0] = '\0';
     client->keep_alive = false;
     client->out_connection_close = true;
@@ -744,6 +748,10 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
 #endif
 
     // Replace esocket callbacks: HTTP layer is no longer in charge.
+    /* BEGIN TEMP SERVER-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_NOTICE, "[SERVER-STAGE] event=upgrade_takeover uuid=%llu peer=%s",
+        (unsigned long long)a_http_client->esocket->uuid, a_http_client->esocket->remote_addr_str);
+    /* END TEMP SERVER-STAGE */
     // After upgrade, the esocket handles raw WebSocket frames, not HTTP.
     a_http_client->esocket->callbacks.read_callback = s_ws_server_esocket_read;
     a_http_client->esocket->callbacks.write_callback = NULL;  // Write via trans->ops->write

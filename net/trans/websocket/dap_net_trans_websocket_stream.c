@@ -492,15 +492,20 @@ static void s_ws_handshake_response_wrapper(void *a_data, size_t a_data_size, vo
 {
     ws_handshake_ctx_t *l_ctx = (ws_handshake_ctx_t *)a_arg;
     if (!l_ctx) return;
+    /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_NOTICE, "[WS-STAGE] phase=ENC response stream=%p status=%d bytes=%zu",
+           (void *)l_ctx->stream, (int)a_status, a_data_size);
+    /* END TEMP WS-STAGE */
+
+    /* Restore before calling the FSM: callback can retire the client or
+     * install the next stage's argument. Never touch client afterwards. */
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_ctx->client);
+    if (l_fsm) l_fsm->callback_arg = l_ctx->old_callback_arg;
     
     if (l_ctx->callback) {
         l_ctx->callback(l_ctx->stream, a_data, a_data_size, 0);
     }
     
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_ctx->client);
-    if (l_fsm)
-        l_fsm->callback_arg = l_ctx->old_callback_arg;
-
     DAP_DELETE(l_ctx);
 }
 
@@ -512,14 +517,16 @@ static void s_ws_handshake_error_wrapper(int a_error, void *a_arg)
     ws_handshake_ctx_t *l_ctx = (ws_handshake_ctx_t *)a_arg;
     if (!l_ctx) return;
 
+    /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_NOTICE, "[WS-STAGE] phase=ENC error stream=%p code=%d", (void *)l_ctx->stream, a_error);
+    /* END TEMP WS-STAGE */
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_ctx->client);
+    if (l_fsm) l_fsm->callback_arg = l_ctx->old_callback_arg;
+
     if (l_ctx->callback) {
         l_ctx->callback(l_ctx->stream, NULL, 0, a_error);
     }
 
-    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_ctx->client);
-    if (l_fsm)
-        l_fsm->callback_arg = l_ctx->old_callback_arg;
-    
     DAP_DELETE(l_ctx);
 }
 
@@ -609,6 +616,10 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
            
     // Create ctx
     ws_handshake_ctx_t *l_ctx = DAP_NEW_Z(ws_handshake_ctx_t);
+    if (!l_ctx) {
+        DAP_DELETE(l_data_str);
+        return -6;
+    }
     l_ctx->stream = a_stream;
     l_ctx->callback = a_callback;
     l_ctx->client = l_client;
@@ -616,6 +627,11 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
 
     l_fsm->callback_arg = l_ctx;
 
+    /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_NOTICE, "[WS-STAGE] phase=ENC send stream=%p endpoint=%s:%u bytes=%zu",
+           (void *)a_stream, l_client->link_info.uplink_addr,
+           l_client->link_info.uplink_port, (size_t)l_data_str_enc_size);
+    /* END TEMP WS-STAGE */
     // Send HTTP request using dap_client_http_request
     // We use the client's worker and address
     dap_client_http_t *l_http_client = dap_client_http_request(l_fsm->worker,
@@ -687,6 +703,10 @@ static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size,
     }
     
     // Parse session response to extract session_id
+    /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_NOTICE, "[WS-STAGE] phase=CTL response stream=%p status=%d bytes=%zu",
+           (void *)l_ctx->stream, (int)a_status, a_data_size);
+    /* END TEMP WS-STAGE */
     uint32_t l_session_id = 0;
     char *l_response_data = NULL;
     size_t l_response_size = 0;
@@ -716,14 +736,13 @@ static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size,
             }
         } else {
             // Unencrypted response
-            char *l_response_str = (char*)a_data;
-            sscanf(l_response_str, "%u", &l_session_id);
             
             // Allocate and copy full response data for trans callback
             l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
             if (l_response_data) {
                 memcpy(l_response_data, a_data, a_data_size);
                 l_response_data[a_data_size] = '\0';
+                sscanf(l_response_data, "%u", &l_session_id);
                 l_response_size = a_data_size;
             }
         }
@@ -749,6 +768,9 @@ static void s_ws_session_error_wrapper_http(int a_error, void *a_arg)
 {
     ws_session_ctx_t *l_ctx = (ws_session_ctx_t *)a_arg;
     if (!l_ctx) return;
+    /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_NOTICE, "[WS-STAGE] phase=CTL error stream=%p code=%d", (void *)l_ctx->stream, a_error);
+    /* END TEMP WS-STAGE */
 
     if (l_ctx->stream && l_ctx->callback) {
         l_ctx->callback(l_ctx->stream, 0, NULL, 0, a_error);
@@ -895,10 +917,19 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
     
     // Allocate ctx
     ws_session_ctx_t *l_ws_ctx = DAP_NEW_Z(ws_session_ctx_t);
+    if (!l_ws_ctx) {
+        DAP_DELETE(l_suburl);
+        return -1;
+    }
     l_ws_ctx->stream = a_stream;
     l_ws_ctx->callback = a_callback;
     l_ws_ctx->session_key = l_tc->session_key;
 
+    /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_NOTICE, "[WS-STAGE] phase=CTL submit stream=%p endpoint=%s:%u bytes=%zu",
+        (void *)a_stream, l_client->link_info.uplink_addr,
+        l_client->link_info.uplink_port, (size_t)l_request_size);
+    /* END TEMP WS-STAGE */
     s_ws_send_http_request_enc(l_tc->session_key, l_tc->session_key_id,
                                l_priv->http_client, l_fsm->worker,
                                l_client->link_info.uplink_addr, l_client->link_info.uplink_port,
@@ -981,6 +1012,10 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     }
 
     // Send WebSocket upgrade request (RFC 6455 Section 4.1)
+    /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_NOTICE, "[WS-STAGE] phase=UPGRADE submit stream=%p endpoint=%s:%u",
+        (void *)a_stream, l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
+    /* END TEMP WS-STAGE */
     ssize_t l_sent = dap_events_socket_write_f_unsafe(l_priv->esocket,
         "GET /%s HTTP/1.1\r\n"
         "Host: %s:%u\r\n"
@@ -1050,6 +1085,10 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                                                         &l_headers_size);
         if (!l_header_result) return 0;
         if (l_header_result < 0) {
+            /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+            log_it(L_WARNING, "[WS-STAGE] phase=UPGRADE reject stream=%p reason=headers_limit bytes=%zu",
+                (void *)a_stream, l_es->buf_in_size);
+            /* END TEMP WS-STAGE */
             l_priv->state = DAP_WS_STATE_CLOSED;
             l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
             if (l_priv->ready_callback) {
@@ -1067,6 +1106,10 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             dap_ws_upgrade_response_valid(l_es->buf_in, l_headers_size, expected_accept,
                                           l_priv->config.subprotocol)) {
             log_it(L_INFO, "WebSocket upgrade successful (101 Switching Protocols)");
+            /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+            log_it(L_NOTICE, "[WS-STAGE] phase=UPGRADE accepted stream=%p headers=%zu tail=%zu",
+                (void *)a_stream, l_headers_size, l_es->buf_in_size - l_headers_size);
+            /* END TEMP WS-STAGE */
             l_priv->state = DAP_WS_STATE_OPEN;
 
             // Start ping timer now that we're connected.
@@ -1093,6 +1136,10 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             }
         } else {
             log_it(L_ERROR, "WebSocket upgrade failed: %.40s", (char *)l_es->buf_in);
+            /* BEGIN TEMP WS-STAGE — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+            log_it(L_WARNING, "[WS-STAGE] phase=UPGRADE reject stream=%p reason=response_validation headers=%zu",
+                (void *)a_stream, l_headers_size);
+            /* END TEMP WS-STAGE */
             l_priv->state = DAP_WS_STATE_CLOSED;
             dap_events_socket_shrink_buf_in(l_es, l_headers_size);
             // Fire callback with error so FSM knows the stage failed
