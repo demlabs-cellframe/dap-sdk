@@ -138,6 +138,8 @@ static int s_vpn_ctl(void *arg, const void *data, size_t size, void **out, size_
     c->stream = dap_stream_new_es_server(c->http.esocket, session);
     if (!c->stream) return -1;
     c->stream->trans = &s_vpn_transport;
+    /* WSS owner must receive FIN/fatal-I/O cleanup, not retain a dead stream. */
+    c->http.esocket->no_close = false;
     /* The connection owner owns teardown. The generic direct keepalive can
      * delete the stream behind our back on socket error; replace its lifecycle
      * with an inbound-activity deadline (client DAP keepalives count). */
