@@ -1,4 +1,5 @@
 #include "dap_https_probe.h"
+#define LOG_TAG "dap_https_probe"
 #include "dap_strfuncs.h"
 #include "dap_net_server_common.h"
 #include "dap_http_server.h"
@@ -40,6 +41,10 @@ static bool s_vpn_idle(void *arg)
     https_probe_client_t *c = arg;
     if (c->vpn_activity) { c->vpn_activity = false; return true; }
     c->vpn_idle_timer = NULL;
+    /* BEGIN TEMP WSS-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    log_it(L_WARNING, "[WSS-DIAG] event=idle_timeout uuid=%llu peer=%s",
+        (unsigned long long)c->http.esocket->uuid, c->http.esocket->remote_addr_str);
+    /* END TEMP WSS-DIAG */
     dap_events_socket_remove_and_delete_unsafe(c->http.esocket, false);
     return false;
 }
@@ -47,8 +52,15 @@ static bool s_vpn_idle(void *arg)
 static int s_vpn_wire(void *arg, const void *data, size_t size)
 {
     https_probe_client_t *c = arg;
-    return dap_tls_plain_stream_write(&c->tls.endpoint.channel.tls,
-        &c->tls.endpoint.channel.outgoing, data, size) == DAP_TLS_PLAIN_WRITE_ACCEPTED ? 0 : -1;
+    dap_tls_plain_write_result_t rc = dap_tls_plain_stream_write(&c->tls.endpoint.channel.tls,
+        &c->tls.endpoint.channel.outgoing, data, size);
+    /* BEGIN TEMP WSS-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    if (rc != DAP_TLS_PLAIN_WRITE_ACCEPTED)
+        log_it(L_WARNING, "[WSS-DIAG] event=write_rejected uuid=%llu peer=%s result=%d bytes=%zu plain_queue=%zu sdk_out=%zu",
+            (unsigned long long)c->http.esocket->uuid, c->http.esocket->remote_addr_str,
+            (int)rc, size, c->tls.endpoint.channel.outgoing.allocated, c->http.esocket->buf_out_size);
+    /* END TEMP WSS-DIAG */
+    return rc == DAP_TLS_PLAIN_WRITE_ACCEPTED ? 0 : -1;
 }
 static ssize_t s_vpn_write(dap_stream_t *stream, const void *data, size_t size)
 {
@@ -108,6 +120,11 @@ static int s_vpn_input(void *arg, const void *data, size_t size)
 {
     https_probe_client_t *c = arg;
     int rc = dap_wss_dap_input(&c->vpn.wire, data, size);
+    /* BEGIN TEMP WSS-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    if (rc) log_it(L_WARNING, "[WSS-DIAG] event=input_failed uuid=%llu phase=%d bytes=%zu ws_buffer=%zu",
+        (unsigned long long)c->http.esocket->uuid, (int)c->vpn.dispatch.phase,
+        size, c->vpn.wire.incoming.size);
+    /* END TEMP WSS-DIAG */
     if (!rc && c->vpn.wire.closed) dap_http_client_request_close(&c->http);
     return rc;
 }
@@ -285,6 +302,13 @@ static void s_delete(dap_events_socket_t *es, void *arg)
     (void)arg;
     https_probe_client_t *client = es->_inheritor;
     if (!client) return;
+    /* BEGIN TEMP WSS-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    if (client->vpn_mode)
+        log_it(L_NOTICE, "[WSS-DIAG] event=delete uuid=%llu peer=%s phase=%d tls_failed=%d peer_eof=%d plain_queue=%zu sdk_out=%zu",
+            (unsigned long long)es->uuid, es->remote_addr_str, (int)client->vpn.dispatch.phase,
+            client->tls.endpoint.channel.tls.failed, client->peer.peer_eof,
+            client->tls.endpoint.channel.outgoing.allocated, es->buf_out_size);
+    /* END TEMP WSS-DIAG */
     if (client->vpn_idle_timer) {
         dap_timerfd_delete_unsafe(client->vpn_idle_timer);
         client->vpn_idle_timer = NULL;
