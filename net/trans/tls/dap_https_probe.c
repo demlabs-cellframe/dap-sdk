@@ -5,6 +5,12 @@
 #include "dap_http_server.h"
 #include "dap_net_trans_server.h"
 #include "dap_tls_http_peer.h"
+/* BEGIN TEMP WSS-FLOW — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+#ifdef DAP_OS_LINUX
+#include <netinet/tcp.h>
+#include <sys/ioctl.h>
+#endif
+/* END TEMP WSS-FLOW */
 #include "dap_tls_dap_control.h"
 #include "dap_wss_server_session.h"
 #include "dap_stream_session.h"
@@ -34,7 +40,40 @@ typedef struct {
     dap_stream_t *stream;
     dap_timerfd_t *vpn_idle_timer;
     bool vpn_activity;
+    /* BEGIN TEMP WSS-FLOW — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    dap_timerfd_t *flow_timer;
+    uint64_t flow_rx, flow_tx, flow_rx_prev, flow_tx_prev;
+    /* END TEMP WSS-FLOW */
 } https_probe_client_t;
+
+/* BEGIN TEMP WSS-FLOW — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+#ifdef DAP_OS_LINUX
+static bool s_flow_tick(void *arg)
+{
+    https_probe_client_t *c = arg;
+    dap_events_socket_t *es = c->http.esocket;
+    struct tcp_info info = {0};
+    socklen_t length = sizeof(info);
+    int queued = -1;
+    int rc = getsockopt(es->socket, IPPROTO_TCP, TCP_INFO, &info, &length);
+    int qrc = ioctl(es->socket, TIOCOUTQ, &queued);
+    log_it(L_NOTICE, "[WSS-FLOW] uuid=%llu peer=%s phase=%d rx_delta=%llu tx_accepted_delta=%llu "
+        "plain_alloc=%zu wire_pending=%zu sdk_out=%zu sdk_in=%zu ws_in=%zu dap_partial=%zu "
+        "tcp_rc=%d queue_rc=%d sendq=%d state=%u rtt_us=%u rto_us=%u unacked=%u retrans_total=%u last_ack_ms=%u",
+        (unsigned long long)es->uuid, es->remote_addr_str, (int)c->vpn.dispatch.phase,
+        (unsigned long long)(c->flow_rx-c->flow_rx_prev),
+        (unsigned long long)(c->flow_tx-c->flow_tx_prev),
+        c->tls.endpoint.channel.outgoing.allocated,
+        c->tls.endpoint.channel.tls.size-c->tls.endpoint.channel.tls.offset,
+        es->buf_out_size, es->buf_in_size, c->vpn.wire.incoming.size,
+        c->vpn.wire.dap.received, rc, qrc, queued, info.tcpi_state,
+        info.tcpi_rtt, info.tcpi_rto, info.tcpi_unacked, info.tcpi_total_retrans,
+        info.tcpi_last_ack_recv);
+    c->flow_rx_prev=c->flow_rx; c->flow_tx_prev=c->flow_tx;
+    return true;
+}
+#endif
+/* END TEMP WSS-FLOW */
 
 static bool s_vpn_idle(void *arg)
 {
@@ -54,6 +93,9 @@ static int s_vpn_wire(void *arg, const void *data, size_t size)
     https_probe_client_t *c = arg;
     dap_tls_plain_write_result_t rc = dap_tls_plain_stream_write(&c->tls.endpoint.channel.tls,
         &c->tls.endpoint.channel.outgoing, data, size);
+    /* BEGIN TEMP WSS-FLOW — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    if (rc == DAP_TLS_PLAIN_WRITE_ACCEPTED) c->flow_tx += size;
+    /* END TEMP WSS-FLOW */
     /* BEGIN TEMP WSS-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
     if (rc != DAP_TLS_PLAIN_WRITE_ACCEPTED)
         log_it(L_WARNING, "[WSS-DIAG] event=write_rejected uuid=%llu peer=%s result=%d bytes=%zu plain_queue=%zu sdk_out=%zu",
@@ -107,6 +149,12 @@ static int s_vpn_ctl(void *arg, const void *data, size_t size, void **out, size_
     c->vpn_idle_timer = dap_timerfd_start_on_worker(c->http.esocket->worker, 60000, s_vpn_idle, c);
     if (!c->vpn_idle_timer) return -1;
     dap_tls_http_peer_cancel_timer(&c->peer.lifetime_timer);
+    /* BEGIN TEMP WSS-FLOW — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+#ifdef DAP_OS_LINUX
+    c->flow_timer=dap_timerfd_start_on_worker(c->http.esocket->worker,5000,s_flow_tick,c);
+    if (!c->flow_timer) log_it(L_WARNING,"[WSS-FLOW] timer allocation failed");
+#endif
+    /* END TEMP WSS-FLOW */
     return 0;
 }
 static int s_vpn_data(void *arg, const void *data, size_t size)
@@ -120,6 +168,9 @@ static int s_vpn_input(void *arg, const void *data, size_t size)
 {
     https_probe_client_t *c = arg;
     int rc = dap_wss_dap_input(&c->vpn.wire, data, size);
+    /* BEGIN TEMP WSS-FLOW — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    c->flow_rx += size;
+    /* END TEMP WSS-FLOW */
     /* BEGIN TEMP WSS-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
     if (rc) log_it(L_WARNING, "[WSS-DIAG] event=input_failed uuid=%llu phase=%d bytes=%zu ws_buffer=%zu",
         (unsigned long long)c->http.esocket->uuid, (int)c->vpn.dispatch.phase,
@@ -302,6 +353,12 @@ static void s_delete(dap_events_socket_t *es, void *arg)
     (void)arg;
     https_probe_client_t *client = es->_inheritor;
     if (!client) return;
+    /* BEGIN TEMP WSS-FLOW — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
+    if (client->flow_timer) {
+        dap_timerfd_delete_unsafe(client->flow_timer);
+        client->flow_timer=NULL;
+    }
+    /* END TEMP WSS-FLOW */
     /* BEGIN TEMP WSS-DIAG — УДАЛИТЬ ПОСЛЕ ДИАГНОСТИКИ */
     if (client->vpn_mode)
         log_it(L_NOTICE, "[WSS-DIAG] event=delete uuid=%llu peer=%s phase=%d tls_failed=%d peer_eof=%d plain_queue=%zu sdk_out=%zu",
