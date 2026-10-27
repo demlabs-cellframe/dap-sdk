@@ -81,6 +81,19 @@ char *dap_http_ban_list_client_dump(const char *a_addr) {
     return dap_string_free(l_res, false);
 }
 
+size_t dap_http_ban_list_client_enum(dap_http_ban_list_client_enum_cb_t a_cb, void *a_arg) {
+    size_t l_count = 0;
+    ban_record_t *l_rec = NULL, *l_tmp = NULL;
+    pthread_rwlock_rdlock(&s_ban_list_lock);
+    HASH_ITER(hh, s_ban_list, l_rec, l_tmp) {
+        ++l_count;
+        if (a_cb && a_cb(l_rec->addr, l_rec->decree_hash, l_rec->ts_created, a_arg) != 0)
+            break;
+    }
+    pthread_rwlock_unlock(&s_ban_list_lock);
+    return l_count;
+}
+
 int dap_http_ban_list_client_init() {
     return 0;
 }
