@@ -999,6 +999,8 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
     if (!s_cli_allowed_cmd_owned) {
         uint16_t l_allowed_count = 0;
         const char **l_allowed_cfg = dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", &l_allowed_count);
+        if (!l_allowed_cfg || !*l_allowed_cfg)   // operator configs in the wild spell it with a dash
+            l_allowed_cfg = dap_config_get_array_str(g_config, "cli-server", "allowed-cmd", &l_allowed_count);
         if (l_allowed_cfg && *l_allowed_cfg) {
             // Non-array single value reports count 1 but is not an array
             size_t l_n = 0;
