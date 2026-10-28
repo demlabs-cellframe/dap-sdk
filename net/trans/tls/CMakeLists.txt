@@ -31,12 +31,20 @@ target_include_directories(dap_trans_tls PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../
 if(DAP_TLS13_OPENSSL)
     target_sources(dap_trans_tls PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dap_https_probe.c")
     if(NOT TARGET dap_crypto_tls)
-        message(FATAL_ERROR "TLS13 requires BUILD_WITH_TLS=ON and DAP_TLS_BACKEND=openssl")
+        message(FATAL_ERROR "TLS13 requires BUILD_WITH_TLS=ON and DAP_TLS_BACKEND=openssl or boringssl")
     endif()
-    if(NOT DAP_TLS_BACKEND STREQUAL "openssl")
-        message(FATAL_ERROR "TLS13 memory BIO transport requires explicit DAP_TLS_BACKEND=openssl")
+    if(NOT (DAP_TLS_BACKEND STREQUAL "openssl" OR DAP_TLS_BACKEND STREQUAL "boringssl"))
+        message(FATAL_ERROR "TLS13 memory BIO transport requires explicit DAP_TLS_BACKEND=openssl or boringssl")
     endif()
     target_compile_definitions(dap_trans_tls PRIVATE DAP_TLS13_OPENSSL=1)
+    # Anti-DPI spike: Chrome-like ClientHello for TLS13/WSS clients. Opt-in;
+    # full fidelity needs DAP_TLS_BACKEND=boringssl. See
+    # docs/VPN_ANTIDPI_CIRCUMVENTION_PLAN_2026_10_28.md (Phase 1).
+    option(DAP_TLS13_BROWSER_HELLO "Chrome-like ClientHello for TLS13/WSS clients (anti-DPI)" OFF)
+    if(DAP_TLS13_BROWSER_HELLO)
+        target_compile_definitions(dap_trans_tls PRIVATE DAP_TLS13_BROWSER_HELLO=1)
+        message(STATUS "TLS13 browser-like ClientHello: ON")
+    endif()
     target_link_libraries(dap_trans_tls INTERFACE dap_crypto_tls)
     target_include_directories(dap_trans_tls PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/tls/include)
 endif()

@@ -49,6 +49,15 @@ static int dap_tls13_endpoint_client_protocol(dap_tls13_endpoint_t *e, const cha
     if (!e->context || dap_tls_context_set_min_version(e->context, 0x0304)) goto fail;
     static const unsigned char alpn[] = {8,'h','t','t','p','/','1','.','1'};
     if (http1 && dap_tls_context_set_alpn(e->context, alpn, sizeof(alpn))) goto fail;
+#ifdef DAP_TLS13_BROWSER_HELLO
+    /* Anti-DPI (opt-in): Chrome-like ClientHello for the WSS path. Applied
+     * after the plain http/1.1 ALPN and overrides the offer to h2,http/1.1
+     * (the server select-cb still picks http/1.1), plus Chrome cipher/curve/
+     * sigalg ordering and — on BoringSSL — GREASE + extension permutation.
+     * Must run before dap_tls_session_new (per-SSL extras read the profile).
+     * Failure aborts the endpoint so a build never silently loses camouflage. */
+    if (http1 && dap_tls_context_set_hello_profile(e->context, DAP_TLS_HELLO_CHROME)) goto fail;
+#endif
     e->channel.tls.session = dap_tls_session_new(e->context);
     if (!e->channel.tls.session ||
         dap_tls_openssl_session_set_memory_io(e->channel.tls.session) ||

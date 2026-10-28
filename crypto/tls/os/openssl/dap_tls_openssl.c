@@ -25,6 +25,7 @@
 static bool s_debug_more = false;
 struct dap_tls_context {
     SSL_CTX *ssl_ctx;
+    int hello_profile; /* dap_tls_hello_profile_t; per-SSL extras at session_new */
 };
 
 struct dap_tls_session {
@@ -59,7 +60,11 @@ void dap_tls_deinit(void)
 
 const char *dap_tls_backend_name(void)
 {
+#ifdef DAP_TLS_BACKEND_BORINGSSL
+    return "BoringSSL";
+#else
     return "OpenSSL";
+#endif
 }
 
 /* ---- Context ------------------------------------------------------------ */
@@ -238,6 +243,61 @@ int dap_tls_context_set_min_version(dap_tls_context_t *a_ctx, uint16_t a_version
     return 0;
 }
 
+/* Browser-like ClientHello profile (anti-DPI). Common parameters use APIs
+ * shared by OpenSSL 1.1+ and BoringSSL; GREASE and extension permutation are
+ * BoringSSL-only and applied per-session in dap_tls_session_new(). JA3/JA4
+ * fidelity MUST be verified against a real Chrome reference before relying on
+ * it (see docs/VPN_ANTIDPI_CIRCUMVENTION_PLAN_2026_10_28.md). Known gaps:
+ * supported_versions still offers TLS1.3-only (min-version policy), curves
+ * omit X25519Kyber768, and exact extension set/order needs measurement. */
+int dap_tls_context_set_hello_profile(dap_tls_context_t *a_ctx,
+                                      dap_tls_hello_profile_t a_profile)
+{
+    if (!a_ctx || !a_ctx->ssl_ctx)
+        return -1;
+    if (a_profile == DAP_TLS_HELLO_DEFAULT) {
+        a_ctx->hello_profile = 0;
+        return 0;
+    }
+    if (a_profile != DAP_TLS_HELLO_CHROME)
+        return -1;
+
+    SSL_CTX *l_ctx = a_ctx->ssl_ctx;
+
+    static const char l_tls13[] =
+        "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256";
+    static const char l_tls12[] =
+        "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
+        "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
+        "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+        "ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:"
+        "ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:"
+        "AES128-GCM-SHA256:AES256-GCM-SHA384";
+    static const char l_sigalgs[] =
+        "ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:"
+        "ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:"
+        "rsa_pss_rsae_sha512:rsa_pkcs1_sha512";
+    /* Chrome ALPN offer: h2 first, then http/1.1. The WSS server selects
+     * http/1.1 (see s_http1_alpn), so this stays compatible while looking
+     * like a browser on the wire. Overrides any earlier http/1.1-only set. */
+    static const unsigned char l_alpn[] = { 2,'h','2', 8,'h','t','t','p','/','1','.','1' };
+
+    if (SSL_CTX_set_ciphersuites(l_ctx, l_tls13) != 1)
+        log_it(L_WARNING, "hello_profile: SSL_CTX_set_ciphersuites failed");
+    if (SSL_CTX_set_cipher_list(l_ctx, l_tls12) != 1)
+        log_it(L_WARNING, "hello_profile: SSL_CTX_set_cipher_list failed");
+    if (SSL_CTX_set1_curves_list(l_ctx, "X25519:P-256:P-384:P-521") != 1)
+        log_it(L_WARNING, "hello_profile: SSL_CTX_set1_curves_list failed");
+    if (SSL_CTX_set1_sigalgs_list(l_ctx, l_sigalgs) != 1)
+        log_it(L_WARNING, "hello_profile: SSL_CTX_set1_sigalgs_list failed");
+    if (SSL_CTX_set_alpn_protos(l_ctx, l_alpn, sizeof(l_alpn)) != 0)
+        log_it(L_WARNING, "hello_profile: SSL_CTX_set_alpn_protos failed");
+
+    a_ctx->hello_profile = (int)a_profile;
+    log_it(L_INFO, "TLS hello profile: CHROME-like ClientHello (verify JA3 vs reference)");
+    return 0;
+}
+
 /* ---- Session ------------------------------------------------------------ */
 
 dap_tls_session_t *dap_tls_session_new(dap_tls_context_t *a_ctx)
@@ -254,6 +314,18 @@ dap_tls_session_t *dap_tls_session_new(dap_tls_context_t *a_ctx)
         SSL_free(l_ssl);
         return NULL;
     }
+#if defined(OPENSSL_IS_BORINGSSL)
+    if (a_ctx->hello_profile == (int)DAP_TLS_HELLO_CHROME) {
+        /* Chrome shuffles ClientHello extensions and injects GREASE values;
+         * both materially change JA3/JA4. BoringSSL-only, feature-detected. */
+#if defined(DAP_TLS_HAVE_SSL_SET_PERMUTE_EXTENSIONS)
+        SSL_set_permute_extensions(l_ssl, 1);
+#endif
+#if defined(DAP_TLS_HAVE_SSL_SET_GREASE_ENABLED)
+        SSL_set_grease_enabled(l_ssl, 1);
+#endif
+    }
+#endif
     l_s->ctx = a_ctx;
     l_s->ssl = l_ssl;
     return l_s;
@@ -349,8 +421,15 @@ int dap_tls_openssl_session_set_spki_pin(dap_tls_session_t *s, const uint8_t pin
 
 static bool s_verify_pinned_peer(dap_tls_session_t *s)
 {
+#ifdef DAP_TLS_BACKEND_BORINGSSL
+    /* BoringSSL: borrowed reference into the peer chain; must NOT X509_free. */
+    const STACK_OF(X509) *l_chain = SSL_get0_peer_certificates(s->ssl);
+    if (!l_chain || sk_X509_num(l_chain) == 0) return false;
+    X509 *cert = sk_X509_value(l_chain, 0);
+#else
     X509 *cert = SSL_get_peer_certificate(s->ssl);
     if (!cert) return false;
+#endif
     unsigned char *der = NULL;
     int length = i2d_X509_PUBKEY(X509_get_X509_PUBKEY(cert), &der);
     unsigned char digest[EVP_MAX_MD_SIZE];
@@ -362,7 +441,9 @@ static bool s_verify_pinned_peer(dap_tls_session_t *s)
         digest_size == sizeof(s->spki_pin) &&
         CRYPTO_memcmp(digest, s->spki_pin, sizeof(s->spki_pin)) == 0;
     OPENSSL_free(der);
+#ifndef DAP_TLS_BACKEND_BORINGSSL
     X509_free(cert);
+#endif
     return valid;
 }
 

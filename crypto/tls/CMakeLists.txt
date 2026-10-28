@@ -3,7 +3,7 @@ project(dap_crypto_tls C)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/LibraryHelpers.cmake)
 
-set(DAP_TLS_BACKEND "" CACHE STRING "TLS backend (auto, openssl, apple, schannel)")
+set(DAP_TLS_BACKEND "" CACHE STRING "TLS backend (auto, openssl, boringssl, apple, schannel)")
 if(NOT DAP_TLS_BACKEND OR DAP_TLS_BACKEND STREQUAL "auto")
     if(APPLE)
         set(DAP_TLS_BACKEND_DETECTED "apple")
@@ -40,6 +40,38 @@ if(DAP_TLS_BACKEND_DETECTED STREQUAL "openssl")
     set(DAP_TLS_LINK_LIBS OpenSSL::SSL OpenSSL::Crypto)
     set(DAP_TLS_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
     message(STATUS "  OpenSSL version: ${OPENSSL_VERSION}")
+elseif(DAP_TLS_BACKEND_DETECTED STREQUAL "boringssl")
+    # BoringSSL is API-compatible with OpenSSL; reuse the openssl backend source.
+    # Enables browser-like ClientHello fingerprinting (anti-DPI). Requires
+    # -DBORINGSSL_ROOT=<prefix> with include/ and lib/libssl.a + libcrypto.a.
+    if(NOT BORINGSSL_ROOT)
+        message(FATAL_ERROR "DAP_TLS_BACKEND=boringssl requires -DBORINGSSL_ROOT=<prefix> (include/ + lib/libssl.a,libcrypto.a)")
+    endif()
+    set(DAP_TLS_BACKEND_SRC "${CMAKE_CURRENT_SOURCE_DIR}/os/openssl/dap_tls_openssl.c")
+    set(DAP_TLS_INCLUDE_DIRS "${BORINGSSL_ROOT}/include")
+    find_library(BORINGSSL_SSL_LIB NAMES ssl
+        PATHS "${BORINGSSL_ROOT}/lib" "${BORINGSSL_ROOT}/build/ssl" NO_DEFAULT_PATH REQUIRED)
+    find_library(BORINGSSL_CRYPTO_LIB NAMES crypto
+        PATHS "${BORINGSSL_ROOT}/lib" "${BORINGSSL_ROOT}/build/crypto" NO_DEFAULT_PATH REQUIRED)
+    set(DAP_TLS_LINK_LIBS ${BORINGSSL_SSL_LIB} ${BORINGSSL_CRYPTO_LIB})
+    # BoringSSL crypto contains C++; ensure a C++ stdlib and threads are linked.
+    if(NOT APPLE)
+        list(APPEND DAP_TLS_LINK_LIBS stdc++)
+    endif()
+    list(APPEND DAP_TLS_LINK_LIBS pthread)
+    set(DAP_TLS_BACKEND_DEFINES DAP_TLS_BACKEND_BORINGSSL=1)
+    # Optional fingerprint APIs (present in recent BoringSSL, absent in OpenSSL).
+    include(CheckSymbolExists)
+    set(CMAKE_REQUIRED_INCLUDES "${BORINGSSL_ROOT}/include")
+    check_symbol_exists(SSL_set_permute_extensions "openssl/ssl.h" DAP_TLS_HAVE_SSL_SET_PERMUTE_EXTENSIONS)
+    check_symbol_exists(SSL_set_grease_enabled "openssl/ssl.h" DAP_TLS_HAVE_SSL_SET_GREASE_ENABLED)
+    if(DAP_TLS_HAVE_SSL_SET_PERMUTE_EXTENSIONS)
+        list(APPEND DAP_TLS_BACKEND_DEFINES DAP_TLS_HAVE_SSL_SET_PERMUTE_EXTENSIONS=1)
+    endif()
+    if(DAP_TLS_HAVE_SSL_SET_GREASE_ENABLED)
+        list(APPEND DAP_TLS_BACKEND_DEFINES DAP_TLS_HAVE_SSL_SET_GREASE_ENABLED=1)
+    endif()
+    message(STATUS "  BoringSSL root: ${BORINGSSL_ROOT} (permute_ext=${DAP_TLS_HAVE_SSL_SET_PERMUTE_EXTENSIONS} grease=${DAP_TLS_HAVE_SSL_SET_GREASE_ENABLED})")
 elseif(DAP_TLS_BACKEND_DETECTED STREQUAL "apple")
     set(DAP_TLS_BACKEND_SRC "${CMAKE_CURRENT_SOURCE_DIR}/os/apple/dap_tls_apple.c")
     find_library(SECURITY_FRAMEWORK Security REQUIRED)
@@ -59,6 +91,10 @@ target_include_directories(dap_crypto_tls PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc
 
 if(DAP_TLS_INCLUDE_DIRS)
     target_include_directories(dap_crypto_tls PRIVATE ${DAP_TLS_INCLUDE_DIRS})
+endif()
+
+if(DAP_TLS_BACKEND_DEFINES)
+    target_compile_definitions(dap_crypto_tls PRIVATE ${DAP_TLS_BACKEND_DEFINES})
 endif()
 
 dap_link_libraries(dap_crypto_tls INTERFACE dap_core)

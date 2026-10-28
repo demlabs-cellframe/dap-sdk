@@ -62,6 +62,19 @@ int dap_tls_context_set_alpn(dap_tls_context_t *a_ctx,
                               const uint8_t *a_protos, uint32_t a_protos_len);
 int dap_tls_context_set_min_version(dap_tls_context_t *a_ctx, uint16_t a_version);
 
+/* Browser-like ClientHello profiles (anti-DPI fingerprinting).
+ * Full fidelity (GREASE, extension permutation) requires the BoringSSL
+ * backend; other backends apply a best-effort subset or reject the profile.
+ * Client contexts only. Call before dap_tls_session_new(); the profile
+ * overrides cipher list, curves, sigalgs, ALPN offer and version range. */
+typedef enum dap_tls_hello_profile {
+    DAP_TLS_HELLO_DEFAULT = 0,  /* keep backend defaults */
+    DAP_TLS_HELLO_CHROME  = 1   /* Chrome desktop-like ClientHello */
+} dap_tls_hello_profile_t;
+
+int dap_tls_context_set_hello_profile(dap_tls_context_t *a_ctx,
+                                      dap_tls_hello_profile_t a_profile);
+
 dap_tls_session_t *dap_tls_session_new(dap_tls_context_t *a_ctx);
 void dap_tls_session_free(dap_tls_session_t *a_session);
 int dap_tls_session_set_fd(dap_tls_session_t *a_session, int a_fd);

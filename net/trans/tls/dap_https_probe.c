@@ -21,6 +21,24 @@
 #include "../websocket/dap_ws_close.h"
 #include "../websocket/include/dap_net_trans_websocket_stream.h"
 
+/* Permanent TCP congestion-control include (the TEMP WSS-FLOW block above also
+ * pulls netinet/tcp.h but is slated for removal). */
+#ifdef DAP_OS_LINUX
+#include <netinet/tcp.h>
+#endif
+
+/* Pace VPN/WSS download bursts with BBR when the kernel provides it. The server
+ * pushes large download bursts into a high-RTT path; a loss-based CC (cubic)
+ * overshoots, fills the bottleneck queue, then collapses cwnd on the resulting
+ * loss -- the observed "peak then drop". BBR paces by measured bw/rtt and does
+ * not collapse on loss. Per-socket, so it does not change TCP behaviour of other
+ * services on the node, needs no root, and falls back to the system default when
+ * the module is unavailable. Kernel >= 4.20 paces internally without fq.
+ * Override at build time with -DDAP_WSS_TCP_CONGESTION='"<name>"'. */
+#ifndef DAP_WSS_TCP_CONGESTION
+#define DAP_WSS_TCP_CONGESTION "bbr"
+#endif
+
 typedef struct {
     dap_http_server_t http; /* DAP_HTTP_SERVER-compatible listener context. */
     char *certificate, *key;
@@ -400,6 +418,16 @@ static void s_new(dap_events_socket_t *es, void *arg)
         es->flags |= DAP_SOCK_SIGNAL_CLOSE;
         return;
     }
+#ifdef DAP_OS_LINUX
+    /* Prefer BBR for this VPN/WSS socket (see DAP_WSS_TCP_CONGESTION). Failure is
+     * non-fatal: kernels without the module keep the system default CC. */
+    {
+        static const char l_cc[] = DAP_WSS_TCP_CONGESTION;
+        if (setsockopt(es->socket, IPPROTO_TCP, TCP_CONGESTION, l_cc,
+                       (socklen_t)(sizeof(l_cc) - 1)) < 0)
+            log_it(L_NOTICE, "WSS: TCP_CONGESTION \"%s\" unavailable, using system default", l_cc);
+    }
+#endif
     es->_inheritor = client;
     client->http.esocket = es;
     client->http.http = &listener->http;

@@ -251,6 +251,15 @@ int dap_tls_context_set_min_version(dap_tls_context_t *a_ctx, uint16_t a_version
     return 0;
 }
 
+int dap_tls_context_set_hello_profile(dap_tls_context_t *a_ctx,
+                                      dap_tls_hello_profile_t a_profile)
+{
+    UNUSED(a_ctx);
+    /* Browser ClientHello fingerprinting requires the BoringSSL backend;
+     * SChannel does not expose ClientHello composition. */
+    return a_profile == DAP_TLS_HELLO_DEFAULT ? 0 : -1;
+}
+
 dap_tls_session_t *dap_tls_session_new(dap_tls_context_t *a_ctx)
 {
     if (!a_ctx || !a_ctx->cred_valid) return NULL;
