@@ -22,6 +22,14 @@
 
 #define LOG_TAG "dap_tls_openssl"
 
+#ifdef DAP_TLS_BACKEND_BORINGSSL
+/* BoringSSL has no SSL_in_before(); both call sites run before the handshake
+ * starts, when BoringSSL's SSL_in_init() is still 0. */
+#define DAP_SSL_IN_BEFORE(ssl) (!SSL_in_init(ssl))
+#else
+#define DAP_SSL_IN_BEFORE(ssl) (SSL_in_before(ssl))
+#endif
+
 static bool s_debug_more = false;
 struct dap_tls_context {
     SSL_CTX *ssl_ctx;
@@ -158,6 +166,14 @@ int dap_tls_context_set_ciphers(dap_tls_context_t *a_ctx, const char *a_ciphers)
 {
     if (!a_ctx || !a_ctx->ssl_ctx || !a_ciphers)
         return -1;
+#ifdef DAP_TLS_BACKEND_BORINGSSL
+    /* BoringSSL: TLS 1.3 suites are fixed (AES-GCM + ChaCha20, the Chrome
+     * set); only the TLS 1.2-and-below list is configurable. */
+    if (SSL_CTX_set_cipher_list(a_ctx->ssl_ctx, a_ciphers) != 1) {
+        log_it(L_ERROR, "Failed to set cipher list: %s", a_ciphers);
+        return -1;
+    }
+#else
     if (SSL_CTX_set_ciphersuites(a_ctx->ssl_ctx, a_ciphers) != 1) {
         log_it(L_WARNING, "Failed to set TLS 1.3 ciphersuites, trying cipher_list");
         if (SSL_CTX_set_cipher_list(a_ctx->ssl_ctx, a_ciphers) != 1) {
@@ -165,6 +181,7 @@ int dap_tls_context_set_ciphers(dap_tls_context_t *a_ctx, const char *a_ciphers)
             return -1;
         }
     }
+#endif
     return 0;
 }
 
@@ -282,8 +299,13 @@ int dap_tls_context_set_hello_profile(dap_tls_context_t *a_ctx,
      * like a browser on the wire. Overrides any earlier http/1.1-only set. */
     static const unsigned char l_alpn[] = { 2,'h','2', 8,'h','t','t','p','/','1','.','1' };
 
+#ifdef DAP_TLS_BACKEND_BORINGSSL
+    /* BoringSSL hard-codes the TLS 1.3 suites to exactly this Chrome set. */
+    (void)l_tls13;
+#else
     if (SSL_CTX_set_ciphersuites(l_ctx, l_tls13) != 1)
         log_it(L_WARNING, "hello_profile: SSL_CTX_set_ciphersuites failed");
+#endif
     if (SSL_CTX_set_cipher_list(l_ctx, l_tls12) != 1)
         log_it(L_WARNING, "hello_profile: SSL_CTX_set_cipher_list failed");
     if (SSL_CTX_set1_curves_list(l_ctx, "X25519:P-256:P-384:P-521") != 1)
@@ -292,6 +314,17 @@ int dap_tls_context_set_hello_profile(dap_tls_context_t *a_ctx,
         log_it(L_WARNING, "hello_profile: SSL_CTX_set1_sigalgs_list failed");
     if (SSL_CTX_set_alpn_protos(l_ctx, l_alpn, sizeof(l_alpn)) != 0)
         log_it(L_WARNING, "hello_profile: SSL_CTX_set_alpn_protos failed");
+
+#ifdef DAP_TLS_HAVE_SSL_CTX_SET_GREASE_ENABLED
+    /* RFC 8701 GREASE: reserved code points in ciphers/extensions/versions.
+     * Chrome always sends GREASE; a GREASE-less hello is trivially
+     * fingerprintable as non-browser. */
+    SSL_CTX_set_grease_enabled(l_ctx, 1);
+#endif
+#ifdef DAP_TLS_HAVE_SSL_CTX_SET_PERMUTE_EXTENSIONS
+    /* Chrome shuffles the ClientHello extension order per connection. */
+    SSL_CTX_set_permute_extensions(l_ctx, 1);
+#endif
 
     a_ctx->hello_profile = (int)a_profile;
     log_it(L_INFO, "TLS hello profile: CHROME-like ClientHello (verify JA3 vs reference)");
@@ -314,18 +347,8 @@ dap_tls_session_t *dap_tls_session_new(dap_tls_context_t *a_ctx)
         SSL_free(l_ssl);
         return NULL;
     }
-#if defined(OPENSSL_IS_BORINGSSL)
-    if (a_ctx->hello_profile == (int)DAP_TLS_HELLO_CHROME) {
-        /* Chrome shuffles ClientHello extensions and injects GREASE values;
-         * both materially change JA3/JA4. BoringSSL-only, feature-detected. */
-#if defined(DAP_TLS_HAVE_SSL_SET_PERMUTE_EXTENSIONS)
-        SSL_set_permute_extensions(l_ssl, 1);
-#endif
-#if defined(DAP_TLS_HAVE_SSL_SET_GREASE_ENABLED)
-        SSL_set_grease_enabled(l_ssl, 1);
-#endif
-    }
-#endif
+    /* GREASE/extension permutation are CTX-level (set in
+     * dap_tls_context_set_hello_profile); no per-SSL extras needed. */
     l_s->ctx = a_ctx;
     l_s->ssl = l_ssl;
     return l_s;
@@ -354,7 +377,7 @@ int dap_tls_session_set_fd(dap_tls_session_t *a_session, int a_fd)
 
 int dap_tls_openssl_session_set_memory_io(dap_tls_session_t *s)
 {
-    if (!s || !s->ssl || s->fd_io || s->memory_io || !SSL_in_before(s->ssl)) return -1;
+    if (!s || !s->ssl || s->fd_io || s->memory_io || !DAP_SSL_IN_BEFORE(s->ssl)) return -1;
     BIO *input = BIO_new(BIO_s_mem()), *output = BIO_new(BIO_s_mem());
     if (!input || !output) {
         BIO_free(input);
@@ -410,7 +433,7 @@ void dap_tls_session_set_nonblocking(dap_tls_session_t *a_session,
 
 int dap_tls_openssl_session_set_spki_pin(dap_tls_session_t *s, const uint8_t pin[32])
 {
-    if (!s || !s->ssl || !pin || !SSL_in_before(s->ssl)) return -1;
+    if (!s || !s->ssl || !pin || !DAP_SSL_IN_BEFORE(s->ssl)) return -1;
     memcpy(s->spki_pin, pin, sizeof(s->spki_pin));
     s->pin_set = true;
     /* Trust is the provisioned SPKI, not an arbitrary self-signed chain.
@@ -421,15 +444,9 @@ int dap_tls_openssl_session_set_spki_pin(dap_tls_session_t *s, const uint8_t pin
 
 static bool s_verify_pinned_peer(dap_tls_session_t *s)
 {
-#ifdef DAP_TLS_BACKEND_BORINGSSL
-    /* BoringSSL: borrowed reference into the peer chain; must NOT X509_free. */
-    const STACK_OF(X509) *l_chain = SSL_get0_peer_certificates(s->ssl);
-    if (!l_chain || sk_X509_num(l_chain) == 0) return false;
-    X509 *cert = sk_X509_value(l_chain, 0);
-#else
+    /* Owned reference in both OpenSSL and BoringSSL; must X509_free. */
     X509 *cert = SSL_get_peer_certificate(s->ssl);
     if (!cert) return false;
-#endif
     unsigned char *der = NULL;
     int length = i2d_X509_PUBKEY(X509_get_X509_PUBKEY(cert), &der);
     unsigned char digest[EVP_MAX_MD_SIZE];
@@ -441,9 +458,7 @@ static bool s_verify_pinned_peer(dap_tls_session_t *s)
         digest_size == sizeof(s->spki_pin) &&
         CRYPTO_memcmp(digest, s->spki_pin, sizeof(s->spki_pin)) == 0;
     OPENSSL_free(der);
-#ifndef DAP_TLS_BACKEND_BORINGSSL
     X509_free(cert);
-#endif
     return valid;
 }
 
@@ -465,7 +480,7 @@ int dap_tls_session_connect(dap_tls_session_t *a_session)
     if (l_err == SSL_ERROR_WANT_READ || l_err == SSL_ERROR_WANT_WRITE)
         return 0;
     unsigned long l_ossl_err = ERR_peek_last_error();
-    log_it(L_ERROR, "SSL_connect failed: %s", ERR_error_string(l_ossl_err, NULL));
+    log_it(L_ERROR, "SSL_connect failed: %s", ERR_error_string((uint32_t)l_ossl_err, NULL));
     return -1;
 }
 
@@ -480,7 +495,7 @@ int dap_tls_session_accept(dap_tls_session_t *a_session)
     if (l_err == SSL_ERROR_WANT_READ || l_err == SSL_ERROR_WANT_WRITE)
         return 0;
     unsigned long l_ossl_err = ERR_peek_last_error();
-    log_it(L_ERROR, "SSL_accept failed: %s", ERR_error_string(l_ossl_err, NULL));
+    log_it(L_ERROR, "SSL_accept failed: %s", ERR_error_string((uint32_t)l_ossl_err, NULL));
     return -1;
 }
 
