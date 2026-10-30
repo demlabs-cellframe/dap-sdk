@@ -77,10 +77,19 @@ int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_st
         char *l_len_token = strstr(l_cmd->cmd_res, l_content_len_str);
         if (!l_len_token || !strpbrk(l_len_token, "\r\n"))
             break;
-        if (( l_cmd->cmd_res_len = strtol(l_len_token + sizeof(l_content_len_str) - 1, NULL, 10) ))
-            ++a_status;
-        else
+        char *l_len_value = l_len_token + sizeof(l_content_len_str) - 1;
+        // A zero length is a valid frame: the overload gate answers 429 with
+        // "Content-Length: 0" and no body. Only a non-numeric value is a
+        // format error - treating 0 as one made a busy server look like a
+        // corrupted reply ("Response format error!" on heavy commands like
+        // "ledger list balance" under load).
+        if (*l_len_value < '0' || *l_len_value > '9')
             return DAP_CLI_ERROR_FORMAT;
+        errno = 0;
+        l_cmd->cmd_res_len = (size_t)strtoull(l_len_value, NULL, 10);
+        if (errno == ERANGE)
+            return DAP_CLI_ERROR_FORMAT;
+        ++a_status;
     }
     case 2: {   // Find header end and throw out header
         static const char l_head_end_str[] = "\r\n\r\n";
@@ -106,6 +115,24 @@ int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_st
         break;
     }
     return a_status;
+}
+
+// HTTP status of the reply head ("HTTP/1.1 429 Too Many Requests"), 0 when
+// the line is missing or unparsable.
+static int s_cli_http_status_get(const char *a_hdr)
+{
+    if (!a_hdr || strncmp(a_hdr, "HTTP/", 5))
+        return 0;
+    const char *l_code = strchr(a_hdr, ' ');
+    int l_status = l_code ? atoi(l_code + 1) : 0;
+    return l_status >= 100 && l_status < 600 ? l_status : 0;
+}
+
+static unsigned s_cli_http_retry_after_get(const char *a_hdr)
+{
+    static const char l_key[] = "Retry-After: ";
+    const char *l_p = a_hdr ? strstr(a_hdr, l_key) : NULL;
+    return l_p ? (unsigned)strtoul(l_p + sizeof(l_key) - 1, NULL, 10) : 0;
 }
 
 /**
@@ -201,6 +228,8 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
         return -1;
     }
     a_cmd->cmd_res_cur = 0;
+    a_cmd->http_status = 0;
+    a_cmd->retry_after = 0;
     dap_json_rpc_params_t *params = dap_json_rpc_params_create();
     char *l_cmd_str = dap_app_cli_form_command(a_cmd);
     dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
@@ -223,6 +252,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
     size_t res = send(a_socket, l_post_data->str, l_post_data->len, 0);
     if (res != l_post_data->len) {
         dap_json_rpc_request_free(a_request);
+        dap_string_free(l_post_data, true);
         printf("Error sending to server");
         return -1;
     }
@@ -238,17 +268,34 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
     }
     // process result
     if (!l_status && a_cmd->cmd_res) {
-        dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res + a_cmd->hdr_len);
-        if (l_id_response != response->id) {
-            printf("Wrong response from server\n");
-            dap_json_rpc_request_free(a_request);
-            dap_json_rpc_response_free(response);
-            return -1;
+        a_cmd->http_status = s_cli_http_status_get(a_cmd->cmd_res);
+        a_cmd->retry_after = s_cli_http_retry_after_get(a_cmd->cmd_res);
+        size_t l_body_size = a_cmd->cmd_res_cur > a_cmd->hdr_len ? a_cmd->cmd_res_cur - a_cmd->hdr_len : 0;
+        if (!l_body_size) {
+            // The overload gate answers 429 with an empty body: parsing it as
+            // JSON made a busy node look like a corrupted reply. Report it as
+            // busy so the caller retries instead of printing a format error.
+            if (a_cmd->http_status && a_cmd->http_status != 200) {
+                l_status = DAP_CLI_ERROR_BUSY;
+            } else {
+                printf("Empty response from server\n");
+                l_status = DAP_CLI_ERROR_FORMAT;
+            }
+        } else {
+            dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res + a_cmd->hdr_len);
+            if (!response) {
+                printf("Malformed response from server\n");
+                l_status = DAP_CLI_ERROR_FORMAT;
+            } else {
+                if (l_id_response != response->id) {
+                    printf("Wrong response from server\n");
+                    l_status = DAP_CLI_ERROR_FORMAT;
+                } else if (dap_json_rpc_response_printf_result(response, a_cmd->cmd_name, a_cmd->cmd_param, a_cmd->cmd_param_count) != 0) {
+                    printf("Something wrong with response\n");
+                }
+                dap_json_rpc_response_free(response);
+            }
         }
-        if (dap_json_rpc_response_printf_result(response, a_cmd->cmd_name, a_cmd->cmd_param, a_cmd->cmd_param_count) != 0) {
-            printf("Something wrong with response\n");
-        }
-        dap_json_rpc_response_free(response);
     }
     DAP_DELETE(a_cmd->cmd_res);
     dap_json_rpc_request_free(a_request);

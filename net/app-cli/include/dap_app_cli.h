@@ -36,6 +36,9 @@ typedef struct dap_app_cli_cmd_state {
     // for reply
     char *cmd_res;
     size_t cmd_res_len, cmd_res_cur, hdr_len;
+    // last HTTP status of the reply and its Retry-After, 0 when absent
+    int http_status;
+    unsigned retry_after;
 } dap_app_cli_cmd_state_t;
 
 #ifdef __cplusplus

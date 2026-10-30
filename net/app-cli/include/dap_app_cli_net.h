@@ -33,6 +33,7 @@
 #define DAP_CLI_ERROR_TIMEOUT   -2
 #define DAP_CLI_ERROR_SOCKET    -3
 #define DAP_CLI_ERROR_INCOMPLETE -4
+#define DAP_CLI_ERROR_BUSY      -5  // server refused with an empty 429/503 body (backpressure)
 
 // connection description
 typedef uint64_t dap_app_cli_connect_param_t;

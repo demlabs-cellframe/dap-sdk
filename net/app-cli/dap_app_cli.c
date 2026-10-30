@@ -30,6 +30,7 @@
 #include "dap_common.h"
 #include "dap_file_utils.h"
 #include "dap_strfuncs.h"
+#include "dap_time.h"
 #include "dap_cli_server.h"
 #include "dap_app_cli.h"
 #include "dap_app_cli_net.h"
@@ -239,12 +240,30 @@ int dap_app_cli_main(const char *a_app_name, int a_argc, const char **a_argv)
             .cmd_param_count    = a_argc - 2,
             .cmd_param          = a_argc - 2 > 0 ? (char**)(a_argv + 2) : NULL
         };
-        // Send command
-        dap_app_cli_connect_param_t cparam = dap_app_cli_connect();
-        if ( (dap_app_cli_connect_param_t)~0 == cparam )
-            return printf("Can't connect to CLI server\r\n"), -3;
-        l_res = dap_app_cli_post_command(cparam, &cmd);
-        dap_app_cli_disconnect(cparam);
+        // The overload gate can refuse a heavy command (ledger list, token
+        // list) with an empty 429 and Retry-After: 1 s. Retry a few times on
+        // a fresh connection so the CLI behaves like a patient operator tool
+        // instead of reporting a format error on a busy node.
+        enum { CLI_BUSY_ATTEMPTS_MAX = 3 };
+        for (int l_attempt = 1; ; ++l_attempt) {
+            // Send command
+            dap_app_cli_connect_param_t cparam = dap_app_cli_connect();
+            if ( (dap_app_cli_connect_param_t)~0 == cparam )
+                return printf("Can't connect to CLI server\r\n"), -3;
+            l_res = dap_app_cli_post_command(cparam, &cmd);
+            dap_app_cli_disconnect(cparam);
+            if (l_res != DAP_CLI_ERROR_BUSY)
+                break;
+            unsigned l_delay = cmd.retry_after ? cmd.retry_after : 1;
+            if (l_attempt >= CLI_BUSY_ATTEMPTS_MAX) {
+                printf("CLI server is busy (HTTP %d): the command was not executed, retry later\n",
+                       cmd.http_status);
+                break;
+            }
+            printf("CLI server is busy (HTTP %d), retrying in %u s (attempt %d/%d)\n",
+                   cmd.http_status, l_delay, l_attempt, CLI_BUSY_ATTEMPTS_MAX);
+            dap_usleep((uint64_t)l_delay * 1000000);
+        }
     } else {
         // no command passed, start interactive shell
         l_res = shell_reader_loop();
