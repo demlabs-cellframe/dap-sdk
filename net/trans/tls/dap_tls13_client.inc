@@ -18,11 +18,19 @@ typedef struct tls13_client {
     dap_wss_client_upgrade_t upgrade;
 } tls13_client_t;
 
+/* Wire-write result contract: 0 accepted, >0 retryable backpressure (nothing
+ * queued, caller must shed or retry), <0 fatal. Collapsing BLOCKED into -1
+ * used to mark the socket for close and, when it happened inside a frame
+ * dispatch callback, permanently flip the client phase to CLOSED — a zombie
+ * tunnel with a live TCP connection, no logs and no reconnect. */
 static int s_tls13_ws_wire(void *arg,const void *data,size_t size)
 {
     tls13_client_t *c=arg;
-    return dap_tls_plain_stream_write(&c->connection.endpoint.channel.tls,
-        &c->connection.endpoint.channel.outgoing,data,size)==DAP_TLS_PLAIN_WRITE_ACCEPTED ? 0 : -1;
+    dap_tls_plain_write_result_t l_rc = dap_tls_plain_stream_write(
+        &c->connection.endpoint.channel.tls,
+        &c->connection.endpoint.channel.outgoing,data,size);
+    if (l_rc == DAP_TLS_PLAIN_WRITE_ACCEPTED) return 0;
+    return l_rc == DAP_TLS_PLAIN_WRITE_BLOCKED ? 1 : -1;
 }
 static int s_tls13_ws_tail(void *arg,const void *data,size_t size)
 {
@@ -99,19 +107,51 @@ static int s_tls13_ws_ready(void *arg)
     c->dap.phase=TLS_PHASE_ENC_INIT_WAIT;
     return s_tls_send_enc_init(c->stream,&c->dap,c->stream->esocket);
 }
+/* Silent-failure diagnostics: every early return here used to vanish without a
+ * trace (the -1 becomes SIZE_MAX upstream and no shed counter catches it), which
+ * is exactly how the tunnel could freeze with a healthy worker and idle CPU. */
+static void s_tls13_write_fail_log(const char *a_why, int a_phase, size_t a_size)
+{
+    static atomic_llong s_last_log_ms;
+    static atomic_ullong s_fail_count;
+    unsigned long long l_n = atomic_fetch_add_explicit(&s_fail_count, 1, memory_order_relaxed) + 1;
+    int64_t l_now = dap_get_monotime_ms();
+    int64_t l_prev = atomic_load(&s_last_log_ms);
+    if (l_now - l_prev >= 5000 &&
+        atomic_compare_exchange_strong(&s_last_log_ms, &l_prev, l_now))
+        log_it(L_WARNING, "TLS13/WSS write refused: %s (phase=%d, size=%zu, total=%llu)",
+               a_why, a_phase, a_size, l_n);
+}
+
 static ssize_t s_tls13_client_write(dap_stream_t *stream,const void *data,size_t size)
 {
     tls13_client_t *c=stream && stream->trans_ctx ? stream->trans_ctx->transport_priv : NULL;
-    if (!c) return -1;
+    if (!c) {
+        s_tls13_write_fail_log("no transport ctx", -1, size);
+        return -1;
+    }
     uint8_t type;
     switch(c->state.phase) {
         case DAP_TLS13_WAIT_ENC: type=DAP_TLS13_ENC_REQUEST; break;
         case DAP_TLS13_WAIT_CTL: type=DAP_TLS13_CTL_REQUEST; break;
         case DAP_TLS13_STREAMING: type=DAP_TLS13_STREAM; break;
-        default: return -1;
+        default:
+            s_tls13_write_fail_log("unexpected phase", (int)c->state.phase, size);
+            return -1;
     }
-    if (c->wss ? dap_wss_dap_send(&c->ws,type,data,size) :
-        dap_tls13_channel_send(&c->connection.endpoint.channel,type,data,size)) {
+    int l_rc = c->wss ? dap_wss_dap_send(&c->ws,type,data,size) :
+                        dap_tls13_channel_send(&c->connection.endpoint.channel,type,data,size);
+    if (l_rc > 0) {
+        /* Egress queue full: shed this packet, keep the session. The upper
+         * layer counts the shed and inner TCP retransmits — real backpressure
+         * instead of a fatal close. */
+        s_tls13_write_fail_log("egress queue full (retryable, packet shed)",
+                               (int)c->state.phase, size);
+        return 0;
+    }
+    if (l_rc) {
+        s_tls13_write_fail_log(c->wss ? "wss_dap_send failed" : "channel_send failed",
+                               (int)c->state.phase, size);
         stream->esocket->flags|=DAP_SOCK_SIGNAL_CLOSE;
         return -1;
     }

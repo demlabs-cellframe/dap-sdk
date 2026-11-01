@@ -98,6 +98,8 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
 static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
                                 dap_net_trans_ready_cb_t a_callback);
 static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
+static void s_ws_stats_maybe_log(dap_net_trans_websocket_private_t *a_priv,
+                                 dap_events_socket_t *a_es);
 static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static void s_ws_close(dap_stream_t *a_stream);
 static uint32_t s_ws_get_capabilities(dap_net_trans_t *a_trans);
@@ -1073,6 +1075,7 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     if (!l_es || l_es->buf_in_size == 0) {
         return 0;
     }
+    s_ws_stats_maybe_log(l_priv, l_es);
 
     // --- Phase 1: Handle HTTP 101 Switching Protocols response ---
     if (l_priv->state == DAP_WS_STATE_CONNECTING) {
@@ -1344,6 +1347,28 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 /**
  * @brief Write data to WebSocket
  */
+/* Socket-level throughput report (5 s). Distinguishes "socket drained but no
+ * frames produced" from "frames queued but socket not draining" (buf_out). */
+static void s_ws_stats_maybe_log(dap_net_trans_websocket_private_t *a_priv,
+                                 dap_events_socket_t *a_es)
+{
+    static atomic_llong s_last_log_ms;
+    static atomic_ullong s_prev_tx, s_prev_rx;
+    int64_t l_now = dap_get_monotime_ms();
+    int64_t l_prev = atomic_load(&s_last_log_ms);
+    if (l_now - l_prev < 5000 ||
+        !atomic_compare_exchange_strong(&s_last_log_ms, &l_prev, l_now))
+        return;
+    uint64_t l_tx = a_priv ? a_priv->bytes_sent : 0;
+    uint64_t l_rx = a_priv ? a_priv->bytes_received : 0;
+    uint64_t l_tx_d = l_tx - atomic_exchange(&s_prev_tx, l_tx);
+    uint64_t l_rx_d = l_rx - atomic_exchange(&s_prev_rx, l_rx);
+    log_it(L_INFO, "WS sock: tx=%llu B rx=%llu B last 5s, buf_out=%zu buf_in=%zu state=%d",
+           (unsigned long long)l_tx_d, (unsigned long long)l_rx_d,
+           a_es ? a_es->buf_out_size : 0, a_es ? a_es->buf_in_size : 0,
+           a_priv ? (int)a_priv->state : -1);
+}
+
 static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
     if (!a_stream || !a_data || a_size == 0) {
@@ -1392,12 +1417,18 @@ static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_s
     }
 
     size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame_buffer, l_actual_frame_size);
+    s_ws_stats_maybe_log(l_priv, l_es);
     if (l_sent == l_actual_frame_size) {
         if (l_priv) {
             l_priv->frames_sent++;
             l_priv->bytes_sent += a_size;
         }
         debug_if(s_debug_more, L_DEBUG, "WebSocket write: %zu bytes (frame: %zu)", a_size, l_actual_frame_size);
+    } else if (l_sent == 0) {
+        /* Egress cap reached (congested peer) — transient, not an error.
+         * Returning 0 sheds this packet; VPN inner TCP retransmits it. */
+        debug_if(s_debug_more, L_DEBUG, "WebSocket write: egress congested, shed %zu bytes", a_size);
+        l_ret = -6;
     } else {
         log_it(L_ERROR, "WebSocket write incomplete or failed");
         l_ret = -6;

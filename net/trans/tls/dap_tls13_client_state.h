@@ -31,14 +31,24 @@ static int dap_tls13_client_dispatch(void *arg, uint8_t type, const void *data, 
     } else if (type == DAP_TLS13_STREAM && s->phase == DAP_TLS13_STREAMING) {
         callback = s->stream_data;
     } else {
+        int l_prev_phase = (int)s->phase;
         s->phase = DAP_TLS13_CLOSED;
+        log_it(L_ERROR, "TLS13/WSS client: unexpected frame (type=%d in phase=%d) — closing session",
+               (int)type, l_prev_phase);
         return -1;
     }
     if (!callback) { s->phase = DAP_TLS13_CLOSED; return -1; }
     void *user = s->arg;
     /* Owner must defer destruction until frame dispatch returns. */
     int rc = callback(user, data, size);
-    if (rc) s->phase = DAP_TLS13_CLOSED;
+    /* Only a fatal error ends the session. A retryable result (queue full)
+     * must not flip the phase to CLOSED: that silently bricked the transport
+     * (all further writes refused, all frames dropped) while TCP stayed up. */
+    if (rc < 0) {
+        s->phase = DAP_TLS13_CLOSED;
+        log_it(L_ERROR, "TLS13/WSS client: fatal dispatch error (type=%d rc=%d) — closing session",
+               (int)type, rc);
+    }
     return rc;
 }
 #endif

@@ -229,6 +229,15 @@ typedef struct dap_events_socket_callbacks {
 #define DAP_EVENTS_SOCKET_BUF_LIMIT     DAP_STREAM_PKT_SIZE_MAX
 #define DAP_QUEUE_MAX_MSGS              1024
 
+/* Hard cap for per-socket buffered output (buf_out). When a write would push
+ * buf_out past it, dap_events_socket_write_unsafe() refuses the data (returns 0)
+ * so callers shed load instead of buffering without bound. On the VPN hot path
+ * the shed packet makes inner TCP retransmit — natural end-to-end backpressure.
+ * 1 MB covers the bandwidth-delay product of a 100 Mbps / 67 ms path (~840 KB)
+ * and drains in ≤8 s even on a 1 Mbps uplink, keeping keepalive delay bounded. */
+#define DAP_ESOCKET_OUTBUF_CAP_DEFAULT  (1024 * 1024)
+extern size_t g_dap_esocket_outbuf_cap;
+
 typedef enum {
     DESCRIPTOR_TYPE_SOCKET_CLIENT,
     DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT,

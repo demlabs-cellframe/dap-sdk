@@ -21,6 +21,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_events.h"
 #include "dap_events_socket.h"
 #include "dap_context.h"
@@ -92,6 +93,7 @@ int dap_stream_worker_init()
  */
 static void s_ch_io_callback(void * a_msg)
 {
+    int64_t l_t0 = dap_get_monotime_ms();
     dap_stream_worker_msg_io_t * l_msg = (dap_stream_worker_msg_io_t*) a_msg;
     assert(l_msg);
 
@@ -123,9 +125,51 @@ static void s_ch_io_callback(void * a_msg)
         dap_stream_ch_set_ready_to_write_unsafe(l_msg_ch, false);
     if (l_msg->data_size && l_msg->data) {
         size_t l_ret = dap_stream_ch_pkt_write_unsafe(l_msg_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
+        if (!l_ret) {
+            /* Shed on congestion or channel teardown — must stay observable:
+             * VPN inner TCP retransmits, control channels surface the loss. */
+            static atomic_ullong s_shed_pkts;
+            static atomic_llong s_shed_last_log_ms;
+            unsigned long long l_total = atomic_fetch_add(&s_shed_pkts, 1) + 1;
+            int64_t l_now = dap_get_monotime_ms();
+            int64_t l_prev = atomic_load(&s_shed_last_log_ms);
+            if (l_now - l_prev >= 5000 &&
+                atomic_compare_exchange_strong(&s_shed_last_log_ms, &l_prev, l_now))
+                log_it(L_WARNING, "Stream worker: channel pkt shed (egress congested/full), "
+                       "total=%llu, last pkt %zu bytes", l_total, l_msg->data_size);
+        }
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);
+
+    /* Worker stall diagnostics: this thread pumps uploads, downloads and
+     * keepalives alike — a single slow message (or a long queue wait) freezes
+     * the whole tunnel. Log heavy messages and periodic queue depth. */
+    static atomic_ullong s_msgs_processed;
+    static atomic_ullong s_max_msg_ms;
+    static atomic_llong s_stat_last_log_ms;
+    int64_t l_dt = dap_get_monotime_ms() - l_t0;
+    uint64_t l_prev_max = atomic_load(&s_max_msg_ms);
+    if ((uint64_t)l_dt > l_prev_max)
+        atomic_store(&s_max_msg_ms, (uint64_t)l_dt);
+    uint64_t l_msgs = atomic_fetch_add(&s_msgs_processed, 1) + 1;
+    if (l_dt >= 50) {
+        static atomic_llong s_slow_last_log_ms;
+        int64_t l_now = dap_get_monotime_ms();
+        int64_t l_prev = atomic_load(&s_slow_last_log_ms);
+        if (l_now - l_prev >= 2000 &&
+            atomic_compare_exchange_strong(&s_slow_last_log_ms, &l_prev, l_now))
+            log_it(L_WARNING, "Stream worker: single msg took %lld ms (queue depth %zu)",
+                   (long long)l_dt, dap_context_queue_count(l_stream_worker->queue_ch_io));
+    }
+    int64_t l_now = dap_get_monotime_ms();
+    int64_t l_prev_stat = atomic_load(&s_stat_last_log_ms);
+    if (l_now - l_prev_stat >= 5000 &&
+        atomic_compare_exchange_strong(&s_stat_last_log_ms, &l_prev_stat, l_now))
+        log_it(L_INFO, "Stream worker: %llu msgs last 5s, queue depth %zu, slowest msg %llu ms",
+               (unsigned long long)l_msgs,
+               dap_context_queue_count(l_stream_worker->queue_ch_io),
+               (unsigned long long)atomic_exchange(&s_max_msg_ms, 0));
 }
 
 static void s_ch_send_callback(void *a_msg)

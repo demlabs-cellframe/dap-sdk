@@ -30,6 +30,7 @@
 #endif
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_events_socket.h"
@@ -147,6 +148,29 @@ static void    s_tls_deinit(dap_net_trans_t *a_trans);
 static int     s_tls_stage_prepare(dap_net_trans_t *a_trans,
                                    const dap_net_stage_prepare_params_t *a_params,
                                    dap_net_stage_prepare_result_t *a_result);
+/* Socket-level throughput report for the real WSS/TLS13 transport (5 s).
+ * Three boundaries are measured end-to-end (NE flow, stream worker, socket);
+ * comparing them localizes a freeze to a single hop. */
+static void s_tls_stats_maybe_log(dap_events_socket_t *a_es)
+{
+    static atomic_llong s_last_log_ms;
+    int64_t l_now = dap_get_monotime_ms();
+    int64_t l_prev = atomic_load(&s_last_log_ms);
+    if (l_now - l_prev < 5000 ||
+        !atomic_compare_exchange_strong(&s_last_log_ms, &l_prev, l_now))
+        return;
+    static atomic_ullong s_prev_out, s_prev_in;
+    /* buf_out/buf_in are instantaneous; cumulative byte counters live on the
+     * esocket as bytes_sent/bytes_received where available. */
+    log_it(L_INFO, "TLS/WSS sock: buf_out=%zu buf_in=%zu (prev out=%llu in=%llu), flags=0x%x",
+           a_es ? a_es->buf_out_size : 0, a_es ? a_es->buf_in_size : 0,
+           (unsigned long long)atomic_load(&s_prev_out),
+           (unsigned long long)atomic_load(&s_prev_in),
+           a_es ? a_es->flags : 0);
+    atomic_store(&s_prev_out, a_es ? a_es->buf_out_size : 0);
+    atomic_store(&s_prev_in, a_es ? a_es->buf_in_size : 0);
+}
+
 static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
 static void    s_tls_close(dap_stream_t *a_stream);
@@ -381,6 +405,7 @@ static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         ssize_t l_ret = dap_events_socket_write_unsafe(
             a_stream->esocket, l_wrapped, l_wrapped_size);
         DAP_DELETE(l_wrapped);
+        s_tls_stats_maybe_log(a_stream->esocket);
         return l_ret == (ssize_t)l_wrapped_size ? (ssize_t)a_size : -1;
     }
 
@@ -396,6 +421,7 @@ static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     size_t l_avail = l_es->buf_in_size;
     if (l_avail == 0)
         return 0;
+    s_tls_stats_maybe_log(l_es);
 
     tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
 

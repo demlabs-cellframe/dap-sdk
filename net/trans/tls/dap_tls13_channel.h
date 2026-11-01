@@ -37,8 +37,10 @@ static int dap_tls13_channel_send(dap_tls13_channel_t *c, uint8_t type,
     memcpy(frame + sizeof(header), data, size);
     dap_tls_plain_write_result_t rc = dap_tls_plain_stream_write(&c->tls, &c->outgoing, frame, total);
     free(frame);
-    /* Legacy DAP write contract has no retryable queue-full status. */
-    return rc == DAP_TLS_PLAIN_WRITE_ACCEPTED ? 0 : -1;
+    /* 0 accepted, >0 retryable queue-full (caller sheds/retries), <0 fatal.
+     * Reporting queue-full as fatal closed live tunnels under burst load. */
+    return rc == DAP_TLS_PLAIN_WRITE_ACCEPTED ? 0 :
+           rc == DAP_TLS_PLAIN_WRITE_BLOCKED ? 1 : -1;
 }
 
 /* 1: authenticated and drained this turn, 0: reschedule/I/O pending, -1: fail.

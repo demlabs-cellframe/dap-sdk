@@ -120,13 +120,20 @@ static int s_vpn_wire(void *arg, const void *data, size_t size)
             (unsigned long long)c->http.esocket->uuid, c->http.esocket->remote_addr_str,
             (int)rc, size, c->tls.endpoint.channel.outgoing.allocated, c->http.esocket->buf_out_size);
     /* END TEMP WSS-DIAG */
-    return rc == DAP_TLS_PLAIN_WRITE_ACCEPTED ? 0 : -1;
+    /* 0 accepted, >0 retryable queue-full, <0 fatal — same contract as the
+     * client wire. Reporting queue-full as fatal closed live VPN sessions. */
+    if (rc == DAP_TLS_PLAIN_WRITE_ACCEPTED) return 0;
+    return rc == DAP_TLS_PLAIN_WRITE_BLOCKED ? 1 : -1;
 }
 static ssize_t s_vpn_write(dap_stream_t *stream, const void *data, size_t size)
 {
     https_probe_client_t *c = stream && stream->esocket ? stream->esocket->_inheritor : NULL;
-    if (!c || dap_wss_server_session_write(&c->vpn, data, size)) {
-        if (c) c->http.esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+    if (!c) return -1;
+    int l_rc = dap_wss_server_session_write(&c->vpn, data, size);
+    if (l_rc > 0)
+        return 0;   /* egress queue full: shed packet, keep the session alive */
+    if (l_rc) {
+        c->http.esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
         return -1;
     }
     return (ssize_t)size;
@@ -213,8 +220,15 @@ static int s_ws_send(https_probe_client_t *client, dap_ws_opcode_t opcode,
     size_t length = 0;
     int rc = dap_net_trans_websocket_build_frame(wire, size + 14, opcode, fin, false,
                                                 data, size, &length);
-    if (!rc) rc = dap_tls_plain_stream_write(&client->tls.endpoint.channel.tls,
-        &client->tls.endpoint.channel.outgoing, wire, length) == DAP_TLS_PLAIN_WRITE_ACCEPTED ? 0 : -1;
+    if (!rc) {
+        dap_tls_plain_write_result_t l_wr = dap_tls_plain_stream_write(
+            &client->tls.endpoint.channel.tls,
+            &client->tls.endpoint.channel.outgoing, wire, length);
+        /* Control frames (PONG/close) are safe to drop when the egress queue is
+         * full — the peer re-pings. Reporting it as fatal killed the session. */
+        rc = l_wr == DAP_TLS_PLAIN_WRITE_BLOCKED ? 0 :
+             l_wr == DAP_TLS_PLAIN_WRITE_ACCEPTED ? 0 : -1;
+    }
     free(wire);
     return rc;
 }

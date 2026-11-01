@@ -76,6 +76,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include <pthread.h>
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_config.h"
 #include "dap_list.h"
 #include "dap_worker.h"
@@ -92,6 +93,9 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #define LOG_TAG "dap_events_socket"
 
 static bool s_debug_more = false;
+
+/* See dap_events_socket.h: per-socket buffered-output cap (backpressure). */
+size_t g_dap_esocket_outbuf_cap = DAP_ESOCKET_OUTBUF_CAP_DEFAULT;
 
 /* Thread-ownership assert for _unsafe functions.
  * Validates that the caller is the esocket's owner worker thread. */
@@ -1983,7 +1987,25 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
         log_it(L_ERROR, "Integer overflow in output size calculation");
         return NULL;
     }
-    
+
+    /* Congestion guard: never buffer more than the cap. write_unsafe() returns 0
+     * and upper layers shed the packet (VPN: inner TCP retransmits). Without this
+     * a stalled egress socket grew buf_out without bound and delayed everything
+     * queued behind it — including keepalives — until the peer was declared dead. */
+    if (l_needed > g_dap_esocket_outbuf_cap) {
+        static atomic_size_t s_cap_hits;
+        uint64_t l_hits = atomic_fetch_add(&s_cap_hits, 1) + 1;
+        static atomic_llong s_last_log_ms;
+        int64_t l_now = dap_get_monotime_ms();
+        int64_t l_prev = atomic_load(&s_last_log_ms);
+        if (l_now - l_prev >= 5000 &&
+            atomic_compare_exchange_strong(&s_last_log_ms, &l_prev, l_now))
+            log_it(L_WARNING, "Egress buffer cap hit (%zu/%zu bytes) on socket %"DAP_FORMAT_SOCKET
+                   " — shedding writes (hits=%llu)", a_es->buf_out_size,
+                   g_dap_esocket_outbuf_cap, a_es->fd, (unsigned long long)l_hits);
+        return NULL;
+    }
+
     if (a_es->buf_out_size_max < l_needed) {
         size_t l_capacity;
         /* Geometric growth avoids repeatedly copying a growing backlog.
@@ -1992,6 +2014,8 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
         if (__builtin_add_overflow(a_es->buf_out_size_max, l_growth, &l_capacity))
             l_capacity = l_needed;
         l_capacity = dap_max(l_capacity, l_needed);
+        if (l_capacity > g_dap_esocket_outbuf_cap)
+            l_capacity = g_dap_esocket_outbuf_cap;
         if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, l_capacity))) {
             log_it(L_ERROR, "Can't increase capacity: OOM!");
             return NULL;

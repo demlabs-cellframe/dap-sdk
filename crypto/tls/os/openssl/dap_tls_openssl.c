@@ -23,9 +23,11 @@
 #define LOG_TAG "dap_tls_openssl"
 
 #ifdef DAP_TLS_BACKEND_BORINGSSL
-/* BoringSSL has no SSL_in_before(); both call sites run before the handshake
- * starts, when BoringSSL's SSL_in_init() is still 0. */
-#define DAP_SSL_IN_BEFORE(ssl) (!SSL_in_init(ssl))
+/* BoringSSL has no SSL_in_before() and its SSL_in_init() is already 1 right
+ * after SSL_new() (the handshake object is created eagerly), so it cannot
+ * distinguish "fresh" from "in progress". SSL_is_init_finished() is 0 for a
+ * fresh SSL and only turns 1 after the initial handshake completes. */
+#define DAP_SSL_IN_BEFORE(ssl) (!SSL_is_init_finished(ssl))
 #else
 #define DAP_SSL_IN_BEFORE(ssl) (SSL_in_before(ssl))
 #endif

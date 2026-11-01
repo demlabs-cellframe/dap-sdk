@@ -120,10 +120,11 @@ size_t dap_client_enc_init_url_path(char *a_out, size_t a_out_size,
  * @brief dap_client_init
  * @return
  */
+static bool s_is_module_inited = false;
+
 int dap_client_init()
 {
-    static bool s_is_first_time = true;
-    if (s_is_first_time) {
+    if (!s_is_module_inited) {
         int err = 0;
         log_it(L_INFO, "Init DAP client module");
 
@@ -146,7 +147,7 @@ int dap_client_init()
         if (err) return err;
         dap_client_trans_ctx_init();
         dap_client_fsm_init();
-        s_is_first_time = false;
+        s_is_module_inited = true;
     }
     return 0;
 }
@@ -159,6 +160,10 @@ void dap_client_deinit()
     dap_client_fsm_deinit();
     dap_client_trans_ctx_deinit();
     dap_http_client_deinit();
+    /* Symmetry: the init above runs once per process under s_is_module_inited.
+     * A full deinit (NE provider stop/start in the same process) discards the
+     * FSM pool and transport contexts, so the next init must run again. */
+    s_is_module_inited = false;
     log_it(L_INFO, "Deinit DAP client module");
 }
 
