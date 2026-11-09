@@ -115,6 +115,12 @@ typedef struct dap_client {
     char tls13_spki_sha256[65]; // Per-client endpoint trust, copied before connect
     char tls13_server_name[254];
 
+    /* REALITY (VLESS) endpoint trust, copied before connect (client role only) */
+    char reality_uuid[37];        // VLESS UUID "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    char reality_public_key[65];  // Server X25519 public key, base64url (64 chars)
+    char reality_short_id[17];    // Server short_id, hex (<=16 chars)
+    char reality_sni[256];        // Mask SNI (empty = module default www.samsung.com)
+
     void *_internal;
     void *_inheritor;
 } dap_client_t;

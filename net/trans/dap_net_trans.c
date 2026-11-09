@@ -314,6 +314,7 @@ const char *dap_net_trans_type_to_str(dap_net_trans_type_t a_type)
         case DAP_NET_TRANS_TLS_DIRECT:    return "TLS_DIRECT";
         case DAP_NET_TRANS_TLS13:         return "TLS13";
         case DAP_NET_TRANS_WSS:           return "WSS";
+        case DAP_NET_TRANS_REALITY:       return "REALITY";
         case DAP_NET_TRANS_DNS_TUNNEL:    return "DNS_TUNNEL";
         default:                                 return "UNKNOWN";
     }
@@ -339,6 +340,7 @@ static const struct {
     { "tls_direct",   DAP_NET_TRANS_TLS_DIRECT },
     { "tls13",        DAP_NET_TRANS_TLS13 },
     { "wss",          DAP_NET_TRANS_WSS },
+    { "reality",      DAP_NET_TRANS_REALITY },
     { "dns",          DAP_NET_TRANS_DNS_TUNNEL },
     { "dns_tunnel",   DAP_NET_TRANS_DNS_TUNNEL },
 };

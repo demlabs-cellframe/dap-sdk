@@ -742,15 +742,19 @@ static void s_worker_execute_stage(void *a_arg)
                 (l_tc->stream->esocket->type == DESCRIPTOR_TYPE_SOCKET_UDP) ||
                 (l_client->trans_type == DAP_NET_TRANS_TLS_DIRECT) ||
                 (l_client->trans_type == DAP_NET_TRANS_TLS13) ||
-                (l_client->trans_type == DAP_NET_TRANS_WSS);
+                (l_client->trans_type == DAP_NET_TRANS_WSS) ||
+                (l_client->trans_type == DAP_NET_TRANS_REALITY);
             if (!l_keep_transport_read) {
                 l_tc->stream->esocket->callbacks.read_callback = l_stream_cbs.read_callback;
             }
-            if (l_client->trans_type != DAP_NET_TRANS_TLS13 && l_client->trans_type != DAP_NET_TRANS_WSS)
+            if (l_client->trans_type != DAP_NET_TRANS_TLS13 && l_client->trans_type != DAP_NET_TRANS_WSS &&
+                l_client->trans_type != DAP_NET_TRANS_REALITY)
                 l_tc->stream->esocket->callbacks.write_callback = l_stream_cbs.write_callback;
-            if (l_client->trans_type != DAP_NET_TRANS_TLS13 && l_client->trans_type != DAP_NET_TRANS_WSS)
+            if (l_client->trans_type != DAP_NET_TRANS_TLS13 && l_client->trans_type != DAP_NET_TRANS_WSS &&
+                l_client->trans_type != DAP_NET_TRANS_REALITY)
                 l_tc->stream->esocket->callbacks.error_callback = l_stream_cbs.error_callback;
-            if (l_client->trans_type != DAP_NET_TRANS_TLS13 && l_client->trans_type != DAP_NET_TRANS_WSS)
+            if (l_client->trans_type != DAP_NET_TRANS_TLS13 && l_client->trans_type != DAP_NET_TRANS_WSS &&
+                l_client->trans_type != DAP_NET_TRANS_REALITY)
                 l_tc->stream->esocket->callbacks.delete_callback = l_stream_cbs.delete_callback;
         }
 
@@ -1439,6 +1443,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         /* A fresh TLS13 connection must authenticate its peer and establish
          * the framed ENC/CTL state even when a previous DAP key exists. */
         const bool l_resume = l_client->trans_type != DAP_NET_TRANS_TLS13 && l_client->trans_type != DAP_NET_TRANS_WSS &&
+                              l_client->trans_type != DAP_NET_TRANS_REALITY &&
                               l_client->session_resume_mode && l_tc && l_tc->session_key;
 
         // Validate address

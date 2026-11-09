@@ -11,6 +11,8 @@ add_subdirectory(http)
 add_subdirectory(udp)
 add_subdirectory(dns)
 add_subdirectory(tls)
+# After tls: reality auto-enables itself when DAP_TLS13_OPENSSL is ON
+add_subdirectory(reality)
 
 # Unified trans abstraction layer (dap_net_trans.c) and server API (dap_net_trans_server.c)
 file(GLOB TRANS_CORE_SRCS 
@@ -47,7 +49,7 @@ target_include_directories(dap_net_trans PRIVATE
 )
 
 # Link dependencies
-dap_link_libraries(dap_net_trans INTERFACE
+set(DAP_NET_TRANS_DEPS
     dap_core
     dap_crypto
     dap_stream
@@ -59,6 +61,10 @@ dap_link_libraries(dap_net_trans INTERFACE
     dap_trans_dns
     dap_trans_tls
 )
+if(TARGET dap_trans_reality)
+    list(APPEND DAP_NET_TRANS_DEPS dap_trans_reality)
+endif()
+dap_link_libraries(dap_net_trans INTERFACE ${DAP_NET_TRANS_DEPS})
 
 # Register dap_net_trans module with dap_module system
 dap_register_module(

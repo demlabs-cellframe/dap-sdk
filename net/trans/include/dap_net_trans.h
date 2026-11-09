@@ -100,7 +100,8 @@ typedef enum dap_net_trans_type {
     DAP_NET_TRANS_DNS_TUNNEL     = 0x07,  ///< DNS-based tunneling
     DAP_NET_TRANS_TLS13          = 0x08,  ///< Standard authenticated TLS 1.3 (separate registration)
     DAP_NET_TRANS_WSS            = 0x09,  ///< DAP over authenticated WebSocket/TLS
-    DAP_NET_TRANS_MAX            = 0x09   ///< Maximum trans type value
+    DAP_NET_TRANS_REALITY        = 0x0A,  ///< VLESS+REALITY client transport (Xray-compatible, client role only)
+    DAP_NET_TRANS_MAX            = 0x0A   ///< Maximum trans type value
 } dap_net_trans_type_t;
 
 /**
@@ -522,6 +523,21 @@ dap_net_trans_t *dap_net_trans_find(dap_net_trans_type_t a_type);
  * @return Trans instance or NULL if not found
  */
 dap_net_trans_t *dap_net_trans_find_by_name(const char *a_name);
+
+/**
+ * @brief Register the REALITY (VLESS) client transport
+ *
+ * Client-role transport (Xray-compatible REALITY + VLESS + vision flow).
+ * Server listen/accept are not provided: on the server side the node is
+ * fronted by Xray (Reality inbound :443 -> 127.0.0.1:<http port>).
+ * Idempotent: repeated calls keep the single registration.
+ *
+ * @return 0 on success (or already registered), negative on failure
+ * @note The implementation is built only when the CMake option
+ *       DAP_SDK_NET_TRANS_REALITY is ON (auto-enabled together with
+ *       DAP_TLS13_OPENSSL); linking fails otherwise.
+ */
+int dap_net_trans_reality_register(void);
 
 /**
  * @brief Get trans name string
