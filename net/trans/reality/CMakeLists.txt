@@ -56,6 +56,30 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
         create_object_library(dap_trans_reality DAP_INTERNAL_MODULES "${REALITY_MODULE_SRCS}" HEADERS "")
         target_compile_definitions(dap_trans_reality PRIVATE DAP_SDK_NET_TRANS_REALITY=1)
+        # Vendored PQClean fips202/randombytes export generic names (shake256,
+        # sha3_512, randombytes, ...) that collide with dap-sdk crypto
+        # (dap_rand.c, msrln, ringct20) when the node links cellframe-sdk with
+        # --whole-archive. Prefix them at compile time — consistent inside the
+        # target (headers + call sites get the same defines). The PQCLEAN_
+        # MLKEM768_CLEAN_* symbols are already namespaced upstream.
+        set(REALITY_MLKEM_SYMS
+            shake128 shake128_absorb shake128_squeezeblocks shake128_ctx_clone shake128_ctx_release
+            shake128_inc_init shake128_inc_absorb shake128_inc_finalize shake128_inc_squeeze
+            shake128_inc_ctx_clone shake128_inc_ctx_release
+            shake256 shake256_absorb shake256_squeezeblocks shake256_ctx_clone shake256_ctx_release
+            shake256_inc_init shake256_inc_absorb shake256_inc_finalize shake256_inc_squeeze
+            shake256_inc_ctx_clone shake256_inc_ctx_release
+            sha3_256 sha3_256_inc_init sha3_256_inc_absorb sha3_256_inc_finalize
+            sha3_256_inc_ctx_clone sha3_256_inc_ctx_release
+            sha3_384 sha3_384_inc_init sha3_384_inc_absorb sha3_384_inc_finalize
+            sha3_384_inc_ctx_clone sha3_384_inc_ctx_release
+            sha3_512 sha3_512_inc_init sha3_512_inc_absorb sha3_512_inc_finalize
+            sha3_512_inc_ctx_clone sha3_512_inc_ctx_release
+            randombytes
+        )
+        foreach(_sym IN LISTS REALITY_MLKEM_SYMS)
+            target_compile_definitions(dap_trans_reality PRIVATE ${_sym}=reality_pqclean_${_sym})
+        endforeach()
         target_include_directories(dap_trans_reality PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${CMAKE_CURRENT_SOURCE_DIR}/port
