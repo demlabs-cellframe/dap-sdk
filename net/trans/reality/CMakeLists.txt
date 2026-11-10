@@ -61,9 +61,11 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
             ${CMAKE_CURRENT_SOURCE_DIR}/port
             ${CMAKE_CURRENT_SOURCE_DIR}/../tls
         )
-        # Threads for the bridge pump thread
-        find_package(Threads REQUIRED)
-        target_link_libraries(dap_trans_reality INTERFACE Threads::Threads)
+        # pthread (bridge pump thread) comes through dap_io's "pthread" link
+        # string in the chain below — do NOT reference the Threads::Threads
+        # imported target here: it exists only in this directory scope and
+        # breaks consumers (cellframe-sdk/node) that re-link the INTERFACE
+        # dependency chain from sibling directories.
         dap_link_libraries(dap_trans_reality INTERFACE
             dap_core
             dap_crypto
