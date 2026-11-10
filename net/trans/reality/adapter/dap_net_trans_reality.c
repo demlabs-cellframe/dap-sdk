@@ -90,6 +90,12 @@ typedef struct reality_adapter_ctx {
     bool have_headers;
     int http_status;
 
+    /* pre-takeover stream writes (keepalive/channel pings): buffered and
+     * flushed into the tunnel at takeover, same as HTTP transport queues
+     * them in esocket buf_out */
+    uint8_t *pending;
+    size_t pending_size;
+
     /* stream plaintext tail (STREAMING) */
     uint8_t *tail;
     size_t tail_size;
@@ -132,6 +138,20 @@ static int s_http_append(reality_adapter_ctx_t *a_ctx, const uint8_t *a_data, si
     memcpy(l_buf + a_ctx->http_size, a_data, a_size);
     a_ctx->http = l_buf;
     a_ctx->http_size += a_size;
+    return 0;
+}
+
+/* Buffer a pre-takeover stream write. 0 ok, -1 OOM */
+static int s_pending_append(reality_adapter_ctx_t *a_ctx, const void *a_data, size_t a_size)
+{
+    uint8_t *l_buf = realloc(a_ctx->pending, a_ctx->pending_size + a_size);
+    if (!l_buf) {
+        log_it(L_ERROR, "REALITY: pending queue OOM (%zu bytes)", a_ctx->pending_size + a_size);
+        return -1;
+    }
+    memcpy(l_buf + a_ctx->pending_size, a_data, a_size);
+    a_ctx->pending = l_buf;
+    a_ctx->pending_size += a_size;
     return 0;
 }
 
@@ -190,8 +210,11 @@ static int s_http_try_complete(reality_adapter_ctx_t *a_ctx,
     }
     size_t l_body_size = a_ctx->http_size > a_ctx->headers_size ?
                          a_ctx->http_size - a_ctx->headers_size : 0;
-    if (l_body_size < a_ctx->content_len)
+    if (l_body_size < a_ctx->content_len) {
+        debug_if(true, L_DEBUG, "REALITY: HTTP body %zu/%zu — waiting",
+                 l_body_size, a_ctx->content_len);
         return 0; /* body incomplete */
+    }
     *a_body = a_ctx->http + a_ctx->headers_size;
     *a_body_size = a_ctx->content_len;
     return 1;
@@ -261,6 +284,8 @@ static void s_reality_es_delete(dap_events_socket_t *a_es, void *a_arg)
         DAP_DEL_Z(l_ctx->alice);
         s_http_reset(l_ctx);
         DAP_DEL_Z(l_ctx->tail);
+        DAP_DEL_Z(l_ctx->pending);
+        l_ctx->pending_size = 0;
         DAP_DELETE(l_ctx);
     }
 }
@@ -314,6 +339,8 @@ static void s_reality_read_cb(dap_events_socket_t *a_es, void *a_arg)
     reality_adapter_ctx_t *l_ctx = a_arg;
     if (!l_ctx || !a_es->buf_in_size)
         return;
+    debug_if(true, L_DEBUG, "REALITY: read event %zu bytes (phase %s, http_buf %zu)",
+             a_es->buf_in_size, s_phase_str(l_ctx->phase), l_ctx->http_size);
 
     switch (l_ctx->phase) {
     case RPH_ENC_WAIT:
@@ -397,6 +424,13 @@ static void s_reality_read_cb(dap_events_socket_t *a_es, void *a_arg)
             s_http_reset(l_ctx);
             if (l_cb)
                 l_cb(l_ctx->stream, 0);
+            /* flush writes buffered before takeover (channel pings, keepalive) */
+            if (l_ctx->pending_size) {
+                debug_if(true, L_DEBUG, "REALITY: flushing %zu pre-takeover bytes", l_ctx->pending_size);
+                dap_events_socket_write_unsafe(l_ctx->es, l_ctx->pending, l_ctx->pending_size);
+                DAP_DEL_Z(l_ctx->pending);
+                l_ctx->pending_size = 0;
+            }
             if (l_leftover) {
                 debug_if(true, L_DEBUG, "REALITY: %zu pipelined bytes after takeover", l_leftover);
                 if (s_tls_stream_feed(l_ctx->stream, &l_ctx->tail, &l_ctx->tail_size,
@@ -899,9 +933,20 @@ static ssize_t s_reality_write(dap_stream_t *a_stream, const void *a_data, size_
     if (!l_ctx || !a_data || !a_size)
         return -1;
     if (l_ctx->phase != RPH_STREAMING) {
-        log_it(L_WARNING, "REALITY: write refused in phase %s (%zu bytes)",
-               s_phase_str(l_ctx->phase), a_size);
-        return -1;
+        /* Pre-takeover writes (channel setup / keepalive pings): buffer and
+         * flush into the tunnel at takeover — the HTTP transport queues them
+         * in esocket buf_out the same way. Refusing them here made the server
+         * side idle-close the session mid-negotiation. */
+        if (l_ctx->pending_size + a_size > 256u * 1024u) {
+            log_it(L_WARNING, "REALITY: pre-takeover pending queue overflow (%zu bytes refused)",
+                   a_size);
+            return -1;
+        }
+        if (s_pending_append(l_ctx, a_data, a_size) != 0)
+            return -1;
+        debug_if(true, L_DEBUG, "REALITY: queued %zu bytes in phase %s (pending %zu)",
+                 a_size, s_phase_str(l_ctx->phase), l_ctx->pending_size);
+        return (ssize_t)a_size;
     }
     ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->es, a_data, a_size);
     return l_sent == (ssize_t)a_size ? (ssize_t)a_size : -1;
