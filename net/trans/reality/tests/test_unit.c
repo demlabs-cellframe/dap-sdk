@@ -277,17 +277,34 @@ static void test_auth_seal_roundtrip(void)
 
 static void test_rate_limiter(void)
 {
+    /* Small rate: burst is floored to 32 KiB so a 16 KiB pump chunk always fits */
     rate_limiter_t rl;
-    rate_limiter_init(&rl, 1000); /* 1000 B/s */
+    rate_limiter_init(&rl, 100000); /* 100 kB/s */
+    CHECK(rl.burst == 32768, "rl: burst floored to 32 KiB for small rates");
     uint64_t t = 1000;
-    CHECK(rate_limiter_allow(&rl, t, 500), "rl: first 500B allowed");
-    CHECK(rate_limiter_allow(&rl, t, 500), "rl: second 500B allowed (bucket)");
-    CHECK(!rate_limiter_allow(&rl, t, 500), "rl: third 500B denied same ms");
-    t += 1000; /* +1s -> refill 1000 */
-    CHECK(rate_limiter_allow(&rl, t, 900), "rl: refilled after 1s");
-    uint64_t d = rate_limiter_delay_ms(&rl, t, 5000);
-    CHECK(d > 0, "rl: delay reported when over budget");
+    CHECK(rate_limiter_allow(&rl, t, 16384), "rl: first 16 KiB allowed (burst)");
+    CHECK(rate_limiter_allow(&rl, t, 16384), "rl: second 16 KiB allowed (burst)");
+    CHECK(rl.tokens == 0, "rl: bucket drained");
+    CHECK(!rate_limiter_allow(&rl, t, 500), "rl: denied while empty (same ms)");
+    t += 1000; /* +1 s -> refill 100000, capped at burst */
+    CHECK(rate_limiter_allow(&rl, t, 16384), "rl: refilled after 1s");
+    CHECK(rl.tokens <= rl.burst, "rl: refill capped at burst");
+
+    /* Large rate: burst = 250 ms of the rate */
+    rate_limiter_t rl2;
+    rate_limiter_init(&rl2, 1000000); /* 1 MB/s */
+    CHECK(rl2.burst == 250000, "rl: burst = 250 ms of rate");
+
+    /* Oversized chunk (> bucket) must still be admitted once the bucket is
+     * full, otherwise the waiter would spin forever on tiny caps. */
+    rate_limiter_t rl3;
+    rate_limiter_init(&rl3, 1000); /* 1 kB/s -> burst floored to 32 KiB */
+    CHECK(rate_limiter_allow(&rl3, t, 1u << 20), "rl: oversized chunk admitted (no deadlock)");
+    CHECK(rl3.tokens == 0, "rl: oversized chunk drains the bucket");
+    CHECK(rate_limiter_delay_ms(&rl3, t, 1u << 20) > 0, "rl: delay reported when over budget");
+
     rate_limiter_t rl0; rate_limiter_init(&rl0, 0);
+    CHECK(rl0.burst == 0, "rl: rate 0 -> empty bucket, but unlimited");
     CHECK(rate_limiter_allow(&rl0, t, 1u << 20), "rl: rate 0 = unlimited");
 }
 

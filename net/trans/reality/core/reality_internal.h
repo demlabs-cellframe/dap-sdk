@@ -143,6 +143,7 @@ int64_t vision_read(vision_reader_t *a_r, const uint8_t *a_src, size_t a_len,
 
 typedef struct rate_limiter {
     uint64_t rate_bps;      /* bytes per second, 0 = off */
+    uint64_t burst;         /* bucket capacity (bytes); limits short-transfer burst */
     uint64_t tokens;
     uint64_t last_mono_ms;
 } rate_limiter_t;

@@ -61,7 +61,8 @@ int main(void)
     snprintf(cfg.public_key_b64url, sizeof(cfg.public_key_b64url), "%s", pubkey);
     if (shortid) snprintf(cfg.short_id_hex, sizeof(cfg.short_id_hex), "%s", shortid);
     snprintf(cfg.uuid, sizeof(cfg.uuid), "%s", uuid);
-    cfg.rate_limit_bytes_per_sec = 0; /* raw speed for the test */
+    const char *rate_s = getenv("REALITY_RATE_LIMIT");
+    cfg.rate_limit_bytes_per_sec = rate_s ? (uint32_t)strtoul(rate_s, NULL, 10) : 0;
 
     reality_io_ops_t *io = reality_io_socket_connect(node, (uint16_t)atoi(port_s), 15,
                                                      getenv("REALITY_IFACE"));
@@ -90,7 +91,7 @@ int main(void)
         return 1;
     }
 
-    uint8_t buf[16384];
+    uint8_t buf[262144];
     size_t total = 0;
     for (;;) {
         size_t n = 0;
@@ -106,8 +107,13 @@ int main(void)
     buf[total] = 0;
     uint64_t t2 = now_ms();
 
-    printf("--- response (%zu bytes, %llu ms) ---\n%s\n---\n",
-           total, (unsigned long long)(t2 - t1), total > 600 ? "(truncated)" : (char *)buf);
+    {
+        double secs = (double)(t2 - t1) / 1000.0;
+        double kbps = secs > 0 ? (double)total / secs / 1024.0 : 0.0;
+        printf("--- response (%zu bytes, %llu ms, %.1f KB/s) ---\n%s\n---\n",
+               total, (unsigned long long)(t2 - t1), kbps,
+               total > 600 ? "(truncated)" : (char *)buf);
+    }
 
     int ok = total > 0 && strstr((char *)buf, "200") != NULL;
     reality_session_close(s);

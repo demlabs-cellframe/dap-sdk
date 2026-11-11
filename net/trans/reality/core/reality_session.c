@@ -13,6 +13,23 @@
 
 #define VLESS_CHUNK 2048u
 
+/* Shared token bucket for BOTH directions (a single flow-rate cap is what the
+ * DPI measurements call for). Blocking here is safe: the session is consumed
+ * either by the bridge pump thread or by a blocking test/CLI reader. */
+static void rate_limit_wait(reality_session_t *s, size_t a_len)
+{
+    if (!s->rl.rate_bps || !s->time->sleep_ms || !a_len)
+        return;
+    for (;;) {
+        uint64_t now = s->time->mono_ms(s->time->user);
+        if (rate_limiter_allow(&s->rl, now, a_len))
+            break;
+        uint64_t d = rate_limiter_delay_ms(&s->rl, now, a_len);
+        if (d > 1000) d = 1000;
+        s->time->sleep_ms(s->time->user, d);
+    }
+}
+
 /* raw (non-vision) read of exactly need bytes into dst; leftovers stay in rawbuf */
 static int read_raw_exact(reality_session_t *s, uint8_t *dst, size_t need)
 {
@@ -121,15 +138,8 @@ int reality_session_write(reality_session_t *s, const uint8_t *buf, size_t len)
         size_t chunk = len - off;
         if (chunk > VLESS_CHUNK) chunk = VLESS_CHUNK;
 
-        if (s->rl.rate_bps && s->time->sleep_ms) {
-            for (;;) {
-                uint64_t now = s->time->mono_ms(s->time->user);
-                if (rate_limiter_allow(&s->rl, now, chunk)) break;
-                uint64_t d = rate_limiter_delay_ms(&s->rl, now, chunk);
-                if (d > 1000) d = 1000;
-                s->time->sleep_ms(s->time->user, d);
-            }
-        }
+        if (s->rl.rate_bps && s->time->sleep_ms)
+            rate_limit_wait(s, chunk);
 
         size_t flen = vision_write(&s->vw, buf + off, chunk, frame, sizeof(frame));
         if (flen == 0) RFAIL(s, REALITY_ERR_PROTOCOL, "vision_write overflow");
@@ -166,6 +176,7 @@ int reality_session_read(reality_session_t *s, uint8_t *buf, size_t cap, size_t 
     if (s->appbuf_len > s->appbuf_off) {
         size_t n = s->appbuf_len - s->appbuf_off;
         if (n > cap) n = cap;
+        rate_limit_wait(s, n);
         memcpy(buf, s->appbuf + s->appbuf_off, n);
         s->appbuf_off += n;
         *out_len = n;
@@ -194,6 +205,7 @@ int reality_session_read(reality_session_t *s, uint8_t *buf, size_t cap, size_t 
 
         size_t take = s->appbuf_len;
         if (take > cap) take = cap;
+        rate_limit_wait(s, take);
         memcpy(buf, s->appbuf, take);
         s->appbuf_off = take;
         *out_len = take;
