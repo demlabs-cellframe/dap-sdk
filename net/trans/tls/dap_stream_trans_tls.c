@@ -46,44 +46,11 @@
 #include "dap_tls_fingerprint.h"
 #include "dap_stream_trans_tls.h"
 #include "dap_net_trans_tls_server.h"
+#include "dap_tls_dap.h"
 
 #define LOG_TAG "dap_stream_trans_tls"
-static dap_tls13_trust_provider_t s_tls13_trust_provider;
-static void *s_tls13_trust_arg;
-
-void dap_stream_trans_tls13_set_trust_provider(dap_tls13_trust_provider_t provider, void *arg)
-{
-    s_tls13_trust_provider = provider;
-    s_tls13_trust_arg = arg;
-}
 #include <json-c/json.h>
 #include "dap_tls_stream_buffer.h"
-
-/* Client-side protocol phases, processed in order by the single read callback.
- * The state machine is driven by this enum, NOT by swapping read_callback
- * pointers — so there is no window where a server response can arrive with
- * no callback able to receive it (the race the old swap-on-write design had). */
-typedef enum tls_client_phase {
-    TLS_PHASE_HANDSHAKE = 0,       /* waiting for ServerHello */
-    TLS_PHASE_ENC_INIT_WAIT,       /* sent enc_init, waiting for response */
-    TLS_PHASE_STREAM_CTL_WAIT,     /* sent stream_ctl, waiting for response */
-    TLS_PHASE_STREAMING,           /* established — DAP stream packets */
-} tls_client_phase_t;
-
-typedef struct tls_mimicry_ctx {
-    dap_tls_mimicry_t *mimicry;
-    char              *sni_hostname;
-    dap_net_trans_handshake_cb_t handshake_cb;
-    dap_net_handshake_params_t  handshake_params;  /* saved for enc_init after TLS handshake */
-    dap_net_trans_session_cb_t  session_create_cb; /* callback for stream_ctl response */
-    tls_client_phase_t           phase;            /* current protocol phase */
-    uint8_t *stream_tail;
-    size_t stream_tail_size;
-    char *enc_reply;
-    size_t enc_reply_size;
-} tls_mimicry_ctx_t;
-
-
 
 static dap_stream_trans_tls_config_t s_config;
 static bool s_debug_more = false;
@@ -145,9 +112,6 @@ static dap_stream_t *s_stream_from_es(dap_events_socket_t *a_es)
 
 static int     s_tls_init(dap_net_trans_t *a_trans, dap_config_t *a_cfg);
 static void    s_tls_deinit(dap_net_trans_t *a_trans);
-static int     s_tls_stage_prepare(dap_net_trans_t *a_trans,
-                                   const dap_net_stage_prepare_params_t *a_params,
-                                   dap_net_stage_prepare_result_t *a_result);
 /* Socket-level throughput report for the real WSS/TLS13 transport (5 s).
  * Three boundaries are measured end-to-end (NE flow, stream worker, socket);
  * comparing them localizes a freeze to a single hop. */
@@ -174,7 +138,6 @@ static void s_tls_stats_maybe_log(dap_events_socket_t *a_es)
 static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
 static void    s_tls_close(dap_stream_t *a_stream);
-static uint32_t s_tls_get_caps(dap_net_trans_t *a_trans);
 
 static int s_tls_handshake_init(dap_stream_t *a_stream,
                                 dap_net_handshake_params_t *a_params,
@@ -187,11 +150,11 @@ static int s_tls_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 static const dap_net_trans_ops_t s_tls_ops = {
     .init             = s_tls_init,
     .deinit           = s_tls_deinit,
-    .stage_prepare    = s_tls_stage_prepare,
+    .stage_prepare    = dap_tls_dap_stage_prepare,
     .write            = s_tls_write,
     .read             = s_tls_read,
     .close            = s_tls_close,
-    .get_capabilities = s_tls_get_caps,
+    .get_capabilities = dap_tls_dap_get_caps,
     .handshake_init   = s_tls_handshake_init,
     .session_create   = s_tls_session_create,
     .session_start    = s_tls_session_start
@@ -202,7 +165,7 @@ static const dap_net_trans_ops_t s_tls_ops = {
 /* ========================================================================== */
 
 #ifdef DAP_TLS13_OPENSSL
-static int s_tls13_register_client(void);
+#include "dap_net_trans_tls13.h"
 #endif
 int dap_stream_trans_tls_register(void)
 {
@@ -224,7 +187,7 @@ int dap_stream_trans_tls_register(void)
     if (l_rc == 0)
         log_it(L_NOTICE, "TLS Mimicry transport registered");
 #ifdef DAP_TLS13_OPENSSL
-    if (!l_rc) l_rc = s_tls13_register_client();
+    if (!l_rc) l_rc = dap_net_trans_tls13_register();
 #endif
     return l_rc;
 }
@@ -234,7 +197,7 @@ int dap_stream_trans_tls_unregister(void)
     dap_net_trans_tls_server_deinit();
     DAP_DEL_Z(s_config.sni_hostname);
 #ifdef DAP_TLS13_OPENSSL
-    dap_net_trans_unregister(DAP_NET_TRANS_TLS13);
+    dap_net_trans_tls13_unregister();
 #endif
     return dap_net_trans_unregister(DAP_NET_TRANS_TLS_DIRECT);
 }
@@ -279,6 +242,7 @@ static int s_tls_init(dap_net_trans_t *a_trans, dap_config_t *a_cfg)
     UNUSED(a_trans);
     if (a_cfg) {
         s_debug_more = dap_config_get_item_bool_default(a_cfg, "tls", "debug_more", false);
+        dap_tls_dap_set_debug_more(s_debug_more);
         const char *l_sni = dap_config_get_item_str(a_cfg, "tls", "sni_hostname");
         if (l_sni) {
             DAP_DEL_Z(s_config.sni_hostname);
@@ -295,88 +259,6 @@ static void s_tls_deinit(dap_net_trans_t *a_trans)
     UNUSED(a_trans);
     DAP_DEL_Z(s_config.sni_hostname);
     debug_if(s_debug_more, L_DEBUG, "TLS Mimicry transport deinitialized");
-}
-
-static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
-                               const dap_net_stage_prepare_params_t *a_params,
-                               dap_net_stage_prepare_result_t *a_result)
-{
-    UNUSED(a_trans);
-    if (!a_params || !a_result) return -1;
-    memset(a_result, 0, sizeof(*a_result));
-
-    dap_events_socket_callbacks_t *l_cbs = a_params->callbacks;
-    // Resolve first and create a socket of the resolved family (IPv6/NAT64-safe)
-    bool l_resolve_failed = false;
-    dap_events_socket_t *l_es = dap_events_socket_create_resolved(a_params->host, a_params->port,
-                                                                  SOCK_STREAM, 0, l_cbs, &l_resolve_failed);
-    if (!l_es) {
-        log_it(L_ERROR, "Failed to %s for TLS mimicry transport",
-               l_resolve_failed ? "resolve address" : "create TCP socket");
-        a_result->error_code = -1;
-        return -1;
-    }
-
-    l_es->_inheritor = a_params->client_ctx;
-
-    /* Disable Nagle's algorithm on the client-side TCP socket.
-     * VPN data consists of individual IP packets (~1420 bytes + headers);
-     * Nagle delays small writes up to 200 ms waiting for coalescing or an ACK,
-     * which adds unacceptable latency on the VPN hot path. */
-    {
-        int l_nodelay = 1;
-        if (setsockopt(l_es->socket, IPPROTO_TCP, TCP_NODELAY,
-                        (const char *)&l_nodelay, sizeof(l_nodelay)) < 0)
-            log_it(L_WARNING, "TLS transport: failed to set TCP_NODELAY: %s", strerror(errno));
-    }
-
-    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE | DAP_SOCK_READY_TO_READ;
-#ifdef DAP_EVENTS_CAPS_IOCP
-    l_es->flags &= ~DAP_SOCK_READY_TO_READ;
-#else
-    int l_err = 0;
-    dap_events_socket_connect(l_es, &l_err);
-    if (l_err) {
-        log_it(L_ERROR, "TLS Mimicry: TCP connect error: %d", l_err);
-        a_result->error_code = l_err;
-        /* Not published to a worker yet. The caller still owns client_ctx
-         * and callbacks.arg on prepare failure. */
-        dap_events_socket_delete_unsafe(l_es, true);
-        return -1;
-    }
-#endif
-
-    if (a_params->worker)
-        dap_worker_add_events_socket(a_params->worker, l_es);
-
-    /* Create stream from esocket — same as HTTP transport.
-     * The stream is needed for the FSM to proceed through
-     * enc_init → stream_ctl → stream stages. */
-    dap_stream_t *l_stream = dap_stream_new_es_client(l_es,
-                                (dap_stream_node_addr_t *)a_params->node_addr,
-                                a_params->authorized);
-    if (!l_stream) {
-        log_it(L_ERROR, "TLS Mimicry: failed to create stream");
-        a_result->error_code = -1;
-        /* prepare failed: FSM still owns callbacks.arg/client_ctx. Retire
-         * the socket without notifying/deleting those owners a second time. */
-        memset(&l_es->callbacks, 0, sizeof(l_es->callbacks));
-        if (l_es->worker)
-            dap_events_socket_remove_and_delete_unsafe(l_es, true);
-        else
-            dap_events_socket_delete_unsafe(l_es, true);
-        return -1;
-    }
-    l_stream->trans = a_trans;
-
-    a_result->esocket = l_es;
-    a_result->stream = l_stream;
-    a_result->error_code = 0;
-
-    const char *l_sni = s_config.sni_hostname ? s_config.sni_hostname : "";
-    log_it(L_INFO, "TLS Mimicry: TCP connect to %s:%u initiated (SNI=%s)",
-           a_params->host, a_params->port, l_sni);
-    return 0;
 }
 
 static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
@@ -522,17 +404,6 @@ static void s_tls_close(dap_stream_t *a_stream)
     }
 }
 
-static uint32_t s_tls_get_caps(dap_net_trans_t *a_trans)
-{
-    UNUSED(a_trans);
-    return DAP_NET_TRANS_CAP_RELIABLE
-         | DAP_NET_TRANS_CAP_ORDERED
-         | DAP_NET_TRANS_CAP_OBFUSCATION
-         | DAP_NET_TRANS_CAP_BIDIRECTIONAL
-         | DAP_NET_TRANS_CAP_HIGH_THROUGHPUT
-         | DAP_NET_TRANS_CAP_MIMICRY;
-}
-
 /* ========================================================================== */
 /*  Client-side TLS handshake (fake TLS for DPI evasion)                     */
 /* ========================================================================== */
@@ -545,90 +416,6 @@ static uint32_t s_tls_get_caps(dap_net_trans_t *a_trans)
  * processes them, completes the TLS handshake, and notifies the FSM.
  */
 static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg);
-
-/**
- * @brief Build and send the enc_init HTTP POST through the TLS channel.
- *
- * Called once, right after the fake TLS handshake completes. Advances
- * l_ctx->phase to TLS_PHASE_ENC_INIT_WAIT so the next incoming TLS record
- * (the server's enc_init reply) is routed to the FSM via handshake_cb.
- *
- * @return 0 on success, -1 on allocation/send failure.
- */
-static int s_tls_send_enc_init(dap_stream_t *a_stream, tls_mimicry_ctx_t *a_ctx,
-                               dap_events_socket_t *a_es)
-{
-    /* Node address: base58-encode the stream's node addr (set at stream
-     * creation from a_params->node_addr). Fall back to the legacy anonymous
-     * placeholder — same logic as the HTTP transport. */
-    char l_node_addr_b58[32] = "gd4y5yh78w42aaagh";
-    if (a_stream->node.uint64) {
-        uint64_t l_addr_le = a_stream->node.uint64;
-        size_t l_b58_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), l_node_addr_b58);
-        if (!l_b58_len)
-            dap_strncpy(l_node_addr_b58, "gd4y5yh78w42aaagh", sizeof(l_node_addr_b58) - 1);
-    }
-
-    char l_enc_init_url[512];
-    snprintf(l_enc_init_url, sizeof(l_enc_init_url),
-             "/%s/%s?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,"
-             "block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-             DAP_UPLINK_PATH_ENC_INIT, l_node_addr_b58,
-             a_ctx->handshake_params.enc_type,
-             a_ctx->handshake_params.pkey_exchange_type,
-             a_ctx->handshake_params.pkey_exchange_size,
-             a_ctx->handshake_params.block_key_size,
-             a_ctx->handshake_params.protocol_version,
-             a_ctx->handshake_params.sign_count);
-
-    /* Body = base64-encoded alice_pub_key */
-    size_t l_body_b64_size = ((a_ctx->handshake_params.alice_pub_key_size + 2) / 3) * 4 + 1;
-    char *l_body_b64 = DAP_NEW_Z_SIZE(char, l_body_b64_size);
-    if (!l_body_b64)
-        return -1;
-
-    static const char s_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    size_t l_in_len = a_ctx->handshake_params.alice_pub_key_size;
-    const uint8_t *l_in = a_ctx->handshake_params.alice_pub_key;
-    size_t l_out_pos = 0;
-    for (size_t i = 0; i < l_in_len; i += 3) {
-        uint32_t n = (uint32_t)l_in[i] << 16;
-        if (i + 1 < l_in_len) n |= (uint32_t)l_in[i + 1] << 8;
-        if (i + 2 < l_in_len) n |= (uint32_t)l_in[i + 2];
-        l_body_b64[l_out_pos++] = s_b64[(n >> 18) & 0x3F];
-        l_body_b64[l_out_pos++] = s_b64[(n >> 12) & 0x3F];
-        l_body_b64[l_out_pos++] = (i + 1 < l_in_len) ? s_b64[(n >> 6) & 0x3F] : '=';
-        l_body_b64[l_out_pos++] = (i + 2 < l_in_len) ? s_b64[n & 0x3F] : '=';
-    }
-    l_body_b64[l_out_pos] = '\0';
-
-    char l_http_post[8192];
-    int l_post_size = snprintf(l_http_post, sizeof(l_http_post),
-        "POST %s HTTP/1.1\r\n"
-        "Host: localhost\r\n"
-        "Content-Type: text/text\r\n"
-        "Content-Length: %zu\r\n"
-        "Connection: keep-alive\r\n"
-        "\r\n"
-        "%s",
-        l_enc_init_url, l_out_pos, l_body_b64);
-
-    int l_ret = 0;
-    if (l_post_size < 0 || (size_t)l_post_size >= sizeof(l_http_post)) {
-        log_it(L_ERROR, "TLS enc_init: HTTP request too large (%d bytes)", l_post_size);
-        l_ret = -1;
-    } else {
-        ssize_t l_sent = dap_stream_trans_write_unsafe(a_stream, l_http_post, (size_t)l_post_size);
-        if (l_sent > 0)
-            log_it(L_NOTICE, "TLS enc_init sent (%zd bytes) through TLS channel", l_sent);
-        else {
-            log_it(L_ERROR, "TLS enc_init: failed to send through TLS channel");
-            l_ret = -1;
-        }
-    }
-    DAP_DELETE(l_body_b64);
-    return l_ret;
-}
 
 /**
  * @brief Single esocket read callback for the whole TLS client lifecycle.
@@ -702,7 +489,7 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
         }
 
         log_it(L_NOTICE, "TLS handshake completed — sending enc_init through TLS channel");
-        if (s_tls_send_enc_init(l_stream, l_ctx, a_es) == 0) {
+        if (dap_tls_dap_send_enc_init(l_stream, l_ctx, a_es) == 0) {
             l_ctx->phase = TLS_PHASE_ENC_INIT_WAIT;
             /* Keep EPOLLIN armed; the reactor recv()s the enc_init reply. */
             dap_events_socket_set_readable_unsafe(a_es, true);
@@ -963,87 +750,11 @@ static int s_tls_handshake_init(dap_stream_t *a_stream,
 /**
  * @brief Create DAP session through TLS channel
  *
- * Sends stream_ctl HTTP POST through the TLS channel. The HTTP POST
- * is wrapped in TLS records by s_tls_write (called by DAP stream layer).
- * Server processes it through its internal HTTP server after TLS unwrap.
- *
- * This is independent of the HTTP transport module — TLS has its own
- * internal HTTP server (created in dap_net_trans_tls_server.c).
+ * Sends stream_ctl HTTP POST through the TLS channel (shared builder
+ * dap_tls_dap_send_session_request). The HTTP POST is wrapped in TLS records
+ * by s_tls_write (called by DAP stream layer). Server processes it through its
+ * internal HTTP server after TLS unwrap.
  */
-static int s_tls_send_session_request(dap_stream_t *a_stream, dap_net_session_params_t *a_params)
-{
-    if (!a_stream || !a_params || !a_params->channels) {
-        log_it(L_ERROR, "TLS session_create: invalid parameters");
-        return -1;
-    }
-
-    if (!a_stream->trans_ctx) {
-        log_it(L_ERROR, "TLS session_create: stream has no trans_ctx");
-        return -2;
-    }
-
-    /* Build stream_ctl request body (protocol version) */
-    char l_request[16];
-    int l_request_size = snprintf(l_request, sizeof(l_request), "%d", DAP_CLIENT_PROTOCOL_VERSION);
-    if (l_request_size < 0 || (size_t)l_request_size >= sizeof(l_request)) {
-        log_it(L_ERROR, "TLS session_create: protocol version string too large");
-        return -3;
-    }
-
-    /* Build stream_ctl URL with channel parameters */
-    char *l_suburl = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
-                                        a_params->channels, a_params->enc_type,
-                                         a_params->enc_key_size, a_params->enc_headers ? 1 : 0);
-    if (!l_suburl) return -3;
-
-    char l_stream_ctl_url[1024] = { '\0' };
-    int l_url_size = snprintf(l_stream_ctl_url, sizeof(l_stream_ctl_url), "/%s/%s",
-              DAP_UPLINK_PATH_STREAM_CTL, l_suburl);
-    if (l_url_size < 0 || (size_t)l_url_size >= sizeof(l_stream_ctl_url)) {
-        DAP_DELETE(l_suburl);
-        return -3;
-    }
-
-    debug_if(s_debug_more, L_DEBUG, "TLS session_create: sending stream_ctl via TLS channel: %s",
-           l_stream_ctl_url);
-
-    /* Build complete HTTP POST request */
-    char l_http_post[2048];
-    int l_http_post_size = snprintf(l_http_post, sizeof(l_http_post),
-        "POST %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Content-Type: text/text\r\n"
-        "Content-Length: %zu\r\n"
-        "Connection: keep-alive\r\n"
-        "\r\n"
-        "%s",
-        l_stream_ctl_url,
-        "localhost",  /* Host header (server processes by path) */
-        (size_t)l_request_size,
-        l_request);
-
-    DAP_DELETE(l_suburl);
-
-    if (l_http_post_size < 0 || (size_t)l_http_post_size >= sizeof(l_http_post)) {
-        log_it(L_ERROR, "TLS session_create: HTTP request too large (%d bytes)", l_http_post_size);
-        return -3;
-    }
-
-    debug_if(s_debug_more, L_DEBUG, "TLS session_create: HTTP POST %d bytes via TLS channel",
-           l_http_post_size);
-
-    /* Send through DAP stream transport layer — s_tls_write wraps in TLS records.
-     * Server's internal HTTP server processes after TLS unwrap. */
-    ssize_t l_sent = dap_stream_trans_write_unsafe(a_stream, l_http_post, (size_t)l_http_post_size);
-
-    if (l_sent != l_http_post_size) {
-        log_it(L_ERROR, "TLS session_create: failed to send stream_ctl via TLS");
-        return -3;
-    }
-
-    return 0;
-}
-
 static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t *a_params,
                                  dap_net_trans_session_cb_t a_callback)
 {
@@ -1052,7 +763,7 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
     if (!l_ctx) return -1;
     l_ctx->session_create_cb = a_callback;
     l_ctx->phase = TLS_PHASE_STREAM_CTL_WAIT;
-    int rc = s_tls_send_session_request(a_stream, a_params);
+    int rc = dap_tls_dap_send_session_request(a_stream, a_params);
     if (rc) {
         l_ctx->session_create_cb = NULL;
         if (a_stream->esocket) a_stream->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
@@ -1124,6 +835,3 @@ bool dap_stream_trans_is_tls(const dap_stream_t *a_stream)
         && a_stream->trans->type == DAP_NET_TRANS_TLS_DIRECT;
 }
 
-#ifdef DAP_TLS13_OPENSSL
-#include "dap_tls13_client.inc"
-#endif

@@ -1,10 +1,24 @@
-/* TLS13 uses the same DAP request builders as mimicry, not its wire engine. */
+/*
+ * TLS13 (0x08) and WSS (0x09) client transport adapter.
+ *
+ * Split out of dap_stream_trans_tls.c (formerly dap_tls13_client.inc) so the
+ * real-TLS transports live in their own translation unit and register
+ * independently of the tls_mimicry engine. The DAP request builders and the
+ * shared client context come from dap_tls_dap.h; the TLS/WSS protocol framing
+ * comes from the tls13/wss protocol headers. No mimicry engine dependency.
+ */
+#define LOG_TAG "dap_net_trans_tls13"
+
+#include "dap_tls_dap.h"
 #include "dap_tls13_connection.h"
 #include "dap_tls13_client_state.h"
 #include "dap_client_trans_ctx.h"
 #include "dap_wss_dap.h"
 #include "dap_wss_client_upgrade.h"
+#include "dap_enc_base64.h"
+#include "dap_client.h"
 #include "rand/dap_rand.h"
+
 typedef struct tls13_client {
     /* DAP request parameters; never cast the transport context to mimicry. */
     tls_mimicry_ctx_t dap;
@@ -97,7 +111,7 @@ static void s_tls13_client_ready(void *arg)
     }
     c->state.phase=DAP_TLS13_WAIT_ENC;
     c->dap.phase=TLS_PHASE_ENC_INIT_WAIT;
-    if (s_tls_send_enc_init(c->stream,&c->dap,c->stream->esocket))
+    if (dap_tls_dap_send_enc_init(c->stream,&c->dap,c->stream->esocket))
         c->stream->esocket->flags|=DAP_SOCK_SIGNAL_CLOSE;
 }
 static int s_tls13_ws_ready(void *arg)
@@ -105,7 +119,7 @@ static int s_tls13_ws_ready(void *arg)
     tls13_client_t *c=arg;
     c->state.phase=DAP_TLS13_WAIT_ENC;
     c->dap.phase=TLS_PHASE_ENC_INIT_WAIT;
-    return s_tls_send_enc_init(c->stream,&c->dap,c->stream->esocket);
+    return dap_tls_dap_send_enc_init(c->stream,&c->dap,c->stream->esocket);
 }
 /* Silent-failure diagnostics: every early return here used to vanish without a
  * trace (the -1 becomes SIZE_MAX upstream and no shed counter catches it), which
@@ -183,15 +197,16 @@ static int s_tls13_client_prepare(dap_net_trans_t *trans,const dap_net_stage_pre
     char provided_pin[65] = {0}, provided_name[254] = {0};
     const char *pin=NULL, *sni=NULL;
     dap_client_t *client = params->client_ctx;
+    dap_tls13_trust_provider_t trust = dap_tls_dap_trust_provider();
     if (client && client->tls13_spki_sha256[0]) {
         if (!memchr(client->tls13_spki_sha256,0,sizeof(client->tls13_spki_sha256)) ||
             !memchr(client->tls13_server_name,0,sizeof(client->tls13_server_name))) return -1;
         pin=client->tls13_spki_sha256;
         sni=client->tls13_server_name[0] ? client->tls13_server_name : NULL;
-    } else if (s_tls13_trust_provider) {
-        if (s_tls13_trust_provider(params->host,params->port,
+    } else if (trust) {
+        if (trust(params->host,params->port,
                 provided_pin,sizeof(provided_pin),provided_name,sizeof(provided_name),
-                s_tls13_trust_arg) ||
+                dap_tls_dap_trust_arg()) ||
             !memchr(provided_pin,0,sizeof(provided_pin)) ||
             !memchr(provided_name,0,sizeof(provided_name))) return -1;
         pin=provided_pin;
@@ -211,7 +226,7 @@ static int s_tls13_client_prepare(dap_net_trans_t *trans,const dap_net_stage_pre
      * context before publishing transport_priv; FSM adopts it after prepare. */
     dap_net_trans_ctx_t *staging=calloc(1,sizeof(*staging));
     if (!staging) { free(c->pin); free(c->sni); free(c); return -1; }
-    int rc=s_tls_stage_prepare(trans,params,result);
+    int rc=dap_tls_dap_stage_prepare(trans,params,result);
     if (rc) { free(staging); free(c->pin); free(c->sni); free(c); return rc; }
     c->stream=result->stream;
     staging->stream=c->stream;
@@ -266,7 +281,7 @@ static int s_tls13_client_session(dap_stream_t *stream,dap_net_session_params_t 
     if (!c || !params || !callback || c->state.phase!=DAP_TLS13_ENC_DONE) return -1;
     c->state.phase=DAP_TLS13_WAIT_CTL;
     c->dap.session_create_cb=callback;
-    int rc=s_tls_send_session_request(stream,params);
+    int rc=dap_tls_dap_send_session_request(stream,params);
     if (rc) {
         c->dap.session_create_cb=NULL;
         c->state.phase=DAP_TLS13_CLOSED;
@@ -294,13 +309,20 @@ static int s_tls13_client_start(dap_stream_t *stream,uint32_t session,dap_net_tr
 static const dap_net_trans_ops_t s_tls13_client_ops={
     .stage_prepare=s_tls13_client_prepare,.handshake_init=s_tls13_client_handshake,
     .session_create=s_tls13_client_session,.session_start=s_tls13_client_start,
-    .write=s_tls13_client_write,.close=s_tls13_client_close,.get_capabilities=s_tls_get_caps
+    .write=s_tls13_client_write,.close=s_tls13_client_close,.get_capabilities=dap_tls_dap_get_caps
 };
-static int s_tls13_register_client(void)
+
+int dap_net_trans_tls13_register(void)
 {
     int rc = dap_net_trans_register("tls13",DAP_NET_TRANS_TLS13,&s_tls13_client_ops,
         DAP_NET_TRANS_SOCKET_TCP,NULL);
     if (rc) return rc;
     return dap_net_trans_register("wss",DAP_NET_TRANS_WSS,&s_tls13_client_ops,
         DAP_NET_TRANS_SOCKET_TCP,NULL);
+}
+
+int dap_net_trans_tls13_unregister(void)
+{
+    dap_net_trans_unregister(DAP_NET_TRANS_WSS);
+    return dap_net_trans_unregister(DAP_NET_TRANS_TLS13);
 }

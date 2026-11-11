@@ -8,6 +8,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/DapModule.cmake)
 
 set(TLS_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_stream_trans_tls.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dap_tls_dap.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans_tls_server.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_tls_mimicry.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_tls_ja3.c"
@@ -30,6 +31,7 @@ target_include_directories(dap_trans_tls PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../
 
 if(DAP_TLS13_OPENSSL)
     target_sources(dap_trans_tls PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dap_https_probe.c")
+    target_sources(dap_trans_tls PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans_tls13.c")
     if(NOT TARGET dap_crypto_tls)
         message(FATAL_ERROR "TLS13 requires BUILD_WITH_TLS=ON and DAP_TLS_BACKEND=openssl or boringssl")
     endif()
