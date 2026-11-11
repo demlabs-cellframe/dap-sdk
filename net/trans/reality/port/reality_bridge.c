@@ -187,6 +187,12 @@ static reality_bridge_t *bridge_start_common(const reality_bridge_cfg_t *a_cfg, 
     b->ctrl_sdk = ctrl_pair[0]; b->ctrl_thr = ctrl_pair[1];
     set_nonblock(b->ctrl_thr);
     reality_no_sigpipe(b->ctrl_thr);
+    /* The SDK side is handed to the event reactor, which assumes non-blocking
+     * descriptors (dap creates its own sockets with O_NONBLOCK). Leaving it
+     * blocking let a full pipe park the reactor's worker thread inside send()
+     * -- observed as a fully frozen extension (no timers, no stats, no reads). */
+    set_nonblock(b->ctrl_sdk);
+    reality_no_sigpipe(b->ctrl_sdk);
 
     if (a_ext_fd < 0) {
         int data_pair[2];
@@ -196,6 +202,8 @@ static reality_bridge_t *bridge_start_common(const reality_bridge_cfg_t *a_cfg, 
         b->data_sdk = data_pair[0]; b->data_thr = data_pair[1];
         set_nonblock(b->data_thr);
         reality_no_sigpipe(b->data_thr);
+        set_nonblock(b->data_sdk);
+        reality_no_sigpipe(b->data_sdk);
     } else {
         /* ownership of the external fd is ours for the pump's lifetime */
         set_nonblock(a_ext_fd);

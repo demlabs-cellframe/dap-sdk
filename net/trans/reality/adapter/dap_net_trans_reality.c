@@ -157,9 +157,15 @@ static int s_pending_append(reality_adapter_ctx_t *a_ctx, const void *a_data, si
 
 /**
  * Try to complete the accumulated HTTP response.
- * @return 1 complete (a_body/a_body_size set, headers parsed), 0 need more, -1 protocol error
+ * @param a_headers_only  when true, completion = end of the header block and
+ *        a_body/a_body_size describe EVERYTHING after it (raw stream bytes).
+ *        Used for GET /stream: the node switches the connection to raw stream
+ *        mode right after the 200, so Content-Length does NOT describe a body
+ *        we may wait for (waiting for it stalled the takeover by ~15 s, with
+ *        keepalive pings mistaken for body bytes).
+ * @return 1 complete (a_body/a_body_size set), 0 need more, -1 protocol error
  */
-static int s_http_try_complete(reality_adapter_ctx_t *a_ctx,
+static int s_http_try_complete(reality_adapter_ctx_t *a_ctx, bool a_headers_only,
                                const uint8_t **a_body, size_t *a_body_size)
 {
     if (!a_ctx->have_headers) {
@@ -210,6 +216,11 @@ static int s_http_try_complete(reality_adapter_ctx_t *a_ctx,
     }
     size_t l_body_size = a_ctx->http_size > a_ctx->headers_size ?
                          a_ctx->http_size - a_ctx->headers_size : 0;
+    if (a_headers_only) {
+        *a_body = a_ctx->http + a_ctx->headers_size;
+        *a_body_size = l_body_size;   /* raw stream bytes, may be 0 */
+        return 1;
+    }
     if (l_body_size < a_ctx->content_len) {
         debug_if(true, L_DEBUG, "REALITY: HTTP body %zu/%zu — waiting",
                  l_body_size, a_ctx->content_len);
@@ -344,8 +355,7 @@ static void s_reality_read_cb(dap_events_socket_t *a_es, void *a_arg)
 
     switch (l_ctx->phase) {
     case RPH_ENC_WAIT:
-    case RPH_CTL_WAIT:
-    case RPH_STREAM_200_WAIT: {
+    case RPH_CTL_WAIT: {
         if (s_http_append(l_ctx, a_es->buf_in, a_es->buf_in_size)) {
             a_es->buf_in_size = 0;
             s_reality_fail(l_ctx, "HTTP accumulate failure");
@@ -355,7 +365,7 @@ static void s_reality_read_cb(dap_events_socket_t *a_es, void *a_arg)
 
         const uint8_t *l_body = NULL;
         size_t l_body_size = 0;
-        int l_rc = s_http_try_complete(l_ctx, &l_body, &l_body_size);
+        int l_rc = s_http_try_complete(l_ctx, false, &l_body, &l_body_size);
         if (l_rc == 0)
             return;             /* need more bytes */
         if (l_rc < 0) {
@@ -407,39 +417,60 @@ static void s_reality_read_cb(dap_events_socket_t *a_es, void *a_arg)
             } else {
                 DAP_DELETE(l_plain);
             }
-        } else { /* RPH_STREAM_200_WAIT */
-            if (l_ctx->http_status < 200 || l_ctx->http_status >= 300) {
-                s_reality_fail(l_ctx, "stream GET was not accepted");
+        }
+        break;
+    }
+
+    case RPH_STREAM_200_WAIT: {
+        if (s_http_append(l_ctx, a_es->buf_in, a_es->buf_in_size)) {
+            a_es->buf_in_size = 0;
+            s_reality_fail(l_ctx, "HTTP accumulate failure");
+            return;
+        }
+        a_es->buf_in_size = 0;
+
+        /* Headers-only completion: the node switches the connection to raw
+         * stream mode right after the "200", so everything after the header
+         * block is DAP stream data, NOT an HTTP body. Waiting for
+         * Content-Length here stalled the takeover by ~15 s (stream keepalive
+         * pings were mistaken for body bytes) and discarded real stream data.
+         * Same contract as the HTTP transport (s_http_trans_read). */
+        const uint8_t *l_raw = NULL;
+        size_t l_raw_size = 0;
+        int l_rc = s_http_try_complete(l_ctx, true, &l_raw, &l_raw_size);
+        if (l_rc == 0)
+            return;                 /* header block not complete yet */
+        if (l_rc < 0 || l_ctx->http_status < 200 || l_ctx->http_status >= 300) {
+            s_reality_fail(l_ctx, "stream GET was not accepted");
+            return;
+        }
+
+        log_it(L_NOTICE, "REALITY: stream takeover (HTTP %d)", l_ctx->http_status);
+        dap_net_trans_ready_cb_t l_cb = l_ctx->ready_cb;
+        l_ctx->ready_cb = NULL;
+        l_ctx->phase = RPH_STREAMING;
+
+        /* flush writes buffered before takeover (channel pings, keepalive) */
+        if (l_ctx->pending_size) {
+            debug_if(true, L_DEBUG, "REALITY: flushing %zu pre-takeover bytes", l_ctx->pending_size);
+            dap_events_socket_write_unsafe(l_ctx->es, l_ctx->pending, l_ctx->pending_size);
+            DAP_DEL_Z(l_ctx->pending);
+            l_ctx->pending_size = 0;
+        }
+        if (l_cb)
+            l_cb(l_ctx->stream, 0);
+        /* Stream bytes that arrived together with the headers. Feed BEFORE
+         * s_http_reset(): l_raw points into the accumulation buffer. */
+        if (l_raw_size) {
+            debug_if(true, L_DEBUG, "REALITY: %zu stream bytes with takeover headers", l_raw_size);
+            if (s_tls_stream_feed(l_ctx->stream, &l_ctx->tail, &l_ctx->tail_size,
+                                  l_raw, l_raw_size) != 0) {
+                s_http_reset(l_ctx);
+                s_reality_fail(l_ctx, "stream feed failure");
                 return;
             }
-            log_it(L_NOTICE, "REALITY: stream takeover (HTTP %d)", l_ctx->http_status);
-            dap_net_trans_ready_cb_t l_cb = l_ctx->ready_cb;
-            l_ctx->ready_cb = NULL;
-            l_ctx->phase = RPH_STREAMING;
-            /* leftover pipelined bytes: anything in the buffer beyond the
-             * complete HTTP header block is already raw stream data */
-            size_t l_leftover = l_ctx->http_size > l_ctx->headers_size + l_ctx->content_len ?
-                                l_ctx->http_size - (l_ctx->headers_size + l_ctx->content_len) : 0;
-            const uint8_t *l_leftover_ptr = l_ctx->http + l_ctx->headers_size + l_ctx->content_len;
-            s_http_reset(l_ctx);
-            if (l_cb)
-                l_cb(l_ctx->stream, 0);
-            /* flush writes buffered before takeover (channel pings, keepalive) */
-            if (l_ctx->pending_size) {
-                debug_if(true, L_DEBUG, "REALITY: flushing %zu pre-takeover bytes", l_ctx->pending_size);
-                dap_events_socket_write_unsafe(l_ctx->es, l_ctx->pending, l_ctx->pending_size);
-                DAP_DEL_Z(l_ctx->pending);
-                l_ctx->pending_size = 0;
-            }
-            if (l_leftover) {
-                debug_if(true, L_DEBUG, "REALITY: %zu pipelined bytes after takeover", l_leftover);
-                if (s_tls_stream_feed(l_ctx->stream, &l_ctx->tail, &l_ctx->tail_size,
-                                      l_leftover_ptr, l_leftover) != 0) {
-                    s_reality_fail(l_ctx, "stream feed failure");
-                    return;
-                }
-            }
         }
+        s_http_reset(l_ctx);
         break;
     }
 
@@ -684,6 +715,7 @@ static int s_reality_stage_prepare(dap_net_trans_t *a_trans,
     const char *l_sni = l_client && l_client->reality_sni[0] ? l_client->reality_sni : NULL;
 
     char l_section[512];
+    uint32_t l_rate_limit = 0;      /* bytes/sec, 0 = unlimited */
     snprintf(l_section, sizeof(l_section), "reality:%s:%u", a_params->host, l_ctx->cfg.port);
     if (g_config) {
         if (!l_uuid)
@@ -700,12 +732,16 @@ static int s_reality_stage_prepare(dap_net_trans_t *a_trans,
         uint16_t l_dest_port = dap_config_get_item_uint16_default(g_config, l_section, "dest_port", 0);
         if (l_dest_port)
             l_ctx->cfg.dest_port = l_dest_port;
-        l_ctx->cfg.rcfg.rate_limit_bytes_per_sec =
-            dap_config_get_item_uint64_default(g_config, l_section, "rate_limit", 0);
+        l_rate_limit = (uint32_t)dap_config_get_item_uint64_default(g_config, l_section, "rate_limit", 0);
         const char *l_iface = dap_config_get_item_str(g_config, l_section, "iface");
         if (l_iface && *l_iface)
             dap_strncpy(l_ctx->cfg.iface, l_iface, sizeof(l_ctx->cfg.iface) - 1);
     }
+    /* Per-client cap wins over the config file (GUI setting, delivered via IPC).
+     * 0 = unlimited — the default; DPI research suggests 5-6 MB/s on cellular. */
+    if (l_client && l_client->reality_rate_limit)
+        l_rate_limit = l_client->reality_rate_limit;
+    l_ctx->cfg.rcfg.rate_limit_bytes_per_sec = l_rate_limit;
     if (!l_sni || !*l_sni)
         l_sni = REALITY_DEFAULT_SNI;
 
@@ -849,9 +885,14 @@ static int s_reality_stage_prepare(dap_net_trans_t *a_trans,
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_INFO, "REALITY: bridge to %s:%u started (sni=%s, dest=%s:%u), stream created",
+    char l_rate_str[32];
+    if (l_ctx->cfg.rcfg.rate_limit_bytes_per_sec)
+        snprintf(l_rate_str, sizeof(l_rate_str), "%u B/s", l_ctx->cfg.rcfg.rate_limit_bytes_per_sec);
+    else
+        snprintf(l_rate_str, sizeof(l_rate_str), "unlimited");
+    log_it(L_INFO, "REALITY: bridge to %s:%u started (sni=%s, dest=%s:%u, rate_limit=%s), stream created",
            l_ctx->cfg.host, l_ctx->cfg.port, l_ctx->cfg.rcfg.sni,
-           l_ctx->cfg.dest_host, l_ctx->cfg.dest_port);
+           l_ctx->cfg.dest_host, l_ctx->cfg.dest_port, l_rate_str);
     return 0;
 }
 
@@ -926,6 +967,22 @@ static int s_reality_session_start(dap_stream_t *a_stream, uint32_t a_session_id
     return 0;
 }
 
+/* Egress backpressure: dap_events_socket_write_unsafe() returns 0 when buf_out
+ * is at its cap. Shed the packet (inner TCP retransmits) instead of returning
+ * an error, which the stream layer would treat as a fatal transport failure. */
+static void s_reality_shed_log(size_t a_size)
+{
+    static int64_t s_last_ms;
+    static uint64_t s_count;
+    s_count++;
+    int64_t l_now = dap_get_monotime_ms();
+    if (l_now - s_last_ms >= 5000) {
+        s_last_ms = l_now;
+        log_it(L_WARNING, "REALITY: egress queue full, shedding packet (%zu bytes, %llu shed total)",
+               a_size, (unsigned long long)s_count);
+    }
+}
+
 static ssize_t s_reality_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
     reality_adapter_ctx_t *l_ctx = a_stream && a_stream->trans_ctx ?
@@ -938,18 +995,25 @@ static ssize_t s_reality_write(dap_stream_t *a_stream, const void *a_data, size_
          * in esocket buf_out the same way. Refusing them here made the server
          * side idle-close the session mid-negotiation. */
         if (l_ctx->pending_size + a_size > 256u * 1024u) {
-            log_it(L_WARNING, "REALITY: pre-takeover pending queue overflow (%zu bytes refused)",
+            log_it(L_WARNING, "REALITY: pre-takeover pending queue overflow (%zu bytes shed)",
                    a_size);
-            return -1;
+            return 0;
         }
         if (s_pending_append(l_ctx, a_data, a_size) != 0)
-            return -1;
+            return 0;
         debug_if(true, L_DEBUG, "REALITY: queued %zu bytes in phase %s (pending %zu)",
                  a_size, s_phase_str(l_ctx->phase), l_ctx->pending_size);
         return (ssize_t)a_size;
     }
-    ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->es, a_data, a_size);
-    return l_sent == (ssize_t)a_size ? (ssize_t)a_size : -1;
+    size_t l_sent = dap_events_socket_write_unsafe(l_ctx->es, a_data, a_size);
+    if (l_sent == a_size)
+        return (ssize_t)a_size;
+    if (l_sent == 0) {
+        s_reality_shed_log(a_size);
+        return 0;                   /* retryable backpressure, session stays up */
+    }
+    log_it(L_ERROR, "REALITY: partial write %zu/%zu", l_sent, a_size);
+    return -1;
 }
 
 static void s_reality_close(dap_stream_t *a_stream)

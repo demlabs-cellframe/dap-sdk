@@ -120,6 +120,7 @@ typedef struct dap_client {
     char reality_public_key[65];  // Server X25519 public key, base64url (64 chars)
     char reality_short_id[17];    // Server short_id, hex (<=16 chars)
     char reality_sni[256];        // Mask SNI (empty = module default www.samsung.com)
+    uint32_t reality_rate_limit;  // Payload cap in bytes/sec, 0 = unlimited (DPI: 5-6 MB/s on cellular)
 
     void *_internal;
     void *_inheritor;
