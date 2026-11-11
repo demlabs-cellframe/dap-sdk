@@ -54,10 +54,17 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
     if (a_type == DAP_CLUSTER_TYPE_VIRTUAL)
         return ret;
     dap_cluster_t *l_check = NULL;
-    pthread_rwlock_wrlock(&s_clusters_rwlock);
+    if (pthread_rwlock_wrlock(&s_clusters_rwlock) != 0) {
+        log_it(L_CRITICAL, "Cluster registry wrlock failed");
+        pthread_rwlock_destroy(&ret->members_lock);
+        DAP_DELETE(ret);
+        return NULL;
+    }
     HASH_FIND(hh, s_clusters, &a_guuid, sizeof(dap_guuid_t), l_check);
     if (l_check) {
         log_it(L_ERROR, "GUUID %s already in use", dap_guuid_to_hex_str(a_guuid));
+        pthread_rwlock_unlock(&s_clusters_rwlock);
+        pthread_rwlock_destroy(&ret->members_lock);
         DAP_DELETE(ret);
         return NULL;
     }
@@ -65,12 +72,16 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
         HASH_FIND(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_check);
         if (l_check) {
             log_it(L_ERROR, "Mnemonim %s already in use", a_mnemonim);
+            pthread_rwlock_unlock(&s_clusters_rwlock);
+            pthread_rwlock_destroy(&ret->members_lock);
             DAP_DELETE(ret);
             return NULL;
         }
         ret->mnemonim = strdup(a_mnemonim);
         if (!ret->mnemonim) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            pthread_rwlock_unlock(&s_clusters_rwlock);
+            pthread_rwlock_destroy(&ret->members_lock);
             DAP_DELETE(ret);
             return NULL;
         }

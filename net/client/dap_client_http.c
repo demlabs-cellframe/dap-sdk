@@ -2184,8 +2184,13 @@ void dap_client_http_request_simple_async(
 }
 
 int dap_client_http_set_params(uint64_t a_timeout_ms, uint64_t a_timeout_read_after_connect_ms, size_t a_streaming_threshold_bytes) {
-    if ( s_client_timeout_ms != 0 )
+    if ( s_client_timeout_ms != 0 ) {
+        if ( s_client_timeout_ms == a_timeout_ms &&
+             s_client_timeout_read_after_connect_ms == a_timeout_read_after_connect_ms &&
+             s_streaming_threshold == a_streaming_threshold_bytes )
+            return 0;
         return log_it(L_ERROR, "HTTP client parameters are already set"), -1;
+    }
     s_client_timeout_ms = a_timeout_ms;
     s_client_timeout_read_after_connect_ms = a_timeout_read_after_connect_ms;
     s_streaming_threshold = a_streaming_threshold_bytes;
