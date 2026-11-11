@@ -80,6 +80,7 @@ static void *bridge_thread(void *arg)
     int tcp_fd = reality_io_socket_fd(io);
     int pipe_fd = b->ext_fd >= 0 ? b->ext_fd : b->data_thr;
     uint8_t buf[PUMP_CHUNK];
+    bool progress = true;   /* previous pass moved data (guards against busy-spin) */
 
     while (!b->stop) {
         struct pollfd pfd[2];
@@ -90,21 +91,24 @@ static void *bridge_thread(void *arg)
          * previous recv() (one read can return several TLS records while
          * reality_session_read() delivers only one). poll() would never fire
          * for those bytes -- the socket is already drained -- so the payload
-         * would be stranded until an unrelated socket event. Drain first. */
+         * would be stranded until an unrelated socket event. Drain first.
+         *
+         * The timeout is 0 in that case (not "skip polling"): both directions
+         * must be serviced every pass, otherwise a heavy download starves the
+         * upload direction and the peer sees a dead tunnel. */
         bool pending = reality_session_has_pending(s);
-        int pr = 0;
-        if (!pending) {
-            pr = poll(pfd, 2, POLL_SLICE_MS);
-            if (pr < 0) {
-                if (errno == EINTR) continue;
-                break;
-            }
+        int pr = poll(pfd, 2, (pending && progress) ? 0 : POLL_SLICE_MS);
+        if (pr < 0) {
+            if (errno == EINTR) continue;
+            break;
         }
+        progress = false;
 
         /* SDK/consumer -> tunnel */
-        if (!pending && (pfd[0].revents & (POLLIN | POLLHUP | POLLERR))) {
+        if (pfd[0].revents & (POLLIN | POLLHUP | POLLERR)) {
             ssize_t n = recv(pipe_fd, buf, sizeof(buf), 0);
             if (n > 0) {
+                progress = true;
                 if (reality_session_write(s, buf, (size_t)n) != 0) {
                     b->state = REALITY_ERR_IO;
                     uint8_t ev[2] = { 'E', (uint8_t)REALITY_ERR_IO };
@@ -124,6 +128,7 @@ static void *bridge_thread(void *arg)
             size_t got = 0;
             int rc = reality_session_read(s, buf, sizeof(buf), &got);
             if (rc == 0 && got > 0) {
+                progress = true;
                 size_t off = 0;
                 while (off < got && !b->stop) {
                     ssize_t w = send(pipe_fd, buf + off, got - off, REALITY_SEND_FLAGS);

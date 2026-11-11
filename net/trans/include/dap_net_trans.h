@@ -540,6 +540,12 @@ dap_net_trans_t *dap_net_trans_find_by_name(const char *a_name);
 int dap_net_trans_reality_register(void);
 
 /**
+ * @brief Unregister the REALITY (VLESS) client transport
+ * @return 0 on success (or if it was not registered), negative on failure
+ */
+int dap_net_trans_reality_unregister(void);
+
+/**
  * @brief Get trans name string
  * @param a_type Trans type enum
  * @return Trans name or "UNKNOWN"

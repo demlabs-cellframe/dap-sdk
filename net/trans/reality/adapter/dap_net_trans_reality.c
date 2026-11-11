@@ -101,8 +101,6 @@ typedef struct reality_adapter_ctx {
     size_t tail_size;
 } reality_adapter_ctx_t;
 
-static int s_reality_registered = 0;
-
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
 /* ------------------------------------------------------------------ */
@@ -1068,7 +1066,12 @@ static const dap_net_trans_ops_t s_reality_ops = {
 
 int dap_net_trans_reality_register(void)
 {
-    if (s_reality_registered)
+    /* The registry is the ONLY source of truth here. dap_net_trans_deinit()
+     * wipes it during stack teardown, so a module-level "already registered"
+     * flag made the second stack init skip registration silently — the
+     * transport then vanished from the fallback list and every later connect
+     * fell back to HTTP. */
+    if (dap_net_trans_find(DAP_NET_TRANS_REALITY))
         return 0;
     int l_rc = dap_net_trans_register("reality", DAP_NET_TRANS_REALITY,
                                       &s_reality_ops, DAP_NET_TRANS_SOCKET_TCP, NULL);
@@ -1076,8 +1079,17 @@ int dap_net_trans_reality_register(void)
         log_it(L_ERROR, "REALITY: transport registration failed (%d)", l_rc);
         return l_rc;
     }
-    s_reality_registered = 1;
     log_it(L_NOTICE, "REALITY (VLESS) client transport registered (type 0x%02X)",
            DAP_NET_TRANS_REALITY);
     return 0;
+}
+
+int dap_net_trans_reality_unregister(void)
+{
+    if (!dap_net_trans_find(DAP_NET_TRANS_REALITY))
+        return 0;
+    int l_rc = dap_net_trans_unregister(DAP_NET_TRANS_REALITY);
+    if (l_rc == 0)
+        log_it(L_NOTICE, "REALITY (VLESS) client transport unregistered");
+    return l_rc;
 }
