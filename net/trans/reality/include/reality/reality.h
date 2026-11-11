@@ -151,6 +151,22 @@ int  reality_session_write(reality_session_t *a_s, const uint8_t *a_buf, size_t 
 int  reality_session_read(reality_session_t *a_s, uint8_t *a_buf, size_t a_cap, size_t *a_out_len);
 void reality_session_close(reality_session_t *a_s);   /* graceful close_notify + io close */
 
+/**
+ * @brief True when payload can be produced WITHOUT new socket IO.
+ *
+ * The record layer reads as much as the socket offers into an internal buffer,
+ * so one recv() may contain several TLS records while a single
+ * reality_session_read() returns only the first one. Consumers that gate reads
+ * on socket readiness (poll/epoll/kqueue) MUST also check this flag, otherwise
+ * the already-buffered records are stranded until an unrelated socket event
+ * arrives (observed as a multi-second stall in the middle of a response).
+ *
+ * Reports: undelivered decoded payload, undecoded plaintext, or at least one
+ * complete TLS record sitting in the input buffer. A partial record is NOT
+ * reported (reading it would block).
+ */
+bool reality_session_has_pending(const reality_session_t *a_s);
+
 /* diagnostics */
 const char *reality_last_error(reality_session_t *a_s);
 

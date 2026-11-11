@@ -5,6 +5,7 @@
  */
 
 #include "reality/reality.h"
+#include "reality_port.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -35,13 +36,21 @@ static int s_write(void *u, const uint8_t *buf, size_t len)
 {
     sock_user_t *su = (sock_user_t *)u;
     size_t off = 0;
+    int again_tries = 0;
     while (off < len) {
-        ssize_t n = send(su->fd, buf + off, len - off, 0);
+        ssize_t n = send(su->fd, buf + off, len - off, REALITY_SEND_FLAGS);
         if (n <= 0) {
-            if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
-                continue;  /* SNDTIMEO tick / signal: retry until real error */
+            if (n < 0 && errno == EINTR)
+                continue;
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                /* SNDTIMEO tick: retry a bounded number of times, then report
+                 * the peer as stuck instead of spinning forever. */
+                if (++again_tries >= 4) return REALITY_ERR_IO;
+                continue;
+            }
             return REALITY_ERR_IO;
         }
+        again_tries = 0;
         off += (size_t)n;
     }
     return 0;
@@ -88,7 +97,7 @@ reality_io_ops_t *reality_io_socket_connect(const char *host, uint16_t port,
         struct timeval tv = { timeout_sec > 0 ? timeout_sec : 10, 0 };
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-        if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) break;
+        if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) { reality_no_sigpipe(fd); break; }
         close(fd);
         fd = -1;
     }

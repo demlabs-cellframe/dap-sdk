@@ -201,8 +201,22 @@ int reality_session_read(reality_session_t *s, uint8_t *buf, size_t cap, size_t 
     }
 }
 
-void reality_session_close(reality_session_t *s)
+bool reality_session_has_pending(const reality_session_t *s)
 {
+    if (!s) return false;
+    /* decoded payload not yet handed to the caller */
+    if (s->appbuf_len > s->appbuf_off) return true;
+    /* decrypted TLS payload not yet vision-decoded */
+    if (s->rawbuf_len > s->rawbuf_off) return true;
+    /* at least one COMPLETE TLS record buffered (header 5B + length) */
+    if (s->inbuf_len >= 5) {
+        size_t rlen = ((size_t)s->inbuf[3] << 8) | (size_t)s->inbuf[4];
+        if (s->inbuf_len >= rlen + 5) return true;
+    }
+    return false;
+}
+
+void reality_session_close(reality_session_t *s){
     if (!s) return;
     if (s->handshake_done)
         rtls_close_notify(s);

@@ -70,12 +70,23 @@ static size_t hash_len(reality_session_t *s){ return s->hash384 ? 48 : 32; }
 
 static int rd_exact(reality_session_t *s, uint8_t *a_dst, size_t a_n)
 {
+    int again_tries = 0;
     while (s->inbuf_len < a_n) {
         size_t got = 0;
         int rc = s->io->read(s->io->user, s->inbuf + s->inbuf_len,
                              sizeof(s->inbuf) - s->inbuf_len, &got);
-        if (rc == REALITY_ERR_AGAIN) continue;  /* SO_RCVTIMEO tick / EINTR */
+        if (rc == REALITY_ERR_AGAIN) {
+            /* SO_RCVTIMEO tick. Retrying forever froze the session silently
+             * (no data, no error, no fallback). We cannot resume safely after
+             * a timeout in the middle of a record -- the record header lives
+             * in a caller-local buffer -- so bail out hard after a bounded
+             * number of timeouts and let the caller tear the session down. */
+            if (++again_tries >= 2)
+                RFAIL(s, REALITY_ERR_IO, "record read timed out");
+            continue;
+        }
         if (rc != 0) return rc;
+        again_tries = 0;
         if (got == 0) return REALITY_ERR_CLOSED;
         s->inbuf_len += got;
     }

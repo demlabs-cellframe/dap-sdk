@@ -13,10 +13,21 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 
 #define PUMP_CHUNK   16384
 #define POLL_SLICE_MS 200
+
+/* Thread-side fds must never block: a blocking send() into a full pipe parked
+ * the pump thread forever, and reality_bridge_stop() then hung in
+ * pthread_join() (observed as a disconnect that never completed). */
+static int set_nonblock(int a_fd)
+{
+    int l_fl = fcntl(a_fd, F_GETFL, 0);
+    if (l_fl < 0) return -1;
+    return fcntl(a_fd, F_SETFL, l_fl | O_NONBLOCK);
+}
 
 struct reality_bridge {
     reality_bridge_cfg_t cfg;
@@ -33,7 +44,7 @@ struct reality_bridge {
 
 static void ctrl_send(reality_bridge_t *b, const void *p, size_t n)
 {
-    ssize_t r = send(b->ctrl_thr, p, n, 0);
+    ssize_t r = send(b->ctrl_thr, p, n, REALITY_SEND_FLAGS);
     (void)r; /* best effort: consumer may be gone */
 }
 
@@ -74,14 +85,24 @@ static void *bridge_thread(void *arg)
         struct pollfd pfd[2];
         pfd[0].fd = pipe_fd; pfd[0].events = POLLIN; pfd[0].revents = 0;
         pfd[1].fd = tcp_fd;  pfd[1].events = POLLIN; pfd[1].revents = 0;
-        int pr = poll(pfd, 2, POLL_SLICE_MS);
-        if (pr < 0) {
-            if (errno == EINTR) continue;
-            break;
+
+        /* The record layer may already hold complete records buffered from a
+         * previous recv() (one read can return several TLS records while
+         * reality_session_read() delivers only one). poll() would never fire
+         * for those bytes -- the socket is already drained -- so the payload
+         * would be stranded until an unrelated socket event. Drain first. */
+        bool pending = reality_session_has_pending(s);
+        int pr = 0;
+        if (!pending) {
+            pr = poll(pfd, 2, POLL_SLICE_MS);
+            if (pr < 0) {
+                if (errno == EINTR) continue;
+                break;
+            }
         }
 
         /* SDK/consumer -> tunnel */
-        if (pfd[0].revents & (POLLIN | POLLHUP | POLLERR)) {
+        if (!pending && (pfd[0].revents & (POLLIN | POLLHUP | POLLERR))) {
             ssize_t n = recv(pipe_fd, buf, sizeof(buf), 0);
             if (n > 0) {
                 if (reality_session_write(s, buf, (size_t)n) != 0) {
@@ -98,23 +119,39 @@ static void *bridge_thread(void *arg)
             }
         }
 
-        /* tunnel -> SDK/consumer (poll-gated: a record is available, read completes promptly) */
-        if (pfd[1].revents & (POLLIN | POLLHUP | POLLERR)) {
+        /* tunnel -> SDK/consumer */
+        if (pending || (pfd[1].revents & (POLLIN | POLLHUP | POLLERR))) {
             size_t got = 0;
             int rc = reality_session_read(s, buf, sizeof(buf), &got);
             if (rc == 0 && got > 0) {
                 size_t off = 0;
                 while (off < got && !b->stop) {
-                    ssize_t w = send(pipe_fd, buf + off, got - off, 0);
-                    if (w <= 0) {
-                        if (w < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
-                            continue;
-                        off = got; /* peer gone */
-                        b->stop = 1;
-                        break;
+                    ssize_t w = send(pipe_fd, buf + off, got - off, REALITY_SEND_FLAGS);
+                    if (w > 0) {
+                        off += (size_t)w;
+                        continue;
                     }
-                    off += (size_t)w;
+                    if (w < 0 && errno == EINTR)
+                        continue;
+                    if (w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                        /* Consumer is slower than the tunnel: wait for the pipe
+                         * to drain in slices, re-checking the stop flag, instead
+                         * of blocking inside send() indefinitely. */
+                        struct pollfd wp = { .fd = pipe_fd, .events = POLLOUT, .revents = 0 };
+                        int wpr = poll(&wp, 1, POLL_SLICE_MS);
+                        if (wpr < 0 && errno != EINTR) {
+                            b->stop = 1;
+                            break;
+                        }
+                        continue;
+                    }
+                    off = got; /* peer gone */
+                    b->stop = 1;
+                    break;
                 }
+            } else if (rc == REALITY_ERR_AGAIN) {
+                /* read timed out with nothing buffered: keep the session alive */
+                continue;
             } else if (rc != 0) {
                 b->state = (rc == REALITY_ERR_CLOSED) ? 2 : rc;
                 uint8_t ev[2] = { (uint8_t)(rc == REALITY_ERR_CLOSED ? 'C' : 'E'),
@@ -148,6 +185,8 @@ static reality_bridge_t *bridge_start_common(const reality_bridge_cfg_t *a_cfg, 
     int ctrl_pair[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, ctrl_pair) != 0) { free(b); return NULL; }
     b->ctrl_sdk = ctrl_pair[0]; b->ctrl_thr = ctrl_pair[1];
+    set_nonblock(b->ctrl_thr);
+    reality_no_sigpipe(b->ctrl_thr);
 
     if (a_ext_fd < 0) {
         int data_pair[2];
@@ -155,6 +194,12 @@ static reality_bridge_t *bridge_start_common(const reality_bridge_cfg_t *a_cfg, 
             close(b->ctrl_sdk); close(b->ctrl_thr); free(b); return NULL;
         }
         b->data_sdk = data_pair[0]; b->data_thr = data_pair[1];
+        set_nonblock(b->data_thr);
+        reality_no_sigpipe(b->data_thr);
+    } else {
+        /* ownership of the external fd is ours for the pump's lifetime */
+        set_nonblock(a_ext_fd);
+        reality_no_sigpipe(a_ext_fd);
     }
 
     if (pthread_create(&b->thread, NULL, bridge_thread, b) != 0) {
@@ -196,11 +241,12 @@ void reality_bridge_signal_stop(reality_bridge_t *b)
     if (!b) return;
     b->stop = 1;
     if (b->io) reality_io_socket_shutdown(b->io);
+    /* shutdown(), NOT send(): a 1-byte send into a full pipe blocks, which made
+     * signal_stop() (and thus reality_bridge_stop() -> pthread_join) hang. */
     if (b->ext_fd >= 0) {
         shutdown(b->ext_fd, SHUT_RDWR);
     } else if (b->data_thr >= 0) {
-        ssize_t r = send(b->data_thr, "", 1, 0);
-        (void)r;
+        shutdown(b->data_thr, SHUT_RDWR);
     }
 }
 

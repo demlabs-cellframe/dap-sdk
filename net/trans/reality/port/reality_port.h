@@ -7,11 +7,33 @@
 #ifndef REALITY_PORT_H
 #define REALITY_PORT_H
 
+#include <sys/socket.h>
+
 #include "reality/reality.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* SIGPIPE-safe send helpers (pure POSIX, no SDK dependencies).
+ * The pump can write to a pipe whose peer disappeared during teardown; an
+ * unhandled SIGPIPE kills the whole process -- fatal inside a Network
+ * Extension. Use MSG_NOSIGNAL where available and SO_NOSIGPIPE on Apple. */
+#ifdef MSG_NOSIGNAL
+#define REALITY_SEND_FLAGS MSG_NOSIGNAL
+#else
+#define REALITY_SEND_FLAGS 0
+#endif
+
+static inline void reality_no_sigpipe(int a_fd)
+{
+#ifdef SO_NOSIGPIPE
+    int l_on = 1;
+    (void)setsockopt(a_fd, SOL_SOCKET, SO_NOSIGPIPE, &l_on, sizeof(l_on));
+#else
+    (void)a_fd;
+#endif
+}
 
 const reality_crypto_ops_t *reality_crypto_openssl(void);
 const reality_time_ops_t   *reality_time_std(void);
