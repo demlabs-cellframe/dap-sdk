@@ -7,6 +7,9 @@
 typedef struct dap_tls13_endpoint {
     dap_tls_context_t *context;
     dap_tls13_channel_t channel;
+    /* Browser ClientHello profile requested by the owner (0 = CHROME default
+     * when DAP_TLS13_BROWSER_HELLO is built). Set before endpoint init. */
+    dap_tls_hello_profile_t hello_profile;
 } dap_tls13_endpoint_t;
 
 static int dap_tls13_pin_decode(const char *hex, uint8_t pin[32])
@@ -50,13 +53,19 @@ static int dap_tls13_endpoint_client_protocol(dap_tls13_endpoint_t *e, const cha
     static const unsigned char alpn[] = {8,'h','t','t','p','/','1','.','1'};
     if (http1 && dap_tls_context_set_alpn(e->context, alpn, sizeof(alpn))) goto fail;
 #ifdef DAP_TLS13_BROWSER_HELLO
-    /* Anti-DPI (opt-in): Chrome-like ClientHello for the WSS path. Applied
-     * after the plain http/1.1 ALPN and overrides the offer to h2,http/1.1
-     * (the server select-cb still picks http/1.1), plus Chrome cipher/curve/
-     * sigalg ordering and — on BoringSSL — GREASE + extension permutation.
-     * Must run before dap_tls_session_new (per-SSL extras read the profile).
-     * Failure aborts the endpoint so a build never silently loses camouflage. */
-    if (http1 && dap_tls_context_set_hello_profile(e->context, DAP_TLS_HELLO_CHROME)) goto fail;
+    /* Anti-DPI (opt-in): browser-like ClientHello for the WSS/TLS13 path.
+     * Applied after the plain http/1.1 ALPN and overrides the offer to
+     * h2,http/1.1 (the server select-cb still picks http/1.1), plus the
+     * selected browser's cipher/curve/sigalg ordering and — on BoringSSL —
+     * GREASE + extension permutation. The owner picks the profile via
+     * e->hello_profile (0 defaults to Chrome). Must run before
+     * dap_tls_session_new. Failure aborts the endpoint so a build never
+     * silently loses camouflage. */
+    if (http1) {
+        dap_tls_hello_profile_t l_prof = e->hello_profile ? e->hello_profile
+                                                          : DAP_TLS_HELLO_CHROME;
+        if (dap_tls_context_set_hello_profile(e->context, l_prof)) goto fail;
+    }
 #endif
     e->channel.tls.session = dap_tls_session_new(e->context);
     if (!e->channel.tls.session ||

@@ -80,6 +80,7 @@ int main(int argc, char **argv) {
     int port = argc > 2 ? atoi(argv[2]) : 8443;
     const char *pin = argc > 3 ? argv[3] : "aa02397b30763a6a2140dbd2916e502f3e1acb176c1ef654645bbf2332523a3a";
     int use_tls13 = argc > 4 && !strcmp(argv[4], "tls13");
+    int fp_index = argc > 5 ? atoi(argv[5]) : 0;
 
     pthread_t wd; intptr_t to = 40;
     pthread_create(&wd, NULL, watchdog, (void*)to);
@@ -105,20 +106,21 @@ int main(int argc, char **argv) {
     dap_client_t *c = dap_client_new(s_stage_cb, NULL);
     if (!c) { log_it(L_ERROR, "dap_client_new failed"); return 2; }
     c->no_transport_fallback = true;
+    c->tls_fp_profile_index = (uint8_t)fp_index;
     dap_net_trans_type_t tt = use_tls13 ? DAP_NET_TRANS_TLS13 : DAP_NET_TRANS_WSS;
     dap_client_set_trans_type(c, tt);
     strncpy(c->tls13_spki_sha256, pin, sizeof(c->tls13_spki_sha256) - 1);
     dap_stream_node_addr_t node = {0};
     dap_client_set_uplink_unsafe(c, &node, host, (uint16_t)port);
     dap_client_set_active_channels_unsafe(c, "S");
-    log_it(L_NOTICE, "=== connecting %s:%d transport=%s pin=%.16s... ===",
-           host, port, dap_net_trans_type_to_str(tt), pin);
+    log_it(L_NOTICE, "=== connecting %s:%d transport=%s fp_index=%d pin=%.16s... ===",
+           host, port, dap_net_trans_type_to_str(tt), fp_index, pin);
     dap_client_go_stage(c, STAGE_STREAM_STREAMING, s_stage_cb);
 
     while (!g_streaming && !g_failed) usleep(100000);
     if (g_streaming) {
-        log_it(L_NOTICE, "=== holding session 35s to verify downstream keepalive ===");
-        for (int i = 0; i < 35 && !g_failed; i++) {
+        log_it(L_NOTICE, "=== holding session 6s to verify downstream keepalive ===");
+        for (int i = 0; i < 6 && !g_failed; i++) {
             sleep(1);
             if (i % 10 == 9)
                 log_it(L_NOTICE, "alive t=%ds stage=%s status=%s rx=%u", i + 1,

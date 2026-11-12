@@ -262,13 +262,66 @@ int dap_tls_context_set_min_version(dap_tls_context_t *a_ctx, uint16_t a_version
     return 0;
 }
 
-/* Browser-like ClientHello profile (anti-DPI). Common parameters use APIs
+/* Browser-like ClientHello profiles (anti-DPI). Common parameters use APIs
  * shared by OpenSSL 1.1+ and BoringSSL; GREASE and extension permutation are
  * BoringSSL-only and applied per-session in dap_tls_session_new(). JA3/JA4
- * fidelity MUST be verified against a real Chrome reference before relying on
- * it (see docs/VPN_ANTIDPI_CIRCUMVENTION_PLAN_2026_10_28.md). Known gaps:
- * supported_versions still offers TLS1.3-only (min-version policy), curves
- * omit X25519Kyber768, and exact extension set/order needs measurement. */
+ * fidelity MUST be verified against a real browser reference before relying on
+ * it (see docs/VPN_ANTIDPI_CIRCUMVENTION_PLAN_2026_10_28.md). The profiles below
+ * are best-effort approximations: they differ in TLS1.3 suite order, TLS1.2
+ * cipher order and sigalg order, which is what separates browser JA3s from a
+ * generic OpenSSL hello. Known gaps: supported_versions offers TLS1.3-only
+ * (min-version policy), curves omit X25519Kyber768, exact extension set/order
+ * needs measurement. */
+typedef struct dap_tls_hello_params {
+    const char *tls13;
+    const char *tls12;
+    const char *curves;
+    const char *sigalgs;
+} dap_tls_hello_params_t;
+
+static const dap_tls_hello_params_t s_hello_chrome = {
+    "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
+    "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
+    "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
+    "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+    "ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:"
+    "AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA:AES256-SHA",
+    "X25519:P-256:P-384:P-521",
+    "ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:"
+    "ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:"
+    "rsa_pss_rsae_sha512:rsa_pkcs1_sha512"
+};
+
+/* Firefox: CHACHA20 before AES256 in TLS1.3; sigalgs grouped ECDSA, then
+ * rsa_pss, then rsa_pkcs1 (distinct from Chrome's interleaved order). */
+static const dap_tls_hello_params_t s_hello_firefox = {
+    "TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384",
+    "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
+    "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
+    "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+    "ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:"
+    "AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA:AES256-SHA",
+    "X25519:P-256:P-384:P-521",
+    "ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:"
+    "rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:rsa_pss_rsae_sha512:"
+    "rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512"
+};
+
+/* Safari: ECDSA-first and AES256-first TLS1.2 ordering. */
+static const dap_tls_hello_params_t s_hello_safari = {
+    "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
+    "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:"
+    "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-AES256-GCM-SHA384:"
+    "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-CHACHA20-POLY1305:"
+    "ECDHE-ECDSA-AES256-SHA:ECDHE-ECDSA-AES128-SHA:"
+    "ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA:"
+    "AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-SHA:AES128-SHA",
+    "X25519:P-256:P-384:P-521",
+    "ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:"
+    "ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:"
+    "rsa_pss_rsae_sha512:rsa_pkcs1_sha512"
+};
+
 int dap_tls_context_set_hello_profile(dap_tls_context_t *a_ctx,
                                       dap_tls_hello_profile_t a_profile)
 {
@@ -278,41 +331,36 @@ int dap_tls_context_set_hello_profile(dap_tls_context_t *a_ctx,
         a_ctx->hello_profile = 0;
         return 0;
     }
-    if (a_profile != DAP_TLS_HELLO_CHROME)
-        return -1;
+
+    const dap_tls_hello_params_t *l_p;
+    const char *l_name;
+    switch (a_profile) {
+        case DAP_TLS_HELLO_CHROME:  l_p = &s_hello_chrome;  l_name = "CHROME";  break;
+        case DAP_TLS_HELLO_EDGE:    l_p = &s_hello_chrome;  l_name = "EDGE";    break;
+        case DAP_TLS_HELLO_FIREFOX: l_p = &s_hello_firefox; l_name = "FIREFOX"; break;
+        case DAP_TLS_HELLO_SAFARI:  l_p = &s_hello_safari;  l_name = "SAFARI";  break;
+        default: return -1;
+    }
 
     SSL_CTX *l_ctx = a_ctx->ssl_ctx;
 
-    static const char l_tls13[] =
-        "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256";
-    static const char l_tls12[] =
-        "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
-        "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
-        "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
-        "ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:"
-        "ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:"
-        "AES128-GCM-SHA256:AES256-GCM-SHA384";
-    static const char l_sigalgs[] =
-        "ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:"
-        "ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:"
-        "rsa_pss_rsae_sha512:rsa_pkcs1_sha512";
     /* Chrome ALPN offer: h2 first, then http/1.1. The WSS server selects
      * http/1.1 (see s_http1_alpn), so this stays compatible while looking
      * like a browser on the wire. Overrides any earlier http/1.1-only set. */
     static const unsigned char l_alpn[] = { 2,'h','2', 8,'h','t','t','p','/','1','.','1' };
 
 #ifdef DAP_TLS_BACKEND_BORINGSSL
-    /* BoringSSL hard-codes the TLS 1.3 suites to exactly this Chrome set. */
-    (void)l_tls13;
+    /* BoringSSL hard-codes the TLS 1.3 suites to exactly the Chrome set. */
+    (void)l_p->tls13;
 #else
-    if (SSL_CTX_set_ciphersuites(l_ctx, l_tls13) != 1)
+    if (SSL_CTX_set_ciphersuites(l_ctx, l_p->tls13) != 1)
         log_it(L_WARNING, "hello_profile: SSL_CTX_set_ciphersuites failed");
 #endif
-    if (SSL_CTX_set_cipher_list(l_ctx, l_tls12) != 1)
+    if (SSL_CTX_set_cipher_list(l_ctx, l_p->tls12) != 1)
         log_it(L_WARNING, "hello_profile: SSL_CTX_set_cipher_list failed");
-    if (SSL_CTX_set1_curves_list(l_ctx, "X25519:P-256:P-384:P-521") != 1)
+    if (SSL_CTX_set1_curves_list(l_ctx, l_p->curves) != 1)
         log_it(L_WARNING, "hello_profile: SSL_CTX_set1_curves_list failed");
-    if (SSL_CTX_set1_sigalgs_list(l_ctx, l_sigalgs) != 1)
+    if (SSL_CTX_set1_sigalgs_list(l_ctx, l_p->sigalgs) != 1)
         log_it(L_WARNING, "hello_profile: SSL_CTX_set1_sigalgs_list failed");
     if (SSL_CTX_set_alpn_protos(l_ctx, l_alpn, sizeof(l_alpn)) != 0)
         log_it(L_WARNING, "hello_profile: SSL_CTX_set_alpn_protos failed");
@@ -329,7 +377,7 @@ int dap_tls_context_set_hello_profile(dap_tls_context_t *a_ctx,
 #endif
 
     a_ctx->hello_profile = (int)a_profile;
-    log_it(L_INFO, "TLS hello profile: CHROME-like ClientHello (verify JA3 vs reference)");
+    log_it(L_INFO, "TLS hello profile: %s-like ClientHello (verify JA3 vs reference)", l_name);
     return 0;
 }
 

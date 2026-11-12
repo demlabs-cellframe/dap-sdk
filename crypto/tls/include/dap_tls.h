@@ -69,7 +69,10 @@ int dap_tls_context_set_min_version(dap_tls_context_t *a_ctx, uint16_t a_version
  * overrides cipher list, curves, sigalgs, ALPN offer and version range. */
 typedef enum dap_tls_hello_profile {
     DAP_TLS_HELLO_DEFAULT = 0,  /* keep backend defaults */
-    DAP_TLS_HELLO_CHROME  = 1   /* Chrome desktop-like ClientHello */
+    DAP_TLS_HELLO_CHROME  = 1,  /* Chrome desktop-like ClientHello */
+    DAP_TLS_HELLO_FIREFOX = 2,  /* Firefox desktop-like ClientHello */
+    DAP_TLS_HELLO_EDGE    = 3,  /* Edge (Chromium) — same shape as Chrome */
+    DAP_TLS_HELLO_SAFARI  = 4   /* Safari desktop-like ClientHello */
 } dap_tls_hello_profile_t;
 
 int dap_tls_context_set_hello_profile(dap_tls_context_t *a_ctx,

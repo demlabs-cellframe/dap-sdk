@@ -28,9 +28,23 @@ typedef struct tls13_client {
     uint8_t *alice;
     char *pin, *sni;
     bool wss;
+    dap_tls_hello_profile_t hello_profile;
     dap_wss_dap_t ws;
     dap_wss_client_upgrade_t upgrade;
 } tls13_client_t;
+
+/* Map the GUI/IPC fingerprint-profile index (0=chrome,1=firefox,2=edge,
+ * 3=safari,4=android,5=telegram) to a real-TLS ClientHello profile. The
+ * android/telegram templates have no OpenSSL hello counterpart -> Chrome. */
+static dap_tls_hello_profile_t s_tls13_fp_to_hello(uint8_t a_index)
+{
+    switch (a_index) {
+        case 1:  return DAP_TLS_HELLO_FIREFOX;
+        case 2:  return DAP_TLS_HELLO_EDGE;
+        case 3:  return DAP_TLS_HELLO_SAFARI;
+        default: return DAP_TLS_HELLO_CHROME;
+    }
+}
 
 /* Wire-write result contract: 0 accepted, >0 retryable backpressure (nothing
  * queued, caller must shed or retry), <0 fatal. Collapsing BLOCKED into -1
@@ -220,6 +234,7 @@ static int s_tls13_client_prepare(dap_net_trans_t *trans,const dap_net_stage_pre
     tls13_client_t *c=calloc(1,sizeof(*c));
     if (!c) return -1;
     c->wss=trans && trans->type == DAP_NET_TRANS_WSS;
+    c->hello_profile=s_tls13_fp_to_hello(client ? client->tls_fp_profile_index : 0);
     c->pin=dap_strdup(pin); c->sni=sni ? dap_strdup(sni) : NULL;
     if (!c->pin || (sni && !c->sni)) { free(c->pin); free(c->sni); free(c); return -1; }
     /* dap_stream_new_es_client does not allocate trans_ctx. Supply a staging
@@ -251,6 +266,7 @@ static int s_tls13_client_handshake(dap_stream_t *stream,dap_net_handshake_param
     c->state=(dap_tls13_client_state_t){.enc_reply=s_tls13_client_enc_reply,
         .ctl_reply=s_tls13_client_ctl_reply,.stream_data=s_tls13_client_data,.arg=c};
     int rc;
+    c->connection.endpoint.hello_profile=c->hello_profile;
     if(c->wss) {
         rc=dap_wss_dap_init(&c->ws,false,dap_tls13_client_dispatch,&c->state,s_tls13_ws_wire,c);
         if(!rc) rc=dap_tls13_endpoint_client_protocol(&c->connection.endpoint,c->pin,c->sni,
