@@ -39,14 +39,10 @@ if(DAP_TLS13_OPENSSL)
         message(FATAL_ERROR "TLS13 memory BIO transport requires explicit DAP_TLS_BACKEND=openssl or boringssl")
     endif()
     target_compile_definitions(dap_trans_tls PRIVATE DAP_TLS13_OPENSSL=1)
-    # Anti-DPI spike: Chrome-like ClientHello for TLS13/WSS clients. Opt-in;
-    # full fidelity needs DAP_TLS_BACKEND=boringssl. See
-    # docs/VPN_ANTIDPI_CIRCUMVENTION_PLAN_2026_10_28.md (Phase 1).
-    option(DAP_TLS13_BROWSER_HELLO "Chrome-like ClientHello for TLS13/WSS clients (anti-DPI)" OFF)
-    if(DAP_TLS13_BROWSER_HELLO)
-        target_compile_definitions(dap_trans_tls PRIVATE DAP_TLS13_BROWSER_HELLO=1)
-        message(STATUS "TLS13 browser-like ClientHello: ON")
-    endif()
+    # Anti-DPI: the browser-like ClientHello for TLS13/WSS is always applied
+    # (profile selected per-connection via tls_fp_profile_index, default Chrome).
+    # Full GREASE/extension-permutation fidelity needs DAP_TLS_BACKEND=boringssl;
+    # OpenSSL applies a best-effort cipher/curve/sigalg profile.
     target_link_libraries(dap_trans_tls INTERFACE dap_crypto_tls)
     target_include_directories(dap_trans_tls PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/tls/include)
 endif()

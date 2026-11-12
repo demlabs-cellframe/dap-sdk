@@ -7,8 +7,8 @@
 typedef struct dap_tls13_endpoint {
     dap_tls_context_t *context;
     dap_tls13_channel_t channel;
-    /* Browser ClientHello profile requested by the owner (0 = CHROME default
-     * when DAP_TLS13_BROWSER_HELLO is built). Set before endpoint init. */
+    /* Browser ClientHello profile requested by the owner (0 = CHROME default).
+     * Always applied for the WSS/http1 path. Set before endpoint init. */
     dap_tls_hello_profile_t hello_profile;
 } dap_tls13_endpoint_t;
 
@@ -52,21 +52,21 @@ static int dap_tls13_endpoint_client_protocol(dap_tls13_endpoint_t *e, const cha
     if (!e->context || dap_tls_context_set_min_version(e->context, 0x0304)) goto fail;
     static const unsigned char alpn[] = {8,'h','t','t','p','/','1','.','1'};
     if (http1 && dap_tls_context_set_alpn(e->context, alpn, sizeof(alpn))) goto fail;
-#ifdef DAP_TLS13_BROWSER_HELLO
-    /* Anti-DPI (opt-in): browser-like ClientHello for the WSS/TLS13 path.
+    /* Anti-DPI: browser-like ClientHello for the WSS/TLS13 path (always on).
      * Applied after the plain http/1.1 ALPN and overrides the offer to
      * h2,http/1.1 (the server select-cb still picks http/1.1), plus the
      * selected browser's cipher/curve/sigalg ordering and — on BoringSSL —
      * GREASE + extension permutation. The owner picks the profile via
      * e->hello_profile (0 defaults to Chrome). Must run before
-     * dap_tls_session_new. Failure aborts the endpoint so a build never
-     * silently loses camouflage. */
+     * dap_tls_session_new. Backends that cannot compose a ClientHello
+     * (Secure Transport / SChannel) reject the profile; we log and fall back
+     * to the default hello rather than dropping the connection. */
     if (http1) {
         dap_tls_hello_profile_t l_prof = e->hello_profile ? e->hello_profile
                                                           : DAP_TLS_HELLO_CHROME;
-        if (dap_tls_context_set_hello_profile(e->context, l_prof)) goto fail;
+        if (dap_tls_context_set_hello_profile(e->context, l_prof))
+            log_it(L_WARNING, "TLS13: browser hello profile unsupported by backend, using default ClientHello");
     }
-#endif
     e->channel.tls.session = dap_tls_session_new(e->context);
     if (!e->channel.tls.session ||
         dap_tls_openssl_session_set_memory_io(e->channel.tls.session) ||
