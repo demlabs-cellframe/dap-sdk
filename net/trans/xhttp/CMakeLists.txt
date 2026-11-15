@@ -14,6 +14,11 @@ file(GLOB NGHTTP2_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/nghttp2/*.c)
 add_library(nghttp2_vendor STATIC ${NGHTTP2_SRCS})
 target_include_directories(nghttp2_vendor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nghttp2/includes)
 target_compile_definitions(nghttp2_vendor PUBLIC NGHTTP2_STATICLIB)
+if(UNIX)
+    # No config.h in the vendored build: nghttp2_net.h gates <arpa/inet.h> /
+    # <netinet/in.h> (htonl/ntohl) on these; GCC>=14 errors on implicit decls.
+    target_compile_definitions(nghttp2_vendor PRIVATE HAVE_ARPA_INET_H=1 HAVE_NETINET_IN_H=1)
+endif()
 if(NOT MSVC)
     target_compile_options(nghttp2_vendor PRIVATE -w)
 endif()
