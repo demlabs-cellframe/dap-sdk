@@ -456,6 +456,14 @@ ssize_t dap_tls_session_write(dap_tls_session_t *a_session,
     return -1;
 }
 
+int dap_tls_session_pending(const dap_tls_session_t *a_session)
+{
+    /* Secure Transport exposes no buffered-record count; poll-driven pumps
+     * fall back to their poll slice. Best-effort 0. */
+    (void)a_session;
+    return 0;
+}
+
 int dap_tls_session_shutdown(dap_tls_session_t *a_session)
 {
     if (!a_session || !a_session->ssl) return -1;

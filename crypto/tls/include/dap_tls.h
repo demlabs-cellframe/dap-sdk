@@ -106,6 +106,10 @@ ssize_t dap_tls_session_read(dap_tls_session_t *a_session,
 ssize_t dap_tls_session_write(dap_tls_session_t *a_session,
                                const void *a_data, size_t a_size);
 
+/* Bytes already buffered in the TLS layer (readable without waiting on the
+ * socket). Used by poll-driven pumps to drain buffered records. */
+int dap_tls_session_pending(const dap_tls_session_t *a_session);
+
 int dap_tls_session_shutdown(dap_tls_session_t *a_session);
 
 dap_tls_error_t dap_tls_session_get_error(dap_tls_session_t *a_session, int a_ret);

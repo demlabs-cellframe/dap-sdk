@@ -569,6 +569,13 @@ ssize_t dap_tls_session_write(dap_tls_session_t *a_session,
     return (ssize_t)SSL_write(a_session->ssl, a_data, (int)a_size);
 }
 
+int dap_tls_session_pending(const dap_tls_session_t *a_session)
+{
+    if (!a_session || !a_session->ssl)
+        return 0;
+    return SSL_pending(a_session->ssl);
+}
+
 /* ---- Shutdown ----------------------------------------------------------- */
 
 int dap_tls_session_shutdown(dap_tls_session_t *a_session)

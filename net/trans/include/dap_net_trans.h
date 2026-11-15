@@ -101,7 +101,11 @@ typedef enum dap_net_trans_type {
     DAP_NET_TRANS_TLS13          = 0x08,  ///< Standard authenticated TLS 1.3 (separate registration)
     DAP_NET_TRANS_WSS            = 0x09,  ///< DAP over authenticated WebSocket/TLS
     DAP_NET_TRANS_REALITY        = 0x0A,  ///< VLESS+REALITY client transport (Xray-compatible, client role only)
-    DAP_NET_TRANS_MAX            = 0x0A   ///< Maximum trans type value
+    DAP_NET_TRANS_TROJAN         = 0x0B,  ///< Trojan (TLS + password-hash header) client transport
+    DAP_NET_TRANS_ANYTLS         = 0x0C,  ///< AnyTLS (TLS + auth + mux/padding session) client transport
+    DAP_NET_TRANS_XHTTP          = 0x0D,  ///< XHTTP (VLESS over HTTP/2, Xray splithttp) client transport
+    DAP_NET_TRANS_SHADOWTLS      = 0x0E,  ///< ShadowTLS v3 (relayed TLS handshake + HMAC framing) client transport
+    DAP_NET_TRANS_MAX            = 0x0E   ///< Maximum trans type value
 } dap_net_trans_type_t;
 
 /**
@@ -544,6 +548,62 @@ int dap_net_trans_reality_register(void);
  * @return 0 on success (or if it was not registered), negative on failure
  */
 int dap_net_trans_reality_unregister(void);
+
+/**
+ * @brief Register the Trojan client transport (TLS + password-hash header)
+ * @return 0 on success (or already registered), negative on failure
+ * @note Built only when DAP_SDK_NET_TRANS_TROJAN is ON (auto-enabled with
+ *       DAP_TLS13_OPENSSL); linking fails otherwise.
+ */
+int dap_net_trans_trojan_register(void);
+
+/**
+ * @brief Unregister the Trojan client transport
+ * @return 0 on success (or if it was not registered), negative on failure
+ */
+int dap_net_trans_trojan_unregister(void);
+
+/**
+ * @brief Register the AnyTLS client transport (TLS + auth + mux/padding session)
+ * @return 0 on success (or already registered), negative on failure
+ * @note Built only when DAP_SDK_NET_TRANS_ANYTLS is ON (auto-enabled with
+ *       DAP_TLS13_OPENSSL); linking fails otherwise.
+ */
+int dap_net_trans_anytls_register(void);
+
+/**
+ * @brief Unregister the AnyTLS client transport
+ * @return 0 on success (or if it was not registered), negative on failure
+ */
+int dap_net_trans_anytls_unregister(void);
+
+/**
+ * @brief Register the XHTTP client transport (VLESS over HTTP/2)
+ * @return 0 on success (or already registered), negative on failure
+ * @note Built only when DAP_SDK_NET_TRANS_XHTTP is ON (auto-enabled with
+ *       DAP_TLS13_OPENSSL); linking fails otherwise.
+ */
+int dap_net_trans_xhttp_register(void);
+
+/**
+ * @brief Unregister the XHTTP client transport
+ * @return 0 on success (or if it was not registered), negative on failure
+ */
+int dap_net_trans_xhttp_unregister(void);
+
+/**
+ * @brief Register the ShadowTLS v3 client transport
+ * @return 0 on success (or already registered), negative on failure
+ * @note Built only when DAP_SDK_NET_TRANS_SHADOWTLS is ON (auto-enabled with
+ *       DAP_TLS13_OPENSSL); linking fails otherwise.
+ */
+int dap_net_trans_shadowtls_register(void);
+
+/**
+ * @brief Unregister the ShadowTLS v3 client transport
+ * @return 0 on success (or if it was not registered), negative on failure
+ */
+int dap_net_trans_shadowtls_unregister(void);
 
 /**
  * @brief Get trans name string

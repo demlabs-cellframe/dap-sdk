@@ -84,6 +84,8 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
             ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${CMAKE_CURRENT_SOURCE_DIR}/port
             ${CMAKE_CURRENT_SOURCE_DIR}/../tls
+            ${CMAKE_CURRENT_SOURCE_DIR}/../carrier/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/../carrier_dap
         )
         # pthread (bridge pump thread) comes through dap_io's "pthread" link
         # string in the chain below — do NOT reference the Threads::Threads
@@ -98,6 +100,8 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
             dap_stream
             dap_client
             dap_net_trans
+            dap_trans_carrier
+            dap_trans_carrier_dap
         )
 
         dap_register_module(
@@ -126,6 +130,9 @@ endif()
 # --- vendored ML-KEM-768 (PQClean clean, CC0) ---
 file(GLOB SRC_MLKEM port/mlkem/*.c)
 
+# --- shared carrier layer (bridge/pipe), standalone sibling build ---
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../carrier carrier_build)
+
 add_library(reality_core STATIC
     core/reality_fp_chrome.c
     core/reality_fp_build.c
@@ -148,7 +155,7 @@ add_library(reality_port_ossl STATIC
     port/reality_forwarder.c
 )
 target_include_directories(reality_port_ossl PUBLIC include port)
-target_include_directories(reality_port_ossl PRIVATE ${OPENSSL_ROOT}/include core)
+target_include_directories(reality_port_ossl PRIVATE ${OPENSSL_ROOT}/include core ${CMAKE_CURRENT_SOURCE_DIR}/../carrier/include)
 target_compile_options(reality_port_ossl PRIVATE -Wall)
 
 find_library(CRYPTO_LIB crypto PATHS ${OPENSSL_ROOT}/lib NO_DEFAULT_PATH)
@@ -158,7 +165,7 @@ if(NOT CRYPTO_LIB)
 endif()
 target_link_libraries(reality_port_ossl PUBLIC ${CRYPTO_LIB})
 find_package(Threads REQUIRED)
-target_link_libraries(reality_port_ossl PUBLIC Threads::Threads)
+target_link_libraries(reality_port_ossl PUBLIC Threads::Threads carrier)
 
 if(REALITY_BUILD_TESTS)
     enable_testing()

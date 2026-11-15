@@ -11,8 +11,20 @@ add_subdirectory(http)
 add_subdirectory(udp)
 add_subdirectory(dns)
 add_subdirectory(tls)
+# Shared carrier layer (bridge/pipe/trust) — before transports that use it
+add_subdirectory(carrier)
+# Shared HTTP-DAP phase machine (SDK-aware adapter support)
+add_subdirectory(carrier_dap)
 # After tls: reality auto-enables itself when DAP_TLS13_OPENSSL is ON
 add_subdirectory(reality)
+# Trojan auto-enables with DAP_TLS13_OPENSSL (same TLS profile)
+add_subdirectory(trojan)
+# AnyTLS auto-enables with DAP_TLS13_OPENSSL (same TLS profile)
+add_subdirectory(anytls)
+# XHTTP auto-enables with DAP_TLS13_OPENSSL (vendored nghttp2)
+add_subdirectory(xhttp)
+# ShadowTLS auto-enables with DAP_TLS13_OPENSSL
+add_subdirectory(shadowtls)
 
 # Unified trans abstraction layer (dap_net_trans.c) and server API (dap_net_trans_server.c)
 file(GLOB TRANS_CORE_SRCS 
@@ -60,9 +72,23 @@ set(DAP_NET_TRANS_DEPS
     dap_trans_udp
     dap_trans_dns
     dap_trans_tls
+    dap_trans_carrier
+    dap_trans_carrier_dap
 )
 if(TARGET dap_trans_reality)
     list(APPEND DAP_NET_TRANS_DEPS dap_trans_reality)
+endif()
+if(TARGET dap_trans_trojan)
+    list(APPEND DAP_NET_TRANS_DEPS dap_trans_trojan)
+endif()
+if(TARGET dap_trans_anytls)
+    list(APPEND DAP_NET_TRANS_DEPS dap_trans_anytls)
+endif()
+if(TARGET dap_trans_xhttp)
+    list(APPEND DAP_NET_TRANS_DEPS dap_trans_xhttp)
+endif()
+if(TARGET dap_trans_shadowtls)
+    list(APPEND DAP_NET_TRANS_DEPS dap_trans_shadowtls)
 endif()
 dap_link_libraries(dap_net_trans INTERFACE ${DAP_NET_TRANS_DEPS})
 

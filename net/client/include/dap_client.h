@@ -122,6 +122,13 @@ typedef struct dap_client {
     char reality_sni[256];        // Mask SNI (empty = module default www.samsung.com)
     uint32_t reality_rate_limit;  // Payload cap in bytes/sec, 0 = unlimited (DPI: 5-6 MB/s on cellular)
 
+    /* Trojan endpoint secret, copied before connect. TLS trust reuses
+     * tls13_spki_sha256 / tls13_server_name. Provisioned, never hardcoded. */
+    char trojan_password[128];
+    char anytls_password[128];   /* AnyTLS secret (TLS trust: tls13_spki_sha256/server_name) */
+    char xhttp_uuid[37];         /* XHTTP VLESS UUID (TLS trust: tls13_spki_sha256/server_name) */
+    char shadowtls_password[128];/* ShadowTLS v3 secret (mask SNI: tls13_server_name) */
+
     void *_internal;
     void *_inheritor;
 } dap_client_t;

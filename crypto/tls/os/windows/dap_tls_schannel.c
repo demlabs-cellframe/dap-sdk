@@ -667,6 +667,14 @@ ssize_t dap_tls_session_write(dap_tls_session_t *a_session,
     return (ssize_t)l_to_send;
 }
 
+int dap_tls_session_pending(const dap_tls_session_t *a_session)
+{
+    /* SChannel: no direct buffered-record count exposed; poll-driven pumps
+     * fall back to their poll slice. Best-effort 0. */
+    (void)a_session;
+    return 0;
+}
+
 int dap_tls_session_shutdown(dap_tls_session_t *a_session)
 {
     if (!a_session || !a_session->sec_ctx_valid)
