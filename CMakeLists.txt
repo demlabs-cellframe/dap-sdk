@@ -46,7 +46,9 @@ if(USE_LIBBSD_EXPLICIT_BZERO)
 endif()
 
 if (NOT DEFINED DAP_VERSION)
-    set(DAP_VERSION "0.0.0")
+    # Pinned by the release branch: a build of this line reports the version it
+    # ships with even when the caller does not pass DAP_VERSION (the node does).
+    set(DAP_VERSION "5.9-0")
     message(STATUS "DAP_VERSION is not defined, using default: ${DAP_VERSION}")
 endif()
 
