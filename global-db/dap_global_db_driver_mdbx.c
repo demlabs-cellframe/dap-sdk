@@ -665,8 +665,11 @@ MDBX_val    l_key_iov, l_data_iov;
 dap_list_t  *l_slist = NULL;
 char        *l_cp;
 size_t     l_upper_limit_of_db_size = 16;
-    // MB to B, default 1GB
-    l_upper_limit_of_db_size = 0x100000 * dap_config_get_item_uint32_default(g_config,  "global_db", "mdbx_upper_limit_of_db_size", 1024);
+    // MB to B, default 1GB. The cast is not cosmetic: both operands are 32-bit, so a
+    // limit of 4096 MB or more wrapped around and reached mdbx as 0 - every operator
+    // who raised it above 4 GB silently got "no limit" instead of the number set, and
+    // a node that kept the default stopped writing once the file reached 1 GB.
+    l_upper_limit_of_db_size = (size_t)0x100000 * dap_config_get_item_uint32_default(g_config,  "global_db", "mdbx_upper_limit_of_db_size", 1024);
     log_it(L_INFO, "Set MDBX Upper Limit of DB Size to %zu bytes", l_upper_limit_of_db_size);
 
     snprintf(s_db_path, sizeof(s_db_path), "%s/%s", a_mdbx_path, s_subdir );/* Make a path to MDBX root */
